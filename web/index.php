@@ -104,7 +104,7 @@ if (isset($_GET['api'])) {
         exit;
     }
     if ($what === 'logout' && $post) {
-        ai_call('/api/auth/logout', 'POST', [], 10.0);
+        ai_call('/api/auth/logout', 'POST', ['everywhere' => !empty(sent_body()['everywhere'])], 10.0);
         ai_clear_session();
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => true]);
@@ -310,7 +310,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
   <div class="btnrow">
     <button type="button" class="btn small mebtn" id="me-btn" data-icon="person"
             title="The account you are signed in as: its password, the language of these pages, the letters of the terminal."><span class="me-name" data-no-i18n><?= h($me['name']) ?></span></button>
-    <button class="btn small" id="signout" data-icon="out">Sign out</button>
+    <button class="btn small" id="signout" data-icon="out" title="Sign out of this browser. The terminals and Claude Code go on running on the server, and you may be signed in from other places at the same time - they stay signed in.">Sign out</button>
   </div>
   <div class="updated" id="updated" title="Click to pause or resume the live updates">
     <b>live</b><br><span id="updated-at">…</span></div>
@@ -340,9 +340,10 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <section class="panel" id="tab-terms">
   <div class="term-layout" id="term-layout">
     <aside class="card term-side" id="term-side">
-      <h2>Terminals <span class="right"><button class="btn small cmd primary" id="tl-new" data-icon="add"
+      <h2>Terminals <span class="right"><button type="button" class="tl-pinbtn" id="tl-pin" aria-pressed="false"
+          aria-label="Keep this list open"></button><button class="btn small cmd primary" id="tl-new" data-icon="add"
           title="A new terminal: Claude Code or a shell, in the folder you choose.">New</button></span></h2>
-      <div class="btnrow" style="margin-bottom:8px">
+      <div class="btnrow tl-filters" style="margin-bottom:8px">
         <input type="search" id="tl-q" placeholder="find a terminal…" style="flex:1;min-width:120px">
         <select id="tl-show" title="Which terminals the list shows.">
           <option value="live">running</option>
@@ -366,23 +367,39 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       </div>
       <div class="term-open" id="term-open" hidden>
         <div class="term-bar">
-          <button class="btn small iconly" id="tb-side" data-icon="list" title="Show or hide the list of terminals."></button>
+          <button class="btn small iconly" id="tb-side" data-icon="list" title="Keep the list of terminals open beside the terminal, or let it hide itself at the edge (it slides out when you point at it)."></button>
           <span class="term-title" id="tb-title" data-no-i18n>…</span>
           <span class="pill small" id="tb-state"><span class="dot"></span><span>…</span></span>
           <span class="muted small mono term-path" id="tb-path" data-no-i18n></span>
           <span class="spacer"></span>
           <button class="btn small" id="tb-cmds" data-icon="list" title="Claude Code's commands - /model, /compact, /resume... - put into the terminal, ready to be sent.">Commands</button>
           <button class="btn small" id="tb-attach" data-icon="upload" title="Give Claude a file: it is written into the working directory's upload folder and its path typed into the terminal. Dropping a file onto the terminal, or pasting one (Ctrl+V), does the same.">File for Claude</button>
-          <button class="btn small" id="tb-files" data-icon="archive" title="The files of this terminal's working directory.">Files</button>
+          <button class="btn small" id="tb-files" data-icon="archive" title="The files of this chat: its own folder and what is in it, beside the terminal - nothing above it.">Files</button>
           <button class="btn small" id="tb-compose" data-icon="edit" title="A box to write longer text in, sent to the terminal at once - handy on a phone, or for many lines.">Write</button>
           <button class="btn small iconly" id="tb-font-" title="Smaller letters">A−</button>
           <button class="btn small iconly" id="tb-font+" title="Bigger letters">A+</button>
           <button class="btn small iconly" id="tb-full" data-icon="unfold" title="The terminal over the whole window (Esc twice, or this again, to come back)."></button>
           <button class="btn small" id="tb-more" data-icon="gear" title="Rename it, start it again, end it, open it in a window of its own.">More</button>
         </div>
+        <div class="term-split" id="term-split">
         <div class="term-host" id="term-host" data-no-i18n>
           <div class="term-drop" id="term-drop" hidden><div>Drop the file to give it to Claude</div></div>
           <div class="term-gone" id="term-gone" hidden></div>
+        </div>
+        <aside class="term-files" id="term-files" hidden>
+          <div class="tf-head">
+            <span class="tf-ic" id="tf-ic"></span>
+            <div class="tf-where"><b id="tf-root" data-no-i18n></b><span class="tf-crumbs mono" id="tf-crumbs" data-no-i18n></span></div>
+            <button class="btn small iconly" id="tf-up" data-icon="up" title="One folder up - never above the folder of this chat."></button>
+            <button class="btn small iconly" id="tf-send" data-icon="upload" title="Upload files into the folder shown. Dropping them onto this list does the same."></button>
+            <button class="btn small iconly" id="tf-mkdir" data-icon="add" title="A new folder here."></button>
+            <button class="btn small iconly" id="tf-reload" data-icon="refresh" title="Read the folder again."></button>
+            <button class="btn small iconly" id="tf-close" data-icon="close" title="Close the files of this chat."></button>
+            <input type="file" id="tf-input" multiple hidden>
+          </div>
+          <div class="tf-list" id="tf-list"></div>
+          <div class="tf-foot muted small" id="tf-foot"></div>
+        </aside>
         </div>
         <div class="term-keys" id="term-keys"></div>
         <div class="term-compose" id="term-compose" hidden>

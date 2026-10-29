@@ -28,6 +28,47 @@ Claude Code → *Where files given to Claude go*; it gets a `.gitignore` of its
 own) and its path typed into the terminal: a picture becomes `[Image #1]`,
 another file `@path`, for Claude to read.
 
+## The right mouse button
+
+On the terminal: copy what is selected, paste, select or copy the whole
+screen, a file for Claude, the files of the chat, Claude Code's commands, a
+longer text, the whole window, clearing the screen - then what the list
+offers for the chat. Shift with the right button gives the browser's own
+menu. tmux's own menu on that button is switched off.
+
+On a chat in the list (or its ⋯, as on claude.ai): open it, open it in a
+new window, **pin** it (pinned chats stay at the top, kept with your
+account, so they are pinned wherever you sign in), **rename** it in its row
+(Enter keeps the name, Esc does not), its files, a new Claude Code in its
+folder, the command to attach it on the server, start it again, end it.
+
+## The files of a chat
+
+*Files* in the terminal's bar opens the chat's own folder beside it - the
+folder it was started in and what is under it, never above it (the daemon
+refuses a path outside it). The right button on a file hands it to Claude
+(`@path`), opens, downloads, renames or deletes it; files dropped onto the
+list are uploaded into the folder shown. The whole server stays under the
+*Files* tab for an administrator.
+
+## The list of terminals
+
+At the edge of the screen as otp's menu of settings: a strip of icons that
+slides out when pointed at, and stays out once pinned (the pin at its top,
+or the first button of the terminal's bar). On a phone the list and the
+terminal take the screen in turn.
+
+## Nothing ends by closing the browser
+
+Each terminal is a tmux session on the server. Closing the browser, losing
+the connection, signing out, the sign-in running out or restarting ai ends
+none of them: the next sign-in - from here or from any other computer -
+finds them running, Claude Code in the middle of what it was doing. Several
+places may be signed in at the same time and look at the same terminal live;
+the window typed in last sets its size. Signing out closes only that
+window's view (*Sign out everywhere*, under your name, ends every sign-in -
+still no terminal).
+
 ## On the server
 
 ```

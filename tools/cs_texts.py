@@ -1333,6 +1333,125 @@ STRINGS = {
         'certifikát, kterým odpovídá vlastní název a adresa vm',
     'The built-in value: false':
         'Vestavěná hodnota: vypnuto',
+    'What runs in it is ended on the server - for every window looking at it. Its last screen stays in the list for a while.':
+        'Co v něm běží, se na serveru ukončí – pro všechna okna, která se na něj dívají. Jeho poslední obrazovka zůstane chvíli v seznamu.',
+    ' - Claude Code picks up the conversation where it was (--continue).':
+        ' – Claude Code naváže na konverzaci tam, kde byla (--continue).',
+    # ---- 1.0.5: chats like claude.ai ----
+    'Pinned':
+        'Připnuté',
+    'The others':
+        'Ostatní',
+    'Pin':
+        'Připnout',
+    'Unpin':
+        'Odepnout',
+    'Rename':
+        'Přejmenovat',
+    'Open it':
+        'Otevřít',
+    'Open in a new window':
+        'Otevřít v novém okně',
+    'Its last screen':
+        'Jeho poslední obrazovka',
+    'The files of this chat':
+        'Soubory tohoto chatu',
+    'A new Claude Code in its folder':
+        'Nový Claude Code v jeho složce',
+    'Copy the command to attach it on the server':
+        'Zkopírovat příkaz k připojení na serveru',
+    'Start it again':
+        'Spustit znovu',
+    'Take it off the list':
+        'Odebrat ze seznamu',
+    'End it':
+        'Ukončit ho',
+    'Copy':
+        'Kopírovat',
+    'Paste':
+        'Vložit',
+    'Select everything on the screen':
+        'Vybrat vše na obrazovce',
+    'Copy everything on the screen':
+        'Zkopírovat celou obrazovku',
+    'Give Claude a file…':
+        'Předat Claude soubor…',
+    "Claude Code's commands":
+        'Příkazy Claude Code',
+    'Write a longer text':
+        'Napsat delší text',
+    'Over the whole window':
+        'Přes celé okno',
+    'Back from the whole window':
+        'Zpět z celého okna',
+    'Clear the screen':
+        'Vymazat obrazovku',
+    'Open the folder':
+        'Otevřít složku',
+    'Copy its path':
+        'Zkopírovat cestu',
+    'A new Claude Code in it':
+        'Nový Claude Code v ní',
+    'Download it as a .zip':
+        'Stáhnout jako .zip',
+    'Download it':
+        'Stáhnout',
+    'Delete':
+        'Smazat',
+    'Delete it':
+        'Smazat',
+    'An empty folder. Drop files here to put them in.':
+        'Prázdná složka. Přetáhněte sem soubory, aby se do ní nahrály.',
+    'What to do with it':
+        'Co s ním',
+    'Pin it, rename it, its files, start it again, end it… - the right mouse button on it does the same.':
+        'Připnout, přejmenovat, jeho soubory, spustit znovu, ukončit… – totéž nabídne pravé tlačítko myši.',
+    'renamed':
+        'přejmenováno',
+    'copied':
+        'zkopírováno',
+    'the screen was copied':
+        'obrazovka byla zkopírována',
+    'the browser would not copy it':
+        'prohlížeč to nezkopíroval',
+    'this browser lets only Ctrl+V paste':
+        'tento prohlížeč dovolí vkládat jen přes Ctrl+V',
+    'the browser did not let the page read the clipboard - Ctrl+V does':
+        'prohlížeč stránce nedovolil číst schránku – Ctrl+V funguje',
+    'Keep this list open':
+        'Nechat seznam otevřený',
+    'The list is staying open. Press again to let it hide itself at the edge of the screen.':
+        'Seznam zůstává otevřený. Dalším stiskem se bude schovávat u okraje obrazovky.',
+    'The list hides itself at the edge of the screen and slides out when you point at it. Press this to keep it open.':
+        'Seznam se schovává u okraje obrazovky a vysune se, když na něj najedete myší. Stiskem ho necháte otevřený.',
+    'Keep the list of terminals open beside the terminal, or let it hide itself at the edge (it slides out when you point at it).':
+        'Nechat seznam terminálů otevřený vedle terminálu, nebo ho nechat schovávat u okraje (vysune se, když na něj najedete myší).',
+    'The files of this chat: its own folder and what is in it, beside the terminal - nothing above it.':
+        'Soubory tohoto chatu: jeho vlastní složka a co v ní je, vedle terminálu – nic nad ní.',
+    'One folder up - never above the folder of this chat.':
+        'O složku výš – nikdy nad složku tohoto chatu.',
+    'Upload files into the folder shown. Dropping them onto this list does the same.':
+        'Nahrát soubory do zobrazené složky. Totéž udělá jejich přetažení na tento seznam.',
+    'A new folder here.':
+        'Nová složka zde.',
+    'Read the folder again.':
+        'Načíst složku znovu.',
+    'Close the files of this chat.':
+        'Zavřít soubory tohoto chatu.',
+    'Sign out of this browser. The terminals and Claude Code go on running on the server, and you may be signed in from other places at the same time - they stay signed in.':
+        'Odhlásit tento prohlížeč. Terminály a Claude Code běží na serveru dál a můžete být zároveň přihlášeni i odjinud – ta přihlášení zůstanou.',
+    'Where you are signed in':
+        'Kde jste přihlášeni',
+    'You may be signed in from several places at once - every one sees the same terminals, live. Signing out or closing the browser ends no terminal: Claude Code goes on working on the server.':
+        'Můžete být přihlášeni z více míst najednou – každé vidí stejné terminály, živě. Odhlášení ani zavření prohlížeče žádný terminál neukončí: Claude Code na serveru pracuje dál.',
+    'Sign out everywhere':
+        'Odhlásit všude',
+    'Sign out everywhere?':
+        'Odhlásit všude?',
+    'Every sign-in of yours ends - here and on every other computer. The terminals go on running.':
+        'Skončí všechna vaše přihlášení – zde i na všech ostatních počítačích. Terminály běží dál.',
+    'signed out - the terminal goes on running':
+        'odhlášeno – terminál běží dál',
 }
 
 PATTERNS = {
@@ -1469,6 +1588,29 @@ PATTERNS = {
         'příliš mnoho chybných kódů – zkuste to znovu za {0} min',
     'cleared: {0}':
         'smazáno: {0}',
+    # ---- 1.0.5: chats like claude.ai ----
+    'pinned: {0}':
+        'připnuto: {0}',
+    'no longer pinned: {0}':
+        'odepnuto: {0}',
+    'Hand it to Claude (@{0})':
+        'Předat Claude (@{0})',
+    '{0} item(s) · right button: what to do with one':
+        '{0} {0:položka|položky|položek} · pravé tlačítko: co s ní',
+    'Start {0} again?':
+        'Spustit {0} znovu?',
+    'End {0}?':
+        'Ukončit {0}?',
+    'Delete {0}?':
+        'Smazat {0}?',
+    'copied: {0}':
+        'zkopírováno: {0}',
+    'sending {0}…':
+        'nahrávám {0}…',
+    'that is outside the folder of this chat ({0})':
+        'to je mimo složku tohoto chatu ({0})',
+    'What runs in it now is ended and started afresh in the same folder{0}':
+        'Co v něm teď běží, se ukončí a spustí znovu ve stejné složce{0}',
 }
 
 RICH = {

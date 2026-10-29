@@ -3,6 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.5
+
+- **The files of a chat** beside its terminal: its own folder and what is under it, never above it (the
+  daemon refuses a path outside it); the right button hands a file to Claude (`@path`), opens, downloads,
+  renames or deletes it; files dropped onto the list are uploaded there.
+- **The right mouse button**, with a menu drawn as claude.ai draws one: on the terminal - copy, paste,
+  select or copy the screen, a file for Claude, the chat's files, commands, clear the screen - and on a chat
+  in the list (or its ⋯): open, open in a new window, pin, rename in its row, its files, a new Claude Code in
+  its folder, the command to attach it, start it again, end it. tmux's own menu on that button is off.
+- **Pinned chats** at the top of the list, kept with the account (wherever you sign in).
+- **The list of terminals and the menu of settings hide themselves** at the edge of the screen as otp's do,
+  slide out when pointed at, and stay out once pinned; not pinned is the default, as in otp.
+- Signing out (or a sign-in ended by an administrator) closes that window's view of a terminal - never the
+  terminal; **Sign out everywhere** under your name. Several sign-ins at once see the same terminals live.
+
 ## 1.0.4
 
 What otp has and ai had not yet - taken over from otp 1.0.161, its code and its pages:

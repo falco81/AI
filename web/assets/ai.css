@@ -3250,3 +3250,97 @@ pre.lines.tall{max-height:60vh;overflow:auto}
 .term-keys .key-f{font-size:12px;padding:3px 8px;min-height:0;width:auto}
 .term-keys .lockkeys{margin-left:auto}
 :fullscreen .term-host{min-height:0}
+
+/* ---- 1.0.5: a menu on the right button, as claude.ai draws one ------------------ */
+.ctx{position:fixed;z-index:400;min-width:220px;max-width:320px;padding:6px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.25);
+  font-size:13.5px;animation:ctx-in .09s ease-out;user-select:none}
+@keyframes ctx-in{from{opacity:0;transform:scale(.97) translateY(-2px)}to{opacity:1;transform:none}}
+.ctx-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;border-radius:8px;
+  background:none;color:var(--tx);text-align:left;cursor:pointer;font:inherit;line-height:1.25}
+.ctx-item svg{flex:none;opacity:.75}
+.ctx-item .ctx-w{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctx-item .ctx-k{flex:none;color:var(--tx-mut);font-size:11.5px;margin-left:12px}
+.ctx-item:hover,.ctx-item.sel{background:var(--panel2)}
+.ctx-item.danger{color:var(--crit)}
+.ctx-item.danger svg{opacity:1}
+.ctx-item.danger:hover,.ctx-item.danger.sel{background:rgba(248,81,73,.12)}
+.ctx-item[disabled]{opacity:.4;cursor:default}
+.ctx-item[disabled]:hover{background:none}
+.ctx-sep{height:1px;margin:5px 6px;background:var(--line)}
+.ctx-head{padding:6px 10px 4px;color:var(--tx-mut);font-size:11px;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- the list of chats: pinned ones on top, a ⋯ on the row, as claude.ai --------- */
+.tl-sec{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tx-mut);
+  margin:8px 4px 2px;display:flex;align-items:center;gap:6px}
+.tl-sec:first-child{margin-top:0}
+.tl-item{position:relative}
+.tl-dots{position:absolute;top:6px;right:6px;width:28px;height:26px;border-radius:7px;border:0;background:var(--panel);
+  color:var(--tx-dim);display:grid;place-items:center;opacity:0;cursor:pointer}
+.tl-item:hover .tl-dots,.tl-item.on .tl-dots,.tl-dots:focus-visible,.tl-item.menu .tl-dots{opacity:1}
+.tl-dots:hover{color:var(--tx);background:var(--panel2)}
+.tl-item:hover .tl-top .tag,.tl-item.menu .tl-top .tag{visibility:hidden}
+.tl-pin{color:var(--warn);flex:none;display:inline-grid}
+.tl-rename{width:100%;font:inherit;font-weight:600;padding:2px 6px;border-radius:6px;border:1px solid var(--info);
+  background:var(--bg);color:var(--tx)}
+
+/* ---- the files of one chat, beside its terminal ------------------------------------ */
+.term-split{display:flex;flex:1 1 auto;min-height:0;gap:10px}
+.term-split > .term-host{flex:1 1 auto;min-width:0}
+.term-files{flex:0 0 330px;display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);overflow:hidden}
+.term-files[hidden]{display:none}
+.tf-head{display:flex;align-items:center;gap:4px;padding:8px 8px 8px 10px;border-bottom:1px solid var(--line)}
+.tf-ic{color:var(--info);display:inline-grid;flex:none}
+.tf-where{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.tf-where b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-crumbs{font-size:11px;color:var(--tx-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.tf-list{flex:1 1 auto;overflow:auto;padding:4px}
+.tf-list.over{outline:2px dashed var(--info);outline-offset:-6px}
+.tf-row{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:7px;background:none;
+  color:var(--tx);text-align:left;cursor:pointer;font:inherit;font-size:13px}
+.tf-row:hover,.tf-row.menu{background:var(--panel2)}
+.tf-row .tf-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-row .tf-s{flex:none;color:var(--tx-mut);font-size:11.5px}
+.tf-row svg{flex:none;color:var(--tx-dim)}
+.tf-row.dir svg{color:var(--info)}
+.tf-foot{padding:6px 10px;border-top:1px solid var(--line)}
+.tf-empty{padding:18px 10px;color:var(--tx-mut);text-align:center;font-size:13px}
+@media (max-width: 900px){
+  .term-files{position:absolute;inset:0;z-index:30;flex:none}
+  .term-split{position:relative}
+}
+
+/* ---- the list of terminals as otp's rail: a strip at the edge, out on pointing, pinned to stay ---- */
+@media (min-width: 901px){
+  .term-layout{display:block;position:relative;padding-left:72px}
+  .term-layout.side-pinned{padding-left:326px}
+  .term-layout.no-side{padding-left:0}
+  .term-layout > .term-main{height:100%}
+  .term-side{position:absolute;top:0;bottom:0;left:0;width:58px;z-index:60;transition:width .16s ease,box-shadow .16s;
+    padding:12px 8px}
+  .term-side.open,.term-side.pinned{width:310px;padding:16px}
+  .term-side.open:not(.pinned){box-shadow:12px 0 36px rgba(0,0,0,.55)}
+  .term-side:not(.open):not(.pinned) h2 > :not(.right),
+  .term-side:not(.open):not(.pinned) .tl-filters,
+  .term-side:not(.open):not(.pinned) .tl-sec,
+  .term-side:not(.open):not(.pinned) .tl-item > :not(.tl-top),
+  .term-side:not(.open):not(.pinned) .tl-top > :not(.tl-icon),
+  .term-side:not(.open):not(.pinned) .tl-dots,
+  .term-side:not(.open):not(.pinned) .tl-list > p{display:none}
+  .term-side:not(.open):not(.pinned) h2{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:0}
+  .term-side:not(.open):not(.pinned) h2 .right{display:flex;flex-direction:column;gap:8px;margin:0}
+  .term-side:not(.open):not(.pinned) #tl-new span{display:none}
+  .term-side:not(.open):not(.pinned) .tl-item{padding:8px 0;display:grid;place-items:center}
+  .term-side:not(.open):not(.pinned) .tl-list{scrollbar-width:none}
+  .term-side .tl-pinbtn{display:grid}
+}
+.tl-pinbtn{display:none;appearance:none;place-items:center;width:34px;height:30px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--tx-dim);cursor:pointer}
+.tl-pinbtn:hover{color:var(--tx)}
+.term-side.pinned .tl-pinbtn{color:var(--info);border-color:rgba(88,166,255,.45);background:rgba(88,166,255,.1)}
+.tl-item .tl-icon{position:relative}
+.tl-item .tl-icon .tl-dot{position:absolute;right:-3px;bottom:-2px;width:7px;height:7px;border-radius:50%;
+  background:var(--ok);box-shadow:0 0 0 2px var(--panel2)}
+.tl-item.ended .tl-icon .tl-dot{background:var(--tx-mut)}

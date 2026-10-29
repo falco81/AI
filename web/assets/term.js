@@ -124,7 +124,7 @@ function filesApi(what, query, body) {
                         : 'the page got something that is not an answer');
       }
       if (r.status === 401) { signedOutNow(); }
-      if (!r.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + r.status));
+      if (!r.ok || d.ok === false) { var err = new Error(d.error || ('HTTP ' + r.status)); err.status = r.status; throw err; }
       return d;
     });
   });
@@ -353,6 +353,10 @@ function termConnect() {
       var d = null;
       try { d = JSON.parse(m.data); } catch (e) { return; }
       if (d && d.t === 'error') termSay('lost', d.error || 'the terminal could not be reached');
+      /* This sign-in has ended (signed out here or elsewhere, or ended by an
+         administrator): the terminal goes on running, the page asks for a
+         sign-in again. */
+      if (d && d.t === 'signed-out') { TERM.want = false; termSay('lost', 'signed out - the terminal goes on running'); setTimeout(function () { location.reload(); }, 1500); }
       return;
     }
     TERM.t.write(new Uint8Array(m.data));

@@ -547,6 +547,20 @@ var ICONS = {
   pulse: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
   flag: '<path d="M5 21V4"/><path d="M5 5h11l-2 3.5L16 12H5z"/>',
   pin: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/>',
+  /* Three dots in a row: what more can be done with it (1.0.5). */
+  more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
+  /* A clipboard: paste. */
+  paste: '<rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.5h5v1"/><path d="M9 11h6M9 15h4"/>',
+  /* A window with an arrow out of it: open elsewhere. */
+  window: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17"/><path d="M13 14l3-3m0 0h-2.5m2.5 0v2.5"/>',
+  /* A folder. */
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  /* A page: a file. */
+  file: '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/>',
+  /* A box with a corner marked: select everything. */
+  selectall: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><rect x="8" y="8" width="8" height="8" rx="1"/>',
+  /* An at sign: a file handed to Claude by its path. */
+  at: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
   broom: '<path d="M14 3l7 7"/><path d="M12.5 5.5L18.5 11.5"/>'
     + '<path d="M11 7L4 14v6h6l7-7z"/><path d="M8 12l4 4"/>'
 };

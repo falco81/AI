@@ -330,6 +330,20 @@ function showMe() {
     mine.appendChild(io);
     body.appendChild(mine);
 
+    var ssec = el('div', 'me-sec');
+    ssec.appendChild(el('h3', '', 'Where you are signed in'));
+    ssec.appendChild(el('p', '', 'You may be signed in from several places at once - every one sees the same terminals, live. Signing out or closing the browser ends no terminal: Claude Code goes on working on the server.'));
+    var sacts = el('div', 'me-acts');
+    var every = cmdButton('Sign out everywhere', 'out', 'small');
+    every.onclick = function () {
+      confirmThen('Sign out everywhere?', 'Every sign-in of yours ends - here and on every other computer. The terminals go on running.', 'Sign out everywhere', function () {
+        api('logout', {everywhere: true}).then(function () { location.href = '/'; }).catch(function () { location.href = '/'; });
+      }, true);
+    };
+    sacts.appendChild(every);
+    ssec.appendChild(sacts);
+    body.appendChild(ssec);
+
     var pwsec = el('div', 'me-sec');
     pwsec.appendChild(el('h3', '', 'A new password'));
     body.appendChild(pwsec);
@@ -522,26 +536,47 @@ function loadTerms(openId, quiet) {
   }).catch(function (e) { if (!quiet) oops(e); });
 }
 
+function pins() { return (prefs().pins || []).filter(function (x) { return typeof x === 'string'; }); }
+function isPinned(id) { return pins().indexOf(id) >= 0; }
+function togglePin(t) {
+  var p = pins().filter(function (x) { return x !== t.id && TL.terms.some(function (y) { return y.id === x; }); });
+  var was = isPinned(t.id);
+  if (!was) p.unshift(t.id);
+  savePrefs({pins: p.slice(0, 50)}).then(function () {
+    toast(was ? 'no longer pinned: ' + t.title : 'pinned: ' + t.title, 'good');
+    drawTermList();
+  }).catch(oops);
+}
 function drawTermList() {
+  if (TL.renaming) return;            /* a name being written in its row: not drawn over */
   var host = $('tl-list');
   var q = $('tl-q').value.trim().toLowerCase();
   var all = $('tl-show').value === 'all';
   clear(host);
   var list = TL.terms.filter(function (t) {
-    if (!all && t.state === 'ended') return false;
+    if (!all && t.state === 'ended' && !isPinned(t.id)) return false;
     if (!q) return true;
     return (t.title + ' ' + t.path + ' ' + t.owner + ' ' + t.run_as + ' ' + t.id).toLowerCase().indexOf(q) >= 0;
   });
   if (!list.length) {
     host.appendChild(el('p', 'muted small', TL.terms.length ? 'Nothing matches.' : 'No terminal yet. Press New.'));
   }
-  list.forEach(function (t) {
-    var row = el('button', 'tl-item' + (t.id === TL.open ? ' on' : '') + (t.state === 'ended' ? ' ended' : ''));
-    row.type = 'button';
+  var order = pins();
+  var pinned = list.filter(function (t) { return order.indexOf(t.id) >= 0; })
+    .sort(function (a, b) { return order.indexOf(a.id) - order.indexOf(b.id); });
+  var rest = list.filter(function (t) { return order.indexOf(t.id) < 0; });
+  var row = function (t) {
+    var row = el('div', 'tl-item' + (t.id === TL.open ? ' on' : '') + (t.state === 'ended' ? ' ended' : ''));
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.dataset.id = t.id;
     var top = el('div', 'tl-top');
     var ic = el('span', 'tl-icon');
     ic.innerHTML = iconMarkup(t.kind === 'claude' ? 'terminal' : (t.kind === 'shell' ? 'log' : 'play'), 16);
+    ic.appendChild(el('i', 'tl-dot'));
+    ic.title = t.title;
     top.appendChild(ic);
+    if (isPinned(t.id)) { var pi = el('span', 'tl-pin'); pi.innerHTML = iconMarkup('pin', 12); top.appendChild(pi); }
     top.appendChild(noI18n(el('span', 'tl-title', t.title)));
     top.appendChild(termStateTag(t));
     row.appendChild(top);
@@ -550,13 +585,81 @@ function drawTermList() {
     meta.appendChild(document.createTextNode(kindWords(t.kind) + ' · ' + t.run_as
       + (ADMIN && t.owner && t.owner !== ME.name ? ' · ' + t.owner : '') + ' · ' + ago(t.activity)));
     row.appendChild(meta);
+    var dots = el('button', 'tl-dots');
+    dots.type = 'button';
+    dots.innerHTML = iconMarkup('more', 16);
+    dots.setAttribute('aria-label', 'What to do with it');
+    explain(dots, 'Pin it, rename it, its files, start it again, end it… - the right mouse button on it does the same.');
+    dots.onclick = function (e) {
+      e.stopPropagation();
+      var r = dots.getBoundingClientRect();
+      termMenu(t, r.left, r.bottom + 4, row);
+    };
+    row.appendChild(dots);
     row.onclick = function () {
+      if (row.querySelector('.tl-rename')) return;
       if (t.state === 'ended') { endedPeek(t); return; }
       openTerm(t.id);
     };
+    row.onkeydown = function (e) { if (e.key === 'Enter') row.onclick(); };
+    row.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      termMenu(t, e.clientX, e.clientY, row);
+    });
     host.appendChild(row);
-  });
+  };
+  if (pinned.length) {
+    var h1 = el('div', 'tl-sec');
+    var hi = el('span', 'tl-pin'); hi.innerHTML = iconMarkup('pin', 11); h1.appendChild(hi);
+    h1.appendChild(el('span', '', 'Pinned'));
+    host.appendChild(h1);
+    pinned.forEach(row);
+    if (rest.length) host.appendChild(el('div', 'tl-sec', 'The others'));
+  }
+  rest.forEach(row);
   explainWhatWasDrawn(host);
+}
+/* Renamed in its row, as claude.ai renames a chat: Enter keeps it, Esc does not. */
+function renameInline(t, row) {
+  var title = row && row.querySelector('.tl-title');
+  if (!title || (TLR && !TLR.pinned && !narrow() && !$('term-side').classList.contains('open'))) { renameAsk(t); return; }
+  var box = el('input', 'tl-rename');
+  box.value = t.title;
+  box.maxLength = 120;
+  title.replaceWith(box);
+  box.focus();
+  box.select();
+  TL.renaming = t.id;
+  var done = false;
+  var finish = function (keep) {
+    if (done) return;
+    done = true;
+    TL.renaming = '';
+    var v = box.value.trim();
+    if (!keep || !v || v === t.title) { drawTermList(); return; }
+    api('terms', {do: 'rename', id: t.id, title: v}).then(function () { toast('renamed', 'good'); loadTerms(TL.open || undefined, true); })
+      .catch(function (e) { oops(e); drawTermList(); });
+  };
+  box.onkeydown = function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  };
+  box.onclick = function (e) { e.stopPropagation(); };
+  box.onblur = function () { finish(true); };
+}
+function renameAsk(t) {
+  modal('Rename', function (body) {
+    var name = textBox(t.title, '');
+    name.maxLength = 120;
+    body._name = name;
+    body.appendChild(formField('Its name', name));
+    setTimeout(function () { name.focus(); name.select(); }, 30);
+    name.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('modal-body')._go(); } });
+    body._go = function () {
+      api('terms', {do: 'rename', id: t.id, title: name.value}).then(function () { closeModal(); loadTerms(TL.open || undefined, true); }).catch(oops);
+    };
+  }, [{words: 'Cancel', close: true}, {words: 'Rename', cls: 'primary', icon: 'save', go: function () { $('modal-body')._go(); }}]);
 }
 $('tl-q').addEventListener('input', debounce(drawTermList, 120));
 $('tl-show').onchange = drawTermList;
@@ -790,6 +893,7 @@ function openTerm(id) {
   drawTermList();
   drawKeys();
   writeHash();
+  if (!$('term-files').hidden && CF.t && CF.t.id !== id) chatFiles(t, true);
   termOpen(id, $('term-host'), function (state, words) {
     var p = $('tb-state');
     p.className = 'pill small ' + (state === 'live' ? 'ok' : (state === 'ended' ? 'unknown' : 'warn'));
@@ -833,6 +937,7 @@ function termEnded(id) {
 }
 function closeTermView() {
   termClose();
+  $('term-files').hidden = true;
   TL.open = '';
   document.title = (STATUS && STATUS.site ? STATUS.site + ' · ' : '') + 'ai';
   drawTermEmpty();
@@ -844,7 +949,43 @@ function sideShow(on) {
   $('term-layout').classList.toggle('no-side', !on);
   setTimeout(termFit, 50);
 }
-$('tb-side').onclick = function () { sideShow(!TL.side); };
+/* The list of terminals as otp's settings rail (1.0.5): a strip of icons at
+   the edge that slides out when pointed at, and stays out once pinned. On a
+   phone the list and the terminal take the screen in turn, as before. */
+var TLR = {pinned: false, open: null, shut: null};
+function narrow() { return window.matchMedia && window.matchMedia('(max-width: 900px)').matches; }
+function pinSide(on) {
+  TLR.pinned = !!on;
+  var side = $('term-side'), pin = $('tl-pin');
+  side.classList.toggle('pinned', TLR.pinned);
+  $('term-layout').classList.toggle('side-pinned', TLR.pinned);
+  pin.setAttribute('aria-pressed', TLR.pinned ? 'true' : 'false');
+  explain(pin, TLR.pinned ? 'The list is staying open. Press again to let it hide itself at the edge of the screen.'
+    : 'The list hides itself at the edge of the screen and slides out when you point at it. Press this to keep it open.');
+  try { localStorage.setItem('ai-tl-pinned', TLR.pinned ? '1' : '0'); } catch (e) { }
+  setTimeout(termFit, 200);
+}
+(function sideRail() {
+  var side = $('term-side'), pin = $('tl-pin');
+  pin.innerHTML = iconMarkup('pin', 17);
+  pin.onclick = function (e) { e.stopPropagation(); pinSide(!TLR.pinned); };
+  side.addEventListener('mouseenter', function () {
+    if (narrow()) return;
+    clearTimeout(TLR.shut);
+    TLR.open = setTimeout(function () { side.classList.add('open'); }, 60);
+  });
+  side.addEventListener('mouseleave', function () {
+    clearTimeout(TLR.open);
+    TLR.shut = setTimeout(function () {
+      if (CTX.el || (document.activeElement && side.contains(document.activeElement) && document.activeElement.tagName === 'INPUT')) return;
+      side.classList.remove('open');
+    }, 260);
+  });
+  var was = '0';
+  try { was = localStorage.getItem('ai-tl-pinned') || '0'; } catch (e) { }
+  pinSide(was === '1');
+}());
+$('tb-side').onclick = function () { if (narrow()) sideShow(!TL.side); else pinSide(!TLR.pinned); };
 $('tb-font-').onclick = function () { termSetFont((TERM.t ? TERM.t.options.fontSize : 14) - 1); };
 $('tb-font+').onclick = function () { termSetFont((TERM.t ? TERM.t.options.fontSize : 14) + 1); };
 $('tb-full').onclick = function () {
@@ -868,7 +1009,8 @@ $('tb-attach').onclick = function () {
 };
 $('tb-files').onclick = function () {
   var t = TL.terms.filter(function (x) { return x.id === TL.open; })[0];
-  if (t) { showTab('files'); loadFiles(t.path || t.cwd); }
+  if (!t) return;
+  if (!$('term-files').hidden && CF.t && CF.t.id === t.id) chatFiles(t, false); else chatFiles(t, true);
 };
 $('tb-compose').onclick = function () {
   var c = $('term-compose');
@@ -1499,8 +1641,8 @@ function pinRail(on) {
       nav.classList.remove('open');
     }, 260);
   });
-  var was = '1';
-  try { was = localStorage.getItem('ai-rail-pinned') || '1'; } catch (e) { }
+  var was = '0';
+  try { was = localStorage.getItem('ai-rail-pinned') || '0'; } catch (e) { }
   pinRail(was === '1');
 }());
 $('ctl-find').addEventListener('input', function () {
@@ -4166,3 +4308,271 @@ $('mq-q').addEventListener('input', function () { clearTimeout(loadOutbox._t); l
 $('mq-state').onchange = loadOutbox;
 $('mq-drop-sent').onclick = function () { api('outbox', {action: 'clear', state: 'sent'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };
 $('mq-drop-failed').onclick = function () { api('outbox', {action: 'clear', state: 'failed'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };
+
+/* ==========================================================================
+   A menu on the right mouse button (1.0.5) - drawn as claude.ai draws its own:
+   a rounded card, an icon and the words on each line, the dangerous one in
+   red at the bottom; arrows and Enter work, Esc or a click elsewhere closes it.
+   ========================================================================== */
+var CTX = {el: null, items: [], sel: -1, owner: null};
+function ctxClose() {
+  if (CTX.el) CTX.el.remove();
+  if (CTX.owner) CTX.owner.classList.remove('menu');
+  CTX.el = null; CTX.items = []; CTX.sel = -1; CTX.owner = null;
+}
+/** items: [{icon, words, go, danger, key, disabled}] - 'sep' a line, {head: words} a heading. */
+function ctxMenu(x, y, items, owner) {
+  ctxClose();
+  var m = el('div', 'ctx');
+  m.setAttribute('role', 'menu');
+  var buttons = [];
+  items.forEach(function (it) {
+    if (!it) return;
+    if (it === 'sep') {
+      if (m.lastChild && !m.lastChild.classList.contains('ctx-sep')) m.appendChild(el('div', 'ctx-sep'));
+      return;
+    }
+    if (it.head) { m.appendChild(noI18n(el('div', 'ctx-head', it.head))); return; }
+    var b = el('button', 'ctx-item' + (it.danger ? ' danger' : ''));
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    if (it.icon) b.innerHTML = iconMarkup(it.icon, 16);
+    b.appendChild(el('span', 'ctx-w', it.words));
+    if (it.key) b.appendChild(noI18n(el('span', 'ctx-k', it.key)));
+    if (it.disabled) b.disabled = true;
+    b.onclick = function (e) { e.stopPropagation(); ctxClose(); if (it.go) it.go(); };
+    b.onmouseenter = function () { CTX.sel = buttons.indexOf(b); paint(); };
+    buttons.push(b);
+    m.appendChild(b);
+  });
+  if (m.lastChild && m.lastChild.classList.contains('ctx-sep')) m.lastChild.remove();
+  document.body.appendChild(m);
+  if (typeof i18nWalk === 'function') { try { i18nWalk(m); } catch (e) { } }
+  var r = m.getBoundingClientRect();
+  var left = Math.min(x, window.innerWidth - r.width - 8), top = y;
+  if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height);
+  m.style.left = Math.max(8, left) + 'px';
+  m.style.top = Math.max(8, top) + 'px';
+  CTX.el = m; CTX.items = buttons; CTX.sel = -1; CTX.owner = owner || null;
+  if (owner) owner.classList.add('menu');
+  function paint() { buttons.forEach(function (b, i) { b.classList.toggle('sel', i === CTX.sel); }); }
+  CTX.paint = paint;
+}
+document.addEventListener('mousedown', function (e) { if (CTX.el && !CTX.el.contains(e.target)) ctxClose(); }, true);
+document.addEventListener('keydown', function (e) {
+  if (!CTX.el) return;
+  var n = CTX.items.length;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ctxClose(); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); e.stopPropagation();
+    var d = e.key === 'ArrowDown' ? 1 : -1, i = CTX.sel;
+    for (var k = 0; k < n; k++) { i = (i + d + n) % n; if (!CTX.items[i].disabled) break; }
+    CTX.sel = i; CTX.paint();
+    return;
+  }
+  if (e.key === 'Enter' && CTX.sel >= 0) { e.preventDefault(); e.stopPropagation(); CTX.items[CTX.sel].click(); }
+}, true);
+window.addEventListener('resize', ctxClose);
+window.addEventListener('blur', ctxClose);
+document.addEventListener('scroll', ctxClose, true);
+
+function termById(id) { return TL.terms.filter(function (x) { return x.id === id; })[0]; }
+function copyText2(text, said) {
+  var done = function () { toast(said || 'copied', 'good'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+  } else fallback();
+  function fallback() {
+    var ta = el('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('the browser would not copy it', 'bad'); }
+    ta.remove();
+  }
+}
+/* What can be done with one chat - from its row in the list, its ⋯, or the
+   terminal itself. */
+function termActions(t, row) {
+  var ended = t.state === 'ended';
+  return [
+    {head: t.title},
+    ended ? {icon: 'eye', words: 'Its last screen', go: function () { endedPeek(t); }}
+          : (t.id === TL.open ? null : {icon: 'play', words: 'Open it', go: function () { openTerm(t.id); }}),
+    !ended ? {icon: 'window', words: 'Open in a new window', go: function () { window.open(location.pathname + '#terms/' + t.id, '_blank'); }} : null,
+    'sep',
+    {icon: 'pin', words: isPinned(t.id) ? 'Unpin' : 'Pin', go: function () { togglePin(t); }},
+    {icon: 'edit', words: 'Rename', go: function () { renameInline(t, row || document.querySelector('.tl-item[data-id="' + t.id + '"]')); }},
+    {icon: 'folder', words: 'The files of this chat', disabled: ended && false, go: function () { if (t.id !== TL.open && !ended) openTerm(t.id); chatFiles(t, true); }},
+    t.kind === 'claude' ? {icon: 'terminal', words: 'A new Claude Code in its folder', go: function () { startTerm({kind: 'claude', cwd: t.path || t.cwd}); }} : null,
+    {icon: 'copy', words: 'Copy the command to attach it on the server', go: function () { copyText2('ai --attach ' + t.id, 'copied: ai --attach ' + t.id); }},
+    'sep',
+    ended ? {icon: 'refresh', words: 'Start it again', go: function () {
+      api('terms', {do: 'again', id: t.id}).then(function (d) { loadTerms(d.id); }).catch(oops);
+    }} : {icon: 'refresh', words: 'Start it again', go: function () {
+      confirmThen('Start ' + t.title + ' again?', 'What runs in it now is ended and started afresh in the same folder' + (t.kind === 'claude' ? ' - Claude Code picks up the conversation where it was (--continue).' : '.'), 'Start it again', function () {
+        api('terms', {do: 'restart', id: t.id}).then(function () { if (t.id === TL.open) termOpen(t.id, $('term-host'), TERM.onState); loadTerms(TL.open, true); }).catch(oops);
+      }, false);
+    }},
+    ended ? {icon: 'trash', words: 'Take it off the list', danger: true, go: function () {
+      api('terms', {do: 'forget', id: t.id}).then(function () { loadTerms(); }).catch(oops);
+    }} : {icon: 'power', words: 'End it', danger: true, go: function () {
+      confirmThen('End ' + t.title + '?', 'What runs in it is ended on the server - for every window looking at it. Its last screen stays in the list for a while.', 'End it', function () {
+        api('terms', {do: 'kill', id: t.id}).then(function () { if (t.id === TL.open) closeTermView(); loadTerms(); }).catch(oops);
+      }, true);
+    }}
+  ];
+}
+function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
+
+/* The right button on the terminal: copying and pasting first, then the chat. */
+(function termRightButton() {
+  var host = $('term-host');
+  /* Before xterm.js sees it: with the mouse on in tmux, the right button
+     would otherwise go to tmux and open its own menu inside the terminal. */
+  host.addEventListener('mousedown', function (e) {
+    if (e.button === 2 && !e.shiftKey) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  host.addEventListener('mouseup', function (e) { if (e.button === 2 && !e.shiftKey) { e.stopPropagation(); e.preventDefault(); } }, true);
+  host.addEventListener('contextmenu', function (e) {
+    if (e.shiftKey) return;           /* Shift: the browser's own menu */
+    e.preventDefault();
+    e.stopPropagation();
+    var t = termById(TL.open);
+    var sel = TERM.t && TERM.t.hasSelection() ? TERM.t.getSelection() : '';
+    var items = [
+      {icon: 'copy', words: 'Copy', key: 'Ctrl+Shift+C', disabled: !sel, go: function () { copyText2(sel); }},
+      {icon: 'paste', words: 'Paste', key: 'Ctrl+V', go: function () {
+        if (!navigator.clipboard || !navigator.clipboard.readText) { toast('this browser lets only Ctrl+V paste', 'warn'); return; }
+        navigator.clipboard.readText().then(function (text) { if (text) termType(text, false); }, function () { toast('the browser did not let the page read the clipboard - Ctrl+V does', 'warn'); });
+      }},
+      {icon: 'selectall', words: 'Select everything on the screen', go: function () { if (TERM.t) { TERM.t.selectAll(); TERM.t.focus(); } }},
+      {icon: 'copy', words: 'Copy everything on the screen', go: function () {
+        if (!TERM.t) return;
+        var b = TERM.t.buffer.active, out = [];
+        for (var i = 0; i < b.length; i++) { var l = b.getLine(i); if (l) out.push(l.translateToString(true)); }
+        copyText2(out.join('\n').replace(/\n+$/, ''), 'the screen was copied');
+      }},
+      'sep',
+      {icon: 'upload', words: 'Give Claude a file…', go: function () { $('tb-attach').click(); }},
+      {icon: 'folder', words: 'The files of this chat', go: function () { if (t) chatFiles(t, true); }},
+      {icon: 'list', words: 'Claude Code\'s commands', go: function () { $('tb-cmds').click(); }},
+      {icon: 'edit', words: 'Write a longer text', go: function () { $('tb-compose').click(); }},
+      {icon: 'unfold', words: TL.full ? 'Back from the whole window' : 'Over the whole window', go: function () { $('tb-full').click(); }},
+      {icon: 'broom', words: 'Clear the screen', key: 'Ctrl+L', go: function () { termKeys('\x0c'); }}
+    ];
+    if (t) items = items.concat(['sep'], termActions(t, null).filter(function (x) {
+      return !x || x === 'sep' || (!x.head && x.icon !== 'folder');
+    }));
+    ctxMenu(e.clientX, e.clientY, items);
+  }, true);
+}());
+
+/* ==========================================================================
+   The files of one chat (1.0.5): its own folder and what is in it, beside its
+   terminal - never above it, whatever else the account may see. A file is
+   handed to Claude by its path (@path), opened, fetched, renamed or deleted;
+   files dropped onto the list go into the folder shown.
+   ========================================================================== */
+var CF = {t: null, root: '', path: '', data: null};
+function chatFiles(t, open) {
+  var box = $('term-files');
+  if (!open) { box.hidden = true; setTimeout(termFit, 50); return; }
+  var root = t.cwd || t.path;
+  if (CF.t && CF.t.id === t.id && !box.hidden) { cfLoad(CF.path); return; }
+  CF.t = t; CF.root = root;
+  box.hidden = false;
+  $('tf-ic').innerHTML = iconMarkup('folder', 17);
+  $('tf-root').textContent = baseName(root);
+  $('tf-root').title = root;
+  cfLoad(root);
+  setTimeout(termFit, 50);
+}
+function cfRel(p) {
+  var r = CF.root.replace(/\/+$/, '');
+  if (p === r) return '';
+  return p.indexOf(r + '/') === 0 ? p.slice(r.length + 1) : p;
+}
+function cfLoad(path) {
+  return filesApi('list', 'hidden=1&root=' + encodeURIComponent(CF.root) + '&path=' + encodeURIComponent(path || CF.root)).then(function (d) {
+    CF.path = d.path; CF.data = d;
+    $('tf-crumbs').textContent = cfRel(d.path) ? '/' + cfRel(d.path) : '';
+    $('tf-up').disabled = !d.up;
+    cfDraw(d);
+  }).catch(function (e) {
+    if (e && e.status === 403) { toast(String(e.message || e), 'bad'); return cfLoad(CF.root); }
+    oops(e);
+  });
+}
+function cfDraw(d) {
+  var host = $('tf-list');
+  clear(host);
+  if (!d.entries.length) host.appendChild(el('div', 'tf-empty', 'An empty folder. Drop files here to put them in.'));
+  d.entries.forEach(function (e) {
+    var full = pathJoin(d.path, e.name);
+    var r = el('button', 'tf-row' + (e.kind === 'dir' ? ' dir' : ''));
+    r.type = 'button';
+    r.innerHTML = iconMarkup(e.kind === 'dir' ? 'folder' : 'file', 15);
+    r.appendChild(noI18n(el('span', 'tf-n', e.name + (e.link ? ' →' : ''))));
+    if (e.kind !== 'dir') r.appendChild(el('span', 'tf-s', bytes(e.size)));
+    r.title = full;
+    r.onclick = function () { if (e.kind === 'dir') cfLoad(full); else openFile(full, e); };
+    r.addEventListener('contextmenu', function (ev) { ev.preventDefault(); cfMenu(e, full, ev.clientX, ev.clientY, r); });
+    host.appendChild(r);
+  });
+  $('tf-foot').textContent = num(d.entries.length) + ' item(s) · right button: what to do with one';
+}
+function cfMenu(e, full, x, y, row) {
+  var rel = cfRel(full);
+  var dir = e.kind === 'dir';
+  ctxMenu(x, y, [
+    {head: e.name},
+    dir ? {icon: 'folder', words: 'Open the folder', go: function () { cfLoad(full); }}
+        : {icon: 'eye', words: 'Open it', go: function () { openFile(full, e); }},
+    {icon: 'at', words: 'Hand it to Claude (@' + (rel.length > 28 ? '…' + rel.slice(-27) : rel) + ')', go: function () { termType('@' + rel + ' ', false); }},
+    {icon: 'copy', words: 'Copy its path', go: function () { copyText2(full); }},
+    dir ? {icon: 'terminal', words: 'A new Claude Code in it', go: function () { startTerm({kind: 'claude', cwd: full}); }} : null,
+    'sep',
+    {icon: 'download', words: dir ? 'Download it as a .zip' : 'Download it', go: function () { download(full); }},
+    {icon: 'edit', words: 'Rename', go: function () {
+      var name = prompt('A new name for ' + e.name, e.name);
+      if (!name || name === e.name) return;
+      filesApi('op', '', {op: 'rename', path: full, name: name}).then(function () { cfLoad(CF.path); }).catch(oops);
+    }},
+    'sep',
+    {icon: 'trash', words: 'Delete', danger: true, go: function () {
+      confirmThen('Delete ' + e.name + '?', (dir ? 'The folder <b>' + htmlText(e.name) + '</b> and everything in it are' : '<b>' + htmlText(e.name) + '</b> is') + ' deleted from the server. There is no bin.', 'Delete it', function () {
+        filesApi('op', '', {op: 'delete', path: full}).then(function () { cfLoad(CF.path); }).catch(oops);
+      });
+    }}
+  ], row);
+}
+$('tf-up').onclick = function () { if (CF.data && CF.data.up) cfLoad(CF.data.up); };
+$('tf-reload').onclick = function () { cfLoad(CF.path); };
+$('tf-close').onclick = function () { chatFiles(null, false); };
+$('tf-mkdir').onclick = function () {
+  var name = prompt('The name of the new folder');
+  if (!name) return;
+  filesApi('op', '', {op: 'mkdir', path: CF.path, name: name}).then(function () { cfLoad(CF.path); }).catch(oops);
+};
+$('tf-send').onclick = function () { $('tf-input').click(); };
+function cfSend(files) {
+  var list = Array.prototype.slice.call(files || []);
+  var next = function () {
+    var f = list.shift();
+    if (!f) { cfLoad(CF.path); return; }
+    $('tf-foot').textContent = 'sending ' + f.name + '…';
+    sendFile('/files/put?dir=' + encodeURIComponent(CF.path) + '&name=' + encodeURIComponent(f.name), f, function (a, b) {
+      $('tf-foot').textContent = f.name + ' ' + Math.round(a * 100 / b) + ' %';
+    }).then(next).catch(function (e) { oops(e); next(); });
+  };
+  next();
+}
+$('tf-input').onchange = function () { cfSend($('tf-input').files); $('tf-input').value = ''; };
+(function () {
+  var host = $('tf-list'), depth = 0;
+  var has = function (e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; };
+  host.addEventListener('dragenter', function (e) { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); depth++; host.classList.add('over'); });
+  host.addEventListener('dragover', function (e) { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); });
+  host.addEventListener('dragleave', function (e) { e.stopPropagation(); if (--depth <= 0) { depth = 0; host.classList.remove('over'); } });
+  host.addEventListener('drop', function (e) { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); depth = 0; host.classList.remove('over'); cfSend(e.dataTransfer.files); });
+}());

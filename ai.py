@@ -76,7 +76,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -3816,12 +3816,33 @@ def term_bridge(daemon, ws, u, r, cols, rows, readonly=False):
         VIEWERS.setdefault(r['id'], set()).add(threading.current_thread().name)
     done = threading.Event()
 
+    sid = u.get('_sid')
+    checked = [time.time()]
+
+    def still_signed_in():
+        """The sign-in this window came with, still there: signing out (or an
+        administrator ending it) closes the window's view - never the terminal,
+        which goes on running for the next sign-in, from here or anywhere."""
+        if not sid or time.time() - checked[0] < 10:
+            return True
+        checked[0] = time.time()
+        try:
+            return bool(daemon.store.one('SELECT id FROM sessions WHERE id=?', (sid,)))
+        except sqlite3.Error:
+            return True
+
     def pump():
         try:
             while not done.is_set():
                 try:
                     ready, _w, _x = select.select([master], [], [], 1.0)
                 except (OSError, ValueError):
+                    break
+                if not still_signed_in():
+                    try:
+                        ws.send(json.dumps({'t': 'signed-out'}))
+                    except WsClosed:
+                        pass
                     break
                 if not ready:
                     if proc.poll() is not None:
@@ -6783,6 +6804,11 @@ def api_login(c):
 
 @route('POST', '/api/auth/logout')
 def api_logout(c):
+    if c.body.get('everywhere'):
+        n = c.daemon.store.x('DELETE FROM sessions WHERE name=?', (c.name,))
+        c.daemon.store.add_event('sign-in', '%s signed out everywhere (%d sign-in(s)); the terminals go on running'
+                                 % (c.name, n), 'info', who=c.name)
+        return {'ended': n}
     c.daemon.auth.logout(c.token)
     return {}
 
@@ -6814,7 +6840,7 @@ def api_prefs(c):
     except ValueError:
         prefs = {}
     for k, v in (c.body.get('prefs') or {}).items():
-        if k in ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste'):
+        if k in PREF_KEYS:
             if v is None:
                 prefs.pop(k, None)
             else:
@@ -7868,7 +7894,7 @@ def put_user_cols(store, name, cols):
     return cols
 
 
-PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste')
+PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins')
 
 
 def clean_prefs(prefs):
@@ -10183,8 +10209,22 @@ class Handler(BaseHTTPRequestHandler):
             return v[0] if v else default
         d = self.daemon
         if u.path == '/files/list' and not post:
-            return self.answer(200, dict(files_list(who, arg('path') or self.home_of(who), arg('hidden', '1') == '1'),
-                                         ok=True))
+            path = arg('path') or self.home_of(who)
+            root = arg('root')
+            if root:
+                # The files of one chat (1.0.5): its own folder and what is in
+                # it, never above - whatever the account may see elsewhere.
+                root = os.path.realpath(root)
+                real = os.path.realpath(path)
+                if real != root and not real.startswith(root.rstrip('/') + '/'):
+                    raise Refused('that is outside the folder of this chat (%s)' % root, 403)
+            got = files_list(who, path, arg('hidden', '1') == '1')
+            if root:
+                got['root'] = root
+                if os.path.realpath(got.get('path') or path) == root:
+                    got['up'] = None
+                got['roots'] = [root]
+            return self.answer(200, dict(got, ok=True))
         if u.path == '/files/get' and not post:
             return self.send_path(who, arg('path'), arg('inline') == '1')
         if u.path == '/files/op' and post:
