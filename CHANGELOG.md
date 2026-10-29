@@ -3,6 +3,24 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.2 — 29 October 2026
+
+**install.sh gone through against otp's, line by line**
+- The first account: a password given is neither printed at the end nor said
+  to be changed; one made by the installer is printed and has to be changed at
+  the first sign-in (it did not have to).
+- Who may reach the pages is checked before anything is installed, and the
+  address you are signed in from over SSH, if it is not among them, is offered
+  to be added - not shut out of the pages you just installed.
+- php-fpm is reloaded, not restarted - the other PHP sites of the machine go
+  on - and started when it was not running.
+- Python 3.9 or newer is checked; a command that fails says on which line.
+- Debian and Ubuntu get the SSH client only, not an SSH server.
+- `--rewrite-nginx` keeps the file there before in /etc/nginx/ai-backups/
+  (the last ten).
+- At the end, the pages' address by IP too, for until the name is in DNS.
+- Without `SSH_CLIENT` (installed from the console) it stopped at once.
+
 ## 1.0.1 — 29 October 2026
 
 **install.sh asks, as otp's does**

@@ -64,6 +64,8 @@ note()  { printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; }
 good()  { printf '    %s%s%s\n' "$C_OK" "$1" "$C_OFF"; }
 warn()  { printf '    %s%s%s\n' "$C_WARN" "$1" "$C_OFF"; }
 fail()  { printf '\n%sERROR: %s%s\n' "$C_BAD" "$1" "$C_OFF" >&2; exit 1; }
+# Where it stopped, if a command it did not expect to fail failed (as otp's).
+trap 'printf "\n%sERROR: line %s: %s%s\n" "$C_BAD" "$LINENO" "$BASH_COMMAND" "$C_OFF" >&2' ERR
 
 run() {
     if [[ -n "$DRY_RUN" ]]; then
@@ -337,7 +339,7 @@ install_packages() {
             run dnf upgrade -y --refresh 'php*' || true
         fi
     elif [[ "$PKG" == "apt" ]]; then
-        want+=(ssh ncurses-term procps iproute2 php-fpm php-cli)
+        want+=(openssh-client ncurses-term procps iproute2 php-fpm php-cli)
         local missing=()
         for p in "${want[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
         if ((${#missing[@]})); then
@@ -357,6 +359,9 @@ install_packages() {
     fi
     command -v tmux >/dev/null 2>&1 || [[ -n "$DRY_RUN" ]] || fail "tmux is not installed and could not be - the terminals need it"
     command -v python3 >/dev/null 2>&1 || [[ -n "$DRY_RUN" ]] || fail "python3 is not installed"
+    if command -v python3 >/dev/null 2>&1 && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
+        fail "python3 here is $(python3 -V 2>&1 | cut -d' ' -f2): ai needs 3.9 or newer"
+    fi
     php_says
     php_guard
     if command -v chronyd >/dev/null 2>&1; then
@@ -496,6 +501,12 @@ text = sys.stdin.read()
 print(re.sub(r"(# AI-ALLOW-BEGIN\n).*?(\n[ \t]*# AI-ALLOW-END)", lambda m: m.group(1) + lines + m.group(2), text, flags=re.S), end="")' "$lines")"
         # A machine with IPv6 switched off in its kernel: nginx refuses [::].
         [[ -e /proc/net/if_inet6 ]] || body="$(grep -v 'listen *\[::\]' <<< "$body")"
+        if [[ -f "$NGINX_CONF" && -z "$DRY_RUN" ]]; then
+            install -d -m 0700 /etc/nginx/ai-backups
+            cp -p "$NGINX_CONF" "/etc/nginx/ai-backups/ai.conf.$(date +%Y%m%d-%H%M%S)"
+            ls -1t /etc/nginx/ai-backups/ai.conf.* 2>/dev/null | tail -n +11 | xargs -r rm -f
+            note "the one there before: /etc/nginx/ai-backups/"
+        fi
         printf '%s\n' "$body" | write_file "$NGINX_CONF" 0644
         good "nginx: $NGINX_CONF ($SERVER_NAME)"
     else
@@ -535,7 +546,13 @@ start_all() {
     local unit
     for unit in $(php_fpm_units); do
         run systemctl enable "$unit" >/dev/null 2>&1 || true
-        run systemctl restart "$unit" || warn "$unit would not restart"
+        # Reloaded, as otp's installer does: every other PHP site on the
+        # machine goes on; started when it was not running.
+        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+            run systemctl reload "$unit" || run systemctl restart "$unit" || warn "$unit would not reload"
+        else
+            run systemctl restart "$unit" || warn "$unit would not start"
+        fi
     done
     if [[ -z "$DRY_RUN" ]]; then
         if nginx -t >/dev/null 2>&1; then
@@ -568,16 +585,23 @@ first_account() {
         FIRST_PW="$(sed -n 's/^password: //p' "$STATE_DIR/first-login.txt")"
         return 0
     fi
-    local pw="$ADMIN_PASSWORD"
-    [[ -n "$pw" ]] || pw="$(tr -dc 'A-HJ-NP-Za-km-z2-9' < /dev/urandom | head -c 16)"
-    "$BIN_LINK" --add-user "$ADMIN_USER" --role admin --password "$pw" >/dev/null 2>&1 \
-        || "$BIN_LINK" --passwd "$ADMIN_USER" --password "$pw" >/dev/null \
-        || fail "the password of $ADMIN_USER was not taken (ai --passwd $ADMIN_USER sets it)"
+    local said
+    if [[ -n "$ADMIN_PASSWORD" ]]; then
+        "$BIN_LINK" --add-user "$ADMIN_USER" --role admin --password "$ADMIN_PASSWORD" >/dev/null 2>&1 \
+            || "$BIN_LINK" --passwd "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null \
+            || fail "the password of $ADMIN_USER was not taken (ai --passwd $ADMIN_USER sets it)"
+        PW_GIVEN=yes
+    else
+        said="$("$BIN_LINK" --add-user "$ADMIN_USER" --role admin --make-password 2>/dev/null \
+                || "$BIN_LINK" --passwd "$ADMIN_USER" --make-password)" \
+            || fail "the account $ADMIN_USER could not be made (ai --add-user $ADMIN_USER --role admin)"
+        FIRST_PW="${said##*password: }"
+    fi
     if [[ "$ADMIN_USER" != "admin" ]] && grep -q '^name: admin' "$STATE_DIR/first-login.txt" 2>/dev/null; then
         "$BIN_LINK" --drop-user admin >/dev/null 2>&1 || true
-        rm -f "$STATE_DIR/first-login.txt"
     fi
-    FIRST_PW="$pw"
+    rm -f "$STATE_DIR/first-login.txt"
+    good "the account $ADMIN_USER (administrator)"
 }
 
 install_claude() {
@@ -634,6 +658,24 @@ if [[ -z "$DO_UPGRADE" ]]; then
     fi
 fi
 [[ "$SERVER_NAME" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || fail "$SERVER_NAME is not a host name"
+if [[ -n "$ALLOW" && "$ALLOW" != "all" ]]; then
+    python3 - "$ALLOW" <<'PY' || fail "--allow takes addresses and networks, comma between (or all)"
+import ipaddress, sys
+for n in sys.argv[1].split(','):
+    if n.strip():
+        ipaddress.ip_network(n.strip(), strict=False)
+PY
+    ME_IP="${SSH_CLIENT:-}"; ME_IP="${ME_IP%% *}"
+    if [[ -n "$ME_IP" ]] && ! python3 - "$ALLOW" "$ME_IP" <<'PY'
+import ipaddress, sys
+ip = ipaddress.ip_address(sys.argv[2])
+sys.exit(0 if any(ip in ipaddress.ip_network(n.strip(), strict=False) for n in sys.argv[1].split(',') if n.strip()) else 1)
+PY
+    then
+        warn "you are here from $ME_IP, which is not among the networks that may reach the pages"
+        if confirm "Add $ME_IP to them?" y; then ALLOW="$ALLOW,$ME_IP"; fi
+    fi
+fi
 [[ "$ADMIN_USER" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$ ]] || fail "$ADMIN_USER is not a name for an account"
 if [[ -n "$RUN_AS" ]] && ! id "$RUN_AS" >/dev/null 2>&1; then
     if [[ "$RUN_AS" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && confirm "There is no Linux account $RUN_AS - make it (useradd -m)?" y; then
@@ -644,6 +686,7 @@ if [[ -n "$RUN_AS" ]] && ! id "$RUN_AS" >/dev/null 2>&1; then
 fi
 
 FIRST_PW=""
+PW_GIVEN=""
 install_packages
 install_program
 install_pages
@@ -657,9 +700,13 @@ install_claude
 
 step "Done: ai $AI_VERSION"
 say "The pages:      https://$SERVER_NAME/"
+MY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[[ -n "$MY_IP" ]] && say "                https://$MY_IP/   (until $SERVER_NAME is in DNS)"
 if [[ -n "$FIRST_PW" ]]; then
     say "Sign in as:     $ADMIN_USER"
     say "Its password:   $FIRST_PW   (to be changed at the first sign-in)"
+elif [[ -n "${PW_GIVEN:-}" ]]; then
+    say "Sign in as:     $ADMIN_USER, with the password you gave"
 fi
 say "On the server:  ai --status · ai --sessions · ai --attach ID"
 [[ -n "$DO_UPGRADE" ]] && say "The terminals that were running go on running."
