@@ -24,7 +24,7 @@ function baseName(p) { p = String(p || '').replace(/\/+$/, ''); return p.slice(p
 function tagEl(words, kind) { return el('span', 'tag ' + (kind || 'dim'), words); }
 
 /* ---- tabs and the address --------------------------------------------------- */
-var TABS = ['terms', 'files', 'history', 'overview', 'events', 'settings'];
+var TABS = ['terms', 'files', 'history', 'claude', 'overview', 'events', 'settings'];
 window.optShowTab = function (name, sub) {
   if (TABS.indexOf(name) < 0) name = 'terms';
   var btn = document.querySelector('.tabs button[data-tab="' + name + '"]');
@@ -45,6 +45,7 @@ document.querySelectorAll('.tabs button[data-tab]').forEach(function (b) {
 function writeHash() {
   var want = '#' + TAB;
   if (TAB === 'settings') want += '/' + PANE;
+  if (TAB === 'claude' && typeof CC !== 'undefined') want += '/' + CC.pane;
   if (TAB === 'terms' && TL.open) want += '/' + TL.open;
   if (TAB === 'files' && FL.path) want += '/' + encodeURIComponent(FL.path);
   if (location.hash !== want) try { history.replaceState(null, '', want); } catch (e) { }
@@ -55,6 +56,7 @@ function onTab(name, sub) {
   if (name === 'terms') { loadTerms(sub); if (TL.open) setTimeout(termFit, 30); }
   if (name === 'files') loadFiles(sub || FL.path || '');
   if (name === 'history') loadHistory();
+  if (name === 'claude' && typeof loadCC === 'function') loadCC(sub);
   if (name === 'overview') loadOverview();
   if (name === 'events') loadEvents();
   if (name === 'settings') { loadSettings(); showPane(sub || PANE); }
@@ -668,35 +670,116 @@ $('te-claude').onclick = function () { newTermAsk('claude'); };
 $('te-shell').onclick = function () { newTermAsk('shell'); };
 $('te-hist').onclick = function () { showTab('history'); };
 
+/* ---- the start, as claude.ai starts (1.0.9): a box to write the task in,
+   the folder, the model, the mode and the effort as chips under it, and the
+   chats going on below. Enter starts Claude Code on it in that folder. */
+var CX = {cwd: '', model: '', mode: '', effort: ''};
+function cxWords(list, v) { var x = list.filter(function (o) { return o[0] === v; })[0]; return x ? x[1] : v; }
+function cxChip(b, icon, words, title) {
+  b.innerHTML = iconMarkup(icon, 14);
+  b.appendChild(noI18n(el('span', '', words)));
+  var dn = el('span', 'cx-caret', '▾');
+  b.appendChild(dn);
+  if (title) b.title = title;
+}
+function cxDraw() {
+  var root = (STATUS && STATUS.chat_root) || '';
+  if (!CX.cwd) CX.cwd = prefs().last_cwd || root || '';
+  if (root && CX.cwd && CX.cwd !== root && CX.cwd.indexOf(root.replace(/\/+$/, '') + '/') !== 0) CX.cwd = root;
+  if (!CX._init) {
+    CX._init = true;
+    CX.model = prefs().model || '';
+    CX.mode = prefs().mode || '';
+    CX.effort = (prefs().cc_opts || {}).effort || '';
+  }
+  cxChip($('cx-dir'), 'folder', CX.cwd ? baseName(CX.cwd) : txT('the home folder'), CX.cwd || '');
+  cxChip($('cx-model'), 'sparkle', CX.model ? cxWords(MODELS, CX.model) : txT('Model'));
+  cxChip($('cx-mode'), 'shield', CX.mode ? cxWords(MODES, CX.mode) : txT('ask before changes'));
+  cxChip($('cx-effort'), 'bolt', CX.effort ? txT('effort') + ': ' + CX.effort : txT('effort'));
+  var name = (ME && ME.name) || '';
+  var h = new Date().getHours();
+  $('cx-hello').textContent = txT(h < 11 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening')) + (name ? ', ' + name : '');
+}
+function cxStart() {
+  var text = $('cx-text').value.trim();
+  var opts = {};
+  if (text) opts.prompt = text;
+  if (CX.model) opts.model = CX.model;
+  if (CX.mode) opts.mode = CX.mode;
+  if (CX.effort) opts.effort = CX.effort;
+  var title = text ? text.replace(/\s+/g, ' ').slice(0, 48) : '';
+  busy($('cx-send'), true);
+  startTerm({kind: 'claude', cwd: CX.cwd, title: title, opts: opts, keep: {model: CX.model, mode: CX.mode, args: prefs().args || ''}})
+    .then(function (ok) { if (ok) $('cx-text').value = ''; }).then(function () { busy($('cx-send'), false); });
+}
+(function () {
+  $('cx-mark').innerHTML = iconMarkup('sparkle', 30);
+  $('cx-send').innerHTML = iconMarkup('up', 18);
+  $('cx-send').onclick = cxStart;
+  var ta = $('cx-text');
+  ta.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); cxStart(); }
+  });
+  ta.addEventListener('input', function () { ta.style.height = 'auto'; ta.style.height = Math.min(320, ta.scrollHeight + 2) + 'px'; });
+  var menu = function (b, list, key) {
+    var r = b.getBoundingClientRect();
+    ctxMenu(r.left, r.bottom + 4, list.map(function (o) {
+      return {icon: CX[key] === o[0] ? 'check' : '', words: o[1], go: function () { CX[key] = o[0]; cxDraw(); }};
+    }));
+  };
+  $('cx-dir').onclick = function () { pickFolder(CX.cwd, function (p) { CX.cwd = p; cxDraw(); }); };
+  $('cx-model').onclick = function () { menu($('cx-model'), MODELS, 'model'); };
+  $('cx-mode').onclick = function () { menu($('cx-mode'), MODES, 'mode'); };
+  $('cx-effort').onclick = function () {
+    menu($('cx-effort'), [['', 'as Claude Code decides'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'extra high'], ['max', 'max']], 'effort');
+  };
+  $('cx-more').onclick = function () { newTermAsk('claude', CX.cwd); };
+}());
 function drawTermEmpty() {
   $('term-empty').hidden = false;
   $('term-open').hidden = true;
+  $('term-layout').classList.add('at-start');
+  cxDraw();
+  setTimeout(function () { if (!$('term-empty').hidden && !('ontouchstart' in window)) $('cx-text').focus(); }, 60);
   var host = $('te-recent');
   clear(host);
+  var live = TL.terms.filter(function (t) { return t.state !== 'ended'; });
+  if (live.length) {
+    host.appendChild(el('h3', 'cx-h', 'Going on'));
+    var grid = el('div', 'cx-cards');
+    live.slice(0, 12).forEach(function (t) {
+      var c = el('button', 'cx-card');
+      c.type = 'button';
+      var top = el('div', 'cx-card-t');
+      top.innerHTML = iconMarkup(t.kind === 'claude' ? 'sparkle' : 'terminal', 14);
+      top.appendChild(noI18n(el('span', '', t.title || t.id)));
+      c.appendChild(top);
+      c.appendChild(noI18n(el('div', 'cx-card-p mono', t.cwd || '')));
+      var foot = el('div', 'cx-card-f');
+      foot.appendChild(el('span', 'tag ' + (t.state === 'running' ? 'ok' : 'dim'), t.state === 'running' ? 'running' : (t.state || '')));
+      if (t.started || t.created) foot.appendChild(el('span', 'muted small', ago(t.started || t.created)));
+      c.appendChild(foot);
+      c.onclick = function () { openTerm(t.id); };
+      c.addEventListener('contextmenu', function (e) { e.preventDefault(); termMenu(t, e.clientX, e.clientY, null); });
+      longPress(c, function (x, y) { termMenu(t, x, y, null); });
+      grid.appendChild(c);
+    });
+    host.appendChild(grid);
+  }
   var recent = (prefs().recent || []).slice(0, 8);
   if (recent.length) {
-    host.appendChild(el('h3', '', 'Claude Code in a folder used lately'));
-    var row = el('div', 'btnrow');
+    host.appendChild(el('h3', 'cx-h', 'Folders used lately'));
+    var row = el('div', 'cx-folders');
     recent.forEach(function (p) {
-      var b = cmdButton(baseName(p), 'terminal', 'small');
-      noI18n(b.querySelector('span'));
-      explain(b, 'A new Claude Code terminal in ' + p);
-      b.onclick = function () { startTerm({kind: 'claude', cwd: p}); };
+      var b = el('button', 'cx-chip');
+      b.type = 'button';
+      b.innerHTML = iconMarkup('folder', 14);
+      b.appendChild(noI18n(el('span', '', baseName(p))));
+      b.title = p;
+      b.onclick = function () { CX.cwd = p; cxDraw(); $('cx-text').focus(); };
       row.appendChild(b);
     });
     host.appendChild(row);
-  }
-  var live = TL.terms.filter(function (t) { return t.state !== 'ended'; });
-  if (live.length) {
-    host.appendChild(el('h3', '', 'Running'));
-    var r2 = el('div', 'btnrow');
-    live.slice(0, 10).forEach(function (t) {
-      var b = cmdButton(t.title, 'play', 'small');
-      noI18n(b.querySelector('span'));
-      b.onclick = function () { openTerm(t.id); };
-      r2.appendChild(b);
-    });
-    host.appendChild(r2);
   }
 }
 
@@ -727,7 +810,8 @@ function endedPeek(t) {
 var MODELS = [['', 'as Claude Code chooses'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'],
               ['fable', 'Fable'], ['opusplan', 'Opus to plan, Sonnet to do']];
 var MODES = [['', 'ask before changes (default)'], ['acceptEdits', 'accept edits by itself'],
-             ['plan', 'plan only'], ['bypassPermissions', 'never ask (bypass permissions)']];
+             ['plan', 'plan only'], ['auto', 'auto (a classifier decides)'], ['manual', 'manual (ask for everything)'],
+             ['dontAsk', 'do not ask (deny what is not allowed)'], ['bypassPermissions', 'never ask (bypass permissions)']];
 
 function newTermAsk(kind, cwd) {
   var st = {kind: kind || 'claude'};
@@ -790,29 +874,138 @@ function newTermAsk(kind, cwd) {
     if (favs.length) body.appendChild(chips);
     var claudeBox = el('div', 'set-sec');
     claudeBox.appendChild(el('h3', 'set-sec-head', 'Claude Code'));
+    var keep = prefs().cc_opts || {};
     var g2 = el('div', 'formgrid');
     var start = selectBox([['new', 'a new conversation'], ['continue', 'the last conversation of this folder (--continue)'],
-                           ['pick', 'choose one of its conversations (--resume)']], 'new');
+                           ['pick', 'choose one of its conversations (--resume)'], ['bg', 'a new one in the background (--bg)']], 'new');
     g2.appendChild(formField('Start with', start));
-    var model = selectBox(MODELS, prefs().model || '');
-    g2.appendChild(formField('Model', model));
+    var nameBox = textBox('', 'shown in the prompt box and in /resume');
+    g2.appendChild(formField('Its name in Claude Code (--name)', nameBox));
+    var model = selectBox(MODELS.concat([['*', 'another… (written below)']]), prefs().model || '');
+    var modelOwn = textBox('', 'claude-opus-5-5', 'mono');
+    noI18n(modelOwn);
+    modelOwn.hidden = model.value !== '*';
+    model.onchange = function () { modelOwn.hidden = model.value !== '*'; };
+    var mw = el('div'); mw.appendChild(model); mw.appendChild(modelOwn);
+    g2.appendChild(formField('Model', mw));
+    var effort = selectBox([['', 'as Claude Code decides'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'extra high'], ['max', 'max']], keep.effort || '');
+    g2.appendChild(formField('Effort (--effort)', effort));
     var mode = selectBox(MODES, prefs().mode || '');
     g2.appendChild(formField('Permissions', mode, 'Never ask is refused by Claude Code when it runs as root.'));
-    var args = textBox(prefs().args || '', '--verbose, --add-dir ../other…', 'mono');
-    g2.appendChild(formField('More words for its command line', args));
+    var prompt1 = el('textarea');
+    prompt1.rows = 3;
+    prompt1.placeholder = txT('What it starts on, as though typed first - empty: nothing, it waits for you.');
+    var pf = formField('The first message', prompt1);
+    pf.classList.add('span-2');
+    g2.appendChild(pf);
     claudeBox.appendChild(g2);
+    /* Every other option of Claude Code's command line, as fields (1.0.9). */
+    var more = el('details', 'cc-more');
+    more.appendChild(el('summary', '', 'Every option of Claude Code'));
+    var gm = el('div', 'formgrid');
+    var F = {};
+    var add = function (key, label, box, says, wide) {
+      F[key] = box;
+      var ff = formField(label, box, says || '');
+      if (wide) ff.classList.add('span-2');
+      gm.appendChild(ff);
+    };
+    var text = function (ph, mono) { var b = textBox('', ph || '', mono ? 'mono' : ''); if (mono) noI18n(b); return b; };
+    var area = function (ph, rows) { var b = el('textarea', 'mono'); b.rows = rows || 2; b.placeholder = ph || ''; noI18n(b); return b; };
+    var flag = function () { return switchBox(false); };
+    gm.appendChild(el('h4', 'span-2 cc-h4', 'Tools and permissions'));
+    add('allowed_tools', 'Allowed without asking (--allowedTools)', area('Bash(git *)\nEdit'), 'One a line, or with commas.');
+    add('disallowed_tools', 'Never (--disallowedTools)', area('Bash(rm *)'), 'One a line, or with commas.');
+    add('tools', 'Only these built-in tools (--tools)', text('Bash,Edit,Read', true), 'Empty: all of them; "default": the usual set.');
+    add('allow_skip', 'Never asking may be switched on in it', flag(), '--allow-dangerously-skip-permissions');
+    gm.appendChild(el('h4', 'span-2 cc-h4', 'What it knows'));
+    var dirs = area('/srv/shared\n../other', 2);
+    var dirsWrap = el('div');
+    dirsWrap.appendChild(dirs);
+    var dirPick = cmdButton('Add a folder…', 'folder', 'small');
+    dirPick.onclick = function () { pickFolder(dir.value, function (p) { dirs.value = (dirs.value.trim() ? dirs.value.trim() + '\n' : '') + p; }); };
+    dirsWrap.appendChild(dirPick);
+    add('add_dirs', 'More folders it may use (--add-dir)', dirsWrap, 'One a line.');
+    F.add_dirs = dirs;
+    add('append_system_prompt', 'Added to its system prompt', area('Answer in Czech. Keep commits small.', 3), '--append-system-prompt', true);
+    add('system_prompt', 'Its whole system prompt instead', area('', 2), '--system-prompt: Claude Code\'s own is not used then.', true);
+    var agent = selectBox([['', 'none']], keep.agent || '');
+    add('agent', 'The agent of the session (--agent)', agent);
+    api('cc&what=items&kind=agent&as=' + encodeURIComponent(asSel ? asSel.value : '') + '&project=' + encodeURIComponent(dir.value || '')).then(function (d) {
+      (d.items || []).forEach(function (it) { var o = noI18n(el('option', '', it.name + (it.scope === 'project' ? ' (project)' : ''))); o.value = it.name.split('/').pop(); agent.appendChild(o); });
+    }).catch(function () { });
+    add('mcp_config', 'MCP servers from files (--mcp-config)', area('.mcp.dev.json'), 'One a line: a file or JSON.');
+    add('strict_mcp', 'Only those servers', flag(), '--strict-mcp-config');
+    add('settings', 'More settings (--settings)', text('a file, or JSON', true));
+    add('setting_sources', 'Settings read from (--setting-sources)', text('user,project,local', true));
+    add('plugin_dirs', 'Plugins from folders (--plugin-dir)', area('~/my-plugin'), 'For this session only.');
+    gm.appendChild(el('h4', 'span-2 cc-h4', 'The session'));
+    add('fork', 'Continued as a new conversation', flag(), '--fork-session, with --continue or --resume');
+    add('worktree', 'In a new git worktree (--worktree)', text('its name, or empty for one made up', true));
+    add('use_worktree', 'Make a worktree', flag());
+    add('session_id', 'Its session ID (--session-id)', text('a UUID', true));
+    add('autocompact', 'Compacted at (--autocompact)', text('auto, or 100k … 1M', true));
+    add('fallback_model', 'When the model is busy (--fallback-model)', text('sonnet,haiku', true));
+    add('remote_control', 'Remote Control on, named', text('', true), '--remote-control: the session can be followed from claude.ai.');
+    add('use_remote', 'Remote Control', flag());
+    gm.appendChild(el('h4', 'span-2 cc-h4', 'How it runs'));
+    add('verbose', 'Verbose', flag(), '--verbose');
+    add('debug', 'Debug, of what (--debug)', text('hooks,mcp - empty: all', true));
+    add('use_debug', 'Debug', flag());
+    add('safe_mode', 'Safe mode', flag(), '--safe-mode: CLAUDE.md, hooks, plugins, MCP and the rest of yours switched off');
+    add('bare', 'Bare', flag(), '--bare: no hooks, plugins, CLAUDE.md discovery, keychain');
+    add('restricted', 'Restricted', flag(), '--restricted: no tools that run code');
+    add('chrome', 'Claude in Chrome', selectBox([['', 'as set'], ['on', 'on (--chrome)'], ['off', 'off (--no-chrome)']], ''));
+    add('ide', 'Connect to the IDE', flag(), '--ide');
+    add('brief', 'Messages to you (SendUserMessage)', flag(), '--brief');
+    add('no_slash', 'No skills or /commands', flag(), '--disable-slash-commands');
+    add('screen_reader', 'For a screen reader', flag(), '--ax-screen-reader');
+    add('exclude_dynamic', 'The machine\'s details in the first message', flag(), '--exclude-dynamic-system-prompt-sections');
+    var args = textBox(prefs().args || '', '--verbose, --add-dir ../other…', 'mono');
+    add('args', 'More words for its command line', args, 'Anything else claude --help lists, as typed.', true);
+    var remember = switchBox(false);
+    add('remember', 'Keep these as how my chats start', remember, 'Kept with your account, offered every time.', true);
+    more.appendChild(gm);
+    claudeBox.appendChild(more);
+    /* What was kept as the start of every chat, put back into the boxes. */
+    Object.keys(keep).forEach(function (k) {
+      var b = F[k];
+      if (!b || k === 'remember') return;
+      if (b._set) b._set(!!keep[k]); else if (b.tagName === 'SELECT' || b.tagName === 'TEXTAREA' || b.tagName === 'INPUT') b.value = Array.isArray(keep[k]) ? keep[k].join('\n') : String(keep[k]);
+    });
+    if (keep.worktree !== undefined && F.use_worktree._set) F.use_worktree._set(true);
     claudeBox.hidden = st.kind !== 'claude';
     body.appendChild(claudeBox);
     body._get = function () {
       var opts = {};
       if (start.value === 'continue') opts.continue = true;
       if (start.value === 'pick') opts.pick = true;
-      if (model.value) opts.model = model.value;
+      var m = model.value === '*' ? modelOwn.value.trim() : model.value;
+      if (m) opts.model = m;
       if (mode.value) opts.mode = mode.value;
+      if (effort.value) opts.effort = effort.value;
+      if (nameBox.value.trim()) opts.name = nameBox.value.trim();
+      if (prompt1.value.trim()) opts.prompt = prompt1.value.trim();
+      var cc = {};
+      var val = function (k) { var b = F[k]; return b._get ? !!b._get() : String(b.value || '').trim(); };
+      ['allowed_tools', 'disallowed_tools', 'tools', 'append_system_prompt', 'system_prompt', 'agent', 'mcp_config', 'settings',
+       'setting_sources', 'plugin_dirs', 'session_id', 'autocompact', 'fallback_model'].forEach(function (k) { if (val(k)) cc[k] = val(k); });
+      ['allow_skip', 'strict_mcp', 'fork', 'verbose', 'safe_mode', 'bare', 'restricted', 'ide', 'brief', 'no_slash', 'screen_reader', 'exclude_dynamic']
+        .forEach(function (k) { if (val(k)) cc[k] = true; });
+      if (val('use_worktree')) cc.worktree = val('worktree') || true;
+      if (val('use_debug')) cc.debug = val('debug') || true;
+      if (val('use_remote')) cc.remote_control = val('remote_control') || true;
+      if (F.chrome.value === 'on') cc.chrome = true;
+      if (F.chrome.value === 'off') cc.no_chrome = true;
+      if (val('add_dirs')) opts.add_dirs = val('add_dirs').split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      Object.assign(opts, cc);
       if (args.value.trim()) opts.args = args.value.trim();
+      if (start.value === 'bg') opts.args = ((opts.args || '') + ' --bg').trim();
       if (mk._get()) opts.mkdir = true;
+      var keepNow = null;
+      if (remember._get()) { keepNow = Object.assign({}, cc); if (effort.value) keepNow.effort = effort.value; }
       return {kind: st.kind, cwd: dir.value.trim(), title: title.value.trim(), opts: opts,
-              run_as: asSel ? asSel.value : '', keep: {model: model.value, mode: mode.value, args: args.value.trim()}};
+              run_as: asSel ? asSel.value : '', keep: {model: m, mode: mode.value, args: args.value.trim()}, ccKeep: keepNow};
     };
   }, [{words: 'Close', close: true},
       {words: 'Start it', cls: 'primary', icon: 'play', go: function (b) {
@@ -833,6 +1026,7 @@ function startTerm(want) {
       p.last_cwd = want.cwd;
     }
     if (want.keep) { p.model = want.keep.model; p.mode = want.keep.mode; p.args = want.keep.args; }
+    if (want.ccKeep) p.cc_opts = want.ccKeep;
     savePrefs(p).catch(function () { });
     if (TAB !== 'terms') showTab('terms');
     return loadTerms(d.id).then(function () { return true; });
@@ -1001,6 +1195,7 @@ function openTerm(id) {
   var t = TL.terms.filter(function (x) { return x.id === id; })[0];
   if (!t) return;
   TL.open = id;
+  $('term-layout').classList.remove('at-start');
   $('term-empty').hidden = true;
   $('term-open').hidden = false;
   $('term-gone').hidden = true;

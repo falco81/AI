@@ -115,7 +115,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -126,7 +126,7 @@ if (isset($_GET['api'])) {
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
-        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude',
+        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -328,6 +328,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
           title="The files of the server: look, fetch, send, drop them in; a text file opened and edited here.">Files</button>
   <button role="tab" aria-selected="false" data-tab="history" data-icon="history"
           title="Every conversation Claude Code has kept, folder by folder - picked up again where it was left.">Conversations</button>
+  <button role="tab" aria-selected="false" data-tab="claude" data-icon="sparkle"
+          title="Claude Code itself, as claude.ai keeps your settings: its settings, permissions, hooks, memory, MCP servers, agents, commands, skills, plugins, background sessions and usage - for you and for a project.">Claude Code</button>
   <button role="tab" aria-selected="false" data-tab="overview" data-icon="chart" class="admin-only"
           title="The server at a glance: what it is, how busy, its disks, its addresses, who is signed in.">Overview</button>
   <button role="tab" aria-selected="false" data-tab="events" data-icon="list"
@@ -354,16 +356,27 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     </aside>
     <div class="card term-main" id="term-main">
       <div class="term-empty" id="term-empty">
-        <h2>Claude Code on this server</h2>
-        <p class="note">Start one in a folder, and it goes on running on the server until it is ended
-          here - close the browser, lose the connection, come back from another computer: it is where
-          you left it. Files dropped or pasted into the terminal (Ctrl+V) are handed to Claude.</p>
-        <div class="btnrow">
-          <button class="btn cmd primary" id="te-claude" data-icon="terminal">New Claude Code</button>
-          <button class="btn cmd" id="te-shell" data-icon="terminal">New shell</button>
-          <button class="btn cmd" id="te-hist" data-icon="history">Pick up a conversation</button>
+        <div class="cx">
+          <h1 class="cx-hello"><span class="cx-mark" id="cx-mark"></span><span id="cx-hello">What are we working on?</span></h1>
+          <div class="cx-box" id="cx-box">
+            <textarea id="cx-text" rows="3" placeholder="Describe a task or ask a question - Claude Code starts on it in the folder below and goes on on the server. Enter starts it, Shift+Enter is a new line."></textarea>
+            <div class="cx-bar">
+              <button type="button" class="cx-chip" id="cx-dir" title="The folder it works in."></button>
+              <button type="button" class="cx-chip" id="cx-model" title="The model."></button>
+              <button type="button" class="cx-chip" id="cx-mode" title="What it may do without asking."></button>
+              <button type="button" class="cx-chip" id="cx-effort" title="How hard it thinks."></button>
+              <span class="spacer"></span>
+              <button type="button" class="cx-chip ghost" id="cx-more" title="Every option of Claude Code, in the full dialog.">Every option…</button>
+              <button type="button" class="cx-send" id="cx-send" aria-label="Start it" title="Start it (Enter)"></button>
+            </div>
+          </div>
+          <div class="cx-alt">
+            <button class="btn small" id="te-claude" data-icon="terminal">Claude Code without a message</button>
+            <button class="btn small" id="te-shell" data-icon="terminal">A shell</button>
+            <button class="btn small" id="te-hist" data-icon="history">Pick up a conversation</button>
+          </div>
+          <div id="te-recent"></div>
         </div>
-        <div id="te-recent" style="margin-top:18px"></div>
       </div>
       <div class="term-open" id="term-open" hidden>
         <div class="term-bar">
@@ -454,6 +467,21 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     </div>
     <div id="hi-table" class="scroll rowsonly"></div>
   </div>
+</section>
+
+<!-- ===================== Claude Code (1.0.9) ===================== -->
+<section class="panel" id="tab-claude" hidden>
+<div class="ctl-layout">
+  <nav class="ctl-nav" id="cc-nav" aria-label="Claude Code">
+    <div class="ctl-navtop">
+      <button type="button" class="ctl-pin" id="cc-pin" aria-pressed="false" aria-label="Keep this menu open"></button>
+    </div>
+  </nav>
+  <div class="ctl-main" id="cc-main">
+    <div class="card full cc-head" id="cc-head"></div>
+    <div id="cc-pane"></div>
+  </div>
+</div>
 </section>
 
 <!-- ===================== Overview ===================== -->
@@ -1081,5 +1109,6 @@ var PHP_SAFETY = <?= $admin ? json_encode(ai_php_safety(), JSON_HEX_TAG | JSON_H
 <script nonce="<?= h($nonce) ?>" src="/assets/term.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/app.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/system.js?v=<?= h(AI_VERSION) ?>"></script>
+<script nonce="<?= h($nonce) ?>" src="/assets/cc.js?v=<?= h(AI_VERSION) ?>"></script>
 </body>
 </html>

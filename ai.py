@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.8'
+__version__ = '1.0.9'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -3880,6 +3880,62 @@ def tmux_conf():
     return '/dev/null'
 
 
+# Claude Code's options a new chat may be started with (1.0.9): the name the
+# page sends, the option, and what it takes. Nothing else of the page's goes
+# onto the command line but the free words, which are the account's own.
+CC_OPTIONS = [
+    ('name', '--name', 'str'), ('effort', '--effort', ('low', 'medium', 'high', 'xhigh', 'max')),
+    ('fallback_model', '--fallback-model', 'str'),
+    ('allowed_tools', '--allowedTools', 'words'), ('disallowed_tools', '--disallowedTools', 'words'),
+    ('tools', '--tools', 'str'), ('append_system_prompt', '--append-system-prompt', 'text'),
+    ('system_prompt', '--system-prompt', 'text'), ('agent', '--agent', 'str'),
+    ('mcp_config', '--mcp-config', 'words'), ('strict_mcp', '--strict-mcp-config', 'flag'),
+    ('settings', '--settings', 'str'), ('setting_sources', '--setting-sources', 'str'),
+    ('plugin_dirs', '--plugin-dir', 'each'), ('worktree', '--worktree', 'maybe'),
+    ('autocompact', '--autocompact', 'str'), ('fork', '--fork-session', 'flag'),
+    ('session_id', '--session-id', 'uuid'), ('verbose', '--verbose', 'flag'), ('debug', '--debug', 'maybe'),
+    ('safe_mode', '--safe-mode', 'flag'), ('bare', '--bare', 'flag'), ('restricted', '--restricted', 'flag'),
+    ('chrome', '--chrome', 'flag'), ('no_chrome', '--no-chrome', 'flag'), ('ide', '--ide', 'flag'),
+    ('brief', '--brief', 'flag'), ('no_slash', '--disable-slash-commands', 'flag'),
+    ('screen_reader', '--ax-screen-reader', 'flag'), ('remote_control', '--remote-control', 'maybe'),
+    ('allow_skip', '--allow-dangerously-skip-permissions', 'flag'),
+    ('exclude_dynamic', '--exclude-dynamic-system-prompt-sections', 'flag'),
+]
+
+
+def cc_option_args(opts):
+    out = []
+    for key, flag, kind in CC_OPTIONS:
+        v = opts.get(key)
+        if v in (None, '', False, []):
+            continue
+        if kind == 'flag':
+            out.append(flag)
+        elif kind == 'maybe':
+            out.append(flag if v is True or str(v).strip() in ('', '1', 'true') else '%s=%s' % (flag, str(v).strip()))
+        elif kind in ('words', 'each'):
+            items = v if isinstance(v, list) else [x for x in re.split(r'[\n,]+', str(v)) if x.strip()]
+            items = [str(x).strip() for x in items if str(x).strip()]
+            if not items:
+                continue
+            if kind == 'each':
+                for x in items:
+                    out += [flag, x]
+            else:
+                out += [flag] + items
+        elif kind == 'uuid':
+            if not re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z', str(v)):
+                raise Refused('a session ID is a UUID')
+            out += [flag, str(v)]
+        elif isinstance(kind, tuple):
+            if str(v) not in kind:
+                raise Refused('%s is one of %s' % (flag, ', '.join(kind)))
+            out += [flag, str(v)]
+        else:
+            out += [flag, str(v)]
+    return out
+
+
 class Terms:
     def __init__(self, store):
         self.store = store
@@ -4048,6 +4104,11 @@ class Terms:
         chosen, and a shell instead (saying why) when it is not installed."""
         cmd = str(CONFIG.get('claude_cmd') or 'claude').strip() or 'claude'
         args = []
+        if opts.get('attach'):
+            # A session Claude Code runs in the background, opened here.
+            if not re.match(r'^[A-Za-z0-9_.-]{1,80}\Z', str(opts['attach'])):
+                raise Refused('which background session?')
+            return 'exec %s attach %s' % (shlex.quote(cmd), shlex.quote(str(opts['attach'])))
         if opts.get('resume'):
             args += ['--resume', str(opts['resume'])]
         elif opts.get('pick'):
@@ -4060,11 +4121,16 @@ class Terms:
             args += ['--permission-mode', str(opts['mode'])]
         for d in opts.get('add_dirs') or []:
             args += ['--add-dir', str(d)]
+        args += cc_option_args(opts)
         try:
             args += shlex.split(str(CONFIG.get('claude_args') or ''))
             args += shlex.split(str(opts.get('args') or ''))
         except ValueError as e:
             raise Refused('the words to start Claude Code with: %s' % e)
+        if str(opts.get('prompt') or '').strip():
+            # The first message, after every option (a value of -w or --debug
+            # may not swallow it).
+            args += ['--', str(opts['prompt']).strip()]
         q = ' '.join(shlex.quote(a) for a in args)
         exe = shlex.quote(cmd)
         return ('if ! command -v %s >/dev/null 2>&1; then '
@@ -8048,6 +8114,472 @@ def api_claude_do(c):
     return {'id': tid}
 
 
+# ---------------------------------------------------------------------------
+# Claude Code's own configuration, from the pages (1.0.9)
+# ---------------------------------------------------------------------------
+# Everything Claude Code reads besides its command line, for one Linux account
+# and, where it has one, one project folder: its settings (user, project,
+# local), its memory (CLAUDE.md), the permissions and hooks inside the
+# settings, its MCP servers, agents, commands, skills and output styles, its
+# plugins and marketplaces, the sessions it runs in the background, and what
+# the conversations used. Files are read and written here as that account
+# (its owner, its modes); what Claude Code keeps itself (~/.claude.json, the
+# MCP servers and plugins) is changed by Claude Code's own commands, run as
+# that account. An account changes its own; an administrator any.
+CC_FILES = {
+    # kind: {scope: path relative to the home (user) or the project folder}
+    'settings': {'user': '.claude/settings.json', 'project': '.claude/settings.json',
+                 'local': '.claude/settings.local.json'},
+    'memory': {'user': '.claude/CLAUDE.md', 'project': 'CLAUDE.md', 'local': 'CLAUDE.local.md'},
+    'keybindings': {'user': '.claude/keybindings.json'},
+    'mcp': {'project': '.mcp.json'},
+}
+CC_JSON = ('settings', 'keybindings', 'mcp')
+# kind: (folder under .claude, the file of one by its name)
+CC_DIRS = {'agent': ('agents', '%s.md'), 'command': ('commands', '%s.md'),
+           'skill': ('skills', '%s/SKILL.md'), 'style': ('output-styles', '%s.md')}
+CC_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,80}(/[A-Za-z0-9][A-Za-z0-9._-]{0,80}){0,3}\Z')
+CC_MOST = 512 * 1024
+CC_SCOPES = ('user', 'project', 'local')
+CC_HOOK_EVENTS = ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit', 'Notification',
+                  'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'SessionStart', 'SessionEnd',
+                  'PermissionRequest')
+CC_USAGE_CACHE = {}
+
+
+def cc_target(c, src):
+    """(the Linux account, the project folder or '') a request is about."""
+    who_as = str(src.get('as') or run_as_of(c.who)).strip()
+    if who_as != run_as_of(c.who):
+        need_admin(c)
+    pw = linux_user(who_as)
+    project = str(src.get('project') or '').strip()
+    if project:
+        if project.startswith('~'):
+            project = pw.pw_dir + project[1:]
+        project = os.path.normpath(project)
+        path_allowed(c.who, project)
+        if not os.path.isdir(project):
+            raise Refused('%s is not a folder' % project)
+    return pw, project
+
+
+def cc_base(pw, project, scope):
+    if scope == 'user':
+        return Path(pw.pw_dir)
+    if scope in ('project', 'local'):
+        if not project:
+            raise Refused('a project folder first: the settings of a project are in it')
+        return Path(project)
+    raise Refused('the scope is user, project or local')
+
+
+def cc_path(pw, project, kind, scope, name=''):
+    """Where one file of Claude Code's is, for that account and project."""
+    if kind in CC_FILES:
+        rel = CC_FILES[kind].get(scope)
+        if not rel:
+            raise Refused('%s has no %s scope' % (kind, scope))
+        return cc_base(pw, project, scope) / rel
+    if kind in CC_DIRS:
+        if scope not in ('user', 'project'):
+            raise Refused('agents, commands, skills and styles are the user\'s or the project\'s')
+        name = str(name or '').strip().strip('/')
+        if not CC_NAME_RE.match(name) or '..' in name:
+            raise Refused('a name of letters, digits, . _ - (and / for a folder of commands)')
+        folder, pattern = CC_DIRS[kind]
+        return cc_base(pw, project, scope) / '.claude' / folder / (pattern % name)
+    raise Refused('no such kind of file: %s' % kind)
+
+
+def cc_inside(pw, project, path):
+    """Never through a link to somewhere else."""
+    real = os.path.realpath(str(path.parent))
+    for top in (pw.pw_dir, project):
+        if top and (real == os.path.realpath(top) or real.startswith(os.path.realpath(top).rstrip('/') + '/')):
+            return
+    raise Refused('%s leads outside the home and the project' % path)
+
+
+def cc_mkdirs(pw, path):
+    """The folders of `path` made as the account, as Claude Code would."""
+    missing = []
+    p = Path(path).parent
+    while not p.exists():
+        missing.append(p)
+        p = p.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o755)
+        if os.geteuid() == 0:
+            try:
+                os.chown(str(d), pw.pw_uid, pw.pw_gid)
+            except OSError:
+                pass
+
+
+def cc_write(pw, project, path, text, kind):
+    text = str(text if text is not None else '')
+    if len(text.encode('utf-8')) > CC_MOST:
+        raise Refused('too big for here (%s at most)' % human_bytes(CC_MOST))
+    if kind in CC_JSON and text.strip():
+        try:
+            json.loads(text)
+        except ValueError as e:
+            raise Refused('that is not JSON: %s' % e)
+    cc_mkdirs(pw, path)
+    cc_inside(pw, project, path)
+    mode = 0o600 if path.name.endswith('.local.json') else 0o644
+    try:
+        mode = stat.S_IMODE(os.stat(str(path)).st_mode)
+    except OSError:
+        pass
+    write_atomic(path, text.encode('utf-8'), mode=mode, uid=pw.pw_uid, gid=pw.pw_gid)
+
+
+def cc_front(text):
+    """The --- name: / description: --- head of an agent, a command or a skill."""
+    out = {}
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n', text or '', re.S)
+    if m:
+        for line in m.group(1).splitlines():
+            k, sep, v = line.partition(':')
+            if sep and k.strip() and not k.startswith(' '):
+                out[k.strip()] = v.strip().strip('"\'')
+    return out
+
+
+def cc_items(pw, project, kind):
+    folder, pattern = CC_DIRS[kind]
+    out = []
+    for scope in ('user', 'project'):
+        if scope == 'project' and not project:
+            continue
+        top = cc_base(pw, project, scope) / '.claude' / folder
+        if not top.is_dir():
+            continue
+        files = sorted(top.glob('*/SKILL.md')) if kind == 'skill' else sorted(top.rglob('*.md'))
+        for f in files[:500]:
+            rel = str(f.parent.relative_to(top)) if kind == 'skill' else str(f.relative_to(top))[:-3]
+            text = read_text(f, 16384)
+            fm = cc_front(text)
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            out.append({'scope': scope, 'name': rel, 'title': fm.get('name') or rel,
+                        'description': fm.get('description') or '', 'model': fm.get('model') or '',
+                        'tools': fm.get('tools') or fm.get('allowed-tools') or '', 'path': str(f),
+                        'size': st.st_size, 'mtime': st.st_mtime})
+    return out
+
+
+def cc_run(pw, args, cwd=None, timeout=60, input=None):
+    """Claude Code's own command, as the account, in its login shell's PATH."""
+    cmd = str(CONFIG.get('claude_cmd') or 'claude').strip() or 'claude'
+    shell = pw.pw_shell if pw.pw_shell and os.path.exists(pw.pw_shell) and \
+        not pw.pw_shell.endswith(('nologin', 'false')) else '/bin/bash'
+    where = cwd if cwd and os.path.isdir(cwd) else (pw.pw_dir if os.path.isdir(pw.pw_dir) else '/')
+    try:
+        got = subprocess.run([shell, '-lc', 'exec %s "$@"' % shlex.quote(cmd), 'claude'] + [str(a) for a in args],
+                             capture_output=True, text=True, timeout=timeout, input=input,
+                             env=user_env(pw, {'CI': '1', 'NO_COLOR': '1', 'TERM': 'dumb'}), cwd=where,
+                             **as_user_kwargs(pw))
+    except subprocess.TimeoutExpired:
+        raise Refused('claude %s did not answer in %d s' % (' '.join(map(str, args[:3])), timeout), 504)
+    except OSError as e:
+        raise Refused('claude could not be run: %s' % e, 500)
+    out = re.sub(r'\x1b\[[0-9;?]*[ -/]*[@-~]', '', got.stdout or '')
+    err = re.sub(r'\x1b\[[0-9;?]*[ -/]*[@-~]', '', got.stderr or '')
+    return got.returncode, out, err
+
+
+def cc_run_json(pw, args, cwd=None, timeout=60):
+    rc, out, err = cc_run(pw, args, cwd, timeout)
+    try:
+        return json.loads(out)
+    except ValueError:
+        raise Refused((err or out or 'no answer').strip()[-400:] or 'claude %s said nothing' % args[0])
+
+
+def cc_hide(d):
+    """An MCP server's settings without the values of its secrets."""
+    d = dict(d or {})
+    for k in ('env', 'headers'):
+        if isinstance(d.get(k), dict):
+            d[k] = {x: ('•••' if v else '') for x, v in d[k].items()}
+    return d
+
+
+def cc_mcp(pw, project):
+    out = []
+    try:
+        with open(os.path.join(pw.pw_dir, '.claude.json'), encoding='utf-8') as f:
+            cj = json.load(f)
+    except (OSError, ValueError):
+        cj = {}
+    for name, d in sorted((cj.get('mcpServers') or {}).items()):
+        out.append(dict(cc_hide(d), name=name, scope='user'))
+    if project:
+        mine = ((cj.get('projects') or {}).get(project) or {})
+        for name, d in sorted((mine.get('mcpServers') or {}).items()):
+            out.append(dict(cc_hide(d), name=name, scope='local'))
+        try:
+            with open(os.path.join(project, '.mcp.json'), encoding='utf-8') as f:
+                pj = json.load(f)
+        except (OSError, ValueError):
+            pj = {}
+        for name, d in sorted((pj.get('mcpServers') or {}).items()):
+            out.append(dict(cc_hide(d), name=name, scope='project'))
+        approved = mine.get('enabledMcpjsonServers') or []
+        denied = mine.get('disabledMcpjsonServers') or []
+        for one in out:
+            if one['scope'] == 'project':
+                one['approved'] = one['name'] in approved
+                one['denied'] = one['name'] in denied
+    return out
+
+
+def cc_usage(pw, days=30):
+    """What the conversations of an account used, from Claude Code's own
+    transcripts: tokens by day, by model and by project folder."""
+    top = Path(pw.pw_dir) / '.claude' / 'projects'
+    since = time.time() - days * 86400
+    by_day, by_model, by_project = {}, {}, {}
+    total = {'input': 0, 'output': 0, 'cache_write': 0, 'cache_read': 0, 'messages': 0, 'sessions': 0}
+    if not top.is_dir():
+        return {'days': days, 'total': total, 'by_day': [], 'by_model': [], 'by_project': []}
+    for f in top.glob('*/*.jsonl'):
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        if st.st_mtime < since:
+            continue
+        key = (str(f), st.st_mtime, st.st_size)
+        rows = CC_USAGE_CACHE.get(key)
+        if rows is None:
+            rows = []
+            seen = set()
+            try:
+                with open(str(f), encoding='utf-8', errors='replace') as fh:
+                    for line in fh:
+                        if '"usage"' not in line:
+                            continue
+                        try:
+                            m = json.loads(line)
+                        except ValueError:
+                            continue
+                        msg = m.get('message') or {}
+                        u = msg.get('usage') or {}
+                        mid = msg.get('id') or m.get('uuid')
+                        if not u or mid in seen:
+                            continue
+                        seen.add(mid)
+                        rows.append((str(m.get('timestamp') or '')[:10], str(msg.get('model') or '?'),
+                                     str(m.get('cwd') or f.parent.name), int(u.get('input_tokens') or 0),
+                                     int(u.get('output_tokens') or 0),
+                                     int(u.get('cache_creation_input_tokens') or 0),
+                                     int(u.get('cache_read_input_tokens') or 0)))
+            except OSError:
+                continue
+            for k in [k for k in CC_USAGE_CACHE if k[0] == str(f)]:
+                CC_USAGE_CACHE.pop(k, None)
+            CC_USAGE_CACHE[key] = rows
+        cut = datetime.fromtimestamp(since).strftime('%Y-%m-%d')
+        used = False
+        for day, model, cwd, i, o, cw, cr in rows:
+            if (day and day < cut) or model == '<synthetic>':
+                continue
+            used = True
+            for book, k in ((by_day, day), (by_model, model), (by_project, cwd)):
+                b = book.setdefault(k, {'key': k, 'input': 0, 'output': 0, 'cache_write': 0, 'cache_read': 0,
+                                        'messages': 0})
+                b['input'] += i
+                b['output'] += o
+                b['cache_write'] += cw
+                b['cache_read'] += cr
+                b['messages'] += 1
+            total['input'] += i
+            total['output'] += o
+            total['cache_write'] += cw
+            total['cache_read'] += cr
+            total['messages'] += 1
+        if used:
+            total['sessions'] += 1
+    return {'days': days, 'total': total,
+            'by_day': sorted(by_day.values(), key=lambda x: x['key']),
+            'by_model': sorted(by_model.values(), key=lambda x: -(x['output'] + x['input'])),
+            'by_project': sorted(by_project.values(), key=lambda x: -(x['output'] + x['input']))[:40]}
+
+
+@route('GET', '/api/cc')
+def api_cc(c):
+    src = {'as': c.arg('as'), 'project': c.arg('project')}
+    pw, project = cc_target(c, src)
+    what = c.arg('what') or 'overview'
+    base = {'as': pw.pw_name, 'home': pw.pw_dir, 'project': project}
+    if what == 'overview':
+        facts = claude_facts(pw)
+        out = dict(base, facts=facts, files={}, counts={})
+        for kind, scopes in CC_FILES.items():
+            for scope in scopes:
+                if scope != 'user' and not project:
+                    continue
+                p = cc_path(pw, project, kind, scope)
+                out['files']['%s:%s' % (kind, scope)] = {'path': str(p), 'there': p.is_file(),
+                                                        'size': p.stat().st_size if p.is_file() else 0}
+        for kind in CC_DIRS:
+            out['counts'][kind] = len(cc_items(pw, project, kind))
+        out['mcp'] = len(cc_mcp(pw, project))
+        if c.arg('auth') == '1':
+            try:
+                out['auth'] = cc_run_json(pw, ['auth', 'status'], project or None, 30)
+            except Refused as e:
+                out['auth'] = {'error': str(e)}
+        return out
+    if what == 'file':
+        p = cc_path(pw, project, c.arg('kind'), c.arg('scope') or 'user', c.arg('name'))
+        text = read_text(p, CC_MOST) if p.is_file() else ''
+        return dict(base, path=str(p), there=p.is_file(), text=text,
+                    mtime=p.stat().st_mtime if p.is_file() else None)
+    if what == 'items':
+        kind = c.arg('kind')
+        if kind not in CC_DIRS:
+            raise Refused('agent, command, skill or style')
+        return dict(base, kind=kind, items=cc_items(pw, project, kind))
+    if what == 'mcp':
+        out = dict(base, servers=cc_mcp(pw, project))
+        if c.arg('check') == '1':
+            rc, so, se = cc_run(pw, ['mcp', 'list'], project or None, 90)
+            out['check'] = (so or se).strip()
+        return out
+    if what == 'plugins':
+        out = dict(base)
+        out['installed'] = cc_run_json(pw, ['plugin', 'list', '--json'], project or None, 60)
+        out['marketplaces'] = cc_run_json(pw, ['plugin', 'marketplace', 'list', '--json'], project or None, 60)
+        if c.arg('available') == '1':
+            try:
+                out['available'] = cc_run_json(pw, ['plugin', 'list', '--available', '--json'], project or None, 120)
+            except Refused as e:
+                out['available_error'] = str(e)
+        return out
+    if what == 'agents':
+        got = cc_run_json(pw, ['agents', '--json', '--all'], project or None, 30)
+        return dict(base, sessions=got if isinstance(got, list) else [])
+    if what == 'logs':
+        sid = c.arg('id')
+        if not re.match(r'^[A-Za-z0-9_.-]{1,80}\Z', sid):
+            raise Refused('which session?')
+        rc, so, se = cc_run(pw, ['logs', sid], project or None, 30)
+        return dict(base, text=(so or se))
+    if what == 'usage':
+        return dict(base, usage=cc_usage(pw, max(1, min(365, int(c.arg('days') or 30)))))
+    if what == 'hooks':
+        return dict(base, events=list(CC_HOOK_EVENTS))
+    raise Refused('overview, file, items, mcp, plugins, agents, logs, usage or hooks')
+
+
+@route('POST', '/api/cc')
+def api_cc_do(c):
+    b = c.body
+    pw, project = cc_target(c, b)
+    act = str(b.get('action') or '')
+    st = c.daemon.store
+    where = '%s%s' % (pw.pw_name, (' in ' + project) if project else '')
+    if act in ('write', 'delete'):
+        kind, scope = str(b.get('kind') or ''), str(b.get('scope') or 'user')
+        p = cc_path(pw, project, kind, scope, b.get('name'))
+        if act == 'write':
+            if b.get('mtime') and p.is_file() and abs(p.stat().st_mtime - float(b['mtime'])) > 0.001:
+                raise Refused('it was changed meanwhile (by Claude Code, or elsewhere) - load it again', 409)
+            cc_write(pw, project, p, b.get('text'), kind)
+            st.add_event('claude', '%s wrote %s (%s)' % (c.name, p, where), who=c.name)
+            return {'message': 'saved: %s' % p, 'path': str(p), 'mtime': p.stat().st_mtime}
+        cc_inside(pw, project, p)
+        if not p.exists():
+            raise Refused('%s is not there' % p, 404)
+        if kind == 'skill':
+            shutil.rmtree(str(p.parent))
+        else:
+            p.unlink()
+        st.add_event('claude', '%s deleted %s (%s)' % (c.name, p, where), 'warn', who=c.name)
+        return {'message': 'deleted: %s' % p}
+    if act in ('mcp_add', 'mcp_remove', 'mcp_approve'):
+        name = str(b.get('name') or '').strip()
+        if not re.match(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z', name):
+            raise Refused('the name of a server: letters, digits, _ . -')
+        scope = str(b.get('scope') or 'local')
+        if scope not in CC_SCOPES:
+            raise Refused('the scope is user, project or local')
+        if scope != 'user' and not project:
+            raise Refused('a project folder first: a server of the %s scope belongs to one' % scope)
+        if act == 'mcp_add':
+            conf = b.get('config')
+            if not isinstance(conf, dict) or not (conf.get('command') or conf.get('url')):
+                raise Refused('a server is a command (stdio) or an address (http, sse)')
+            rc, so, se = cc_run(pw, ['mcp', 'add-json', '-s', scope, name, json.dumps(conf)], project or None, 60)
+        elif act == 'mcp_remove':
+            rc, so, se = cc_run(pw, ['mcp', 'remove', '-s', scope, name], project or None, 60)
+        else:
+            # A server of .mcp.json let in (or kept out) for this project, as
+            # Claude Code asks at its start.
+            cj_path = os.path.join(pw.pw_dir, '.claude.json')
+            try:
+                with open(cj_path, encoding='utf-8') as f:
+                    cj = json.load(f)
+            except (OSError, ValueError):
+                cj = {}
+            mine = cj.setdefault('projects', {}).setdefault(project, {})
+            on, off = set(mine.get('enabledMcpjsonServers') or []), set(mine.get('disabledMcpjsonServers') or [])
+            (on.add if b.get('yes') else on.discard)(name)
+            (off.discard if b.get('yes') else off.add)(name)
+            mine['enabledMcpjsonServers'], mine['disabledMcpjsonServers'] = sorted(on), sorted(off)
+            write_atomic(cj_path, json.dumps(cj, indent=2), mode=0o600, uid=pw.pw_uid, gid=pw.pw_gid)
+            rc, so, se = 0, 'let in' if b.get('yes') else 'kept out', ''
+        if rc != 0:
+            raise Refused((se or so).strip()[-400:] or 'claude mcp said no')
+        st.add_event('claude', '%s: MCP %s %s (%s, %s)' % (c.name, act[4:], name, scope, where), who=c.name)
+        return {'message': (so or se).strip()[-400:] or 'done', 'servers': cc_mcp(pw, project)}
+    if act in ('plugin', 'marketplace'):
+        sub = str(b.get('sub') or '')
+        allowed = {'plugin': ('install', 'uninstall', 'enable', 'disable', 'update'),
+                   'marketplace': ('add', 'remove', 'update')}[act]
+        if sub not in allowed:
+            raise Refused('%s: one of %s' % (act, ', '.join(allowed)))
+        target = str(b.get('target') or '').strip()
+        if not re.match(r'^[A-Za-z0-9@:/._+~-]{1,300}\Z', target) and not (act == 'marketplace' and sub == 'update'):
+            raise Refused('which plugin or marketplace?')
+        args = (['plugin'] if act == 'plugin' else ['plugin', 'marketplace']) + [sub] + ([target] if target else [])
+        if act == 'plugin' and b.get('scope') in CC_SCOPES and sub in ('install', 'uninstall', 'enable', 'disable'):
+            args += ['--scope', b['scope']]
+        rc, so, se = cc_run(pw, args, project or None, 300)
+        if rc != 0:
+            raise Refused((se or so).strip()[-500:] or 'claude %s said no' % ' '.join(args))
+        st.add_event('claude', '%s: claude %s (%s)' % (c.name, ' '.join(args), where), who=c.name)
+        return {'message': (so or se).strip()[-500:] or 'done'}
+    if act in ('stop', 'rm', 'respawn'):
+        sid = str(b.get('id') or '')
+        if not re.match(r'^[A-Za-z0-9_.-]{1,80}\Z', sid):
+            raise Refused('which session?')
+        rc, so, se = cc_run(pw, [act, sid], project or None, 60)
+        if rc != 0:
+            raise Refused((se or so).strip()[-400:] or 'claude %s said no' % act)
+        st.add_event('claude', '%s: claude %s %s (%s)' % (c.name, act, sid, where), who=c.name)
+        return {'message': (so or se).strip()[-400:] or 'done'}
+    if act == 'attach':
+        sid = str(b.get('id') or '')
+        if not re.match(r'^[A-Za-z0-9_.-]{1,80}\Z', sid):
+            raise Refused('which session?')
+        tid = c.daemon.terms.new(c.who, 'claude', project or pw.pw_dir, 'attach %s' % sid, {'attach': sid},
+                                 run_as=pw.pw_name)
+        return {'id': tid}
+    if act == 'doctor':
+        rc, so, se = cc_run(pw, ['doctor'], project or None, 90)
+        return {'text': (so + ('\n' + se if se else '')).strip()}
+    raise Refused('write, delete, mcp_add, mcp_remove, mcp_approve, plugin, marketplace, stop, rm, respawn, '
+                  'attach or doctor')
+
+
 # ---- the second step of signing in (otp's, 1.0.125) ------------------------------------------
 # With admin_2fa on, a right password opens a sign-in that can do nothing yet
 # but its second step (MFA_ALLOWED): a code from an app, or one sent by mail.
@@ -9867,7 +10399,8 @@ def put_user_cols(store, name, cols):
     return cols
 
 
-PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins')
+PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins',
+             'model', 'mode', 'args', 'last_cwd', 'cc_opts')
 
 
 def clean_prefs(prefs):

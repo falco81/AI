@@ -3,6 +3,29 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.9
+
+- **The history on a tablet**: a finger on the terminal moves back through tmux's history and on again, a bar
+  on its right is always there to drag or tap, *Back to now* returns; **History** shows every line tmux keeps,
+  with its colours, in a window that scrolls by finger - copied or downloaded.
+- **A finger held still is the right button**: on the terminal, the chats, the files and the folders.
+- **The folder of the chats** (Settings → Claude Code): a new chat starts in it or under it only - the daemon
+  refuses the rest; the folder picker starts there, never goes above it, and makes, renames and deletes
+  folders and files (buttons, right button, a finger held still). The chat's own files make new files too.
+- **Starting as on claude.ai**: a greeting, a box to write the task in, the folder, model, permission mode and
+  effort as chips, Enter starts Claude Code on it; the chats going on as cards below.
+- **Every option of Claude Code** in the new chat dialog as fields - name, effort, fallback model, every
+  permission mode, allowed / denied / built-in tools, more folders, the system prompt added or replaced, the
+  agent, MCP configs, settings and their sources, plugin folders, worktree, fork, session ID, autocompact,
+  Remote Control, verbose, debug, safe mode, bare, restricted, Chrome, IDE, brief, no slash commands, a screen
+  reader, the first message, a session in the background - kept as how the account's chats start when asked.
+- **The Claude Code tab**, for an account and a project: settings (fields and JSON), permissions (allow, ask,
+  deny), hooks, memory (CLAUDE.md), MCP servers (added, removed, checked, let in), agents, commands, skills,
+  output styles, plugins and marketplaces, background sessions (opened, logs, stopped, removed), usage by day,
+  model and folder, keybindings, the sign-in and the doctor.
+- The model, the permission mode, the more words and the last folder of a new chat are remembered again: they
+  were dropped by the daemon.
+
 ## 1.0.8
 
 - **Settings → Accounts as otp's**: every account in one row with its role chosen right there and the same

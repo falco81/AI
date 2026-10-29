@@ -464,7 +464,12 @@ var ICONS = {
     + '<path d="M8 9V6h8v3M9 19v-4M12 19v-4M15 19v-4"/>',
   wifi: '<path d="M4 9a13 13 0 0 1 16 0"/><path d="M7 12.5a8.5 8.5 0 0 1 10 0"/>'
     + '<path d="M10 16a4 4 0 0 1 4 0"/><circle cx="12" cy="19" r="1"/>',
-  plug: '<path d="M9 3v6M15 3v6"/><path d="M7 9h10v3a5 5 0 0 1-10 0z"/>'
+  plug: '<path d="M9 3v6M15 3v6"/><path d="M7 9h10v3a5 5 0 0 1-10 0z"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
+  bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
+  bot: '<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/>',
+  slash: '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M14 8l-4 8"/>',
+  puzzle: '<path d="M9 4h4v2.5a1.5 1.5 0 0 0 3 0V4h4v6h-2.5a1.5 1.5 0 0 0 0 3H20v7h-6v-2.5a1.5 1.5 0 0 0-3 0V20H4v-6h2.5a1.5 1.5 0 0 0 0-3H4V4z"/>'
     + '<path d="M12 17v4"/>',
   /* The switch every appliance has: the ring broken at the top, with the
      stroke standing in the gap. "Turn this one on." */

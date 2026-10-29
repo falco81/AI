@@ -1694,6 +1694,629 @@ STRINGS = {
         'Už se nepřihlásí. Jeho terminály běží dál pod účtem Linuxu, pod kterým běží.',
     ' It is this one: you are signed out.':
         ' Je to toto přihlášení: budete odhlášeni.',
+    # ---- 1.0.9: the tablet, the folder of the chats, the Claude Code tab, the start ----
+    'Claude Code itself, as claude.ai keeps your settings: its settings, permissions, hooks, memory, MCP servers, agents, commands, skills, plugins, background sessions and usage - for you and for a project.':
+        'Claude Code samotné, jako claude.ai drží vaše nastavení: jeho nastavení, oprávnění, hooky, paměť, MCP servery, agenti, příkazy, dovednosti, pluginy, relace na pozadí a spotřeba – pro vás i pro projekt.',
+    'What are we working on?':
+        'Na čem budeme pracovat?',
+    'Describe a task or ask a question - Claude Code starts on it in the folder below and goes on on the server. Enter starts it, Shift+Enter is a new line.':
+        'Popište úkol nebo položte otázku – Claude Code se do toho pustí ve složce níže a pokračuje na serveru. Enter spustí, Shift+Enter je nový řádek.',
+    'The folder it works in.':
+        'Složka, ve které pracuje.',
+    'The model.':
+        'Model.',
+    'What it may do without asking.':
+        'Co smí bez ptaní.',
+    'How hard it thinks.':
+        'Jak usilovně přemýšlí.',
+    'Every option of Claude Code, in the full dialog.':
+        'Všechny volby Claude Code v úplném dialogu.',
+    'Every option…':
+        'Všechny volby…',
+    'Start it (Enter)':
+        'Spustit (Enter)',
+    'Claude Code without a message':
+        'Claude Code bez zprávy',
+    'Everything this terminal has shown since it started - tmux keeps it - in a window of its own that scrolls by finger too; copied or downloaded.':
+        'Všechno, co tento terminál od spuštění ukázal – drží to tmux – ve vlastním okně, které se posouvá i prstem; dá se zkopírovat nebo stáhnout.',
+    'History':
+        'Historie',
+    'ask before changes':
+        'ptát se před změnami',
+    'effort':
+        'úsilí',
+    'Good morning':
+        'Dobré ráno',
+    'Good afternoon':
+        'Dobré odpoledne',
+    'Good evening':
+        'Dobrý večer',
+    'What it starts on, as though typed first - empty: nothing, it waits for you.':
+        'Čím začne, jako by to bylo napsané jako první – prázdné: nic, počká na vás.',
+    'a new one in the background (--bg)':
+        'novou na pozadí (--bg)',
+    'Its name in Claude Code (--name)':
+        'Jeho název v Claude Code (--name)',
+    'shown in the prompt box and in /resume':
+        'zobrazí se u výzvy a v /resume',
+    'another… (written below)':
+        'jiný… (napsaný níže)',
+    'Effort (--effort)':
+        'Úsilí (--effort)',
+    'as Claude Code decides':
+        'jak rozhodne Claude Code',
+    'low':
+        'nízké',
+    'medium':
+        'střední',
+    'high':
+        'vysoké',
+    'extra high':
+        'velmi vysoké',
+    'max':
+        'maximum',
+    'auto (a classifier decides)':
+        'automaticky (rozhoduje klasifikátor)',
+    'manual (ask for everything)':
+        'ručně (ptát se na všechno)',
+    'do not ask (deny what is not allowed)':
+        'neptat se (zakázat, co není povoleno)',
+    'The first message':
+        'První zpráva',
+    'Every option of Claude Code':
+        'Všechny volby Claude Code',
+    'Tools and permissions':
+        'Nástroje a oprávnění',
+    'Allowed without asking (--allowedTools)':
+        'Povoleno bez ptaní (--allowedTools)',
+    'One a line, or with commas.':
+        'Jeden na řádek nebo oddělené čárkou.',
+    'Never (--disallowedTools)':
+        'Nikdy (--disallowedTools)',
+    'Only these built-in tools (--tools)':
+        'Jen tyto vestavěné nástroje (--tools)',
+    'Never asking may be switched on in it':
+        'Lze v ní zapnout „nikdy se neptat“',
+    'What it knows':
+        'Co ví',
+    'More folders it may use (--add-dir)':
+        'Další složky, které smí používat (--add-dir)',
+    'Add a folder…':
+        'Přidat složku…',
+    'One a line.':
+        'Jedna na řádek.',
+    'Added to its system prompt':
+        'Přidáno k systémové výzvě',
+    'Its whole system prompt instead':
+        'Celá vlastní systémová výzva místo jeho',
+    "--system-prompt: Claude Code's own is not used then.":
+        '--system-prompt: vlastní výzva Claude Code se pak nepoužije.',
+    'The agent of the session (--agent)':
+        'Agent relace (--agent)',
+    'MCP servers from files (--mcp-config)':
+        'MCP servery ze souborů (--mcp-config)',
+    'One a line: a file or JSON.':
+        'Jeden na řádek: soubor nebo JSON.',
+    'Only those servers':
+        'Jen tyto servery',
+    'More settings (--settings)':
+        'Další nastavení (--settings)',
+    'Settings read from (--setting-sources)':
+        'Nastavení číst z (--setting-sources)',
+    'Plugins from folders (--plugin-dir)':
+        'Pluginy ze složek (--plugin-dir)',
+    'For this session only.':
+        'Jen pro tuto relaci.',
+    'The session':
+        'Relace',
+    'Continued as a new conversation':
+        'Pokračovat jako nová konverzace',
+    '--fork-session, with --continue or --resume':
+        '--fork-session, s --continue nebo --resume',
+    'In a new git worktree (--worktree)':
+        'V novém git worktree (--worktree)',
+    'Make a worktree':
+        'Vytvořit worktree',
+    'Its session ID (--session-id)':
+        'ID relace (--session-id)',
+    'Compacted at (--autocompact)':
+        'Zhutnit při (--autocompact)',
+    'When the model is busy (--fallback-model)':
+        'Když je model přetížený (--fallback-model)',
+    'Remote Control on, named':
+        'Remote Control zapnuté, s názvem',
+    '--remote-control: the session can be followed from claude.ai.':
+        '--remote-control: relaci lze sledovat z claude.ai.',
+    'Remote Control':
+        'Remote Control',
+    'How it runs':
+        'Jak běží',
+    'Verbose':
+        'Podrobně',
+    'Debug, of what (--debug)':
+        'Ladění, čeho (--debug)',
+    'Debug':
+        'Ladění',
+    'Safe mode':
+        'Bezpečný režim',
+    '--safe-mode: CLAUDE.md, hooks, plugins, MCP and the rest of yours switched off':
+        '--safe-mode: CLAUDE.md, hooky, pluginy, MCP a ostatní vaše vypnuté',
+    'Bare':
+        'Holé',
+    '--bare: no hooks, plugins, CLAUDE.md discovery, keychain':
+        '--bare: bez hooků, pluginů, hledání CLAUDE.md a klíčenky',
+    'Restricted':
+        'Omezené',
+    '--restricted: no tools that run code':
+        '--restricted: bez nástrojů, které spouštějí kód',
+    'Claude in Chrome':
+        'Claude v Chrome',
+    'as set':
+        'podle nastavení',
+    'on (--chrome)':
+        'zapnuto (--chrome)',
+    'off (--no-chrome)':
+        'vypnuto (--no-chrome)',
+    'Connect to the IDE':
+        'Připojit se k IDE',
+    'Messages to you (SendUserMessage)':
+        'Zprávy pro vás (SendUserMessage)',
+    'No skills or /commands':
+        'Bez dovedností a /příkazů',
+    'For a screen reader':
+        'Pro čtečku obrazovky',
+    "The machine's details in the first message":
+        'Údaje o stroji v první zprávě',
+    'Anything else claude --help lists, as typed.':
+        'Cokoli dalšího z claude --help, tak jak to napíšete.',
+    'Keep these as how my chats start':
+        'Takhle začínat všechny mé chaty',
+    'Kept with your account, offered every time.':
+        'Uloží se k vašemu účtu a nabídne se pokaždé.',
+    'Read the folder again':
+        'Načíst složku znovu',
+    'folder(s)':
+        'složek',
+    'file(s)':
+        'souborů',
+    'What can be done with it':
+        'Co s tím jde dělat',
+    'Choose this folder':
+        'Vybrat tuto složku',
+    'A new folder in it…':
+        'Nová složka v ní…',
+    'A new file in it…':
+        'Nový soubor v ní…',
+    'Rename…':
+        'Přejmenovat…',
+    'Delete…':
+        'Smazat…',
+    'A new folder here…':
+        'Nová složka zde…',
+    'A new file here…':
+        'Nový soubor zde…',
+    'Read it again':
+        'Načíst znovu',
+    'Upload files here…':
+        'Nahrát sem soubory…',
+    'Nothing in it yet.':
+        'Zatím je prázdná.',
+    'With everything in it. It cannot be undone.':
+        'Se vším, co v ní je. Nejde to vrátit.',
+    'It cannot be undone.':
+        'Nejde to vrátit.',
+    'The version, the sign-in, what is set up - and the doctor.':
+        'Verze, přihlášení, co je nastaveno – a doktor.',
+    'Setting it up':
+        'Nastavení',
+    'settings.json: the model, the permission mode, the environment and the rest, for you, the project or only you in the project.':
+        'settings.json: model, režim oprávnění, prostředí a další – pro vás, pro projekt nebo jen pro vás v projektu.',
+    'What Claude Code may do without asking, what it asks first, and what it never does.':
+        'Co Claude Code smí bez ptaní, na co se nejdřív zeptá a co nikdy neudělá.',
+    'Commands run by Claude Code itself before or after a tool, when a prompt is sent, when it stops.':
+        'Příkazy, které Claude Code spouští sám před nástrojem nebo po něm, při odeslání výzvy, když skončí.',
+    'Hooks':
+        'Hooky',
+    'CLAUDE.md - what Claude Code reads at the start of every conversation.':
+        'CLAUDE.md – co Claude Code čte na začátku každé konverzace.',
+    'The tools and data Claude Code reaches through the Model Context Protocol.':
+        'Nástroje a data, ke kterým se Claude Code dostane přes Model Context Protocol.',
+    'MCP servers':
+        'MCP servery',
+    'Extending it':
+        'Rozšíření',
+    'Subagents: a prompt, a model and tools of their own, called by name.':
+        'Subagenti: vlastní výzva, model a nástroje, volaní jménem.',
+    'Agents':
+        'Agenti',
+    'Your own /commands: a prompt kept in a file, with arguments.':
+        'Vlastní /příkazy: výzva uložená v souboru, s argumenty.',
+    'Folders of instructions Claude Code loads when they fit the task.':
+        'Složky s pokyny, které Claude Code načte, když se hodí k úkolu.',
+    'Skills':
+        'Dovednosti',
+    'How Claude Code writes its answers.':
+        'Jak Claude Code píše odpovědi.',
+    'Output styles':
+        'Styly výstupu',
+    'Running it':
+        'Běh',
+    'Plugins and their marketplaces: installed, enabled, updated.':
+        'Pluginy a jejich tržiště: nainstalované, zapnuté, aktualizované.',
+    'Plugins':
+        'Pluginy',
+    'Sessions Claude Code runs on its own (claude --bg): opened, stopped, removed.':
+        'Relace, které Claude Code běží samo (claude --bg): otevřít, zastavit, odebrat.',
+    'Background sessions':
+        'Relace na pozadí',
+    'The tokens the conversations used, by day, model and folder.':
+        'Tokeny, které konverzace spotřebovaly, po dnech, modelech a složkách.',
+    'Usage':
+        'Spotřeba',
+    "keybindings.json: Claude Code's own keys.":
+        'keybindings.json: vlastní klávesy Claude Code.',
+    'Keyboard':
+        'Klávesnice',
+    'The Linux account':
+        'Účet Linuxu',
+    'Whose Claude Code: its home holds its settings, memory and the rest.':
+        'Čí Claude Code: v jeho domovské složce je nastavení, paměť a další.',
+    'The project folder':
+        'Složka projektu',
+    'Choose a project…':
+        'Vybrat projekt…',
+    'Another project…':
+        'Jiný projekt…',
+    'Without a project':
+        'Bez projektu',
+    'A new Claude Code here':
+        'Nové Claude Code zde',
+    'no project chosen - only what is yours everywhere':
+        'žádný projekt – jen to vaše, co platí všude',
+    'Its .claude folder, CLAUDE.md and .mcp.json - shared with everybody working in it.':
+        'Jeho složka .claude, CLAUDE.md a .mcp.json – sdílené se všemi, kdo v něm pracují.',
+    'not there':
+        'není',
+    'Its folder':
+        'Jeho složka',
+    'Ask the doctor':
+        'Zeptat se doktora',
+    'Sign in again':
+        'Přihlásit znovu',
+    'agents':
+        'agentů',
+    'commands':
+        'příkazů',
+    'skills':
+        'dovedností',
+    'output styles':
+        'stylů výstupu',
+    'MCP servers ':
+        'MCP serverů',
+    'Its files':
+        'Jeho soubory',
+    'mine':
+        'moje',
+    'the project':
+        'projekt',
+    'mine in the project':
+        'moje v projektu',
+    'Memory (CLAUDE.md)':
+        'Paměť (CLAUDE.md)',
+    'MCP servers (.mcp.json)':
+        'MCP servery (.mcp.json)',
+    'Mine (all my folders)':
+        'Moje (všechny mé složky)',
+    'This project (shared, in the repository)':
+        'Tento projekt (sdílené, v repozitáři)',
+    'Mine in this project (not shared)':
+        'Moje v tomto projektu (nesdílené)',
+    'The model':
+        'Model',
+    'Any other name of a model can be written in the JSON below.':
+        'Jiný název modelu lze napsat do JSON níže.',
+    'Permission mode at the start':
+        'Režim oprávnění na začátku',
+    'as Claude Code decides (default)':
+        'jak rozhodne Claude Code (výchozí)',
+    'Effort':
+        'Úsilí',
+    'Output style':
+        'Styl výstupu',
+    'The name of a style: Default, Explanatory, Learning or one of yours.':
+        'Název stylu: Default, Explanatory, Learning nebo některý váš.',
+    'The language it answers in':
+        'Jazyk odpovědí',
+    'e.g. czech':
+        'např. czech',
+    'Keep the transcripts (days)':
+        'Držet přepisy (dní)',
+    'Co-Authored-By in commits':
+        'Co-Authored-By v commitech',
+    'Thinking always on':
+        'Přemýšlení vždy zapnuté',
+    'Let in every server of .mcp.json':
+        'Pustit každý server z .mcp.json',
+    'Switch every hook off':
+        'Vypnout všechny hooky',
+    'Tips while it works':
+        'Tipy během práce',
+    'Updates itself':
+        'Aktualizuje se samo',
+    'A command that prints the API key':
+        'Příkaz, který vypíše klíč API',
+    'The status line: a command':
+        'Stavový řádek: příkaz',
+    'Its output is shown under the prompt.':
+        'Jeho výstup se ukáže pod výzvou.',
+    'More folders it may use':
+        'Další složky, které smí používat',
+    'Its environment':
+        'Jeho prostředí',
+    'NAME=value, one a line: set in every session.':
+        'JMÉNO=hodnota, jedno na řádek: nastaví se v každé relaci.',
+    'Save the settings':
+        'Uložit nastavení',
+    'All of it as JSON':
+        'Celé jako JSON',
+    'that is not JSON':
+        'to není JSON',
+    'not there yet - saving makes it':
+        'zatím neexistuje – uložením vznikne',
+    'The file is not JSON Claude Code can read - put it right in the text below.':
+        'Soubor není JSON, který by Claude Code přečetlo – opravte ho v textu níže.',
+    'The settings file is not JSON - put it right under Settings first.':
+        'Soubor nastavení není JSON – nejdřív ho opravte v Nastavení.',
+    'Choose a project above for its own settings.':
+        'Pro vlastní nastavení projektu ho vyberte nahoře.',
+    'A rule is a tool, and what of it in brackets: Bash(npm run test:*), Read(./secrets/**), Edit(src/**), WebFetch(domain:example.com), mcp__github. Deny wins over ask, ask over allow.':
+        'Pravidlo je nástroj a v závorce co z něj: Bash(npm run test:*), Read(./secrets/**), Edit(src/**), WebFetch(domain:example.com), mcp__github. Zákaz má přednost před dotazem, dotaz před povolením.',
+    'allow it':
+        'povolit',
+    'ask first':
+        'nejdřív se zeptat',
+    'an MCP tool (mcp__…)':
+        'nástroj MCP (mcp__…)',
+    'Add the rule':
+        'Přidat pravidlo',
+    'Never':
+        'Nikdy',
+    'Ask first':
+        'Nejdřív se zeptat',
+    'Allowed without asking':
+        'Povoleno bez ptaní',
+    'Take the rule away':
+        'Odebrat pravidlo',
+    'Save the permissions':
+        'Uložit oprávnění',
+    'which MCP tool?':
+        'který nástroj MCP?',
+    'Each hook is a command Claude Code runs itself, with the event as JSON on its input. A matcher picks the tools (Bash, Edit|Write, mcp__.*); empty is every one. An exit code of 2 stops the tool and tells Claude why.':
+        'Každý hook je příkaz, který Claude Code spouští samo, s událostí jako JSON na vstupu. Matcher vybírá nástroje (Bash, Edit|Write, mcp__.*); prázdný je každý. Návratový kód 2 nástroj zastaví a řekne Claudovi proč.',
+    'For the tools (a matcher)':
+        'Pro nástroje (matcher)',
+    'The command':
+        'Příkaz',
+    'Its time (s)':
+        'Jeho čas (s)',
+    'Add the hook':
+        'Přidat hook',
+    'No hook yet.':
+        'Zatím žádný hook.',
+    'Save the hooks':
+        'Uložit hooky',
+    'Tools':
+        'Nástroje',
+    'Command':
+        'Příkaz',
+    'which command?':
+        'jaký příkaz?',
+    'Mine (~/.claude/CLAUDE.md)':
+        'Moje (~/.claude/CLAUDE.md)',
+    'The project (CLAUDE.md)':
+        'Projekt (CLAUDE.md)',
+    'Mine in the project (CLAUDE.local.md)':
+        'Moje v projektu (CLAUDE.local.md)',
+    'Markdown. A line @path/to/file brings another file in; # at the start of a prompt in a session adds a line here.':
+        'Markdown. Řádek @cesta/k/souboru přidá další soubor; # na začátku výzvy v relaci sem přidá řádek.',
+    'The servers':
+        'Servery',
+    'Check them':
+        'Zkontrolovat je',
+    'Add a server':
+        'Přidat server',
+    'Whose':
+        'Čí',
+    'What it runs':
+        'Co spouští',
+    'Secrets':
+        'Tajné údaje',
+    'kept out':
+        'nepuštěný',
+    'waiting to be let in':
+        'čeká na puštění',
+    'Let it in for this project':
+        'Pustit pro tento projekt',
+    'Keep it out of this project':
+        'Nepouštět do tohoto projektu',
+    'Take the server away':
+        'Odebrat server',
+    'An MCP server':
+        'MCP server',
+    'What it is':
+        'Co to je',
+    'a command on this machine (stdio)':
+        'příkaz na tomto stroji (stdio)',
+    'an address (HTTP)':
+        'adresa (HTTP)',
+    'an address (SSE)':
+        'adresa (SSE)',
+    'Its arguments, one a line':
+        'Jeho argumenty, jeden na řádek',
+    'The address':
+        'Adresa',
+    'Headers, one a line':
+        'Hlavičky, jedna na řádek',
+    'Its environment (NAME=value, one a line)':
+        'Jeho prostředí (JMÉNO=hodnota, jedno na řádek)',
+    'Added with claude mcp add-json, as the account - Claude Code keeps it where it keeps its own.':
+        'Přidá se přes claude mcp add-json pod tímto účtem – Claude Code si ho uloží tam, kam ukládá svoje.',
+    'The agents':
+        'Agenti',
+    'A new agent':
+        'Nový agent',
+    'Claude Code calls one by itself when its description fits, or when asked: "use the reviewer agent".':
+        'Claude Code ho zavolá samo, když se hodí jeho popis, nebo když o to požádáte: „use the reviewer agent“.',
+    'The commands':
+        'Příkazy',
+    'A new command':
+        'Nový příkaz',
+    'Typed as /name in a session; $ARGUMENTS is what follows it, $1 $2 one word each. A folder makes /folder:name.':
+        'V relaci se píše /název; $ARGUMENTS je to, co následuje, $1 $2 po jednom slově. Složka dělá /složka:název.',
+    'None yet.':
+        'Zatím žádný.',
+    'The skills':
+        'Dovednosti',
+    'A new skill':
+        'Nová dovednost',
+    'Each is a folder with SKILL.md; Claude Code reads its description and loads it when it fits the task.':
+        'Každá je složka se SKILL.md; Claude Code čte její popis a načte ji, když se hodí k úkolu.',
+    'The output styles':
+        'Styly výstupu',
+    'A new style':
+        'Nový styl',
+    'Chosen with /output-style, or as the output style in Settings.':
+        'Vybírá se přes /output-style nebo jako styl výstupu v Nastavení.',
+    'Edit it':
+        'Upravit',
+    'Letters, digits, - and _.':
+        'Písmena, číslice, - a _.',
+    'When it is used':
+        'Kdy se použije',
+    'Its tools (empty: all)':
+        'Jeho nástroje (prázdné: všechny)',
+    'Its model':
+        'Jeho model',
+    'Its colour':
+        'Jeho barva',
+    'Its system prompt':
+        'Jeho systémová výzva',
+    'Letters, digits, - and _; a folder/name for /folder:name.':
+        'Písmena, číslice, - a _; složka/název pro /složka:název.',
+    'What it does':
+        'Co dělá',
+    'Its arguments':
+        'Jeho argumenty',
+    'Tools it may use':
+        'Nástroje, které smí používat',
+    'The prompt':
+        'Výzva',
+    'When to use it':
+        'Kdy ji použít',
+    'A new output style':
+        'Nový styl výstupu',
+    'Keep the coding instructions (true/false)':
+        'Zachovat pokyny pro programování (true/false)',
+    'a name first':
+        'nejdřív název',
+    'Available':
+        'Dostupné',
+    'Show what the marketplaces have':
+        'Ukázat, co tržiště nabízejí',
+    'Installed':
+        'Nainstalované',
+    'No plugin installed. Install one from a marketplace below.':
+        'Žádný plugin není nainstalovaný. Nainstalujte některý z tržiště níže.',
+    'Marketplaces':
+        'Tržiště',
+    'Add a marketplace':
+        'Přidat tržiště',
+    'Plugin':
+        'Plugin',
+    'Switch off':
+        'Vypnout',
+    'Switch on':
+        'Zapnout',
+    'Uninstall it':
+        'Odinstalovat',
+    'Uninstall':
+        'Odinstalovat',
+    'Install':
+        'Nainstalovat',
+    'find a plugin…':
+        'najít plugin…',
+    'Its sessions':
+        'Jeho relace',
+    'Start one in the background…':
+        'Spustit jednu na pozadí…',
+    'What claude agents lists: the sessions of this account that run now - in a terminal, or in the background on their own (claude --bg), and those that ended. A background one is opened in a terminal of these pages with claude attach.':
+        'Co vypisuje claude agents: relace tohoto účtu, které právě běží – v terminálu nebo samy na pozadí (claude --bg) – a ty, které skončily. Relace na pozadí se otevře v terminálu těchto stránek přes claude attach.',
+    'No session.':
+        'Žádná relace.',
+    'in the background':
+        'na pozadí',
+    'in a terminal':
+        'v terminálu',
+    'Its output':
+        'Její výstup',
+    'Remove it (and its worktree, where that is safe)':
+        'Odebrat (i její worktree, kde je to bezpečné)',
+    '7 days':
+        '7 dní',
+    '30 days':
+        '30 dní',
+    '90 days':
+        '90 dní',
+    'a year':
+        'rok',
+    'counting…':
+        'počítám…',
+    'Tokens written by Claude':
+        'Tokeny napsané Claudem',
+    'Tokens sent':
+        'Odeslané tokeny',
+    'Written to the cache':
+        'Zapsáno do cache',
+    'Read from the cache':
+        'Přečteno z cache',
+    'Answers':
+        'Odpovědi',
+    'By day':
+        'Po dnech',
+    'Nothing in these days.':
+        'V těchto dnech nic.',
+    'By model':
+        'Podle modelu',
+    'Written':
+        'Napsáno',
+    'Sent':
+        'Odesláno',
+    'Cache read':
+        'Z cache',
+    'By folder':
+        'Podle složky',
+    'tokens written':
+        'napsaných tokenů',
+    'answers':
+        'odpovědí',
+    'Claude Code\'s own keys, as /keybindings writes them: {"bindings": [{"context": "Chat", "bindings": {"ctrl+e": "chat:externalEditor"}}]}.':
+        'Vlastní klávesy Claude Code, jak je zapisuje /keybindings: {"bindings": [{"context": "Chat", "bindings": {"ctrl+e": "chat:externalEditor"}}]}.',
+    'A new chat starts in this folder or in one under it, and nowhere else: the folder picker offers it and what is under it, never the rest of the machine. Empty: anywhere the account may go.':
+        'Nový chat začne v této složce nebo v některé pod ní, a nikde jinde: výběr složky nabídne jen ji a co je pod ní, nikdy zbytek stroje. Prázdné: kdekoli, kam účet smí.',
+    'The folder of the chats':
+        'Složka chatů',
+    'The whole history':
+        'Celá historie',
+    'lines':
+        'řádků',
+    'reading what tmux keeps…':
+        'čtu, co drží tmux…',
+    'Copy it all':
+        'Zkopírovat vše',
+    'the whole history was copied':
+        'celá historie je zkopírovaná',
+    'Back to now':
+        'Zpět na teď',
 }
 
 PATTERNS = {
@@ -1873,6 +2496,41 @@ PATTERNS = {
         'role účtu {0} je změněna',
     'the password of {0} is set':
         'heslo účtu {0} je nastaveno',
+    # ---- 1.0.9: the tablet, the folder of the chats, the Claude Code tab, the start ----
+    'Choose a folder in {0}':
+        'Vybrat složku v {0}',
+    'Only {0} and what is under it (Settings - Claude Code - The folder of the chats).':
+        'Jen {0} a co je pod ní (Nastavení – Claude Code – Složka chatů).',
+    'Good evening, {0}':
+        'Dobrý večer, {0}',
+    'Good morning, {0}':
+        'Dobré ráno, {0}',
+    'Good afternoon, {0}':
+        'Dobré odpoledne, {0}',
+    'Claude Code of {0}':
+        'Claude Code účtu {0}',
+    'The whole history: {0}':
+        'Celá historie: {0}',
+    'A new folder in {0}:':
+        'Nová složka v {0}:',
+    'A new file in {0}:':
+        'Nový soubor v {0}:',
+    'A new name for {0}:':
+        'Nový název pro {0}:',
+    'Delete the folder {0}?':
+        'Smazat složku {0}?',
+    'deleted: {0}':
+        'smazáno: {0}',
+    'saved: {0}':
+        'uloženo: {0}',
+    'No MCP server for this account{0}':
+        'Žádný MCP server pro tento účet{0}',
+    'Uninstall {0}?':
+        'Odinstalovat {0}?',
+    'Take the marketplace {0} away?':
+        'Odebrat tržiště {0}?',
+    'Remove {0}?':
+        'Odebrat {0}?',
 }
 
 RICH = {

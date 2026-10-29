@@ -113,5 +113,24 @@ check('a mail address and a phone number checked', ai.mail_checked('a@b.cz') == 
       and ai.phone_checked('+420 603 123 456') == '+420603123456')
 check('the oldest version safe to go back to', ai.ver_tuple(ai.DOWNGRADE_FLOOR) <= ai.ver_tuple(ai.__version__))
 
+# ---- 1.0.9: Claude Code's options, the folder of the chats ------------------------------
+got = ai.cc_option_args({'effort': 'high', 'allowed_tools': 'Bash(git *)\nEdit', 'worktree': True, 'debug': 'hooks',
+                         'verbose': True, 'plugin_dirs': ['/a', '/b'], 'name': 'x y'})
+check('the options of Claude Code on its command line', got == ['--name', 'x y', '--effort', 'high', '--allowedTools',
+                                                                'Bash(git *)', 'Edit', '--plugin-dir', '/a', '--plugin-dir',
+                                                                '/b', '--worktree', '--verbose', '--debug=hooks'])
+try:
+    ai.cc_option_args({'effort': 'enormous'})
+    bad = False
+except ai.Refused:
+    bad = True
+check('an effort Claude Code does not know refused', bad)
+script = ai.Terms(None).claude_script({'prompt': 'start -w here', 'worktree': True})
+check('the first message after every option', script.endswith("--worktree -- 'start -w here'"))
+check('a folder under the folder of the chats', ai.path_under('/srv/chats/a/b', '/srv/chats') and not ai.path_under('/srv/chatsX', '/srv/chats'))
+check('a name of an agent or a command kept to what it may be', bool(ai.CC_NAME_RE.match('front/component'))
+      and not ai.CC_NAME_RE.match('../x') and not ai.CC_NAME_RE.match('/etc'))
+check('the head of an agent read', ai.cc_front('---\nname: r\ndescription: Reviews\n---\nbody') == {'name': 'r', 'description': 'Reviews'})
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

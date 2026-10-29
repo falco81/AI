@@ -20,6 +20,37 @@ the next key, Esc, Tab, Shift+Tab, the arrows, Home/End, PgUp/PgDn, Ins/Del,
 F1-F12, Ctrl+C/D/R/O/T/L/Z - and *History*, which scrolls back (tmux copy
 mode; q comes back).
 
+## The history, on a tablet as well
+
+The page is one more tmux client, so the history is tmux's (50 000 lines a
+terminal): the mouse wheel goes back through it by itself. On an iPad or a
+phone **a finger on the terminal** moves it up and down, and **the bar on its
+right** - always there, wide enough for a finger - is dragged or tapped to a
+place; *Back to now* returns to the live screen. **History** in the bar (and
+*The whole history* on the right button) shows every line tmux keeps, with
+its colours, in a window of its own that scrolls as any page does - copied or
+downloaded as text.
+
+## Starting a chat
+
+The start of *Terminals* is claude.ai's: write the task in the box, choose the
+folder, the model, the permission mode and the effort in the chips under it,
+and Enter starts Claude Code on it in that folder - it goes on on the server.
+*Every option…* opens the full dialog, which has every option of Claude
+Code's command line as a field: its name, effort, fallback model, the
+permission modes, allowed and denied tools, the built-in tools, more folders,
+a system prompt added or replaced, the agent, MCP configs, settings and their
+sources, plugin folders, a worktree, fork, a session ID, autocompact, Remote
+Control, verbose, debug, safe mode, bare, restricted, Chrome, the IDE, brief,
+no slash commands, a screen reader, and the first message - kept with the
+account as how its chats start, when asked.
+
+**The folder of the chats** (Settings → Claude Code): when set, a chat starts
+in it or in a folder under it, and nowhere else - the daemon refuses the rest.
+The folder picker starts there and never goes above it; it makes, renames and
+deletes folders and files by its buttons, the right mouse button, or a finger
+held still on a tablet.
+
 ## Files for Claude
 
 A file dropped onto the terminal, pasted into it, or chosen with *File for
@@ -35,6 +66,9 @@ screen, a file for Claude, the files of the chat, Claude Code's commands, a
 longer text, the whole window, clearing the screen - then what the list
 offers for the chat. Shift with the right button gives the browser's own
 menu. tmux's own menu on that button is switched off.
+
+On a tablet a finger held still on the terminal, a chat, a file or a folder
+is the right button.
 
 On a chat in the list (or its ⋯, as on claude.ai): open it, open it in a
 new window, **pin** it (pinned chats stay at the top, kept with your

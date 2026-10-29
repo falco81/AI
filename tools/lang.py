@@ -27,7 +27,7 @@ def as_ai(t):
 def haystack():
     out = []
     for rel in ('web/index.php', 'web/assets/core.js', 'web/assets/app.js', 'web/assets/term.js',
-                'web/assets/system.js', 'web/assets/cols.js', 'ai.py'):
+                'web/assets/system.js', 'web/assets/cols.js', 'web/assets/cc.js', 'ai.py'):
         with open(os.path.join(ROOT, rel), encoding='utf-8') as f:
             out.append(f.read().replace("\\'", "'"))
     return ' '.join(' '.join(x.split()) for x in out)

@@ -48,7 +48,7 @@ In colour (colorama), `--json` for scripts; the console and every command:
 | terminals | Claude Code or a shell, in any folder; tmux underneath (one server per Linux account, in a systemd scope of its own); xterm.js on a WebSocket; reconnects by itself; several windows on one terminal; the whole keyboard - Ctrl/Alt combinations, arrows, F1-F12, Shift+Enter for a new line, and *All keys* (Keyboard Lock) for Ctrl+W, Ctrl+T, Esc…; Ctrl and Alt keys and the special keys on screen for a phone; Claude Code's commands from a list; a box to write long text in |
 | files | a browser of the server's files; upload by button, drag and drop or Ctrl+V; download of files and of folders as .zip; text files opened and edited; pictures shown; a file for Claude written into `.ai-uploads/` of the working directory and its path typed in (a picture becomes `[Image #1]`) |
 | conversations | every conversation in `~/.claude/projects`, by folder, searched, resumed |
-| Claude Code | installed, updated and checked for each Linux account from the pages (Anthropic's installer or npm); signed in in a terminal; the model, the permission mode and more words chosen per terminal; an environment for all of them |
+| Claude Code | installed, updated and checked for each Linux account from the pages (Anthropic's installer or npm); signed in in a terminal; every option of its command line as a field when a chat starts, from a start box as claude.ai's; its own tab: settings, permissions, hooks, memory (CLAUDE.md), MCP servers, agents, commands, skills, output styles, plugins and marketplaces, background sessions, usage, keybindings - for an account and a project |
 | accounts | administrators and users; a user has terminals of their own only, as the Linux account given, and files in their folders; Linux accounts made from the pages; sign-ins listed and ended; pauses after wrong passwords, the locked out listed and cleared; the columns of every table laid out per person; your own settings to a file and back |
 | second step | after the password a code too, for everybody when switched on: an authenticator app (QR code), or a code by e-mail or SMS; set up by each account at its first sign-in, reset by an administrator or `ai --reset-2fa` |
 | mail and SMS | SMTP (STARTTLS, TLS, PLAIN, LOGIN, CRAM-MD5, XOAUTH2) or straight to the recipients' MX; SMS through an HTTP gateway, a modem's spool (smstools3, gammu) or a Teltonika; the mails and SMS of a code edited in otp's designer, in Czech and English, as they arrive; otp's outgoing mail - what the other side did not take yet tried again by itself (greylisting), sent again or taken out by hand; notices of warnings and failures by mail |
@@ -60,7 +60,8 @@ In colour (colorama), `--json` for scripts; the console and every command:
 
 Installing it: [INSTALL.md](INSTALL.md). How it is put together:
 [docs/how-it-works.md](docs/how-it-works.md). The terminals in detail:
-[docs/terminals.md](docs/terminals.md). Signing in, the second step, mail, SMS and TLS:
+[docs/terminals.md](docs/terminals.md). The Claude Code tab:
+[docs/claude-code.md](docs/claude-code.md). Signing in, the second step, mail, SMS and TLS:
 [docs/security.md](docs/security.md). Copies, backups and putting them back:
 [docs/backups.md](docs/backups.md). New versions and how they are made:
 [docs/releases.md](docs/releases.md).
