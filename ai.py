@@ -34,8 +34,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import collections
 import fcntl
+import ftplib
 import getpass
 import grp
 import hashlib
@@ -158,9 +160,17 @@ DEFAULTS = {
     'db_copy_on': True,
     'db_copy_hour': 2,
     'db_copy_keep': 14,
+    # backups to other machines (otp's)
+    'rbackup': False,
+    'rbackup_at': '04:15',
+    'rbackup_every': 'daily',
+    'rbackup_day': 7,
+    'rbackup_keep': 30,
+    'rbackup_keep_days': 0,
+    'rbackup_password': '',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
-SEALED_KEYS = ('smtp_password',)
+SEALED_KEYS = ('smtp_password', 'rbackup_password')
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
 # set in /etc/ai/config.json or by its own page (the firewall, the network...).
@@ -229,6 +239,23 @@ SCHEMA = [
      {'min': 0, 'max': 23, 'when': ['db_copy_on', [True]]}),
     ('db_copy_keep', 'db', 'int', 'Copies kept', 'The newest ones; older ones are taken away.',
      {'min': 1, 'max': 365}),
+    ('rbackup', 'backup', 'bool', 'Backups to the destinations on a schedule',
+     'A backup is made and sent to every destination switched on, at the time below. Back up now '
+     'sends one whenever wanted.', {}),
+    ('rbackup_at', 'backup', 'str', 'At', 'When, as HH:MM on this machine\'s clock.',
+     {'when': ['rbackup', [True]]}),
+    ('rbackup_every', 'backup', 'choice', 'How often', 'daily, or weekly on the day below.',
+     {'choices': [['daily', 'daily'], ['weekly', 'weekly']], 'when': ['rbackup', [True]]}),
+    ('rbackup_day', 'backup', 'int', 'On (1 Monday - 7 Sunday)', 'The day of a weekly backup.',
+     {'min': 1, 'max': 7, 'when': ['rbackup_every', ['weekly']]}),
+    ('rbackup_keep', 'backup', 'int', 'Backups kept at each destination',
+     'How many of this server\'s backups each destination keeps; the oldest go once a new one is there.',
+     {'min': 1, 'max': 1000}),
+    ('rbackup_keep_days', 'backup', 'int', 'And none older than (days)',
+     'Older ones are taken away too - 0: only the count above decides.', {'min': 0, 'max': 3650}),
+    ('rbackup_password', 'backup', 'password', 'The password of the backups',
+     'Every backup is locked with it (AES-256, opened with ai or with openssl alone). Keep it apart '
+     'from the backups: without it none of them can be opened. Without one nothing is sent.', {'secret': True}),
     ('admin_2fa', 'access', 'bool', 'The second step of signing in, for everybody',
      'After a right password these pages ask for a code too: from an authenticator app, or sent '
      'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
@@ -4110,6 +4137,1423 @@ def cert_now_info():
         return None
 
 
+# ---------------------------------------------------------------------------
+# Backups to another machine (otp's, 1.0.109)
+# ---------------------------------------------------------------------------
+# One file that brings any loss back onto a machine installed from nothing:
+# the whole database (accounts, settings, events, the list of terminals, the
+# certificate and TLS, the firewall), the key its secrets are sealed with,
+# the machine's config.json, a manifest with the checksum of each, and
+# RESTORE.md - the exact steps. Locked with a password kept in the settings
+# (openssl enc, AES-256-CBC, PBKDF2-SHA256: opened with ai, or with openssl
+# alone on any machine). RESTORE.md and a .sha256 also go beside it, not
+# locked, so the steps can be read before anything is opened.
+#
+# Where they go: a folder (an NFS or other mount), FTP, FTPS (explicit or
+# implicit), SFTP, SCP or SMB, each with its name and password, SSH keys made
+# here or brought, the server's host key or certificate checked, a client
+# certificate for FTPS; old ones are taken away as kept-count and age say.
+RB_KINDS = ('folder', 'ftp', 'ftps', 'sftp', 'scp', 'smb')
+RB_KIND_WORDS = {'folder': 'a folder', 'ftp': 'FTP', 'ftps': 'FTPS', 'sftp': 'SFTP',
+                 'scp': 'SCP (ssh)', 'smb': 'SMB (Windows share, Samba)'}
+RB_PORTS = {'ftp': 21, 'ftps': 21, 'sftp': 22, 'scp': 22, 'smb': 445}
+RB_SEALED = ('password', 'key', 'client_key', 'key_pass')
+RB_BIND = 'rbackup'
+RB_LOCK = threading.Lock()
+RB_JOB = {'running': False, 'what': '', 'says': '', 'done': 0, 'whole': 0, 'error': '',
+          'began': 0, 'ended': 0, 'result': None, 'by': ''}
+RB_ITER = 600000
+RB_NAME_RE = re.compile(r'^ai-backup-(?P<site>[A-Za-z0-9_.-]+?)-(?P<node>[A-Za-z0-9_.-]+)-'
+                        r'(?P<stamp>\d{8}-\d{6})\.tar\.gz(?P<enc>\.enc)?\Z')
+RB_TIMEOUT = 60
+
+
+class RbError(Exception):
+    pass
+
+
+def rb_clean(text, what, most=200, pattern=None, empty=True):
+    t = str(text if text is not None else '').strip()
+    if not t and empty:
+        return ''
+    if len(t) > most or re.search(r'[\x00-\x1f\x7f]', t):
+        raise ValueError('%s: at most %d characters, one line' % (what, most))
+    if pattern and t and not re.match(pattern, t):
+        raise ValueError('%s: %r is not one' % (what, t[:60]))
+    return t
+
+
+def rb_slug(text):
+    return re.sub(r'[^A-Za-z0-9_.]+', '_', str(text or 'ai')).strip('_.')[:40] or 'ai'
+
+
+# ---- the destinations ---------------------------------------------------------------
+def rb_targets(store):
+    try:
+        got = json.loads(store.get_meta('rbackup:targets') or '[]')
+    except ValueError:
+        got = []
+    return [t for t in got if isinstance(t, dict) and t.get('id')]
+
+
+def rb_put_targets(store, targets):
+    store.set_meta('rbackup:targets', json.dumps(targets))
+
+
+def rb_target(store, tid):
+    return next((t for t in rb_targets(store) if t['id'] == str(tid)), None)
+
+
+def rb_secret(t, k):
+    v = t.get(k) or ''
+    return (unseal_secret(v, bind=RB_BIND) or '') if v else ''
+
+
+def ssh_fingerprints(lines):
+    """The SHA256 fingerprints of known_hosts lines, as ssh-keygen says them."""
+    if not lines.strip() or not shutil.which('ssh-keygen'):
+        return []
+    got = subprocess.run(['ssh-keygen', '-lf', '-'], input=lines, capture_output=True,
+                         text=True, timeout=20)
+    return [x.strip() for x in got.stdout.splitlines() if x.strip()]
+
+
+def rb_view(t):
+    """A destination as the pages see it: nothing secret, what it has said."""
+    out = {k: v for k, v in t.items() if k not in RB_SEALED}
+    for k in RB_SEALED:
+        out['has_' + k] = bool(t.get(k))
+    out['kind_words'] = RB_KIND_WORDS.get(t.get('kind'), t.get('kind'))
+    if t.get('password'):
+        out['password'] = secret_shown(rb_secret(t, 'password'), last=True)
+    if t.get('hostkey'):
+        out['hostkey_fp'] = ssh_fingerprints(t['hostkey'])
+    if t.get('client_cert'):
+        try:
+            out['client_cert_info'] = cert_info(t['client_cert'])
+        except Exception:                               # noqa: BLE001
+            out['client_cert_info'] = None
+    if t.get('ca'):
+        try:
+            out['ca_info'] = cert_info(t['ca'])
+        except Exception:                               # noqa: BLE001
+            out['ca_info'] = None
+    return out
+
+
+def rb_checked(data, old=None):
+    """A destination as typed on the pages, checked; secrets left out or as
+    dots keep what was there."""
+    old = dict(old or {})
+    if not isinstance(data, dict):
+        raise ValueError('a destination is an object')
+    kind = str(data.get('kind') or old.get('kind') or '')
+    if kind not in RB_KINDS:
+        raise ValueError('the kind is one of %s' % ', '.join(RB_KINDS))
+    t = {'id': old.get('id') or secrets.token_hex(6), 'kind': kind}
+    t['name'] = rb_clean(data.get('name'), 'the name', 60) or \
+        ('%s %s' % (RB_KIND_WORDS[kind], data.get('host') or data.get('path') or '')).strip()
+    t['enabled'] = 1 if data.get('enabled', old.get('enabled', 1)) else 0
+    t['path'] = rb_clean(data.get('path'), 'the folder', 400)
+    if kind == 'folder':
+        if not t['path'].startswith('/'):
+            raise ValueError('the folder is a whole path on this machine (/mnt/backup/ai)')
+        if re.search(r'(^|/)\.\.(/|$)', t['path']):
+            raise ValueError('the folder has no .. in it')
+    else:
+        t['host'] = rb_clean(data.get('host'), 'the server', 253,
+                             r'^[A-Za-z0-9][A-Za-z0-9.:_-]*\Z', empty=False)
+        try:
+            port = int(data.get('port') or RB_PORTS.get(kind) or 0)
+        except (TypeError, ValueError):
+            raise ValueError('the port is a number')
+        if kind == 'ftps' and data.get('implicit') and not data.get('port'):
+            port = 990
+        if not 1 <= port <= 65535:
+            raise ValueError('the port is 1 to 65535')
+        t['port'] = port
+        t['user'] = rb_clean(data.get('user'), 'the account', 128, r'^[^\s:@/\\]+\Z') or ''
+        # Nothing a tool on the way reads as more (1.0.136): smbclient takes
+        # ; as the next command whatever the quotes, ssh a leading - as an
+        # option of its own.
+        if t['user'].startswith('-'):
+            raise ValueError('the account does not begin with -')
+        if re.search(r'[;"]', t['path']) or t['path'].lstrip().startswith('-'):
+            raise ValueError('the folder has no ; or " in it, and does not begin with -')
+        if kind != 'smb' and re.search(r'(^|/)\.\.(/|$)', t['path']):
+            raise ValueError('the folder has no .. in it')
+        if kind == 'scp' and re.search(r'[^A-Za-z0-9._/~+@%=,-]', t['path']):
+            # scp before OpenSSH 9 hands the far path to the shell there
+            # (1.0.139): $( ), `, |, & and spaces ran or broke.
+            raise ValueError('the folder (SCP) is letters, digits and . _ / ~ + @ % = , - '
+                             'only - use SFTP for any other')
+    pw = data.get('password')
+    # The saved password goes only to the server it was saved for (1.0.149):
+    # with another server typed in, Try it sent it there - to whoever the
+    # administrator chose. Typed again for a new one.
+    moved = bool(old) and (old.get('kind') != kind or
+                           str(old.get('host') or '').lower() != str(t.get('host') or '').lower() or
+                           int(old.get('port') or 0) != int(t.get('port') or 0))
+    if (pw is None or is_masked(pw)) and moved and old.get('password'):
+        raise ValueError('the server changed: type the password again')
+    if pw is None or is_masked(pw):
+        t['password'] = old.get('password') or ''
+    else:
+        pw = str(pw)
+        if len(pw) > 512 or '\n' in pw or '\x00' in pw:
+            raise ValueError('the password is one line, at most 512 characters')
+        t['password'] = seal_secret(pw, bind=RB_BIND) if pw else ''
+    if kind in ('sftp', 'scp'):
+        for k in ('key', 'pub', 'ssh_cert', 'hostkey', 'key_pass'):
+            if k in old:
+                t[k] = old[k]
+        if data.get('ssh_cert') is not None:
+            c = str(data.get('ssh_cert') or '').strip()
+            if c and not re.match(r'^[a-z0-9@.-]+-cert-v01@openssh\.com AAAA[A-Za-z0-9+/=]+( .*)?\Z',
+                                  c):
+                raise ValueError('the SSH certificate is the one line of a ...-cert.pub file')
+            t['ssh_cert'] = c
+    if kind in ('ftp', 'ftps'):
+        t['passive'] = 0 if data.get('passive', old.get('passive', 1)) in (0, '0', False) else 1
+    if kind == 'ftps':
+        t['implicit'] = 1 if data.get('implicit', old.get('implicit')) else 0
+        check = str(data.get('tls_check') or old.get('tls_check') or 'system')
+        if check not in ('system', 'ca', 'pin', 'none'):
+            raise ValueError('the server certificate is checked against system, ca, pin or none')
+        t['tls_check'] = check
+        for k in ('ca', 'pin', 'client_cert', 'client_key'):
+            if k in old:
+                t[k] = old[k]
+        if data.get('ca') is not None:
+            ca = str(data.get('ca') or '').strip()
+            if ca and not PEM_CERT.search(ca):
+                raise ValueError('the authority is a PEM certificate (-----BEGIN CERTIFICATE-----)')
+            t['ca'] = '\n'.join(m.group(0) for m in PEM_CERT.finditer(ca)) + '\n' if ca else ''
+        if data.get('pin') is not None:
+            pin = re.sub(r'[^0-9A-Fa-f]', '', str(data.get('pin') or '')).lower()
+            if pin and len(pin) != 64:
+                raise ValueError('the pinned fingerprint is SHA-256: 64 hex digits')
+            t['pin'] = pin
+        if check == 'ca' and not t.get('ca'):
+            raise ValueError('checked against an authority: give its certificate')
+        if check == 'pin' and not t.get('pin'):
+            raise ValueError('pinned: the fingerprint is needed - Try it shows the server\'s')
+    if kind == 'smb':
+        t['share'] = rb_clean(data.get('share'), 'the share', 80, r'^[^\\/:*?"<>|;-][^\\/:*?"<>|;]*\Z',
+                              empty=False)
+        t['domain'] = rb_clean(data.get('domain'), 'the domain', 64, r'^[A-Za-z0-9._-]+\Z')
+        t['smb_encrypt'] = 1 if data.get('smb_encrypt', old.get('smb_encrypt', 1)) else 0
+        if re.search(r'(^|[\\/])\.\.([\\/]|$)', t['path']):
+            raise ValueError('the folder has no .. in it')
+    for k in ('last', 'made'):
+        if k in old:
+            t[k] = old[k]
+    return t
+
+
+def rb_save(store, data, by):
+    with RB_LOCK:
+        targets = rb_targets(store)
+        old = next((x for x in targets if x['id'] == str(data.get('id') or '')), None)
+        if data.get('id') and not old:
+            raise ValueError('no such destination')
+        t = rb_checked(data, old)
+        if old:
+            targets = [t if x['id'] == t['id'] else x for x in targets]
+        else:
+            t['made'] = time.time()
+            if len(targets) >= 20:
+                raise ValueError('20 destinations at most')
+            targets.append(t)
+        rb_put_targets(store, targets)
+    store.add_event('settings', '%s %s the backup destination %s (%s)' % (
+        by, 'changed' if old else 'added', t['name'], RB_KIND_WORDS[t['kind']]), who=by)
+    return t
+
+
+def rb_set_fields(store, tid, by, said, **fields):
+    with RB_LOCK:
+        targets = rb_targets(store)
+        t = next((x for x in targets if x['id'] == str(tid)), None)
+        if not t:
+            raise ValueError('no such destination')
+        for k, v in fields.items():
+            if v is None:
+                t.pop(k, None)
+            else:
+                t[k] = v
+        rb_put_targets(store, targets)
+    if said:
+        store.add_event('settings', '%s: the backup destination %s - %s' % (by, t['name'], said),
+                        who=by)
+    return t
+
+
+def rb_delete(store, tid, by):
+    with RB_LOCK:
+        targets = rb_targets(store)
+        t = next((x for x in targets if x['id'] == str(tid)), None)
+        if not t:
+            raise ValueError('no such destination')
+        rb_put_targets(store, [x for x in targets if x['id'] != t['id']])
+    store.add_event('settings', '%s took away the backup destination %s' % (by, t['name']),
+                    'warn', who=by)
+
+
+# ---- keys and certificates ----------------------------------------------------------
+def ssh_keygen(comment):
+    if not shutil.which('ssh-keygen'):
+        raise ValueError('ssh-keygen is not on this machine (dnf install openssh-clients)')
+    with tempfile.TemporaryDirectory(prefix='ai-key-') as d:
+        path = os.path.join(d, 'k')
+        got = subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', comment,
+                              '-f', path], capture_output=True, text=True, timeout=30)
+        if got.returncode != 0:
+            raise ValueError('ssh-keygen: %s' % (got.stderr or got.stdout).strip()[:200])
+        with open(path) as f:
+            private = f.read()
+        with open(path + '.pub') as f:
+            public = f.read().strip()
+    return private, public
+
+
+def rb_ssh_public_of(private, passphrase=''):
+    """The public half of a private key given - and that it is one."""
+    if not shutil.which('ssh-keygen'):
+        raise ValueError('ssh-keygen is not on this machine (dnf install openssh-clients)')
+    private = str(private or '').replace('\r\n', '\n').strip() + '\n'
+    if 'PRIVATE KEY-----' not in private:
+        raise ValueError('that is not a private key (-----BEGIN OPENSSH PRIVATE KEY----- or '
+                         'another PEM private key)')
+    with tempfile.TemporaryDirectory(prefix='ai-key-') as d:
+        path = os.path.join(d, 'k')
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(private)
+        # The passphrase through SSH_ASKPASS, not on the command line where
+        # `ps` shows it (1.0.136).
+        env = dict(os.environ, DISPLAY=':0', SSH_ASKPASS_REQUIRE='force')
+        if passphrase:
+            ask = os.path.join(d, 'ask')
+            with open(ask, 'w') as f:
+                f.write('#!/bin/sh\nprintf "%s\\n" "$AI_RB_SECRET"\n')
+            os.chmod(ask, 0o700)
+            env.update(SSH_ASKPASS=ask, AI_RB_SECRET=passphrase)
+            argv = ['ssh-keygen', '-y', '-f', path]
+        else:
+            argv = ['ssh-keygen', '-y', '-P', '', '-f', path]
+        got = subprocess.run(argv, capture_output=True, text=True, timeout=20, env=env,
+                             stdin=subprocess.DEVNULL)
+    if got.returncode != 0:
+        said = (got.stderr or got.stdout).strip()
+        if 'passphrase' in said.lower() or 'incorrect' in said.lower():
+            raise ValueError('the key is locked with a passphrase: give it too')
+        raise ValueError('ssh-keygen does not read it: %s' % said[:200])
+    return private, got.stdout.strip()
+
+
+def rb_client_cert_make(cn, days=1825):
+    """A key and a self-signed client certificate for FTPS."""
+    key = new_key('ec')
+    with tempfile.TemporaryDirectory(prefix='ai-crt-') as d:
+        kf = os.path.join(d, 'k.pem')
+        with open(kf, 'w') as f:
+            f.write(key)
+        os.chmod(kf, 0o600)
+        cn = re.sub(r'[^A-Za-z0-9.@_-]', '', str(cn or 'ai-backup'))[:64] or 'ai-backup'
+        crt = _openssl(['req', '-new', '-x509', '-key', kf, '-days', str(int(days)), '-subj',
+                        '/CN=' + cn, '-addext', 'extendedKeyUsage=clientAuth',
+                        '-addext', 'keyUsage=critical,digitalSignature'],
+                       what='the certificate').decode()
+    return key, crt
+
+
+def rb_client_cert_given(text, password=''):
+    """A client certificate brought: PEM (certificate and key, in any order)
+    or PFX (base64 of it, with its password)."""
+    text = str(text or '').strip()
+    if 'BEGIN' in text:
+        certs = [m.group(0) for m in PEM_CERT.finditer(text)]
+        m = re.search(r'-----BEGIN (?:[A-Z ]*)PRIVATE KEY-----[\s\S]+?-----END (?:[A-Z ]*)'
+                      r'PRIVATE KEY-----', text)
+        if not certs or not m:
+            raise ValueError('a client certificate needs its certificate and its private key')
+        key = m.group(0) + '\n'
+        if 'ENCRYPTED' in key:
+            key = _openssl(['pkey', '-passin', 'env:AI_PW'], key.encode(),
+                           env={'AI_PW': password}, what='the key (its password)').decode()
+        if _pub_of_key(key).strip() != _pub_of_cert(certs[0]).strip():
+            raise ValueError('the key is not the one of this certificate')
+        return key, '\n'.join(certs) + '\n'
+    try:
+        pfx = base64.b64decode(text, validate=False)
+    except (binascii.Error, ValueError):
+        raise ValueError('neither PEM nor PFX')
+    with tempfile.TemporaryDirectory(prefix='ai-pfx-') as d:
+        pf = os.path.join(d, 'c.pfx')
+        with open(pf, 'wb') as f:
+            f.write(pfx)
+        both = ''
+        for extra in ([], ['-legacy']):
+            try:
+                both = _openssl(['pkcs12', '-in', pf, '-nodes', '-passin', 'env:AI_PW'] + extra,
+                                env={'AI_PW': password}, what='the PFX (its password?)').decode()
+                break
+            except ValueError:
+                if extra:
+                    raise
+    return rb_client_cert_given(both)
+
+
+# ---- the transports ------------------------------------------------------------------
+class RbFolder(object):
+    def __init__(self, t):
+        self.t = t
+        self.dir = t['path']
+
+    def open(self):
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+        except OSError as e:
+            raise RbError('the folder %s cannot be made: %s' % (self.dir, e))
+        if not os.access(self.dir, os.W_OK):
+            raise RbError('this machine may not write into %s' % self.dir)
+
+    def put(self, local, name):
+        part = os.path.join(self.dir, '.%s.part' % name)
+        shutil.copyfile(local, part)
+        os.chmod(part, 0o640)
+        os.replace(part, os.path.join(self.dir, name))
+
+    def get(self, name, local):
+        shutil.copyfile(os.path.join(self.dir, rb_safe_name(name)), local)
+
+    def list(self):
+        out = []
+        for e in os.scandir(self.dir):
+            if e.is_file() and not e.name.startswith('.'):
+                st = e.stat()
+                out.append({'name': e.name, 'size': st.st_size, 'mtime': st.st_mtime})
+        return out
+
+    def delete(self, name):
+        os.unlink(os.path.join(self.dir, rb_safe_name(name)))
+
+    def close(self):
+        pass
+
+
+def rb_safe_name(name):
+    name = str(name or '')
+    if not re.match(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}\Z', name):
+        raise RbError('not a file name of a backup: %r' % name[:80])
+    return name
+
+
+class _ImplicitFTP_TLS(ftplib.FTP_TLS):
+    """FTPS on its own port (990): TLS from the first byte."""
+    def connect(self, host='', port=0, timeout=-999, source_address=None):
+        if host:
+            self.host = host
+        if port > 0:
+            self.port = port
+        if timeout != -999:
+            self.timeout = timeout
+        self.sock = socket.create_connection((self.host, self.port), self.timeout)
+        self.af = self.sock.family
+        self.sock = self.context.wrap_socket(self.sock, server_hostname=self.host)
+        self.file = self.sock.makefile('r', encoding=self.encoding)
+        self.welcome = self.getresp()
+        return self.welcome
+
+
+class _ReuseMixin(object):
+    """The data connection resumes the control connection's TLS session:
+    vsftpd, ProFTPD and FileZilla Server refuse one that does not (522)."""
+    def ntransfercmd(self, cmd, rest=None):
+        conn, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
+        if self._prot_p:
+            conn = self.context.wrap_socket(conn, server_hostname=self.host,
+                                            session=self.sock.session)
+        return conn, size
+
+
+class RbFtpTls(_ReuseMixin, ftplib.FTP_TLS):
+    pass
+
+
+class RbFtpTlsImplicit(_ReuseMixin, _ImplicitFTP_TLS):
+    pass
+
+
+class RbFtp(object):
+    def __init__(self, t):
+        self.t = t
+        self.ftp = None
+        self.tmp = None
+        self.seen = {}
+
+    def _context(self):
+        t = self.t
+        check = t.get('tls_check') or 'system'
+        if check == 'ca':
+            ctx = ssl.create_default_context(cadata=t.get('ca') or '')
+        elif check == 'system':
+            ctx = ssl.create_default_context()
+        else:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        if t.get('client_cert') and t.get('client_key'):
+            self.tmp = tempfile.mkdtemp(prefix='ai-ftps-')
+            cf, kf = os.path.join(self.tmp, 'c.pem'), os.path.join(self.tmp, 'k.pem')
+            with open(cf, 'w') as f:
+                f.write(t['client_cert'])
+            fd = os.open(kf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                f.write(rb_secret(t, 'client_key'))
+            ctx.load_cert_chain(cf, kf)
+        return ctx
+
+    def open(self):
+        t = self.t
+        try:
+            if t['kind'] == 'ftps':
+                cls = RbFtpTlsImplicit if t.get('implicit') else RbFtpTls
+                self.ftp = cls(context=self._context(), timeout=RB_TIMEOUT)
+                self.ftp.connect(t['host'], int(t['port']))
+                if not t.get('implicit'):
+                    self.ftp.auth()
+                der = self.ftp.sock.getpeercert(True)
+                fp = hashlib.sha256(der).hexdigest() if der else ''
+                self.seen = {'fingerprint': fp}
+                try:
+                    pem = ssl.DER_cert_to_PEM_cert(der)
+                    self.seen['cert'] = cert_info(pem)
+                except Exception:                       # noqa: BLE001
+                    pass
+                if (t.get('tls_check') == 'pin') and fp != (t.get('pin') or ''):
+                    raise RbError('the server answers with another certificate than the one '
+                                  'pinned (SHA-256 %s)' % fp)
+            else:
+                self.ftp = ftplib.FTP(timeout=RB_TIMEOUT)
+                self.ftp.connect(t['host'], int(t['port']))
+            self.ftp.login(t.get('user') or 'anonymous', rb_secret(t, 'password'))
+            if t['kind'] == 'ftps':
+                self.ftp.prot_p()
+            self.ftp.set_pasv(bool(t.get('passive', 1)))
+            self._cd(t.get('path') or '')
+        except ssl.SSLCertVerificationError as e:
+            raise RbError('the server\'s certificate is not trusted: %s - check it against '
+                          'its authority, or pin it' % e.verify_message)
+        except ftplib.error_perm as e:
+            raise RbError('the FTP server said: %s' % str(e)[:200])
+        except (OSError, EOFError, ftplib.Error) as e:
+            raise RbError(str(e)[:200] or e.__class__.__name__)
+
+    def _cd(self, path):
+        if not path:
+            return
+        if path.startswith('/'):
+            self.ftp.cwd('/')
+        for part in [p for p in path.split('/') if p]:
+            try:
+                self.ftp.cwd(part)
+            except ftplib.error_perm:
+                self.ftp.mkd(part)
+                self.ftp.cwd(part)
+
+    def put(self, local, name):
+        with open(local, 'rb') as f:
+            self.ftp.storbinary('STOR .%s.part' % name, f, blocksize=262144)
+        try:
+            self.ftp.delete(name)
+        except ftplib.error_perm:
+            pass
+        self.ftp.rename('.%s.part' % name, name)
+
+    def get(self, name, local):
+        with open(local, 'wb') as f:
+            self.ftp.retrbinary('RETR %s' % rb_safe_name(name), f.write, blocksize=262144)
+
+    def list(self):
+        out = []
+        try:
+            for name, facts in self.ftp.mlsd(facts=['type', 'size', 'modify']):
+                if facts.get('type') == 'file':
+                    m = facts.get('modify') or ''
+                    try:
+                        mt = datetime.strptime(m[:14], '%Y%m%d%H%M%S').replace(
+                            tzinfo=timezone.utc).timestamp()
+                    except ValueError:
+                        mt = 0
+                    out.append({'name': name, 'size': int(facts.get('size') or 0), 'mtime': mt})
+            return out
+        except ftplib.error_perm:
+            pass
+        for name in self.ftp.nlst():
+            name = name.rsplit('/', 1)[-1]
+            if name in ('.', '..'):
+                continue
+            try:
+                size = self.ftp.size(name) or 0
+            except ftplib.error_perm:
+                continue            # a folder
+            out.append({'name': name, 'size': size, 'mtime': 0})
+        return out
+
+    def delete(self, name):
+        self.ftp.delete(rb_safe_name(name))
+
+    def close(self):
+        try:
+            if self.ftp:
+                self.ftp.quit()
+        except Exception:                               # noqa: BLE001
+            try:
+                self.ftp.close()
+            except Exception:                           # noqa: BLE001
+                pass
+        if self.tmp:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+def ssh_keyscan(host, port):
+    """The server's host keys, as known_hosts lines - and their fingerprints."""
+    if not shutil.which('ssh-keyscan'):
+        raise ValueError('ssh-keyscan is not on this machine (dnf install openssh-clients)')
+    got = subprocess.run(['ssh-keyscan', '-T', '10', '-p', str(int(port)), host],
+                         capture_output=True, text=True, timeout=30)
+    lines = [x for x in got.stdout.splitlines() if x.strip() and not x.startswith('#')]
+    if not lines:
+        raise ValueError('%s:%s did not show a host key: %s' % (
+            host, port, (got.stderr or '').strip().splitlines()[-1:] or 'no answer'))
+    return '\n'.join(lines) + '\n', ssh_fingerprints('\n'.join(lines) + '\n')
+
+
+class RbSsh(object):
+    """SFTP (the sftp program) or SCP (scp, and ssh for the list and the
+    deleting) - OpenSSH itself, the server's host key checked against the one
+    trusted on the pages, a key of its own or a password."""
+    def __init__(self, t):
+        self.t = t
+        self.d = None
+
+    def open(self):
+        t = self.t
+        tools = ['ssh'] + (['sftp'] if t['kind'] == 'sftp' else ['scp'])
+        for tool in tools:
+            if not shutil.which(tool):
+                raise RbError('%s is not on this machine (dnf install openssh-clients)' % tool)
+        if not t.get('hostkey'):
+            raise RbError('the server\'s host key is not trusted yet: Try it, then trust the '
+                          'fingerprint it shows')
+        self.d = tempfile.mkdtemp(prefix='ai-ssh-')
+        kh = os.path.join(self.d, 'known_hosts')
+        with open(kh, 'w') as f:
+            f.write(t['hostkey'])
+        self.opts = ['-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + kh,
+                     '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=20',
+                     '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4',
+                     '-o', 'LogLevel=ERROR', '-o', 'IdentitiesOnly=yes', '-F', '/dev/null']
+        key = rb_secret(t, 'key')
+        if key:
+            kf = os.path.join(self.d, 'id')
+            fd = os.open(kf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                f.write(key if key.endswith('\n') else key + '\n')
+            self.opts += ['-i', kf]
+            if t.get('ssh_cert'):
+                cf = os.path.join(self.d, 'id-cert.pub')
+                with open(cf, 'w') as f:
+                    f.write(t['ssh_cert'] + '\n')
+                self.opts += ['-o', 'CertificateFile=' + cf]
+        else:
+            self.opts += ['-o', 'IdentityFile=/dev/null']
+        # A password (or the key's passphrase) through SSH_ASKPASS: never on
+        # a command line, never in a file of anybody's.
+        self.env = dict(os.environ, DISPLAY=':0', SSH_ASKPASS_REQUIRE='force')
+        # Each prompt its own answer (1.0.139): with a password and a key that
+        # has a passphrase, the password went to the key, and the key failed.
+        pw = rb_secret(t, 'password') or rb_secret(t, 'key_pass')
+        kp = rb_secret(t, 'key_pass') or rb_secret(t, 'password')
+        ask = os.path.join(self.d, 'ask')
+        with open(ask, 'w') as f:
+            f.write('#!/bin/sh\ncase "$1" in\n  *assphrase*) printf "%s\\n" "$AI_RB_KEYPASS";;\n'
+                    '  *) printf "%s\\n" "$AI_RB_SECRET";;\nesac\n')
+        os.chmod(ask, 0o700)
+        self.env.update(SSH_ASKPASS=ask, AI_RB_SECRET=pw, AI_RB_KEYPASS=kp)
+        auths = ['publickey'] if key else []
+        if rb_secret(t, 'password'):
+            auths += ['password', 'keyboard-interactive']
+        if not auths:
+            raise RbError('neither a key nor a password is set')
+        self.opts += ['-o', 'PreferredAuthentications=' + ','.join(auths),
+                      '-o', 'NumberOfPasswordPrompts=1']
+        if rb_secret(t, 'password') or rb_secret(t, 'key_pass'):
+            # sftp -b asks ssh for batch mode, which takes no password; the
+            # first value given wins, and this comes first.
+            self.opts += ['-o', 'BatchMode=no']
+        host = str(t['host']).strip('[]')
+        self.dest = '%s@%s' % (t.get('user') or 'root', host)
+        # scp and sftp read user@host:path - an IPv6 address in brackets
+        # there (1.0.146), ssh takes it bare.
+        self.rdest = '%s@[%s]' % (t.get('user') or 'root', host) if ':' in host else self.dest
+        self.dir = (t.get('path') or '').rstrip('/') or '.'
+        # Signed in and the folder made, at once - the errors said here.
+        if t['kind'] == 'sftp':
+            parts = [p for p in self.dir.split('/') if p and p != '.']
+            cmds = []
+            acc = '/' if self.dir.startswith('/') else ''
+            for p in parts:
+                acc = (acc + '/' + p) if acc not in ('', '/') else (acc + p)
+                cmds.append('-mkdir "%s"' % acc)
+            cmds.append('cd "%s"' % self.dir)
+            self._sftp(cmds)
+        else:
+            self._ssh('mkdir -p -- %s && test -w %s' % (shlex.quote(self.dir),
+                                                        shlex.quote(self.dir)))
+
+    def _run(self, args, what, stdin=None, timeout=3600):
+        got = subprocess.run(args, input=stdin, capture_output=True, text=True,
+                             timeout=timeout, env=self.env, start_new_session=True)
+        if got.returncode != 0:
+            said = (got.stderr or got.stdout or '').strip().splitlines()
+            said = [x for x in said if x.strip() and not x.startswith('Warning: Permanently')]
+            tail = ' / '.join(said[-3:])[:300] or 'it said nothing (exit %d)' % got.returncode
+            if 'Host key verification failed' in tail or 'REMOTE HOST IDENTIFICATION' in tail:
+                tail = ('the server shows another host key than the one trusted - if it was '
+                        'reinstalled on purpose, Try it and trust the new one')
+            elif 'Permission denied' in tail:
+                tail = 'the server did not let the account in (%s)' % tail
+            raise RbError('%s: %s' % (what, tail))
+        return got.stdout
+
+    def _ssh(self, command):
+        return self._run(['ssh'] + self.opts + ['-p', str(int(self.t['port'])), self.dest,
+                                                command], 'ssh')
+
+    def _sftp(self, cmds, timeout=3600):
+        batch = os.path.join(self.d, 'batch')
+        with open(batch, 'w') as f:
+            f.write('\n'.join(cmds) + '\n')
+        return self._run(['sftp'] + self.opts + ['-P', str(int(self.t['port'])), '-b', batch,
+                                                 self.rdest], 'sftp', timeout=timeout)
+
+    def put(self, local, name):
+        name = rb_safe_name(name)
+        if self.t['kind'] == 'sftp':
+            self._sftp(['cd "%s"' % self.dir, 'put "%s" ".%s.part"' % (local, name),
+                        '-rm "%s"' % name, 'rename ".%s.part" "%s"' % (name, name)])
+        else:
+            self._run(['scp'] + self.opts + ['-P', str(int(self.t['port'])), '-q', local,
+                                             '%s:%s/.%s.part' % (self.rdest, self.dir, name)],
+                      'scp')
+            self._ssh('mv -f -- %s %s' % (shlex.quote('%s/.%s.part' % (self.dir, name)),
+                                          shlex.quote('%s/%s' % (self.dir, name))))
+
+    def get(self, name, local):
+        name = rb_safe_name(name)
+        if self.t['kind'] == 'sftp':
+            self._sftp(['cd "%s"' % self.dir, 'get "%s" "%s"' % (name, local)])
+        else:
+            self._run(['scp'] + self.opts + ['-P', str(int(self.t['port'])), '-q',
+                                             '%s:%s/%s' % (self.rdest, self.dir, name), local],
+                      'scp')
+
+    def list(self):
+        if self.t['kind'] == 'sftp':
+            text = self._sftp(['cd "%s"' % self.dir, 'ls -ln'])
+        else:
+            text = self._ssh('LC_ALL=C ls -ln -- %s' % shlex.quote(self.dir))
+        out = []
+        for line in text.splitlines():
+            f = line.split(None, 8)
+            if len(f) == 9 and f[0].startswith('-'):
+                name = f[8].rsplit('/', 1)[-1]
+                try:
+                    out.append({'name': name, 'size': int(f[4]), 'mtime': 0})
+                except ValueError:
+                    pass
+        return out
+
+    def delete(self, name):
+        name = rb_safe_name(name)
+        if self.t['kind'] == 'sftp':
+            self._sftp(['cd "%s"' % self.dir, 'rm "%s"' % name])
+        else:
+            self._ssh('rm -f -- %s' % shlex.quote('%s/%s' % (self.dir, name)))
+
+    def close(self):
+        if self.d:
+            shutil.rmtree(self.d, ignore_errors=True)
+
+
+class RbSmb(object):
+    """SMB through smbclient: an authentication file of its own (never the
+    password on a command line), SMB2 at least, SMB3 encryption when asked."""
+    def __init__(self, t):
+        self.t = t
+        self.d = None
+
+    def open(self):
+        t = self.t
+        if not shutil.which('smbclient'):
+            raise RbError('smbclient is not on this machine (dnf install samba-client)')
+        self.d = tempfile.mkdtemp(prefix='ai-smb-')
+        auth = os.path.join(self.d, 'auth')
+        fd = os.open(auth, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write('username = %s\npassword = %s\n' % (t.get('user') or 'guest',
+                                                       rb_secret(t, 'password')))
+            if t.get('domain'):
+                f.write('domain = %s\n' % t['domain'])
+        self.args = ['smbclient', '//%s/%s' % (t['host'], t['share']), '-A', auth,
+                     '-p', str(int(t['port'])), '--option=client min protocol=SMB2',
+                     '-t', str(RB_TIMEOUT)]
+        if t.get('smb_encrypt'):
+            self.args += ['--client-protection=encrypt']
+        self.dir = (t.get('path') or '').replace('/', '\\').strip('\\')
+        cmds = []
+        acc = ''
+        for p in [x for x in self.dir.split('\\') if x]:
+            acc = (acc + '\\' + p) if acc else p
+            cmds.append('mkdir "%s"' % acc)
+        self._run(cmds + ['cd "\\%s"' % self.dir, 'ls'], ignore=('NT_STATUS_OBJECT_NAME_COLLISION',))
+
+    def _run(self, cmds, ignore=(), timeout=3600):
+        got = subprocess.run(self.args + ['-c', '; '.join(cmds)], capture_output=True, text=True,
+                             timeout=timeout, cwd=self.d, start_new_session=True)
+        text = (got.stdout or '') + (got.stderr or '')
+        bad = [x for x in text.splitlines() if 'NT_STATUS_' in x and
+               not any(i in x for i in ignore)]
+        if got.returncode != 0 or bad:
+            said = ' / '.join((bad or text.strip().splitlines() or ['no answer'])[-2:])[:300]
+            if 'NT_STATUS_LOGON_FAILURE' in said:
+                said = 'the server did not take the account and password (%s)' % said
+            elif 'NT_STATUS_BAD_NETWORK_NAME' in said:
+                said = 'there is no share %s on %s' % (self.t['share'], self.t['host'])
+            elif 'protection' in said.lower() and 'unknown' in said.lower():
+                said = ('this smbclient does not know --client-protection: switch "SMB3 '
+                        'encryption required" off or install a newer samba-client')
+            raise RbError('smbclient: %s' % said)
+        return got.stdout or ''
+
+    def _cd(self):
+        return 'cd "\\%s"' % self.dir
+
+    def put(self, local, name):
+        name = rb_safe_name(name)
+        self._run([self._cd(), 'put "%s" ".%s.part"' % (local, name), 'del "%s"' % name,
+                   'rename ".%s.part" "%s"' % (name, name)], ignore=('NT_STATUS_NO_SUCH_FILE',
+                                                                   'NT_STATUS_OBJECT_NAME_NOT_FOUND'))
+
+    def get(self, name, local):
+        self._run([self._cd(), 'get "%s" "%s"' % (rb_safe_name(name), local)])
+
+    def list(self):
+        out = []
+        for line in self._run([self._cd(), 'ls']).splitlines():
+            m = re.match(r'^\s\s(.+?)\s+([ADHNRS]*)\s+(\d+)\s+(\w{3} \w{3}\s+\d+ [\d:]+ \d{4})\s*$',
+                         line)
+            if m and 'D' not in m.group(2) and m.group(1) not in ('.', '..'):
+                try:
+                    mt = datetime.strptime(re.sub(r'\s+', ' ', m.group(4)),
+                                           '%a %b %d %H:%M:%S %Y').timestamp()
+                except ValueError:
+                    mt = 0
+                out.append({'name': m.group(1), 'size': int(m.group(3)), 'mtime': mt})
+        return out
+
+    def delete(self, name):
+        self._run([self._cd(), 'del "%s"' % rb_safe_name(name)])
+
+    def close(self):
+        if self.d:
+            shutil.rmtree(self.d, ignore_errors=True)
+
+
+def rb_said(e):
+    """An error in words, whatever library raised it."""
+    if isinstance(e, EOFError):
+        return 'the server closed the connection'
+    if isinstance(e, socket.timeout):
+        return 'the server did not answer in time'
+    if isinstance(e, ssl.SSLCertVerificationError):
+        return ('the server\'s certificate is not trusted: %s - check it against its authority, '
+                'or pin it' % e.verify_message)
+    if isinstance(e, ftplib.Error):
+        return 'the FTP server said: %s' % str(e)[:300]
+    return scrub_secret(str(e) or e.__class__.__name__)[:400]
+
+
+def rb_transport(t):
+    return {'folder': RbFolder, 'ftp': RbFtp, 'ftps': RbFtp, 'sftp': RbSsh, 'scp': RbSsh,
+            'smb': RbSmb}[t['kind']](t)
+
+
+def rb_try(t):
+    """Signed in, a small file written, seen in the list, taken away again."""
+    out = {'ok': False, 'steps': []}
+    began = time.time()
+    tr = rb_transport(t)
+    try:
+        tr.open()
+        out['steps'].append('signed in, the folder is there')
+        if getattr(tr, 'seen', None):
+            out['server_cert'] = tr.seen
+        name = 'ai-try-%s-%s.txt' % (rb_slug(node_name()), secrets.token_hex(4))
+        with tempfile.NamedTemporaryFile('w', prefix='ai-try-', delete=False) as f:
+            f.write('ai %s on %s tried this destination at %s - this file is taken away again\n'
+                    % (__version__, node_name(), datetime.now().isoformat(timespec='seconds')))
+            local = f.name
+        try:
+            tr.put(local, name)
+        finally:
+            os.unlink(local)
+        out['steps'].append('a file written')
+        names = [x['name'] for x in tr.list()]
+        if name not in names:
+            raise RbError('the file written is not in the list the server gives')
+        out['steps'].append('it is in the list (%d file(s) there)' % len(names))
+        tr.delete(name)
+        out['steps'].append('taken away again')
+        out['ok'] = True
+    except Exception as e:                              # noqa: BLE001
+        out['error'] = rb_said(e)
+        if getattr(tr, 'seen', None):
+            out['server_cert'] = tr.seen
+    finally:
+        tr.close()
+    out['secs'] = round(time.time() - began, 1)
+    return out
+
+
+# ---- the backup itself -----------------------------------------------------------------
+def secret_shown(value, last=True):
+    said = str(value or '')
+    if not said:
+        return ''
+    if not last:
+        return '••••••••'
+    return '•' * min(10, max(4, len(said) - 2)) + said[-2:] if len(said) > 4 else '•' * 6
+
+
+def is_masked(value):
+    return isinstance(value, str) and value.startswith('•')
+
+
+def rb_password():
+    pw = str(CONFIG.get('rbackup_password') or '')
+    return (unseal_secret(pw, 'setting:rbackup_password') or '') if pw else ''
+
+
+def rb_restore_md(m):
+    """RESTORE.md: the exact steps, filled in with what this backup is."""
+    enc = m.get('encrypted')
+    name = m['file']
+    tar = name[:-4] if enc else name
+    site, node, ver = m.get('site') or 'ai', m.get('node') or '?', m.get('ai') or '?'
+    lines = [
+        '# Restoring ai from %s' % name, '',
+        '| | |', '|---|---|',
+        '| Made | %s |' % m.get('made_words'),
+        '| Installation | %s |' % site,
+        '| Server | %s (%s) |' % (node, m.get('host') or ''),
+        '| ai | %s |' % ver,
+        '| Locked | %s |' % ('yes - AES-256-CBC, PBKDF2-SHA256, %d rounds (openssl enc)' % RB_ITER if enc else
+                             '**no** - anybody with the file has every secret: keep it as you would the server'),
+        '| Accounts | %s |' % m.get('accounts', '?'),
+        '', 'Everything is in it: the whole database (the accounts of the pages and their second step,',
+        'every setting, the events, the list of terminals, the certificate and TLS of the pages, the',
+        'firewall, who may reach the pages), the key its secrets are sealed with (`secrets.key`) and',
+        'this machine\'s `/etc/ai/config.json`. Not in it: the files of the Linux accounts and their',
+        'Claude Code (`~/.claude`) - back those up as files.', '',
+        'Keep the password of the backups apart from the backups (a password vault): without it',
+        'the file cannot be opened - by anybody.', '',
+        '## 0. Check the file', '', '```bash',
+        'sha256sum -c %s.sha256          # "%s: OK"' % (name, name), '```', '',
+    ]
+    if enc:
+        lines += ['## 1. Open it', '',
+                  'ai opens it by itself (step 3). With openssl alone, on any machine:', '',
+                  '```bash',
+                  'openssl enc -d -aes-256-cbc -pbkdf2 -iter %d -md sha256 -in %s -out %s' % (RB_ITER, name, tar),
+                  '# it asks for the password of the backups',
+                  'tar tzf %s                    # what is inside' % tar, '```', '']
+    else:
+        lines += ['## 1. It is not locked', '', '```bash', 'tar tzf %s' % tar, '```', '']
+    lines += [
+        'Inside: `ai.db` (the SQLite database), `secrets.key`, `config.json`, `manifest.json`',
+        '(a checksum of each file) and this file.', '',
+        '## 2. A machine to put it on', '',
+        'AlmaLinux / Rocky / RHEL 9 or Debian / Ubuntu. Install ai **%s or newer** the same way as' % ver,
+        'the first time:', '', '```bash',
+        'curl -fsSL https://raw.githubusercontent.com/falco81/AI/main/install.sh -o install.sh',
+        'bash install.sh', '```', '',
+        '## 3. Put it back', '', '```bash',
+        'ai --restore-bundle %s          # shows what is in it, asks for the password' % name,
+        'ai --restore-bundle %s --yes    # puts it back' % name,
+        'systemctl restart ai', '```', '',
+        'The password may come from the environment instead (`AI_BACKUP_PASSWORD`).', '',
+        'What it does: a copy of what the new machine has is made first (/var/lib/ai/copies); then',
+        'the database is replaced with the one in the backup and `secrets.key` is put in place.', '',
+        '## By hand, without --restore-bundle', '', '```bash',
+        'systemctl stop ai',
+        'install -m 0600 secrets.key /var/lib/ai/secrets.key',
+        'install -m 0600 ai.db /var/lib/ai/ai.db && rm -f /var/lib/ai/ai.db-wal /var/lib/ai/ai.db-shm',
+        'systemctl start ai', '```', '',
+        '## 4. Check it', '', '```bash', 'ai --status', 'ai --users', '```', '',
+        'Then sign in to the pages with an account from the backup.', '',
+        '---', 'Made by ai %s on %s. The whole subject: docs/backups.md in the package.' % (__version__, node), '']
+    return '\n'.join(lines)
+
+
+def rb_manifest(store, base):
+    pw = rb_password()
+    try:
+        accounts = len(store.users())
+    except Exception:                                   # noqa: BLE001
+        accounts = '?'
+    return {'ai': __version__, 'made': time.time(),
+            'made_words': datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z').strip(),
+            'site': CONFIG.get('site_name') or 'ai', 'node': node_name(), 'host': socket.getfqdn(),
+            'accounts': accounts, 'encrypted': bool(pw), 'iter': RB_ITER if pw else 0,
+            'file': base + ('.tar.gz.enc' if pw else '.tar.gz'), 'files': {}}
+
+
+def rb_base():
+    return 'ai-backup-%s-%s-%s' % (rb_slug(CONFIG.get('site_name') or 'ai'), rb_slug(node_name()),
+                                   datetime.now().strftime('%Y%m%d-%H%M%S'))
+
+
+def rb_restore_guide(store):
+    m = rb_manifest(store, rb_base())
+    return {'md': rb_restore_md(m), 'name': 'RESTORE-%s.md' % rb_slug(node_name()), 'file': m['file']}
+
+
+def rb_build(store, work, progress=None):
+    """The backup, built in `work`: (path of the file to send, manifest, RESTORE.md)."""
+    import tarfile
+
+    def say(n, t):
+        if progress:
+            progress(n, 6, t)
+    base = rb_base()
+    inner = os.path.join(work, 'in')
+    os.makedirs(inner, mode=0o700)
+    say(1, 'the database is copied')
+    dst = sqlite3.connect(os.path.join(inner, 'ai.db'))
+    with store.lock:
+        store.db.backup(dst)
+    dst.close()
+    key = sealing_key(make=True)
+    with open(os.path.join(inner, 'secrets.key'), 'w') as f:
+        f.write(key.hex() + '\n')
+    if CONFIG_FILE.is_file():
+        shutil.copyfile(str(CONFIG_FILE), os.path.join(inner, 'config.json'))
+    say(2, 'what is in it is counted')
+    pw = rb_password()
+    m = rb_manifest(store, base)
+    for n in sorted(os.listdir(inner)):
+        p = os.path.join(inner, n)
+        h = hashlib.sha256()
+        with open(p, 'rb') as f:
+            for chunk in iter(lambda: f.read(1 << 20), b''):
+                h.update(chunk)
+        m['files'][n] = {'sha256': h.hexdigest(), 'bytes': os.path.getsize(p)}
+    md = rb_restore_md(m)
+    with open(os.path.join(inner, 'RESTORE.md'), 'w') as f:
+        f.write(md)
+    with open(os.path.join(inner, 'manifest.json'), 'w') as f:
+        json.dump(m, f, indent=2, default=str)
+    say(3, 'packed')
+    tar = os.path.join(work, base + '.tar.gz')
+    with tarfile.open(tar, 'w:gz', compresslevel=6) as tf:
+        for n in sorted(os.listdir(inner)):
+            tf.add(os.path.join(inner, n), arcname='%s/%s' % (base, n))
+    shutil.rmtree(inner, ignore_errors=True)
+    out = tar
+    if pw:
+        say(4, 'locked with the password of the backups')
+        out = tar + '.enc'
+        _openssl(['enc', '-aes-256-cbc', '-pbkdf2', '-iter', str(RB_ITER), '-md', 'sha256',
+                  '-salt', '-in', tar, '-out', out, '-pass', 'env:AI_RB_PASS'],
+                 env={'AI_RB_PASS': pw}, what='locking it')
+        os.unlink(tar)
+    h = hashlib.sha256()
+    with open(out, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    m['sha256'] = h.hexdigest()
+    m['bytes'] = os.path.getsize(out)
+    with open(os.path.join(work, m['file'] + '.sha256'), 'w') as f:
+        f.write('%s  %s\n' % (m['sha256'], m['file']))
+    with open(os.path.join(work, base + '-RESTORE.md'), 'w') as f:
+        f.write(md)
+    return out, m, md
+
+
+def rb_companions(name):
+    if not RB_NAME_RE.match(name):
+        return []
+    base = name.split('.tar.gz')[0]
+    return [name + '.sha256', base + '-RESTORE.md']
+
+
+def rb_retain(tr, keep, days, now=None):
+    """This server's backups at a destination beyond what is kept, taken away -
+    never the newest."""
+    now = now or time.time()
+    mine = rb_slug(node_name())
+    files = tr.list()
+    names = set(x['name'] for x in files)
+    ours = []
+    for x in files:
+        m = RB_NAME_RE.match(x['name'])
+        if m and m.group('node') == mine and m.group('site') == rb_slug(CONFIG.get('site_name') or 'ai'):
+            try:
+                when_ = datetime.strptime(m.group('stamp'), '%Y%m%d-%H%M%S').timestamp()
+            except ValueError:
+                continue
+            ours.append((when_, x['name']))
+    ours.sort(reverse=True)
+    gone = []
+    for i, (when_, name) in enumerate(ours):
+        if i == 0:
+            continue
+        if (keep and i >= keep) or (days and now - when_ > days * 86400):
+            for n in [name] + [c for c in rb_companions(name) if c in names]:
+                try:
+                    tr.delete(n)
+                except Exception:                       # noqa: BLE001
+                    pass
+            gone.append(name)
+    return gone
+
+
+def rb_run(store, by, only=None, progress=None):
+    """Made once, sent to every destination switched on (or the ones asked)."""
+    targets = [t for t in rb_targets(store) if (only and t['id'] in only) or (not only and t.get('enabled'))]
+    if not targets:
+        raise RbError('no destination is switched on')
+    # Never sent unlocked: it holds the key every secret is sealed with.
+    if not rb_password():
+        raise RbError('the backups have no password: set one (Settings - Backups) - unlocked, a copy would '
+                      'hand every secret of this server to whoever can read the destination')
+    work = tempfile.mkdtemp(prefix='ai-rbackup-', dir=str(STATE_DIR))
+    os.chmod(work, 0o700)
+    began = time.time()
+    run_ = {'at': began, 'by': by, 'node': node_name(), 'targets': [], 'ok': False}
+    try:
+        path, m, _md = rb_build(store, work, progress)
+        run_.update(file=m['file'], bytes=m['bytes'], encrypted=m['encrypted'], accounts=m['accounts'])
+        sha = os.path.join(work, m['file'] + '.sha256')
+        md = os.path.join(work, m['file'].split('.tar.gz')[0] + '-RESTORE.md')
+        for i, t in enumerate(targets):
+            if progress:
+                progress(5, 6, 'sent to %s (%d of %d)' % (t['name'], i + 1, len(targets)))
+            one = {'id': t['id'], 'name': t['name'], 'kind': t['kind'], 'ok': False}
+            t0 = time.time()
+            tr = rb_transport(t)
+            try:
+                tr.open()
+                tr.put(path, m['file'])
+                tr.put(sha, os.path.basename(sha))
+                tr.put(md, os.path.basename(md))
+                got = {x['name']: x['size'] for x in tr.list()}
+                if got.get(m['file']) not in (None, m['bytes']):
+                    raise RbError('the server holds %s bytes of it, not %s' % (got.get(m['file']), m['bytes']))
+                one['ok'] = True
+                try:
+                    one['taken_away'] = rb_retain(tr, int(CONFIG.get('rbackup_keep') or 0),
+                                                  int(CONFIG.get('rbackup_keep_days') or 0))
+                except Exception as e:                  # noqa: BLE001
+                    one['retain_error'] = str(e)[:200]
+            except Exception as e:                      # noqa: BLE001
+                one['error'] = rb_said(e)
+            finally:
+                tr.close()
+            one['secs'] = round(time.time() - t0, 1)
+            run_['targets'].append(one)
+            rb_set_fields(store, t['id'], '', '', last={'at': time.time(), 'ok': one['ok'],
+                                                        'error': one.get('error') or '',
+                                                        'file': m['file'], 'bytes': m['bytes']})
+        run_['ok'] = all(x['ok'] for x in run_['targets'])
+    except (RbError, OSError, ValueError, subprocess.SubprocessError) as e:
+        run_['error'] = scrub_secret(str(e))[:400]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    run_['secs'] = round(time.time() - began, 1)
+    rb_history_add(store, run_)
+    good = [x['name'] for x in run_['targets'] if x['ok']]
+    bad = ['%s (%s)' % (x['name'], x.get('error')) for x in run_['targets'] if not x['ok']]
+    store.add_event('backups', 'a backup of %s (%s) %s%s%s' % (
+        node_name(), human_bytes(run_.get('bytes') or 0), ('went to ' + ', '.join(good)) if good else 'went nowhere',
+        ('; not to ' + '; '.join(bad)) if bad else '', ('; ' + run_['error']) if run_.get('error') else ''),
+        'info' if run_['ok'] else 'error', who=by)
+    return run_
+
+
+def rb_history(store):
+    got = store.meta_json('rbackup:runs', []) or []
+    return [x for x in got if isinstance(x, dict)]
+
+
+def rb_history_forget(store, at=None, file=None):
+    with RB_LOCK:
+        runs = rb_history(store)
+        if at is None:
+            left = []
+        else:
+            left = [r for r in runs if not (abs(float(r.get('at') or 0) - float(at)) < 0.001 and
+                                           str(r.get('file') or '') == str(file or ''))]
+        store.set_meta_json('rbackup:runs', left)
+        return len(runs) - len(left)
+
+
+def rb_history_add(store, run_):
+    with RB_LOCK:
+        store.set_meta_json('rbackup:runs', ([run_] + rb_history(store))[:60])
+
+
+def rb_job_start(store, by, only=None, what='backup', work=None):
+    """In a thread of its own; the page follows RB_JOB."""
+    with RB_LOCK:
+        if RB_JOB['running']:
+            raise ValueError('a backup is being made or put back already')
+        RB_JOB.update(running=True, what=what, says='starting', done=0, whole=6, error='',
+                      began=time.time(), ended=0, result=None, by=by)
+
+    def progress(done, whole, says):
+        RB_JOB.update(done=done, whole=whole, says=says)
+
+    def go():
+        try:
+            RB_JOB['result'] = work(progress) if work else rb_run(store, by, only, progress)
+            if isinstance(RB_JOB['result'], dict) and RB_JOB['result'].get('error'):
+                RB_JOB['error'] = RB_JOB['result']['error']
+        except Exception as e:                          # noqa: BLE001
+            RB_JOB['error'] = scrub_secret(str(e))[:400]
+            log('remote backup: %s' % e, 'error')
+        finally:
+            RB_JOB.update(running=False, ended=time.time())
+    threading.Thread(target=go, name='rbackup', daemon=True).start()
+    return dict(RB_JOB)
+
+
+def rb_due(last_day):
+    if not CONFIG.get('rbackup'):
+        return None
+    try:
+        hh, mm = (int(x) for x in str(CONFIG.get('rbackup_at') or '04:15').split(':', 1))
+    except ValueError:
+        hh, mm = 4, 15
+    now = datetime.now()
+    if (now.hour, now.minute) < (hh, mm):
+        return None
+    if str(CONFIG.get('rbackup_every') or 'daily') == 'weekly' and now.isoweekday() != int(CONFIG.get('rbackup_day') or 7):
+        return None
+    today = now.strftime('%Y-%m-%d')
+    return today if today != last_day else None
+
+
+def rb_tick(daemon):
+    """From the daemon's loop: the scheduled backup."""
+    store = daemon.store
+    day = rb_due(store.get_meta('rbackup:day') or '')
+    if not day or RB_JOB['running']:
+        return
+    store.set_meta('rbackup:day', day)
+    if not any(t.get('enabled') for t in rb_targets(store)):
+        return
+    rb_job_start(store, 'ai (scheduled)')
+
+
+def rb_next_words():
+    if not CONFIG.get('rbackup'):
+        return ''
+    from datetime import timedelta
+    try:
+        hh, mm = (int(x) for x in str(CONFIG.get('rbackup_at') or '04:15').split(':', 1))
+    except ValueError:
+        hh, mm = 4, 15
+    now = datetime.now()
+    nxt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if nxt <= now:
+        nxt += timedelta(days=1)
+    if str(CONFIG.get('rbackup_every')) == 'weekly':
+        want = int(CONFIG.get('rbackup_day') or 7)
+        while nxt.isoweekday() != want:
+            nxt += timedelta(days=1)
+    return nxt.isoformat(timespec='minutes')
+
+
+# ---- putting one back -----------------------------------------------------------------
+def rb_open(path, password, work):
+    """A backup file opened into `work`: its folder and its manifest - every
+    file checked against the checksum the manifest has."""
+    import tarfile
+    src = path
+    with open(path, 'rb') as f:
+        head = f.read(8)
+    if head.startswith(b'Salted__'):
+        if not password:
+            raise RbError('the backup is locked: its password is needed')
+        src = os.path.join(work, 'b.tar.gz')
+        try:
+            _openssl(['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-iter', str(RB_ITER), '-md', 'sha256',
+                      '-in', path, '-out', src, '-pass', 'env:AI_RB_PASS'], env={'AI_RB_PASS': password},
+                     what='opening it')
+        except ValueError:
+            raise RbError('the password does not open it (or the file is damaged)')
+    elif not head.startswith(b'\x1f\x8b'):
+        raise RbError('that is not a backup of ai (neither locked nor a .tar.gz)')
+    elif password:
+        raise RbError('the backup is not locked, and backups of ai always are - it was not made by ai; not put in')
+    out = os.path.join(work, 'x')
+    os.makedirs(out, mode=0o700)
+    with tarfile.open(src, 'r:gz') as tf:
+        members = tf.getmembers()
+        tops = set()
+        for mb in members:
+            parts = mb.name.split('/')
+            if mb.name.startswith('/') or '..' in parts or not (mb.isfile() or mb.isdir()):
+                raise RbError('the archive has a file it may not have: %r' % mb.name[:100])
+            tops.add(parts[0])
+        if len(tops) != 1:
+            raise RbError('the archive is not one backup')
+        total = sum(mb.size for mb in members if mb.isfile())
+        try:
+            free = shutil.disk_usage(work).free
+        except OSError:
+            free = None
+        if free is not None and total > free - 256 * 1024 * 1024:
+            raise RbError('unpacked it is %s, more than there is room for here (%s free)'
+                          % (human_bytes(total), human_bytes(max(0, free))))
+        for mb in members:
+            if mb.isfile():
+                dst = os.path.join(out, *mb.name.split('/'))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                with tf.extractfile(mb) as s, open(dst, 'wb') as d:
+                    shutil.copyfileobj(s, d)
+    top = os.path.join(out, tops.pop())
+    try:
+        with open(os.path.join(top, 'manifest.json')) as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        raise RbError('there is no manifest in it')
+    for rel, want in (m.get('files') or {}).items():
+        p = os.path.join(top, *rel.split('/'))
+        h = hashlib.sha256()
+        try:
+            with open(p, 'rb') as f:
+                for chunk in iter(lambda: f.read(1 << 20), b''):
+                    h.update(chunk)
+        except OSError:
+            raise RbError('%s is missing from it' % rel)
+        if h.hexdigest() != want.get('sha256'):
+            raise RbError('%s is damaged (its checksum is not the one in the manifest)' % rel)
+    if not os.path.exists(os.path.join(top, 'ai.db')):
+        raise RbError('there is no database in it - is it a backup of ai?')
+    return top, m
+
+
+def rb_restore(daemon, path, password, by):
+    """Everything in a backup put back on this machine: the database and the
+    key of its secrets. A copy of what is here is made first."""
+    import tarfile
+    work = tempfile.mkdtemp(prefix='ai-putback-', dir=str(STATE_DIR))
+    os.chmod(work, 0o700)
+    try:
+        top, m = rb_open(path, password, work)
+        pack = os.path.join(work, 'back.tar.gz')
+        with tarfile.open(pack, 'w:gz') as tf:
+            for n in ('ai.db', 'secrets.key'):
+                if os.path.exists(os.path.join(top, n)):
+                    tf.add(os.path.join(top, n), arcname=n)
+        before = db_restore(daemon, pack, by)
+        daemon.store.add_event('backups', '%s put back the backup %s (made %s on %s, ai %s)' % (
+            by, os.path.basename(str(path)), m.get('made_words'), m.get('node'), m.get('ai')), 'warn', who=by)
+        return {'manifest': m, 'safety': before}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def rb_fetch(store, tid, name, dst):
+    t = rb_target(store, tid)
+    if not t:
+        raise ValueError('no such destination')
+    if not RB_NAME_RE.match(str(name or '')):
+        raise ValueError('not a backup of ai: %r' % str(name)[:80])
+    tr = rb_transport(t)
+    try:
+        tr.open()
+        tr.get(name, dst)
+    finally:
+        tr.close()
+
+
+def rb_remote_list(store, tid):
+    t = rb_target(store, tid)
+    if not t:
+        raise ValueError('no such destination')
+    tr = rb_transport(t)
+    try:
+        tr.open()
+        files = tr.list()
+    finally:
+        tr.close()
+    names = set(x['name'] for x in files)
+    out = []
+    for x in files:
+        m = RB_NAME_RE.match(x['name'])
+        if not m:
+            continue
+        try:
+            when_ = datetime.strptime(m.group('stamp'), '%Y%m%d-%H%M%S').timestamp()
+        except ValueError:
+            when_ = x.get('mtime') or 0
+        out.append({'name': x['name'], 'bytes': x['size'], 'when': when_, 'node': m.group('node'),
+                    'site': m.group('site'), 'encrypted': bool(m.group('enc')),
+                    'mine': m.group('node') == rb_slug(node_name()), 'sha256': (x['name'] + '.sha256') in names})
+    out.sort(key=lambda x: -x['when'])
+    return out
+
+
+RB_UPLOADS = STATE_DIR / 'rbackup-uploads'
+RB_DOWNLOADS = STATE_DIR / 'rbackup-downloads'
+
+
+def rb_tools():
+    return {k: bool(shutil.which(k)) for k in ('ssh', 'sftp', 'scp', 'ssh-keygen', 'ssh-keyscan', 'smbclient', 'openssl')}
+
+
+def rb_page(store):
+    nodes = {}
+    for r in rb_history(store):
+        nodes.setdefault(r.get('node') or '?', r)
+    return {'targets': [rb_view(t) for t in rb_targets(store)], 'runs': rb_history(store)[:40],
+            'last_by_node': nodes, 'job': {k: v for k, v in RB_JOB.items()},
+            'kinds': [{'kind': k, 'words': RB_KIND_WORDS[k], 'port': RB_PORTS.get(k)} for k in RB_KINDS],
+            'tools': rb_tools(), 'node': node_name(), 'locked': bool(rb_password()), 'iter': RB_ITER,
+            'site': CONFIG.get('site_name') or 'ai', 'next': rb_next_words(), 'uploads': str(RB_UPLOADS)}
+
+
+def rb_tidy_files():
+    now = time.time()
+    for d in (RB_UPLOADS, RB_DOWNLOADS):
+        try:
+            for p in d.iterdir():
+                if now - p.stat().st_mtime > 3600:
+                    if p.is_dir():
+                        shutil.rmtree(str(p), ignore_errors=True)
+                    else:
+                        p.unlink()
+        except OSError:
+            pass
+
+
 # ---- power ------------------------------------------------------------------------------------
 def power(what, by, store):
     if what not in ('reboot', 'poweroff', 'restart-ai', 'restart-web'):
@@ -5243,6 +6687,8 @@ def setting_value(k, v):
             mail_checked(v)
         except ValueError as e:
             raise Refused('%s: %s' % (s[3], e))
+    if k == 'rbackup_at' and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
+        raise Refused('%s: HH:MM, as 04:15' % s[3])
     if k == 'notify_to' and v:
         try:
             v = ', '.join(mail_checked(x) for x in re.split(r'[,;\s]+', v) if x)
@@ -5893,6 +7339,252 @@ def api_import(c):
     if isinstance(conf, dict) and conf.get('kind') == 'ai-config-locked':
         conf = open_with(c.body.get('passphrase') or '', conf)
     return {'message': config_import(c.daemon, conf, c.name, bool(c.body.get('replace')), c.ip)}
+
+
+# ---- Settings → Backups (otp's) ---------------------------------------------------------------
+@route('GET', '/api/rbackup', admin=True)
+def api_rbackup(c):
+    for d in (RB_UPLOADS, RB_DOWNLOADS):
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    rb_tidy_files()
+    return rb_page(c.daemon.store)
+
+
+def _rb_target_for(c, b):
+    """The destination asked about: the one saved, with what is typed over it
+    (Try it before Save)."""
+    tid = str(b.get('id') or '')
+    old = rb_target(c.daemon.store, tid) if tid else None
+    if tid and not old:
+        raise Refused('no such destination', 404)
+    if isinstance(b.get('target'), dict):
+        t = rb_checked(dict(b['target'], id=tid or None), old)
+        if old:
+            for k in ('key', 'pub', 'hostkey', 'client_cert', 'client_key', 'key_pass', 'ca', 'pin', 'ssh_cert'):
+                if k in old and k not in t:
+                    t[k] = old[k]
+        return t
+    if not old:
+        raise Refused('which destination?')
+    return old
+
+
+def _rb_upload_path(b):
+    up = str(b.get('upload') or '')
+    if not re.match(r'^[0-9a-f]{16}\Z', up):
+        raise ValueError('which file?')
+    p = RB_UPLOADS / up
+    if not p.is_file():
+        raise ValueError('the file sent is not here any more: send it again')
+    return p
+
+
+@route('POST', '/api/rbackup', admin=True)
+def api_rbackup_do(c):
+    b = c.body
+    st = c.daemon.store
+    act = str(b.get('action') or '')
+    by = c.name
+    try:
+        if act == 'save':
+            t = rb_save(st, dict(b.get('target') or {}, id=b.get('id') or (b.get('target') or {}).get('id')), by)
+            return {'message': 'saved', 'target': rb_view(t)}
+        if act == 'delete':
+            rb_delete(st, b.get('id'), by)
+            return {'message': 'taken away'}
+        if act == 'try':
+            t = _rb_target_for(c, b)
+            if t['kind'] in ('sftp', 'scp') and not t.get('hostkey'):
+                lines, fps = ssh_keyscan(t['host'], t['port'])
+                return {'hostkey_needed': True, 'hostkey': lines, 'fingerprints': fps,
+                        'message': 'the server\'s host key is not trusted yet'}
+            out = rb_try(t)
+            st.add_event('settings', '%s tried the backup destination %s: %s' % (
+                by, t['name'], 'it works' if out['ok'] else out.get('error')), who=by)
+            if t.get('id') and rb_target(st, t['id']):
+                rb_set_fields(st, t['id'], '', '', tried={'at': time.time(), 'ok': out['ok'],
+                                                          'error': out.get('error') or ''})
+            return out
+        if act == 'hostkey_scan':
+            t = _rb_target_for(c, b)
+            lines, fps = ssh_keyscan(t['host'], t['port'])
+            return {'hostkey': lines, 'fingerprints': fps}
+        if act == 'hostkey_trust':
+            t = _rb_target_for(c, b)
+            lines = str(b.get('hostkey') or '')
+            fresh, fps = ssh_keyscan(t['host'], t['port'])
+            if sorted(x.strip() for x in lines.splitlines() if x.strip()) != \
+                    sorted(x.strip() for x in fresh.splitlines() if x.strip()):
+                raise ValueError('the server shows other host keys now than the ones shown: Try it again')
+            rb_set_fields(st, t['id'], by, 'its host key trusted (%s)' % '; '.join(fps), hostkey=fresh)
+            return {'message': 'trusted', 'fingerprints': fps}
+        if act == 'hostkey_forget':
+            t = _rb_target_for(c, b)
+            rb_set_fields(st, t['id'], by, 'its host key forgotten', hostkey=None)
+            return {'message': 'forgotten'}
+        if act == 'keygen':
+            t = _rb_target_for(c, b)
+            private, public = ssh_keygen('ai-backup@%s' % node_name())
+            rb_set_fields(st, t['id'], by, 'a new ssh key made here', key=seal_secret(private, bind=RB_BIND),
+                          pub=public, key_pass=None)
+            return {'message': 'made', 'pub': public}
+        if act == 'key_paste':
+            t = _rb_target_for(c, b)
+            pp = str(b.get('passphrase') or '')
+            private, public = rb_ssh_public_of(b.get('key'), pp)
+            rb_set_fields(st, t['id'], by, 'an ssh key of their own given', key=seal_secret(private, bind=RB_BIND),
+                          pub=public, key_pass=seal_secret(pp, bind=RB_BIND) if pp else None)
+            return {'message': 'taken', 'pub': public}
+        if act == 'key_download':
+            t = _rb_target_for(c, b)
+            private = rb_secret(t, 'key')
+            if not private:
+                raise Refused('there is no key', 404)
+            st.add_event('settings', '%s downloaded the private ssh key of the backup destination %s' % (
+                by, t['name']), 'warn', who=by)
+            return {'pem': private if private.endswith('\n') else private + '\n',
+                    'file': 'ai-backup-%s-key' % rb_slug(t['name'])}
+        if act == 'key_forget':
+            t = _rb_target_for(c, b)
+            rb_set_fields(st, t['id'], by, 'its ssh key forgotten', key=None, pub=None, key_pass=None, ssh_cert=None)
+            return {'message': 'forgotten'}
+        if act == 'cert_make':
+            t = _rb_target_for(c, b)
+            key, crt = rb_client_cert_make(b.get('cn') or 'ai-backup-%s' % rb_slug(node_name()))
+            rb_set_fields(st, t['id'], by, 'a client certificate made here', client_cert=crt,
+                          client_key=seal_secret(key, bind=RB_BIND))
+            return {'message': 'made', 'cert': crt, 'info': cert_info(crt)}
+        if act == 'cert_given':
+            t = _rb_target_for(c, b)
+            key, crt = rb_client_cert_given(b.get('text'), str(b.get('password') or ''))
+            rb_set_fields(st, t['id'], by, 'a client certificate of their own given', client_cert=crt,
+                          client_key=seal_secret(key, bind=RB_BIND))
+            return {'message': 'taken', 'cert': crt, 'info': cert_info(crt)}
+        if act == 'cert_forget':
+            t = _rb_target_for(c, b)
+            rb_set_fields(st, t['id'], by, 'its client certificate forgotten', client_cert=None, client_key=None)
+            return {'message': 'forgotten'}
+        if act == 'pin':
+            t = _rb_target_for(c, b)
+            pin = re.sub(r'[^0-9a-f]', '', str(b.get('pin') or '').lower())
+            if len(pin) != 64:
+                raise ValueError('the fingerprint is SHA-256: 64 hex digits')
+            rb_set_fields(st, t['id'], by, 'the server\'s certificate pinned (%s)' % pin, pin=pin, tls_check='pin')
+            return {'message': 'pinned'}
+        if act == 'run':
+            only = [str(x) for x in (b.get('ids') or [])] or None
+            return {'message': 'the backup is being made', 'job': rb_job_start(st, by, only), 'others': []}
+        if act == 'job':
+            return {'job': dict(RB_JOB)}
+        if act == 'list':
+            return {'files': rb_remote_list(st, b.get('id'))}
+        if act == 'delete_file':
+            t = rb_target(st, b.get('id'))
+            name = str(b.get('name') or '')
+            if not t or not RB_NAME_RE.match(name):
+                raise ValueError('which backup?')
+            tr = rb_transport(t)
+            try:
+                tr.open()
+                names = set(x['name'] for x in tr.list())
+                for n in [name] + [x for x in rb_companions(name) if x in names]:
+                    tr.delete(n)
+            finally:
+                tr.close()
+            st.add_event('backups', '%s deleted the backup %s at %s' % (by, name, t['name']), 'warn', who=by)
+            return {'message': 'deleted'}
+        if act == 'restore_md':
+            return rb_restore_guide(st)
+        if act == 'runs_forget':
+            if b.get('all'):
+                n = rb_history_forget(st)
+                st.add_event('backups', '%s cleared the list of backups sent (%d line(s)); the backups stay where '
+                             'they went' % (by, n), who=by)
+                return {'message': 'the list is empty; the backups stay where they went', 'runs': rb_history(st)[:40]}
+            try:
+                at = float(b.get('at'))
+            except (TypeError, ValueError):
+                raise ValueError('which line?')
+            if not rb_history_forget(st, at, b.get('file')):
+                raise ValueError('that line is not on the list any more')
+            return {'message': 'taken off the list', 'runs': rb_history(st)[:40]}
+        if act == 'download':
+            # A backup made now for the machine somebody is sitting at - or
+            # one fetched from a destination: put where /files/get serves it
+            # to this administrator, and taken away within the hour.
+            RB_DOWNLOADS.mkdir(mode=0o700, parents=True, exist_ok=True)
+            work = RB_DOWNLOADS / secrets.token_hex(8)
+            work.mkdir(mode=0o700)
+            tid, name = str(b.get('id') or ''), str(b.get('name') or '')
+            if tid and name:
+                rb_fetch(st, tid, name, str(work / name))
+                st.add_event('backups', '%s downloaded the backup %s' % (by, name), 'warn', who=by)
+                return {'path': str(work / name)}
+            if not rb_password():
+                raise Refused('without a password of the backups the file would hold every secret unlocked: '
+                              'set the password first', 403)
+            path, m, _md = rb_build(st, str(work))
+            for p in work.iterdir():
+                if str(p) != path:
+                    p.unlink()
+            st.add_event('backups', '%s downloaded a backup made for it (%s)' % (by, m['file']), 'info', who=by)
+            return {'path': path}
+        if act == 'peek':
+            p = _rb_upload_path(b)
+            with open(str(p), 'rb') as f:
+                head = f.read(8)
+            if not (head.startswith(b'Salted__') or head.startswith(b'\x1f\x8b')):
+                p.unlink()
+                raise ValueError('that is not a backup of ai')
+            work = tempfile.mkdtemp(prefix='ai-peek-', dir=str(STATE_DIR))
+            try:
+                pw = str(b.get('password') or '') or rb_password()
+                if head.startswith(b'Salted__') and not pw:
+                    return {'upload': p.name, 'locked': True}
+                try:
+                    _top, m = rb_open(str(p), pw, work)
+                except RbError as e:
+                    return {'upload': p.name, 'locked': head.startswith(b'Salted__'), 'said': str(e)}
+                return {'upload': p.name, 'locked': head.startswith(b'Salted__'), 'manifest': m}
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+        if act == 'restore':
+            password = str(b.get('password') or '') or rb_password()
+            src = _rb_upload_path(b) if b.get('upload') else None
+            if src is None:
+                t = rb_target(st, b.get('id'))
+                name = str(b.get('name') or '')
+                if not t or not RB_NAME_RE.match(name):
+                    raise ValueError('which backup?')
+            daemon = c.daemon
+
+            def work(progress):
+                tmp = None
+                try:
+                    path = src
+                    if path is None:
+                        progress(1, 4, 'fetched from %s' % t['name'])
+                        tmp = Path(tempfile.mkdtemp(prefix='ai-fetch-', dir=str(STATE_DIR)))
+                        path = tmp / name
+                        rb_fetch(st, t['id'], name, str(path))
+                    progress(2, 4, 'opened and checked')
+                    got = rb_restore(daemon, str(path), password, by)
+                    progress(4, 4, 'put back')
+                    return got
+                finally:
+                    if tmp:
+                        shutil.rmtree(str(tmp), ignore_errors=True)
+                    if src is not None:
+                        try:
+                            src.unlink()
+                        except OSError:
+                            pass
+            return {'message': 'the backup is being put back', 'job': rb_job_start(st, by, what='restore', work=work)}
+    except (RbError, ValueError) as e:
+        raise Refused(str(e))
+    except subprocess.SubprocessError as e:
+        raise Refused('it took too long: %s' % str(e)[:200], 504)
+    raise Refused('no such thing to do')
 
 
 @route('GET', '/api/cert', admin=True)
@@ -7371,6 +9063,8 @@ class Daemon:
                     self.upgrades.tick()
                 if n % 20 == 5:
                     db_copy_tick(self.store)
+                if n % 4 == 1:
+                    rb_tick(self)
                 if n % 4 == 3 and not self.notifying.locked():
                     threading.Thread(target=self.notify_once, daemon=True).start()
             except Exception as e:                      # noqa: BLE001
@@ -10270,6 +11964,10 @@ def build_parser():
     g.add_argument('--with-secrets', action='store_true', help='with --export-config: the secrets too, locked')
     g.add_argument('--import-config', metavar='FILE', help='a configuration taken in (--replace: exactly the file; --yes)')
     g.add_argument('--replace', action='store_true', help='with --import-config: what is not in the file goes')
+    g.add_argument('--backup-now', action='store_true', help='a backup made and sent to every destination switched on')
+    g.add_argument('--backups', action='store_true', help='the destinations of the backups and what was sent')
+    g.add_argument('--backup-file', metavar='FILE', help='a backup made into a file here (locked with its password)')
+    g.add_argument('--restore-bundle', metavar='FILE', help='a backup put back (AI_BACKUP_PASSWORD; --yes)')
     g = p.add_argument_group('MAIL')
     g.add_argument('--mail-test', metavar='ADDRESS', help='a test mail sent, every step shown')
     g = p.add_argument_group('SETTINGS')
@@ -10317,6 +12015,15 @@ class CliDaemon(object):
         self.upgrades = Upgrades(self)
         self.started = time.time()
         self.osup_checking = False
+
+
+def rbWhere_cli(t):
+    if t.get('kind') == 'folder':
+        return t.get('path') or ''
+    if t.get('kind') == 'smb':
+        return '\\\\%s\\%s\\%s' % (t.get('host'), t.get('share') or '', t.get('path') or '')
+    return '%s%s:%s/%s' % ((t['user'] + '@') if t.get('user') else '', t.get('host'), t.get('port'),
+                           str(t.get('path') or '').lstrip('/'))
 
 
 def cli_store():
@@ -10797,6 +12504,60 @@ def cli_main(argv):
                 raise Refused('everything here is replaced by it: add --yes')
             print(pal.ok_line('put back - what was here is in %s' % db_restore(d, a.db_restore, 'the command line')))
             print(pal.dim('  the running daemon reads it at once; restart it to be sure: systemctl restart ai'))
+            return 0
+        if a.backups:
+            page = rb_page(st)
+            if a.json:
+                say_json(page)
+                return 0
+            print(table([[t['name'], t['kind_words'], rbWhere_cli(t), 'on' if t.get('enabled') else 'off',
+                          ('ok ' if (t.get('last') or {}).get('ok') else 'FAILED ') + when((t.get('last') or {}).get('at'))
+                          if t.get('last') else '-'] for t in page['targets']],
+                        ['destination', 'kind', 'where', 'state', 'last']) if page['targets']
+                  else pal.warn_line('no destination yet (Settings → Backups)'))
+            print('locked: %s · scheduled: %s' % ('yes' if page['locked'] else 'NO - set rbackup_password',
+                                                  page['next'] or 'no'))
+            for r in page['runs'][:10]:
+                print('  %s  %s  %s' % (when(r['at']), 'ok    ' if r.get('ok') else 'FAILED',
+                                        r.get('file') or r.get('error') or ''))
+            return 0
+        if a.backup_now:
+            r = rb_run(st, 'the command line')
+            for x in r['targets']:
+                print((pal.ok_line if x['ok'] else pal.bad_line)('%s: %s' % (x['name'], 'sent' if x['ok'] else x.get('error'))))
+            if r.get('error'):
+                print(pal.bad_line(r['error']))
+            return 0 if r['ok'] else 1
+        if a.backup_file:
+            if not rb_password():
+                raise Refused('the backups have no password (ai --set rbackup_password=@env, AI_VALUE_RBACKUP_PASSWORD)')
+            work = tempfile.mkdtemp(prefix='ai-bf-', dir=str(STATE_DIR))
+            try:
+                path, m, _md = rb_build(st, work)
+                dst = a.backup_file if not os.path.isdir(a.backup_file) else os.path.join(a.backup_file, m['file'])
+                shutil.move(path, dst)
+                print(pal.ok_line('written: %s (%s)' % (dst, human_bytes(m['bytes']))))
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+            return 0
+        if a.restore_bundle:
+            pw = os.environ.get('AI_BACKUP_PASSWORD') or rb_password()
+            with open(a.restore_bundle, 'rb') as f:
+                locked = f.read(8).startswith(b'Salted__')
+            if locked and not pw:
+                pw = ask_password('the password of the backups', twice=False, env='AI_BACKUP_PASSWORD')
+            work = tempfile.mkdtemp(prefix='ai-look-', dir=str(STATE_DIR))
+            try:
+                _top, m = rb_open(a.restore_bundle, pw if locked else '', work)
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+            print('%s: made %s on %s by ai %s, %s account(s)' % (os.path.basename(a.restore_bundle), m.get('made_words'),
+                                                                m.get('node'), m.get('ai'), m.get('accounts')))
+            if not a.yes:
+                raise Refused('everything here is replaced by it: add --yes')
+            got = rb_restore(d, a.restore_bundle, pw if locked else '', 'the command line')
+            print(pal.ok_line('put back - what was here is in %s' % got['safety']))
+            print(pal.dim('  systemctl restart ai'))
             return 0
         if a.export_config:
             conf = config_export(st, a.with_secrets)

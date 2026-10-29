@@ -94,6 +94,7 @@ if (isset($_GET['api'])) {
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
         'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
+        'rbackup' => '/api/rbackup',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -103,7 +104,7 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
         'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
-        'import' => '/api/import',
+        'import' => '/api/import', 'rbackup' => '/api/rbackup',
     ];
     if ($post) {
         if (!isset($writes[$what])) {
@@ -478,6 +479,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
     <div class="ctl-group">This program</div>
     <button type="button" data-pane="db" data-icon="db" title="The database: copies made every night, downloaded, put back.">Database</button>
+    <button type="button" data-pane="backup" data-icon="upload" title="Backups to other machines: a folder, FTP, FTPS, SFTP, SCP or a Windows share - on a schedule, locked with a password; put back from here.">Backups</button>
     <button type="button" data-pane="carry" data-icon="archive" title="The whole configuration as one file: exported, imported.">Export and import</button>
     <button type="button" data-pane="upgrade" data-icon="up" title="New versions of ai: from the web by themselves, or sent here.">Upgrades</button>
     <button type="button" data-pane="about" data-icon="info" title="Version, the name of the pages, the language, what is running, the log.">About</button>
@@ -594,6 +596,21 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-backup" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Backups</h2>
+      <p class="ctl-lede">A backup is everything of this program: the whole database (the accounts, every
+        setting, the certificate and TLS, the firewall, the events, the list of terminals), the key its
+        secrets are sealed with and this machine's config.json - with RESTORE.md, the exact steps to bring
+        it all back on a machine installed from nothing. Locked with the password below; sent to every
+        destination switched on - a folder, FTP, FTPS, SFTP, SCP or a Windows/Samba share. The files of the
+        Linux accounts (their projects, ~/.claude) are not in it.</p></div>
+    <div id="rb-top"></div>
+    <div class="card full"><h2>When, how many, and the password</h2><div id="sect-backup"></div></div>
+    <div class="card full"><h2>Where they go <span class="right" id="rb-add-host"></span></h2>
+      <div id="rb-targets"></div></div>
+    <div class="card full"><h2>What was sent <span class="right" id="rb-runs-tools"></span></h2><div id="rb-runs"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-carry" hidden>

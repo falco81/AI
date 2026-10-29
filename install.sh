@@ -313,7 +313,7 @@ install_packages() {
     step "Packages"
     local want=(python3 tmux nginx openssl curl tar git chrony)
     if [[ "$PKG" == "dnf" ]]; then
-        want+=(openssh-clients ncurses-term procps-ng iproute util-linux policycoreutils-python-utils)
+        want+=(openssh-clients samba-client ncurses-term procps-ng iproute util-linux policycoreutils-python-utils)
         local missing=()
         for p in "${want[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
         if ((${#missing[@]})); then
@@ -340,7 +340,7 @@ install_packages() {
             run dnf upgrade -y --refresh 'php*' || true
         fi
     elif [[ "$PKG" == "apt" ]]; then
-        want+=(openssh-client ncurses-term procps iproute2 php-fpm php-cli)
+        want+=(openssh-client smbclient ncurses-term procps iproute2 php-fpm php-cli)
         local missing=()
         for p in "${want[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
         if ((${#missing[@]})); then

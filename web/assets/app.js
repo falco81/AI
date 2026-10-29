@@ -1198,6 +1198,7 @@ function showPane(name) {
   if (name === 'people') { loadUsers(); loadLockouts(); }
   if (name === 'mail') loadMail();
   if (name === 'db') loadDb();
+  if (name === 'backup') loadRbackup();
   if (name === 'web') loadWeb();
   if (name === 'fw') loadFw();
   if (name === 'network') loadNet();
@@ -1269,7 +1270,7 @@ $('ctl-find').addEventListener('input', function () {
 });
 
 /* ---- the settings that are only values ---------------------------------------- */
-var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail', db: 'sect-db'};
+var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail', db: 'sect-db', backup: 'sect-backup'};
 function loadSettings() {
   return api('settings').then(function (d) {
     SETTINGS = d;
@@ -1282,6 +1283,7 @@ function loadSettings() {
       host.appendChild(g);
     });
     applyWhen();
+    if (typeof rbPassTools === 'function') rbPassTools();
     markDirtyCount();
     explainWhatWasDrawn(document.querySelector('#tab-settings'));
   }).catch(oops);
@@ -1314,14 +1316,18 @@ function settingItem(s) {
   }
   if (input.id === '') input.id = 'set-' + s.key;
   item.appendChild(input);
-  if (s.help) item.appendChild(el('div', 'says', s.help));
-  if (s.saved) {
+  /* Name, control, then the rest in a row of its own (otp's set-tail), so
+     what is added under a setting never lies over its words. */
+  var tail = el('div', 'set-tail');
+  if (s.help) tail.appendChild(el('div', 'says', s.help));
+  if (s.saved && s.kind !== 'password') {
     var back = el('button', 'link small', 'back to the default');
     back.type = 'button';
     explain(back, 'The built-in value: ' + (s.default === '' ? '(empty)' : String(s.default)));
     back.onclick = function () { DIRTY[s.key] = null; item.classList.add('dirty'); markDirtyCount(); };
-    item.appendChild(back);
+    tail.appendChild(back);
   }
+  item.appendChild(tail);
   function value() {
     if (s.kind === 'bool') return !!input._get();
     if (s.kind === 'int') return parseInt(input.value, 10);
@@ -2547,3 +2553,1006 @@ $('ex-file').onchange = function () {
         }}], 'medium');
   }).catch(oops);
 };
+
+
+/* ==== Backups to another machine (1.0.109) ===================================
+   Destinations (a folder, FTP, FTPS, SFTP, SCP, SMB) with their sign-in -
+   passwords, ssh keys made here or brought, the server's host key or its
+   certificate checked, a client certificate for FTPS - a backup sent now or on
+   a schedule, the history, the backups at each destination, and putting one
+   back. Only a full administrator sees any of it. */
+var RB = null;
+var RB_POLL = null;
+var RB_KIND_ICON = {folder: 'db', ftp: 'upload', ftps: 'lock', sftp: 'terminal', scp: 'terminal', smb: 'net'};
+var RB_KIND_SAYS = {
+  folder: 'A folder on this machine - an NFS or other share mounted here.',
+  ftp: 'Plain FTP: the password and the file go over unencrypted - only inside a network you trust (the file itself is locked).',
+  ftps: 'FTP over TLS - explicit (port 21) or implicit (990); the server’s certificate checked, a client certificate if it wants one.',
+  sftp: 'SSH file transfer: a key made here or your own, or a password; the server’s host key checked.',
+  scp: 'scp over SSH, and ssh to list and take away old ones - needs a shell on the server.',
+  smb: 'A Windows or Samba share: the account, its domain, SMB3 encryption.'
+};
+function rbWhen(ts) {
+  if (!ts) return '';
+  var n = Number(ts);
+  return isNaN(n) ? String(ts) : 'until ' + new Date(n * 1000).toLocaleDateString(numLang());
+}
+function rbBytes(n) {
+  n = Number(n || 0);
+  if (n < 1024) return num(n) + ' B';
+  var u = ['kB', 'MB', 'GB', 'TB'], i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i];
+}
+function rbWhere(t) {
+  if (t.kind === 'folder') return t.path || '';
+  if (t.kind === 'smb') return '\\\\' + t.host + (t.port && t.port !== 445 ? ':' + t.port : '') + '\\' + (t.share || '') + (t.path ? '\\' + String(t.path).replace(/\//g, '\\') : '');
+  return (t.user ? t.user + '@' : '') + t.host + (t.port ? ':' + t.port : '') + '/' + String(t.path || '').replace(/^\//, '');
+}
+function loadRbackup() {
+  var top = $('rb-top');
+  if (!top) return;
+  if (!ME || ME.role !== 'admin') {
+    clear(top);
+    top.appendChild(el('p', 'note', 'Only an administrator sees and changes the backups: they hold every secret.'));
+    return;
+  }
+  api('rbackup').then(function (d) {
+    RB = d;
+    drawRbTop();
+    drawRbTargets();
+    drawRbRuns();
+    rbPassTools();
+    if (d.job && d.job.running) rbWatch();
+  }).catch(oops);
+}
+function rbPassTools() {
+  /* "Make one" beside the password of the backups: a long random one, shown
+     once to be put into the password vault. */
+  var item = document.querySelector('.set-item[data-key="rbackup_password"]');
+  if (!item || item.querySelector('.rb-gen')) return;
+  var b = cmdButton('Make a strong one', 'key', 'small rb-gen');
+  b.style.alignSelf = 'flex-start';
+  b.onclick = function () {
+    var a = new Uint8Array(24);
+    crypto.getRandomValues(a);
+    var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    var pw = '';
+    for (var i = 0; i < a.length; i++) { pw += abc.charAt(a[i] % abc.length); if (i % 6 === 5 && i < a.length - 1) pw += '-'; }
+    var box = item.querySelector('input');
+    if (box) {
+      if (box._set) box._set(pw); else box.value = pw;
+      box.dispatchEvent(new Event('input', {bubbles: true}));
+      box.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    modal('The password of the backups', function (body) {
+      body.appendChild(el('p', 'note', 'Put it into your password vault now - this is the only time it is shown whole. Without it no backup can be opened, by anybody. Then press Save the changes.'));
+      var p = noI18n(el('div', 'rb-pass mono', pw));
+      body.appendChild(p);
+      var c = cmdButton('Copy', 'copy', 'small');
+      c.onclick = function () { copyText(pw, c, 'Copied'); };
+      body.appendChild(c);
+    }, [{words: 'Close', close: true}], true);
+  };
+  var says = item.querySelector('.says');
+  if (says) says.parentNode.insertBefore(b, says); else item.appendChild(b);
+}
+function drawRbTop() {
+  var host = $('rb-top');
+  clear(host);
+  var d = RB;
+  var card = el('div', 'card full rb-hero');
+  var last = (d.runs || [])[0];
+  var mine = (d.runs || []).filter(function (r) { return r.node === d.node; })[0];
+  var on = (d.targets || []).filter(function (t) { return t.enabled; });
+  var state = !on.length ? 'warn' : (!mine ? 'warn' : (mine.ok ? 'good' : 'bad'));
+  card.classList.add(state);
+  var head = el('div', 'rb-hero-head');
+  var ic = el('span', 'rb-hero-ic');
+  ic.innerHTML = iconMarkup(state === 'good' ? 'check' : (state === 'bad' ? 'flag' : 'info'), 22);
+  head.appendChild(ic);
+  var words = el('div', 'rb-hero-words');
+  var title = !on.length ? 'No destination yet - backups go nowhere'
+    : (!mine ? 'No backup of this node has been sent yet'
+      : (mine.ok ? 'The last backup of ' + d.node + ' went to every destination'
+        : 'The last backup of ' + d.node + ' did not reach every destination'));
+  words.appendChild(el('b', '', title));
+  var facts = el('div', 'rb-hero-facts');
+  var fact = function (k, v, cls) {
+    var f = el('span', 'rb-fact ' + (cls || ''));
+    f.appendChild(el('span', 'k', k));
+    f.appendChild(el('span', 'v', v));
+    facts.appendChild(f);
+  };
+  if (mine) fact('Last', ago(mine.at) + ' · ' + rbBytes(mine.bytes));
+  fact('Next', d.next ? new Date(d.next).toLocaleString(numLang(), {weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'by hand only', d.next ? '' : 'warn');
+  fact('Locked', d.locked ? 'with the password (AES-256)' : 'NOT locked - set the password', d.locked ? 'good' : 'bad');
+  fact('Destinations', num(on.length) + ' of ' + num((d.targets || []).length) + ' switched on');
+  words.appendChild(facts);
+  if (mine && !mine.ok) {
+    var bad = (mine.targets || []).filter(function (x) { return !x.ok; });
+    var why = el('div', 'rb-hero-why small bad');
+    why.textContent = mine.error || bad.map(function (x) { return x.name + ': ' + (x.error || 'failed'); }).join(' · ');
+    words.appendChild(why);
+  }
+  head.appendChild(words);
+  var acts = el('div', 'rb-hero-acts');
+  var now = cmdButton('Back up now', 'upload', 'primary');
+  now.id = 'rb-now';
+  now.disabled = !on.length || (d.job && d.job.running);
+  explain(now, 'A backup made now and sent to every destination switched on - the same as the scheduled one.');
+  now.onclick = function () {
+    busy(now, true);
+    api('rbackup', {action: 'run'}).then(function (x) { toast(x.message, 'good'); RB.job = x.job; rbWatch(); })
+      .catch(function (e) { busy(now, false); oops(e); });
+  };
+  acts.appendChild(now);
+  var dl = cmdButton('Download one here', 'download', '');
+  explain(dl, 'A backup made now, saved on the computer you are sitting at - locked with the password as the others.');
+  dl.onclick = function () {
+    if (!d.locked) {
+      confirmThen('Download a backup that is not locked?', 'No password of the backups is set: the file will hold <b>every secret of this server</b> readable. Set the password first unless you know where the file goes.', 'Download it', function () { rbDownload({}); }, false);
+      return;
+    }
+    toast('the backup is being made - the download starts when it is ready', 'good');
+    rbDownload({});
+  };
+  acts.appendChild(dl);
+  var back = cmdButton('Put one back…', 'undo', '');
+  back.onclick = rbPutBackFile;
+  acts.appendChild(back);
+  var guide = cmdButton('How to put it back', 'book', '');
+  explain(guide, 'RESTORE.md - the exact steps to bring everything back from a backup, filled in with this installation, as every backup carries it. To read now, and to keep apart from the backups.');
+  guide.onclick = rbGuide;
+  acts.appendChild(guide);
+  head.appendChild(acts);
+  card.appendChild(head);
+  var going = el('div', 'going wide');
+  going.id = 'rb-going';
+  going.hidden = !(d.job && d.job.running);
+  going.innerHTML = '<div class="bar"><span id="rb-going-fill"></span></div><div class="says" id="rb-going-says"></div>';
+  card.appendChild(going);
+  if (!d.tools.openssl) card.appendChild(el('p', 'note bad', 'openssl is not on this machine: backups cannot be locked (dnf install openssl).'));
+  host.appendChild(card);
+}
+/* RESTORE.md on the pages (1.0.110): read here, downloaded as the file. */
+function rbGuide() {
+  api('rbackup', {action: 'restore_md'}).then(function (d) {
+    modal('How to put a backup back', function (body) {
+      var lede = el('p', 'note');
+      lede.innerHTML = 'The <code>RESTORE.md</code> every backup carries, as one made now would have it. Keep a copy apart from the backups - with the password of the backups in a vault.';
+      body.appendChild(lede);
+      var doc = noI18n(el('div', 'md-doc'));
+      doc.appendChild(mdRender(d.md));
+      body.appendChild(doc);
+    }, [{words: 'Close', close: true},
+        {words: 'Download RESTORE.md', cls: 'primary', icon: 'download', go: function () {
+          var a = el('a');
+          a.href = URL.createObjectURL(new Blob([d.md], {type: 'text/markdown;charset=utf-8'}));
+          a.download = d.name || 'RESTORE.md';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        }}], 'large');
+  }).catch(oops);
+}
+/* Markdown as the guides are written: headings, paragraphs, lists, tables,
+   fenced code (with a copy button), `code`, **bold**, *italic*. Built from
+   elements - nothing in the text becomes HTML. */
+function mdInline(text) {
+  var frag = document.createDocumentFragment();
+  var re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g, last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    var t = m[0];
+    if (t.charAt(0) === '`') frag.appendChild(el('code', '', t.slice(1, -1)));
+    else if (t.slice(0, 2) === '**') frag.appendChild(el('b', '', t.slice(2, -2)));
+    else frag.appendChild(el('i', '', t.slice(1, -1)));
+    last = re.lastIndex;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+function mdRender(md) {
+  var out = document.createDocumentFragment();
+  var lines = String(md || '').split('\n'), i = 0;
+  var para = [];
+  var flush = function () {
+    if (!para.length) return;
+    var p = el('p');
+    p.appendChild(mdInline(para.join(' ')));
+    out.appendChild(p);
+    para = [];
+  };
+  while (i < lines.length) {
+    var ln = lines[i];
+    if (/^```/.test(ln)) {
+      flush();
+      var code = [];
+      i += 1;
+      while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i += 1; }
+      i += 1;
+      var wrap = el('div', 'md-code');
+      var pre = el('pre', '', code.join('\n'));
+      wrap.appendChild(pre);
+      var cp = iconButton('copy', 'Copy');
+      (function (txt, b) {
+        b.onclick = function () {
+          (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('copied', 'good'); }).catch(function () { toast('select it and copy it by hand'); });
+        };
+      })(code.join('\n'), cp);
+      wrap.appendChild(cp);
+      out.appendChild(wrap);
+      continue;
+    }
+    var h = /^(#{1,4})\s+(.*)$/.exec(ln);
+    if (h) { flush(); var hn = el('h' + Math.min(6, h[1].length + 2)); hn.appendChild(mdInline(h[2])); out.appendChild(hn); i += 1; continue; }
+    if (/^\|/.test(ln)) {
+      flush();
+      var rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i += 1; }
+      var tbl = el('table', 'md-table');
+      var tb = el('tbody');
+      rows.forEach(function (r, n) {
+        if (/^\|[\s|:-]+\|$/.test(r)) return;
+        var cells = r.replace(/^\|/, '').replace(/\|$/, '').split('|');
+        if (n === 0 && cells.every(function (c) { return !c.trim(); })) return;
+        var tr = el('tr');
+        cells.forEach(function (c) { var td = el(n === 0 && rows.length > 1 && /^\|[\s|:-]+\|$/.test(rows[1]) ? 'th' : 'td'); td.appendChild(mdInline(c.trim())); tr.appendChild(td); });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      out.appendChild(tbl);
+      continue;
+    }
+    if (/^\s*[-*] /.test(ln)) {
+      flush();
+      var ul = el('ul');
+      var li = null;
+      while (i < lines.length && (/^\s*[-*] /.test(lines[i]) || (li && /^\s{2,}\S/.test(lines[i])))) {
+        if (/^\s*[-*] /.test(lines[i])) { li = el('li'); li._t = lines[i].replace(/^\s*[-*] /, ''); ul.appendChild(li); }
+        else li._t += ' ' + lines[i].trim();
+        i += 1;
+      }
+      Array.prototype.forEach.call(ul.children, function (x) { x.appendChild(mdInline(x._t)); });
+      out.appendChild(ul);
+      continue;
+    }
+    if (/^---+\s*$/.test(ln)) { flush(); out.appendChild(el('hr')); i += 1; continue; }
+    if (!ln.trim()) { flush(); i += 1; continue; }
+    para.push(ln.trim());
+    i += 1;
+  }
+  flush();
+  return out;
+}
+function rbWatch() {
+  if (RB_POLL) return;
+  var step = function () {
+    api('rbackup', {action: 'job'}).then(function (x) {
+      var j = x.job || {};
+      var g = $('rb-going');
+      if (g) {
+        g.hidden = !j.running;
+        var f = $('rb-going-fill');
+        if (f) f.style.width = (j.whole ? Math.round(100 * j.done / j.whole) : 5) + '%';
+        var sy = $('rb-going-says');
+        if (sy) sy.textContent = j.says || '';
+      }
+      if (j.running) { RB_POLL = setTimeout(step, TAB === 'settings' && PANE === 'backup' ? 1000 : 5000); return; }
+      RB_POLL = null;
+      if (j.error) toast('the backup: ' + j.error, 'bad');
+      else if (j.result) toast(j.result.ok ? 'the backup went to every destination' : 'the backup did not reach every destination', j.result.ok ? 'good' : 'bad');
+      if (TAB === 'settings' && PANE === 'backup') loadRbackup();
+    }).catch(function () { RB_POLL = null; });
+  };
+  step();
+}
+function drawRbTargets() {
+  var host = $('rb-targets');
+  clear(host);
+  var add = cmdButton('Add a destination', 'add', 'primary small');
+  add.onclick = rbPickKind;
+  var ah = $('rb-add-host');
+  clear(ah);
+  ah.appendChild(add);
+  var ts = RB.targets || [];
+  if (!ts.length) {
+    var empty = el('div', 'rb-empty');
+    empty.appendChild(el('p', '', 'No destination yet. A backup kept only on this machine is lost with it: add a place on another machine.'));
+    host.appendChild(empty);
+    return;
+  }
+  var grid = el('div', 'rb-grid');
+  ts.forEach(function (t) {
+    var c = el('div', 'rb-card' + (t.enabled ? '' : ' off'));
+    var top = el('div', 'rb-card-top');
+    var ic = el('span', 'rb-kind k-' + t.kind);
+    ic.innerHTML = iconMarkup(RB_KIND_ICON[t.kind] || 'db', 18);
+    top.appendChild(ic);
+    var nm = el('div', 'rb-card-name');
+    nm.appendChild(noI18n(el('b', '', t.name)));
+    nm.appendChild(el('span', 'rb-kind-words', t.kind_words));
+    top.appendChild(nm);
+    var sw = switchBox(t.enabled);
+    explain(sw, t.enabled ? 'Backups go here. Switch off to stop sending, keeping everything set.' : 'Switched off: nothing is sent here.');
+    sw._input.onchange = function () {
+      api('rbackup', {action: 'save', id: t.id, target: {kind: t.kind, enabled: sw._get(), name: t.name, host: t.host, port: t.port, path: t.path, user: t.user, share: t.share, domain: t.domain, smb_encrypt: t.smb_encrypt, implicit: t.implicit, tls_check: t.tls_check, passive: t.passive}})
+        .then(function () { loadRbackup(); }).catch(function (e) { oops(e); loadRbackup(); });
+    };
+    top.appendChild(sw);
+    c.appendChild(top);
+    c.appendChild(noI18n(el('div', 'rb-where mono', rbWhere(t))));
+    var chips = el('div', 'rb-chips');
+    var chip = function (w, cls, tip) { var x = el('span', 'tag ' + (cls || 'dim'), w); if (tip) x.title = tip; chips.appendChild(x); };
+    if (t.has_password) chip('password', 'dim');
+    if (t.has_key) chip('ssh key', 'violet');
+    if (t.ssh_cert) chip('ssh certificate', 'violet');
+    if (t.kind === 'sftp' || t.kind === 'scp') chip(t.hostkey ? 'host key trusted' : 'host key not trusted yet', t.hostkey ? 'ok' : 'warn', (t.hostkey_fp || []).join('\n'));
+    if (t.kind === 'ftps') chip({system: 'certificate: system authorities', ca: 'certificate: own authority', pin: 'certificate pinned', none: 'certificate NOT checked'}[t.tls_check] || '', t.tls_check === 'none' ? 'warn' : 'ok');
+    if (t.has_client_key) chip('client certificate', 'violet');
+    if (t.kind === 'smb' && t.smb_encrypt) chip('SMB3 encrypted', 'ok');
+    if (t.kind === 'ftp') chip('not encrypted on the way', 'warn');
+    c.appendChild(chips);
+    var last = t.last;
+    var ls = el('div', 'rb-last ' + (last ? (last.ok ? 'good' : 'bad') : 'muted'));
+    ls.textContent = last ? (last.ok ? '✓ last sent ' + ago(last.at) + ' · ' + rbBytes(last.bytes) : '✗ ' + ago(last.at) + ': ' + (last.error || 'failed')) : 'nothing sent here yet';
+    c.appendChild(ls);
+    var acts = el('div', 'rb-acts');
+    var tr = cmdButton('Try it', 'play', 'small');
+    tr.onclick = function () { rbTry(t, null, tr); };
+    acts.appendChild(tr);
+    var ed = cmdButton('Edit', 'edit', 'small');
+    ed.onclick = function () { rbEdit(t); };
+    acts.appendChild(ed);
+    var ls2 = cmdButton('Backups there', 'list', 'small');
+    ls2.onclick = function () { rbListThere(t); };
+    acts.appendChild(ls2);
+    var del = iconButton('trash', 'Take this destination away');
+    del.onclick = function () {
+      confirmThen('Take the destination ' + htmlText(t.name) + ' away?', 'Nothing is deleted on the server; backups simply stop going there, and its keys and certificates set here are forgotten.', 'Take it away', function () {
+        api('rbackup', {action: 'delete', id: t.id}).then(function (x) { toast(x.message, 'good'); loadRbackup(); }).catch(oops);
+      });
+    };
+    acts.appendChild(del);
+    c.appendChild(acts);
+    grid.appendChild(c);
+  });
+  host.appendChild(grid);
+}
+function drawRbRuns() {
+  var host = $('rb-runs');
+  clear(host);
+  var runs = RB.runs || [];
+  /* The list can be emptied, or a line taken off (1.0.110) - the backups
+     themselves stay where they went. */
+  var tools = $('rb-runs-tools');
+  if (tools) {
+    clear(tools);
+    if (runs.length) {
+      var wipe = cmdButton('Clear the list', 'trash', 'small');
+      wipe.onclick = function () {
+        confirmThen('Clear the list of backups sent?', 'Every line goes from this list (for both nodes). <b>The backups themselves stay where they went</b> - delete them under <i>Backups there</i> on a destination. Events keeps a line saying who cleared it.', 'Clear the list', function () {
+          api('rbackup', {action: 'runs_forget', all: 1}).then(function (d) { toast(d.message, 'good'); RB.runs = d.runs || []; drawRbRuns(); }).catch(oops);
+        }, true);
+      };
+      tools.appendChild(wipe);
+    }
+  }
+  if (!runs.length) { host.appendChild(el('p', 'note', 'No backup sent yet.')); return; }
+  host.appendChild(listTable(['When', 'Node', 'File', 'Size', 'Where it went', 'Who', ''], runs, function (r) {
+    var tr = el('tr');
+    tr.appendChild(el('td', 'muted', new Date(r.at * 1000).toLocaleString(numLang())));
+    tr.appendChild(noI18n(el('td', '', r.node || '')));
+    var f = el('td', 'mono small');
+    f.appendChild(noI18n(el('span', '', r.file || '–')));
+    if (r.file && !r.encrypted) { f.appendChild(document.createTextNode(' ')); f.appendChild(el('span', 'tag bad', 'not locked')); }
+    tr.appendChild(f);
+    tr.appendChild(el('td', 'num', r.bytes ? rbBytes(r.bytes) : '–'));
+    var w = el('td');
+    if (r.error) w.appendChild(el('span', 'small bad', r.error));
+    (r.targets || []).forEach(function (x) {
+      var s = el('span', 'tag namepill ' + (x.ok ? 'ok' : 'crit'), (x.ok ? '✓ ' : '✗ ') + x.name);
+      s.title = x.ok ? (x.secs + ' s' + ((x.taken_away || []).length ? ' · taken away: ' + x.taken_away.join(', ') : '')) : (x.error || '');
+      noI18n(s);
+      w.appendChild(s);
+      w.appendChild(document.createTextNode(' '));
+    });
+    tr.appendChild(w);
+    tr.appendChild(noI18n(el('td', 'muted small', r.by || '')));
+    var a = el('td', 'rowtools');
+    var del = iconButton('trash', 'Take it off the list');
+    del.onclick = function () {
+      api('rbackup', {action: 'runs_forget', at: r.at, file: r.file || ''}).then(function (d) { toast(d.message, 'good'); RB.runs = d.runs || []; drawRbRuns(); }).catch(oops);
+    };
+    a.appendChild(del);
+    tr.appendChild(a);
+    return tr;
+  }, 'plain'));
+}
+function rbPickKind() {
+  modal('Where should the backups go?', function (body) {
+    var g = el('div', 'rb-kinds');
+    (RB.kinds || []).forEach(function (k) {
+      var b = el('button', 'rb-kind-tile');
+      b.type = 'button';
+      var ic = el('span', 'rb-kind k-' + k.kind);
+      ic.innerHTML = iconMarkup(RB_KIND_ICON[k.kind] || 'db', 20);
+      b.appendChild(ic);
+      b.appendChild(el('b', '', k.words));
+      b.appendChild(el('span', 'small muted', RB_KIND_SAYS[k.kind] || ''));
+      var need = {sftp: ['ssh', 'sftp'], scp: ['ssh', 'scp'], smb: ['smbclient']}[k.kind] || [];
+      var missing = need.filter(function (x) { return !RB.tools[x]; });
+      if (missing.length) {
+        b.appendChild(el('span', 'small bad', 'missing here: ' + missing.join(', ') + (k.kind === 'smb' ? ' (dnf install samba-client)' : ' (dnf install openssh-clients)')));
+      }
+      b.onclick = function () { closeModal(); setTimeout(function () { rbEdit({kind: k.kind, enabled: 1, port: k.port}); }, 30); };
+      g.appendChild(b);
+    });
+    body.appendChild(g);
+  }, [{words: 'Close', close: true}], 'medium');
+}
+/* The editor of one destination. A new one is saved before a key or a
+   certificate is made for it - they are kept with it. */
+function rbEdit(t) {
+  t = t || {};
+  var isNew = !t.id;
+  var cur = {id: t.id};
+  modal(isNew ? 'A new destination: ' + (t.kind_words || (RB.kinds.filter(function (k) { return k.kind === t.kind; })[0] || {}).words || t.kind) : t.name, function (body) {
+    body.classList.add('rb-ed');
+    var f = {};
+    var sec = function (title, says) {
+      var s = el('div', 'rb-sec');
+      s.appendChild(el('h4', '', title));
+      if (says) s.appendChild(el('p', 'small muted', says));
+      var g = el('div', 'formgrid');
+      s.appendChild(g);
+      body.appendChild(s);
+      return g;
+    };
+    var g0 = sec('What it is called', '');
+    f.name = textBox(t.name || '', 'NAS in the server room');
+    g0.appendChild(formField('Name', f.name));
+    f.enabled = switchBox(t.enabled === undefined ? 1 : t.enabled);
+    g0.appendChild(formField('Backups go here', f.enabled));
+    var g1 = sec('Where', t.kind === 'folder' ? 'A whole path on this machine.' : '');
+    if (t.kind === 'folder') {
+      f.path = textBox(t.path || '', '/mnt/backup/ai', 'mono');
+      var fp = formField('The folder', f.path);
+      fp.classList.add('wide');
+      g1.appendChild(fp);
+    } else {
+      f.host = textBox(t.host || '', 'backup.example.cz', 'mono');
+      g1.appendChild(formField('The server', f.host));
+      f.port = textBox(t.port || '', String({ftp: 21, ftps: t.implicit ? 990 : 21, sftp: 22, scp: 22, smb: 445}[t.kind] || ''), 'mono');
+      g1.appendChild(formField('Port', f.port));
+      if (t.kind === 'smb') {
+        f.share = textBox(t.share || '', 'backup', 'mono');
+        g1.appendChild(formField('The share', f.share));
+        f.path = textBox(t.path || '', 'ai\\nightly', 'mono');
+        g1.appendChild(formField('The folder in it', f.path, 'Made if it is not there.'));
+      } else {
+        f.path = textBox(t.path || '', t.kind === 'ftp' || t.kind === 'ftps' ? 'ai/backups' : '/home/backup/ai', 'mono');
+        g1.appendChild(formField('The folder there', f.path, 'Made if it is not there. Without / at the start: under the account’s home.'));
+      }
+    }
+    if (t.kind !== 'folder') {
+      var g2 = sec('Signing in', t.kind === 'sftp' || t.kind === 'scp' ? 'A key (below) or a password - or both.' : '');
+      f.user = textBox(t.user || '', t.kind === 'smb' ? 'backup' : 'ai-backup', 'mono');
+      g2.appendChild(formField('Account', f.user));
+      f.password = maskBox(t.password || '', t.has_password ? '' : '(none)', 'mono');
+      g2.appendChild(formField('Password', f.password, t.has_password ? 'Kept, sealed. Type a new one to change it.' : ''));
+      if (t.kind === 'smb') {
+        f.domain = textBox(t.domain || '', 'CORP', 'mono');
+        g2.appendChild(formField('Domain (workgroup)', f.domain));
+        f.smb_encrypt = switchBox(t.smb_encrypt === undefined ? 1 : t.smb_encrypt);
+        g2.appendChild(formField('SMB3 encryption required', f.smb_encrypt, 'Everything on the wire encrypted; a server that cannot is refused.'));
+      }
+      if (t.kind === 'ftp' || t.kind === 'ftps') {
+        f.passive = switchBox(t.passive === undefined ? 1 : t.passive);
+        g2.appendChild(formField('Passive mode', f.passive, 'The usual one, through firewalls and NAT.'));
+      }
+    }
+    if (t.kind === 'ftps') rbFtpsBlock(body, t, f, cur);
+    if (t.kind === 'sftp' || t.kind === 'scp') rbSshBlock(body, t, f, cur);
+    var out = el('div', 'rb-try-out');
+    out.id = 'rb-try-out';
+    body.appendChild(out);
+    rbEdit.form = f;
+  }, [
+    {words: 'Close', close: true},
+    {words: 'Try it', icon: 'play', go: function (b) { rbTry(cur.id ? rbTarget(cur.id) || t : t, rbFormData(t.kind), b, true); }},
+    {words: 'Save', cls: 'primary', icon: 'save', go: function (b) {
+      busy(b, true);
+      rbSaveForm(t.kind, cur).then(function () { busy(b, false); toast('saved', 'good'); closeModal(); loadRbackup(); })
+        .catch(function (e) { busy(b, false); oops(e); });
+    }}], 'large');
+}
+function rbTarget(id) { return (RB.targets || []).filter(function (x) { return x.id === id; })[0]; }
+function rbFormData(kind) {
+  var f = rbEdit.form || {};
+  var v = function (k) { return f[k] ? (f[k]._get ? f[k]._get() : f[k].value) : undefined; };
+  var d = {kind: kind};
+  ['name', 'enabled', 'host', 'port', 'path', 'user', 'password', 'share', 'domain', 'smb_encrypt', 'passive', 'implicit', 'tls_check', 'ca', 'pin', 'ssh_cert'].forEach(function (k) {
+    var x = v(k);
+    if (x !== undefined) d[k] = typeof x === 'string' ? x.trim() : x;
+  });
+  if (f.password) d.password = f.password.value;
+  return d;
+}
+function rbSaveForm(kind, cur) {
+  return api('rbackup', {action: 'save', id: cur.id || '', target: rbFormData(kind)}).then(function (x) {
+    cur.id = x.target.id;
+    var i = (RB.targets || []).map(function (t) { return t.id; }).indexOf(x.target.id);
+    if (i >= 0) RB.targets[i] = x.target; else RB.targets.push(x.target);
+    return x.target;
+  });
+}
+function rbNeedSaved(kind, cur) {
+  return cur.id ? Promise.resolve(rbTarget(cur.id)) : rbSaveForm(kind, cur);
+}
+function rbKeyBox(text) {
+  var w = el('div', 'rb-keybox');
+  var pre = noI18n(el('pre', 'mono', text));
+  w.appendChild(pre);
+  var c = cmdButton('Copy', 'copy', 'small');
+  c.onclick = function () { copyText(text, c, 'Copied'); };
+  w.appendChild(c);
+  return w;
+}
+/* The key and the certificates, as isemon has them (1.0.109): one box each,
+   a line saying what it is, the same row of buttons always there (Make,
+   Use my own, Download, Forget - the last two greyed until there is one),
+   Try it at the end of the row, and below it the half to copy - a click on
+   it copies it. */
+function rbConfirm(title, words, yes, go, danger) {
+  /* Over the editor, which stays as it is underneath. */
+  modalOver(function () { confirmThen(title, words, yes, go, danger); });
+}
+function rbCopyme(text, said) {
+  var code = noI18n(el('code', 'copyme', text));
+  explain(code, 'Click to copy.');
+  code.onclick = function () { copyText(text, code, said || 'Copied'); };
+  return code;
+}
+function rbPanel(note) {
+  var box = el('div', 'subpanel rb-panel');
+  var p = el('p', 'note');
+  p.innerHTML = note;
+  box.appendChild(p);
+  var row = el('div', 'btnrow');
+  box.appendChild(row);
+  var below = el('div', 'rb-below');
+  box.appendChild(below);
+  return {box: box, row: row, below: below};
+}
+function rbTryButton(t, cur) {
+  var b = cmdButton('Try reaching it', 'pulse', 'primary');
+  explain(b, 'Sign in, write a small file, find it in the list and take it away again - with what is typed above, saved or not.');
+  b.onclick = function () { rbTry(cur.id ? (rbTarget(cur.id) || t) : t, rbFormData(t.kind), b, true); };
+  return b;
+}
+function rbSshBlock(body, t, f, cur) {
+  var s = el('div', 'rb-sec');
+  s.appendChild(el('h4', '', 'The SSH key'));
+  var P = rbPanel('A key is better than a password: made here, it never leaves this machine except when you download it, and the server holds only its <b>public</b> half - in <code>~/.ssh/authorized_keys</code> of the account.');
+  if (!RB.tools['ssh-keygen']) {
+    var miss = el('p', 'note');
+    miss.style.color = 'var(--warn)';
+    miss.textContent = 'ssh-keygen is not on this machine, so a key cannot be made or read here: dnf install openssh-clients. A password still works.';
+    P.box.insertBefore(miss, P.row);
+  }
+  var mk = cmdButton('Make a key', 'key', '');
+  explain(mk, 'Make a fresh ed25519 pair here. The private half stays on this machine, sealed; the public half is shown below for you to put on the server. Any key already kept is replaced.');
+  var own = cmdButton('Use my own', 'upload', '');
+  explain(own, 'Use a private key you already have. Paste it whole, with its BEGIN and END lines; its public half is worked out here.');
+  var dl = cmdButton('Download it', 'download', '');
+  explain(dl, 'The private half as a file, for keeping somewhere safe. That it was downloaded, and by whom, is written into Events.');
+  var fg = cmdButton('Forget it', 'forget', 'danger');
+  explain(fg, 'Delete the private key from this machine. Unless the server takes a password instead, nothing here reaches it until a new key is made and put on it.');
+  [mk, own, dl, fg].forEach(function (b) { P.row.appendChild(b); });
+  P.row.appendChild(el('span', 'spacer'));
+  P.row.appendChild(rbTryButton(t, cur));
+  var state = {pub: t.pub, has: !!t.has_key};
+  var paint = function () {
+    clear(P.below);
+    dl.disabled = !state.has;
+    fg.disabled = !state.has;
+    mk.disabled = own.disabled = !RB.tools['ssh-keygen'];
+    if (!state.has || !state.pub) {
+      P.below.appendChild(el('p', 'btnhelp', 'No key yet — make one, or let it sign in with a password.'));
+      return;
+    }
+    P.below.appendChild(el('p', 'btnhelp', 'The public half. Click it to copy.'));
+    P.below.appendChild(rbCopyme(state.pub, 'the public key is on the clipboard'));
+    var u = (f.user && f.user.value) || 'the account';
+    P.below.appendChild(el('p', 'btnhelp', 'On the server, as ' + u + ':'));
+    P.below.appendChild(rbCopyme("mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '" + state.pub + "' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"));
+  };
+  mk.onclick = function () {
+    rbConfirm('Make a key for ' + ((f.name && f.name.value) || t.name || 'this destination'),
+      'A fresh ed25519 pair is made here. The private half stays on this machine and the public half is shown for you to put on the server.' + (state.has ? '<br><br><b>The key kept now is replaced</b>, so until the new public half is on the server, backups cannot sign in there.' : ''),
+      'Make one', function () {
+        rbNeedSaved(t.kind, cur).then(function () { return api('rbackup', {action: 'keygen', id: cur.id}); })
+          .then(function (x) { state.pub = x.pub; state.has = true; paint(); toast('a new key was made — put the public half on the server', 'good'); })
+          .catch(oops);
+      }, false);
+  };
+  own.onclick = function () {
+    modalOver(function () {
+      modal('Use my own key', function (body2) {
+        var p = el('p', 'note');
+        p.innerHTML = 'An OpenSSH private key, whole, including its <code>BEGIN</code> and <code>END</code> lines. It is kept in this machine’s database, sealed, and never shown back. Its public half is worked out here, so you do not have to hand that over as well.';
+        body2.appendChild(p);
+        var area = el('textarea', 'mono');
+        area.rows = 11;
+        area.id = 'rb-paste-area';
+        area.spellcheck = false;
+        area.placeholder = '-----BEGIN OPENSSH PRIVATE KEY-----';
+        body2.appendChild(area);
+        var pp = maskBox('', '', 'mono');
+        pp.id = 'rb-paste-pp';
+        body2.appendChild(formField('Its passphrase, if it has one', pp));
+        setTimeout(function () { area.focus(); }, 60);
+      }, [{words: 'Cancel', close: true},
+          {words: 'Keep this key', cls: 'primary', close: true, go: function () {
+            var key = $('rb-paste-area').value, pass = $('rb-paste-pp').value;
+            rbNeedSaved(t.kind, cur).then(function () { return api('rbackup', {action: 'key_paste', id: cur.id, key: key, passphrase: pass}); })
+              .then(function (x) { state.pub = x.pub; state.has = true; paint(); toast('the key was stored', 'good'); })
+              .catch(oops);
+          }}]);
+    });
+  };
+  dl.onclick = function () {
+    rbConfirm('Download the private key', 'The private half leaves this machine as a file. Anybody holding it can sign in to the server as <code>' + htmlText((f.user && f.user.value) || 'that account') + '</code>. That it was downloaded, and by whom, is written into Events.', 'Download it', function () {
+      api('rbackup', {action: 'key_download', id: cur.id}).then(function (x) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([x.pem], {type: 'application/octet-stream'}));
+        a.download = x.file;
+        document.body.appendChild(a); a.click(); a.remove();
+      }).catch(oops);
+    }, false);
+  };
+  fg.onclick = function () {
+    rbConfirm('Forget the key', 'The private key is deleted from this machine. Unless the server takes a password instead, backups will not reach it until a new key is made and put on it.', 'Forget it', function () {
+      api('rbackup', {action: 'key_forget', id: cur.id}).then(function () { state.has = false; state.pub = ''; paint(); toast('the key is gone'); }).catch(oops);
+    });
+  };
+  paint();
+  s.appendChild(P.box);
+  f.ssh_cert = el('textarea', 'mono rb-area small');
+  f.ssh_cert.value = t.ssh_cert || '';
+  f.ssh_cert.placeholder = 'ssh-ed25519-cert-v01@openssh.com AAAA…';
+  var cf = formField('SSH certificate of the key (only if the server wants one)', f.ssh_cert);
+  cf.style.marginTop = '12px';
+  s.appendChild(cf);
+  body.appendChild(s);
+  var h = el('div', 'rb-sec');
+  h.appendChild(el('h4', '', 'The server’s host key'));
+  var H = rbPanel('The key the server proves itself with. Trusted once, after comparing its fingerprint with the server’s own (<code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> on it); a server answering with any other is refused - somebody in between, or the server reinstalled.');
+  var hf = cmdButton('Forget it', 'forget', 'danger');
+  H.row.appendChild(hf);
+  H.row.appendChild(el('span', 'spacer'));
+  H.row.appendChild(rbTryButton(t, cur));
+  var paintHost = function (fps) {
+    clear(H.below);
+    hf.disabled = !(fps && fps.length);
+    if (fps && fps.length) {
+      H.below.appendChild(el('p', 'btnhelp ro', 'Trusted. Click to copy.'));
+      fps.forEach(function (x) { H.below.appendChild(rbCopyme(x)); });
+    } else {
+      H.below.appendChild(el('p', 'btnhelp', 'Not trusted yet — Try reaching it shows the fingerprint to trust.'));
+    }
+  };
+  hf.onclick = function () {
+    rbConfirm('Forget the host key', 'Backups stop going there until it is trusted again.', 'Forget it', function () {
+      api('rbackup', {action: 'hostkey_forget', id: cur.id}).then(function () { paintHost([]); }).catch(oops);
+    });
+  };
+  paintHost(t.hostkey_fp);
+  rbSshBlock.paintHost = paintHost;
+  h.appendChild(H.box);
+  body.appendChild(h);
+}
+function rbFtpsBlock(body, t, f, cur) {
+  var s = el('div', 'rb-sec');
+  s.appendChild(el('h4', '', 'TLS'));
+  var g = el('div', 'formgrid');
+  f.implicit = selectBox([['0', 'explicit - AUTH TLS on port 21'], ['1', 'implicit - TLS from the start, port 990']], t.implicit ? '1' : '0');
+  f.implicit._get = function () { return f.implicit.value === '1' ? 1 : 0; };
+  f.implicit.onchange = function () { if (f.port && (!f.port.value || f.port.value === '21' || f.port.value === '990')) f.port.value = f.implicit.value === '1' ? '990' : '21'; };
+  g.appendChild(formField('TLS', f.implicit));
+  f.tls_check = selectBox([['system', 'against the authorities this machine trusts'], ['ca', 'against an authority of my own'], ['pin', 'pinned: exactly this certificate'], ['none', 'not checked (not safe)']], t.tls_check || 'system');
+  g.appendChild(formField('The server’s certificate is checked', f.tls_check));
+  s.appendChild(g);
+  f.ca = el('textarea', 'mono rb-area small');
+  f.ca.value = t.ca || '';
+  f.ca.placeholder = '-----BEGIN CERTIFICATE-----';
+  var caf = formField('The authority (PEM)', f.ca, t.ca_info ? 'Now: ' + (t.ca_info.subject || '') + ' · ' + rbWhen(t.ca_info.not_after) : 'The certificate of the authority that signed the server’s.');
+  s.appendChild(caf);
+  f.pin = textBox(t.pin || '', '64 hex digits - Try reaching it shows the server’s', 'mono');
+  var pinf = formField('Pinned SHA-256 fingerprint', f.pin);
+  s.appendChild(pinf);
+  var show = function () { caf.hidden = f.tls_check.value !== 'ca'; pinf.hidden = f.tls_check.value !== 'pin'; };
+  f.tls_check.onchange = show;
+  show();
+  rbFtpsBlock.pin = f.pin;
+  rbFtpsBlock.check = f.tls_check;
+  body.appendChild(s);
+  var cc = el('div', 'rb-sec');
+  cc.appendChild(el('h4', '', 'Client certificate'));
+  var P = rbPanel('Only for a server that asks for one. Made here, its key never leaves this machine except when you download it; the server gets the <b>certificate</b> - give it to its administrator.');
+  var mk = cmdButton('Make one', 'key', '');
+  explain(mk, 'A key and a certificate for it, made here (EC P-256, five years). Any one kept is replaced.');
+  var own = cmdButton('Use my own', 'upload', '');
+  explain(own, 'A certificate and its key you have: PEM (both, in any order) or a PFX / PKCS#12 file with its password.');
+  var dl = cmdButton('Download it', 'download', '');
+  explain(dl, 'The certificate as a file (not its key), for the server’s administrator.');
+  var fg = cmdButton('Forget it', 'forget', 'danger');
+  [mk, own, dl, fg].forEach(function (b) { P.row.appendChild(b); });
+  P.row.appendChild(el('span', 'spacer'));
+  P.row.appendChild(rbTryButton(t, cur));
+  var state = {cert: t.client_cert, info: t.client_cert_info};
+  var paint = function () {
+    clear(P.below);
+    dl.disabled = fg.disabled = !state.cert;
+    if (!state.cert) {
+      P.below.appendChild(el('p', 'btnhelp', 'No client certificate — most servers want none.'));
+      return;
+    }
+    if (state.info) P.below.appendChild(noI18n(el('p', 'btnhelp ro', (state.info.subject || '') + ' · ' + rbWhen(state.info.not_after))));
+    P.below.appendChild(el('p', 'btnhelp', 'The certificate. Click it to copy.'));
+    P.below.appendChild(rbCopyme(state.cert, 'the certificate is on the clipboard'));
+  };
+  mk.onclick = function () {
+    rbConfirm('Make a client certificate', 'A key and a certificate for it are made here; the key stays on this machine.' + (state.cert ? '<br><br><b>The one kept now is replaced</b>: the server has to be given the new certificate.' : ''), 'Make one', function () {
+      rbNeedSaved(t.kind, cur).then(function () { return api('rbackup', {action: 'cert_make', id: cur.id, cn: 'ai-backup-' + (RB.node || '')}); })
+        .then(function (x) { state.cert = x.cert; state.info = x.info; paint(); toast('made — give the certificate to the server', 'good'); }).catch(oops);
+    }, false);
+  };
+  own.onclick = function () {
+    modalOver(function () {
+      modal('Use my own client certificate', function (body2) {
+        var p = el('p', 'note');
+        p.innerHTML = 'The certificate and its private key, as PEM - pasted, in any order - or a <code>.pfx</code> / <code>.p12</code> file. The key is kept sealed and never shown back.';
+        body2.appendChild(p);
+        var area = el('textarea', 'mono');
+        area.rows = 11;
+        area.id = 'rb-cert-area';
+        area.spellcheck = false;
+        area.placeholder = '-----BEGIN CERTIFICATE-----\n…\n-----BEGIN PRIVATE KEY-----';
+        body2.appendChild(area);
+        var file = el('input');
+        file.type = 'file';
+        file.accept = '.pem,.crt,.key,.pfx,.p12';
+        file.onchange = function () {
+          var fl = file.files[0];
+          if (!fl) return;
+          if (/\.(pfx|p12)$/i.test(fl.name)) fl.arrayBuffer().then(function (buf) {
+            var b = new Uint8Array(buf), s2 = '';
+            for (var i = 0; i < b.length; i++) s2 += String.fromCharCode(b[i]);
+            area.value = btoa(s2);
+          });
+          else fl.text().then(function (x) { area.value = (area.value ? area.value + '\n' : '') + x; });
+        };
+        body2.appendChild(formField('Or a file', file));
+        var pw = maskBox('', '', 'mono');
+        pw.id = 'rb-cert-pw';
+        body2.appendChild(formField('The password of the key or of the PFX, if it has one', pw));
+      }, [{words: 'Cancel', close: true},
+          {words: 'Keep this certificate', cls: 'primary', close: true, go: function () {
+            var text = $('rb-cert-area').value, pass = $('rb-cert-pw').value;
+            rbNeedSaved(t.kind, cur).then(function () { return api('rbackup', {action: 'cert_given', id: cur.id, text: text, password: pass}); })
+              .then(function (x) { state.cert = x.cert; state.info = x.info; paint(); toast('the certificate was stored', 'good'); }).catch(oops);
+          }}]);
+    });
+  };
+  dl.onclick = function () {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([state.cert], {type: 'application/x-pem-file'}));
+    a.download = 'ai-backup-client.crt';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  fg.onclick = function () {
+    rbConfirm('Forget the client certificate', 'Its key is deleted from this machine. A server that asks for one will refuse backups until another is made and given to it.', 'Forget it', function () {
+      api('rbackup', {action: 'cert_forget', id: cur.id}).then(function () { state.cert = ''; state.info = null; paint(); }).catch(oops);
+    });
+  };
+  paint();
+  cc.appendChild(P.box);
+  body.appendChild(cc);
+}
+function rbTry(t, data, button, inEditor) {
+  if (button) busy(button, true);
+  var ask = {action: 'try', id: t.id || ''};
+  if (data) ask.target = data;
+  api('rbackup', ask).then(function (x) {
+    if (button) busy(button, false);
+    var show = function (host) {
+      clear(host);
+      if (x.hostkey_needed) {
+        host.appendChild(el('p', 'note warn', 'The server shows this host key. Compare it with the server’s own fingerprint before you trust it:'));
+        (x.fingerprints || []).forEach(function (fp) { host.appendChild(noI18n(el('div', 'mono small', fp))); });
+        var tb = cmdButton('Trust it', 'check', 'small primary');
+        tb.onclick = function () {
+          var save = (inEditor && rbEdit.form) ? rbSaveForm(t.kind, {id: t.id}) : Promise.resolve(t);
+          save.then(function (saved) {
+            return api('rbackup', {action: 'hostkey_trust', id: saved.id, hostkey: x.hostkey}).then(function (y) {
+              toast('trusted', 'good');
+              if (rbSshBlock.paintHost) rbSshBlock.paintHost(y.fingerprints);
+              t.id = saved.id;
+              rbTry(saved, inEditor ? rbFormData(t.kind) : null, button, inEditor);
+            });
+          }).catch(oops);
+        };
+        host.appendChild(tb);
+        return;
+      }
+      var box = el('div', 'note ' + (x.ok ? 'good' : 'bad'));
+      box.appendChild(el('b', '', x.ok ? 'It works (' + x.secs + ' s)' : 'It does not work'));
+      var ul = el('ul', 'rb-steps');
+      (x.steps || []).forEach(function (s) { ul.appendChild(el('li', '', '✓ ' + s)); });
+      if (x.error) ul.appendChild(el('li', 'bad', '✗ ' + x.error));
+      box.appendChild(ul);
+      var sc = x.server_cert;
+      if (sc && sc.fingerprint) {
+        var p = el('div', 'small');
+        p.appendChild(el('span', '', 'The server’s certificate: '));
+        p.appendChild(noI18n(el('span', 'mono', ((sc.cert || {}).subject || '') + ' · SHA-256 ' + sc.fingerprint)));
+        box.appendChild(p);
+        if (inEditor && rbFtpsBlock.pin) {
+          var pin = cmdButton('Pin this certificate', 'pin', 'small');
+          pin.onclick = function () { rbFtpsBlock.check.value = 'pin'; rbFtpsBlock.check.onchange(); rbFtpsBlock.pin.value = sc.fingerprint; toast('pinned - Save to keep it', 'good'); };
+          box.appendChild(pin);
+        }
+      }
+      host.appendChild(box);
+      if (inEditor) host.appendChild(hideBar(function () { clear(host); }));
+    };
+    var host = inEditor ? $('rb-try-out') : null;
+    if (host) show(host);
+    else modal('Trying ' + (t.name || ''), function (body) { var h = el('div'); body.appendChild(h); show(h); }, [{words: 'Close', close: true}], 'medium');
+    if (!inEditor) loadRbackup();
+  }).catch(function (e) { if (button) busy(button, false); oops(e); });
+}
+function rbListThere(t) {
+  modal('Backups at ' + t.name, function (body) {
+    var host = el('div');
+    host.appendChild(el('p', 'center muted', 'Asking…'));
+    body.appendChild(host);
+    api('rbackup', {action: 'list', id: t.id}).then(function (x) {
+      clear(host);
+      var files = x.files || [];
+      if (!files.length) { host.appendChild(el('p', 'note', 'No backup of ai there.')); return; }
+      host.appendChild(listTable(['Made', 'Node', 'Size', '', ''], files, function (fl) {
+        var tr = el('tr');
+        var w = el('td');
+        w.appendChild(el('div', '', new Date(fl.when * 1000).toLocaleString(numLang())));
+        w.appendChild(noI18n(el('div', 'mono small muted', fl.name)));
+        tr.appendChild(w);
+        var n = el('td');
+        n.appendChild(noI18n(el('span', '', fl.node)));
+        if (fl.mine) { n.appendChild(document.createTextNode(' ')); n.appendChild(el('span', 'tag info', 'this server')); }
+        tr.appendChild(n);
+        var sz = el('td', 'num');
+        sz.textContent = rbBytes(fl.bytes);
+        if (!fl.encrypted) { sz.appendChild(document.createTextNode(' ')); sz.appendChild(el('span', 'tag bad', 'not locked')); }
+        tr.appendChild(sz);
+        var a = el('td', 'rowtools');
+        var dl = iconButton('download', 'Download it');
+        dl.onclick = function () { rbDownload({id: t.id, name: fl.name}); };
+        a.appendChild(dl);
+        var pb = iconButton('undo', 'Put this back…');
+        pb.onclick = function () { rbPutBackConfirm({id: t.id, name: fl.name, encrypted: fl.encrypted, when: fl.when, node: fl.node}); };
+        a.appendChild(pb);
+        var del = iconButton('trash', 'Delete it there');
+        del.onclick = function () {
+          confirmThen('Delete ' + htmlText(fl.name) + '?', 'It is deleted at ' + htmlText(t.name) + ', with its checksum and its RESTORE.md.', 'Delete it', function () {
+            api('rbackup', {action: 'delete_file', id: t.id, name: fl.name}).then(function () { toast('deleted', 'good'); rbListThere(t); }).catch(oops);
+          });
+        };
+        a.appendChild(del);
+        tr.appendChild(a);
+        return tr;
+      }, 'plain'));
+    }).catch(function (e) { clear(host); host.appendChild(el('p', 'note bad', String(e.message || e))); });
+  }, [{words: 'Close', close: true}], 'large');
+}
+function rbPutBackConfirm(what) {
+  modal('Put this backup back?', function (body) {
+    var facts = [];
+    if (what.when) facts.push(['Made', new Date(what.when * 1000).toLocaleString(numLang())]);
+    if (what.node) facts.push(['On', what.node]);
+    if (what.manifest) {
+      var m = what.manifest;
+      facts = [['Made', m.made_words], ['On', m.node + ' (' + (m.host || '') + ')'], ['ai', m.ai], ['Accounts', String(m.accounts)]];
+    }
+    if (facts.length) body.appendChild(peekFacts(facts));
+    body.appendChild(el('p', 'note warn', 'Everything in the database is replaced with what the backup holds - accounts, settings, the certificate, events, and who is signed in: you sign in again afterwards, with an account the backup has. A copy of what is here now is made first (Settings → Database). The terminals go on running.'));
+    var pw = maskBox('', what.encrypted === false ? '(not locked)' : 'the password of the backups - empty: the one set here', 'mono');
+    body.appendChild(formField('Its password', pw, 'Only when it was locked with another password than the one set here now.'));
+    rbPutBackConfirm.pw = pw;
+  }, [{words: 'No, leave it', close: true},
+      {words: 'Put it back', cls: 'danger', icon: 'undo', close: true, go: function () {
+        var ask = {action: 'restore', password: rbPutBackConfirm.pw.value};
+        if (what.upload) ask.upload = what.upload; else { ask.id = what.id; ask.name = what.name; }
+        api('rbackup', ask).then(function (x) {
+          toast(x.message, 'good');
+          rbRestoreWatch();
+        }).catch(oops);
+      }}], 'medium');
+}
+function rbRestoreWatch(title) {
+  modal(title || 'Putting the backup back', function (body) {
+    var bar = el('div', 'going wide');
+    bar.innerHTML = '<div class="bar"><span id="rbr-fill"></span></div><div class="says" id="rbr-says"></div>';
+    body.appendChild(bar);
+  }, [{words: 'Close', close: true}], 'medium');
+  var step = function () {
+    api('rbackup', {action: 'job'}).then(function (d) {
+      var j = d.job || {};
+      if ($('rbr-fill')) $('rbr-fill').style.width = (j.whole ? Math.round(100 * j.done / j.whole) : 5) + '%';
+      if ($('rbr-says')) $('rbr-says').textContent = (j.what || '') + (j.says ? ' — ' + j.says : '');
+      if (j.running) { setTimeout(step, 1000); return; }
+      if (!j.what && !j.result && !j.error) { setTimeout(step, 1000); return; }
+      if (j.error) { if ($('rbr-says')) $('rbr-says').textContent = j.error; toast('putting it back failed: ' + j.error, 'bad'); return; }
+      var r = j.result || {};
+      if ($('rbr-says')) {
+        var said = $('rbr-says');
+        clear(said);
+        said.appendChild(el('div', '', 'Put back.'));
+        (r.said || []).concat(r.key ? [r.key] : []).forEach(function (x) { said.appendChild(el('div', 'small', x)); });
+        if (r.safety) said.appendChild(el('div', 'small muted', 'What was here is kept as ' + r.safety));
+      }
+      toast(title ? 'the database is back' : 'the backup is back', 'good');
+      if (title) setTimeout(function () { location.reload(); }, 4000);
+    }).catch(function (e) {
+      /* Who was signed in is what the backup says now: the sign-in page. */
+      if (/signed in|401/i.test(String(e && e.message || e))) {
+        if ($('rbr-says')) $('rbr-says').textContent = 'Put back. Sign in again - with an account the backup has.';
+        setTimeout(function () { location.reload(); }, 3500);
+        return;
+      }
+      setTimeout(step, 2000);
+    });
+  };
+  setTimeout(step, 500);
+}
+function rbPutBackFile() {
+  var file = el('input');
+  file.type = 'file';
+  file.accept = '.enc,.gz';
+  file.onchange = function () {
+    var fl = file.files[0];
+    if (!fl) return;
+    toast('sending ' + fl.name + '…', 'good');
+    var up = '';
+    var a = new Uint8Array(8);
+    crypto.getRandomValues(a);
+    for (var i = 0; i < a.length; i++) up += ('0' + a[i].toString(16)).slice(-2);
+    sendFile('/files/put?dir=' + encodeURIComponent(RB.uploads) + '&name=' + up, fl, function () {}).then(function () {
+      return api('rbackup', {action: 'peek', upload: up});
+    }).then(function (d) {
+      if (d.said) toast(d.said, 'bad');
+      rbPutBackConfirm({upload: d.upload, encrypted: d.locked, manifest: d.manifest});
+    }).catch(oops);
+  };
+  file.click();
+}
+
+/* A button busy with something slow, the seconds counted beside its words
+   (1.0.109). Returns the function that ends it. */
+function busyCount(button) {
+  busy(button, true);
+  var began = Date.now();
+  var tag = el('span', 'busy-secs', '');
+  button.appendChild(tag);
+  var tick = setInterval(function () { tag.textContent = ' · ' + Math.round((Date.now() - began) / 1000) + ' s'; }, 500);
+  return function () { clearInterval(tick); tag.remove(); busy(button, false); };
+}
+
+
+/* A backup to the machine somebody is sitting at: made (or fetched) by the
+   daemon where /files/get hands it to this administrator. */
+function rbDownload(ask) {
+  api('rbackup', Object.assign({action: 'download'}, ask)).then(function (d) { download(d.path); }).catch(oops);
+}
