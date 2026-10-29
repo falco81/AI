@@ -1455,6 +1455,9 @@ function showPane(name) {
   if (name === 'claude') loadClaude();
   if (name === 'people') { loadUsers(); loadLockouts(); colsCardSay(); }
   if (name === 'mail') loadMail();
+  if (name === 'sms') loadSms();
+  if (name === 'texts') loadTexts();
+  if (name === 'mailq') loadOutbox();
   if (name === 'db') loadDb();
   if (name === 'backup') loadRbackup();
   if (name === 'web') loadWeb();
@@ -1528,7 +1531,7 @@ $('ctl-find').addEventListener('input', function () {
 });
 
 /* ---- the settings that are only values ---------------------------------------- */
-var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail', db: 'sect-db', backup: 'sect-backup'};
+var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail', db: 'sect-db', backup: 'sect-backup', sms: 'sect-sms'};
 function loadSettings() {
   return api('settings').then(function (d) {
     SETTINGS = d;
@@ -3941,3 +3944,224 @@ function loadSoftware() {
   clear(host);
   drawSoftware(host);
 }
+
+/* ---- from otp: SMS (1.0.81-1.0.113) --------------------------------------------- */
+function loadSms() {
+  return api('sms').then(function (d) {
+    var list = d.ca_list || [];
+    $('smsca-when').textContent = list.length ? num(list.length) + ' certificate(s) kept' : 'none imported';
+    $('smsca-drop').hidden = !list.length;
+    $('smsca-card').hidden = d.mode !== 'teltonika';
+    $('sms-tel').hidden = d.mode !== 'teltonika';
+    var host = $('smsca-state');
+    clear(host);
+    if (list.length) host.appendChild(certTable(list, function (c) {
+      confirmThen('Take this certificate out', '<b>' + htmlText(c.subject || 'this certificate')
+        + '</b> is no longer trusted for the SMS gateway. The others stay.', 'Take it out', function () {
+          api('sms', {action: 'ca', mode: 'drop', fingerprint: c.fingerprint}).then(function (r) { toast(r.message, 'good'); loadSms(); }).catch(oops);
+        });
+    }));
+    $('sms-said').textContent = {off: 'switched off', http: 'an HTTP gateway', spool: 'a modem on this machine', teltonika: 'a Teltonika gateway'}[d.mode] || '';
+  }).catch(oops);
+}
+function smsUnsaved() {
+  return Object.keys(DIRTY || {}).some(function (k) { return /^sms_/.test(k); });
+}
+$('sms-test').onclick = function () {
+  if (smsUnsaved()) { toast('save the SMS settings first', 'bad'); return; }
+  var b = $('sms-test');
+  busy(b, true);
+  api('sms', {action: 'test', to: $('sms-to').value.trim(), lang: $('sms-test-lang').value}).then(function (d) {
+    var host = $('sms-steps');
+    clear(host);
+    host.appendChild(el('p', 'note ' + (d.sent ? 'good' : 'bad'), (d.sent ? 'Sent: ' : 'Not sent: ') + (d.said || '') + ' · ' + num(d.took_ms) + ' ms'));
+    host.appendChild(hideBar(function () { clear(host); }));
+  }).catch(oops).then(function () { busy(b, false); });
+};
+$('sms-tel').onclick = function () {
+  if (smsUnsaved()) { toast('save the changes first - the test uses what is saved', 'warn'); return; }
+  var go = $('sms-tel'), out = $('sms-steps');
+  busy(go, true);
+  clear(out);
+  out.appendChild(el('p', 'note', 'Asking the gateway…'));
+  api('sms', {action: 'tel_test'}).then(function (d) {
+    clear(out);
+    var steps = el('div', 'tel-steps');
+    (d.steps || []).forEach(function (st) {
+      var r = el('div', 'tel-step ' + (st.ok ? 'good' : 'bad'));
+      r.appendChild(el('span', 'tel-mark', st.ok ? '✓' : '✗'));
+      r.appendChild(el('b', '', st.what));
+      if (st.secs) r.appendChild(noI18n(el('span', 'muted small', ' ' + String(st.secs).replace('.', numLang() === 'cs' ? ',' : '.') + ' s')));
+      if (st.said) {
+        r.appendChild(document.createTextNode(' – '));
+        r.appendChild(el('span', 'small' + (st.ok ? ' muted' : ' bad'), st.said));
+      }
+      steps.appendChild(r);
+    });
+    out.appendChild(steps);
+    (d.modems || []).forEach(function (m) {
+      var card = el('div', 'tel-modem' + (m.sends ? ' sends' : ''));
+      var t = el('div', 'tel-modem-head');
+      t.appendChild(noI18n(el('b', 'mono', m.id || '?')));
+      if (m.sends) t.appendChild(el('span', 'tag ok', 'sends the codes'));
+      card.appendChild(t);
+      var dl = el('dl', 'tel-facts');
+      (m.fields || []).forEach(function (kv) {
+        if (kv[0] === 'id') return;
+        var one = el('div', 'tel-fact');
+        one.appendChild(el('dt', '', kv[0]));
+        one.appendChild(noI18n(el('dd', 'mono', kv[1])));
+        dl.appendChild(one);
+      });
+      card.appendChild(dl);
+      out.appendChild(card);
+    });
+    out.appendChild(el('p', 'note small ' + (d.ok ? (d.checked ? 'good' : 'warn') : 'bad'), d.ok
+      ? 'The gateway answers' + (d.checked ? ', its certificate checked' : (d.https ? ' - its certificate NOT checked' : ' - over plain HTTP')) + ' (' + num(d.took_ms) + ' ms).'
+      : 'The gateway cannot send codes like this - see the step marked ✗.'));
+    out.appendChild(hideBar(function () { clear(out); }));
+  }).catch(function (e) { clear(out); oops(e); }).then(function () { busy(go, false); });
+};
+$('smsca-pem').addEventListener('input', function () {
+  clear($('smsca-seen'));
+  if (!$('smsca-pem').value.trim()) { delete PENDING.smsca; markDirtyCount(); return; }
+  pendingSet('smsca', {save: function () {
+    return api('sms', {action: 'ca', mode: 'add', ca: $('smsca-pem').value.trim()}).then(function (r) {
+      toast(r.message, 'good'); $('smsca-pem').value = ''; clear($('smsca-seen')); loadSms(); return true;
+    });
+  }, reset: function () { $('smsca-pem').value = ''; clear($('smsca-seen')); }});
+});
+$('smsca-fetch').onclick = function () {
+  if (Object.keys(DIRTY || {}).some(function (k) { return /^sms_tel_(host|https)$/.test(k); })) { toast('save the gateway’s address first', 'bad'); return; }
+  var b = $('smsca-fetch');
+  busy(b, true);
+  api('sms', {action: 'ca_fetch'}).then(function (r) {
+    $('smsca-pem').value = r.pem || '';
+    $('smsca-pem').dispatchEvent(new Event('input'));
+    var seen = $('smsca-seen');
+    if ((r.certs || []).length) {
+      seen.appendChild(el('div', 'says', 'What the gateway shows - check the fingerprint against the one on the gateway (System → Administration → Certificates) before Save the changes trusts it:'));
+      seen.appendChild(certTable(r.certs));
+    }
+  }).catch(oops).then(function () { busy(b, false); });
+};
+$('smsca-file').onclick = function () { $('smsca-input').click(); };
+$('smsca-input').onchange = function () { var f = this.files && this.files[0]; if (f) readCertFile(f, $('smsca-pem')); this.value = ''; };
+$('smsca-drop').onclick = function () {
+  confirmThen('Take every certificate of the SMS gateway away',
+    'The gateway’s certificate will then have to be signed by an authority this machine already trusts, or the check has to be switched off.',
+    'Take them all away', function () {
+      api('sms', {action: 'ca', mode: 'clear'}).then(function (r) { toast(r.message, 'good'); loadSms(); }).catch(oops);
+    }, true);
+};
+
+/* ---- the texts of the messages (as otp's, 1.0.103) ------------------------------------- */
+var TX = {d: null, lang: 'cs', dirty: {}};
+var TX_WORDS = {
+  code_subject: ['A sign-in code by mail', 'the subject'], code_body: ['A sign-in code by mail', 'the text'],
+  verify_subject: ['Checking an address (setting up the second step)', 'the subject'], verify_body: ['Checking an address (setting up the second step)', 'the text'],
+  test_subject: ['A test mail', 'the subject'], test_body: ['A test mail', 'the text'],
+  notice_subject: ['Notices of warnings and failures', 'the subject'], notice_body: ['Notices of warnings and failures', 'the text'],
+  sms_code: ['A sign-in code by SMS', 'the text'], sms_verify: ['Checking a number by SMS', 'the text'], sms_test: ['A test SMS', 'the text']
+};
+function loadTexts() {
+  api('texts').then(function (d) { TX.d = d; TX.dirty = {}; drawTexts(); }).catch(oops);
+}
+function drawTexts() {
+  var host = $('tx-root');
+  clear(host);
+  var last = '';
+  var box = null;
+  (TX.d.texts[TX.lang] || []).forEach(function (t) {
+    var w = TX_WORDS[t.key] || [t.key, ''];
+    if (w[0] !== last) {
+      last = w[0];
+      box = el('section', 'set-sec');
+      var h = el('h3', 'set-sec-head');
+      h.appendChild(el('span', '', w[0]));
+      box.appendChild(h);
+      host.appendChild(box);
+    }
+    var item = el('div', 'set-item tall');
+    item.appendChild(el('label', '', w[1]));
+    var one = /_subject$/.test(t.key) || /^sms_/.test(t.key);
+    var input = one ? textBox(t.text, '', 'mono') : el('textarea', 'mono');
+    if (!one) { input.rows = Math.min(14, Math.max(4, t.text.split('\n').length + 1)); input.value = t.text; input.spellcheck = false; }
+    input.oninput = function () {
+      if (input.value === t.text) delete TX.dirty[t.key]; else TX.dirty[t.key] = input.value;
+      item.classList.toggle('dirty', t.key in TX.dirty);
+      if (Object.keys(TX.dirty).length) pendingSet('texts', {save: textsSave, reset: function () { TX.dirty = {}; drawTexts(); }});
+      else { delete PENDING.texts; markDirtyCount(); }
+      count();
+    };
+    item.appendChild(input);
+    var tail = el('div', 'set-tail');
+    var chips = el('div', 'says');
+    chips.appendChild(document.createTextNode('Filled in: '));
+    t.fields.forEach(function (f) { chips.appendChild(noI18n(el('code', '', '{' + f + '}'))); chips.appendChild(document.createTextNode(' ')); });
+    var count = function () {
+      if (/^sms_/.test(t.key)) chips.lastChild.textContent = ' · ' + input.value.length + ' characters';
+    };
+    if (/^sms_/.test(t.key)) chips.appendChild(el('span', 'muted', ''));
+    count();
+    tail.appendChild(chips);
+    if (t.own) {
+      var back = el('button', 'link small', 'back to the built-in text');
+      back.type = 'button';
+      back.onclick = function () { input.value = t['default']; input.oninput(); };
+      tail.appendChild(back);
+    }
+    item.appendChild(tail);
+    box.appendChild(item);
+  });
+}
+function textsSave() {
+  return api('texts', {lang: TX.lang, texts: TX.dirty}).then(function (r) { toast(r.message, 'good'); loadTexts(); return true; });
+}
+document.querySelectorAll('#tx-langs button').forEach(function (b) {
+  b.onclick = function () {
+    if (Object.keys(TX.dirty).length) { toast('save the changes first', 'warn'); return; }
+    TX.lang = b.dataset.lang;
+    document.querySelectorAll('#tx-langs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    drawTexts();
+  };
+});
+
+/* ---- outgoing mail and SMS (as otp's Outgoing mail) -------------------------------------- */
+function loadOutbox() {
+  var q = $('mq-q').value.trim(), st = $('mq-state').value;
+  api('outbox&q=' + encodeURIComponent(q) + '&state=' + encodeURIComponent(st)).then(function (d) {
+    var chips = $('mq-chips');
+    clear(chips);
+    [['sent', 'sent', 'ok'], ['failed', 'failed', 'crit']].forEach(function (c) {
+      var n = (d.counts || {})[c[0]] || 0;
+      var b = el('button', 'tag ' + (n ? c[2] : 'dim'), c[1] + ': ' + num(n));
+      b.type = 'button';
+      b.onclick = function () { $('mq-state').value = c[0]; loadOutbox(); };
+      chips.appendChild(b);
+      chips.appendChild(document.createTextNode(' '));
+    });
+    var host = $('mq-table');
+    clear(host);
+    if (!d.rows.length) { host.appendChild(el('p', 'note', 'Nothing has been sent yet.')); return; }
+    host.appendChild(listTable(['When', 'How', 'To', 'What', 'State', 'What the other side said', 'Took'], d.rows, function (r) {
+      var tr = el('tr');
+      tr.appendChild(stampCell(r.at));
+      tr.appendChild(el('td', '', r.kind === 'sms' ? 'SMS' : 'e-mail'));
+      tr.appendChild(noI18n(el('td', 'mono small', r.dest)));
+      var w = el('td', 'small', r.what);
+      if (r.subject) w.appendChild(noI18n(el('div', 'muted', r.subject)));
+      tr.appendChild(w);
+      var s = el('td');
+      s.appendChild(el('span', 'tag ' + (r.state === 'sent' ? 'ok' : 'crit'), r.state === 'sent' ? 'sent' : 'failed'));
+      tr.appendChild(s);
+      tr.appendChild(noI18n(el('td', 'small muted', r.said || '')));
+      tr.appendChild(el('td', 'num small muted', (r.secs || 0) + ' s'));
+      return tr;
+    }));
+  }).catch(oops);
+}
+$('mq-q').addEventListener('input', function () { clearTimeout(loadOutbox._t); loadOutbox._t = setTimeout(loadOutbox, 300); });
+$('mq-state').onchange = loadOutbox;
+$('mq-drop-sent').onclick = function () { api('outbox', {action: 'clear', state: 'sent'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };
+$('mq-drop-failed').onclick = function () { api('outbox', {action: 'clear', state: 'failed'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };

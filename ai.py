@@ -153,6 +153,24 @@ DEFAULTS = {
     'mail_direct_tls': 'if-offered',
     'mail_dns': '',
     'mail_lang': 'cs',
+    'sms_mode': 'off',
+    'sms_url': '',
+    'sms_method': 'POST',
+    'sms_body': '',
+    'sms_headers': '',
+    'sms_token': '',
+    'sms_spool_dir': '/var/spool/sms/outgoing',
+    'sms_prefix': '+420',
+    'sms_ok_status': '',
+    'sms_tel_host': '',
+    'sms_tel_https': True,
+    'sms_tel_verify': False,
+    'sms_tel_user': 'admin',
+    'sms_tel_password': '',
+    'sms_tel_api': 'rest',
+    'sms_tel_modem': '',
+    'sms_plain': True,
+    'admin_2fa_sms': True,
     'notify_to': '',
     'notify_level': 'warn',
     'notify_gap_min': 15,
@@ -170,7 +188,7 @@ DEFAULTS = {
     'rbackup_password': '',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
-SEALED_KEYS = ('smtp_password', 'rbackup_password')
+SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password')
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
 # set in /etc/ai/config.json or by its own page (the firewall, the network...).
@@ -266,6 +284,59 @@ SCHEMA = [
      {'when': ['admin_2fa', [True]]}),
     ('admin_2fa_mail', 'access', 'bool', 'Offered: a code by e-mail',
      'Only where sending mail is set up (Settings → Mail).', {'when': ['admin_2fa', [True]]}),
+    ('admin_2fa_sms', 'access', 'bool', 'Offered: a code by SMS',
+     'Only where sending SMS is set up (Settings → SMS).', {'when': ['admin_2fa', [True]]}),
+    ('sms_mode', 'sms', 'choice', 'How SMS is sent',
+     'An SMS gateway with an HTTP API (most operators and services), a GSM modem on this machine run '
+     'by smstools3 or gammu-smsd (a file into its spool folder), or a Teltonika gateway (TRB140, RUT…) '
+     'on the network through its own API. Off: no code goes by SMS.',
+     {'choices': [['off', 'off - no SMS is sent'], ['http', 'an SMS gateway with an HTTP API'],
+                  ['spool', 'a modem on this machine - a file into the spool of smstools / gammu'],
+                  ['teltonika', 'a Teltonika gateway (TRB140, RUT…) on the network']]}),
+    ('sms_prefix', 'sms', 'str', 'Country code for numbers written without one',
+     'A number typed as 603 123 456 becomes +420603123456. Empty: a number has to be typed with its '
+     'country code.', {'when': ['sms_mode', ['http', 'spool', 'teltonika']]}),
+    ('sms_plain', 'sms', 'bool', 'Without accents (one SMS, not two)',
+     'A letter with an accent makes the whole SMS the wide alphabet, 70 characters a part instead of 160.',
+     {'when': ['sms_mode', ['http', 'spool', 'teltonika']]}),
+    ('sms_url', 'sms', 'str', 'The gateway\'s address (URL)',
+     'Where the message is sent. {to} is the number (+420…), {to_digits} the number without +, {text} '
+     'the message, {token} the key below. https://sms.example.cz/api/send?to={to}&text={text}',
+     {'when': ['sms_mode', ['http']]}),
+    ('sms_method', 'sms', 'choice', 'HTTP method', 'POST sends the body below; GET only the address.',
+     {'choices': [['POST', 'POST'], ['GET', 'GET']], 'when': ['sms_mode', ['http']]}),
+    ('sms_token', 'sms', 'password', 'The gateway\'s key ({token})',
+     'Its API key or password, kept sealed in the database and put where {token} is written.',
+     {'secret': True, 'when': ['sms_mode', ['http']]}),
+    ('sms_ok_status', 'sms', 'str', 'The gateway said it was sent when the answer holds',
+     'Some gateways answer 200 to everything: a word their answer holds only when it was sent. Empty: any 2xx.',
+     {'when': ['sms_mode', ['http']]}),
+    ('sms_body', 'sms', 'text', 'What is sent (body)',
+     'For POST. Starting with { it is JSON: {"to": "{to}", "text": "{text}"}; otherwise a form: '
+     'to={to}&text={text}. Empty: the address alone.', {'when': ['sms_mode', ['http']]}),
+    ('sms_headers', 'sms', 'text', 'Headers', 'One a line, Name: value - Authorization: Bearer {token}.',
+     {'when': ['sms_mode', ['http']]}),
+    ('sms_spool_dir', 'sms', 'str', 'The spool folder',
+     'smstools3: /var/spool/sms/outgoing. A file "To: 420…" and the text is written there and the '
+     'modem\'s daemon sends it.', {'when': ['sms_mode', ['spool']]}),
+    ('sms_tel_host', 'sms', 'str', 'The Teltonika\'s address', 'The gateway on the network: 192.168.1.1, or host:port.',
+     {'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_api', 'sms', 'choice', 'Its interface',
+     'RutOS 7 offers its own API out of the box; the older Post/Get service has to be switched on by hand.',
+     {'choices': [['rest', 'RutOS\'s own API (/api, RutOS 7 - the default)'],
+                  ['cgi', 'the older Post/Get SMS service (/cgi-bin/sms_send)']], 'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_modem', 'sms', 'str', 'Its modem', 'Which modem sends - 1-1, 3-1… Empty: the one the gateway names first.',
+     {'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_https', 'sms', 'bool', 'Over HTTPS', 'HTTPS keeps its password and the codes off the wire.',
+     {'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_verify', 'sms', 'bool', 'Check its certificate',
+     'Checked against the certificates imported below - the gateway\'s own or the authority that signed it; '
+     'with none imported, against the authorities this machine trusts. Off: any certificate is taken.',
+     {'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_user', 'sms', 'str', 'Its user', 'An account of the gateway that may use its API.',
+     {'when': ['sms_mode', ['teltonika']]}),
+    ('sms_tel_password', 'sms', 'password', 'Its password', 'Kept sealed in the database. Never shown again.',
+     {'secret': True, 'when': ['sms_mode', ['teltonika']]}),
     ('totp_window', 'access', 'int', 'Codes of the app taken this many periods early or late',
      'A period is 30 s. 1 forgives a phone half a minute out; 0 takes only the code of now.',
      {'min': 0, 'max': 4, 'when': ['admin_2fa', [True]]}),
@@ -1944,6 +2015,705 @@ def mail_send(store, msg, to, mode=None):
 
 
 # ---------------------------------------------------------------------------
+# From otp: SMS - an HTTP gateway, a modem's spool, or a Teltonika on the network
+# ---------------------------------------------------------------------------
+# For the codes of the second step of signing in sent by SMS. Taken over from
+# otp 1.0.161 as it is there: the same gateways, the same checks, the same
+# words in the log (never the text being sent).
+STORE_NOW = {'store': None}
+IS_DAEMON = [False]
+
+
+# ---- sending -------------------------------------------------------------------------
+class SmsError(RuntimeError):
+    pass
+
+
+def sms_plain(text):
+    """The text without accents (1.0.81): one letter outside the GSM
+    alphabet makes the whole SMS the wide one, 70 characters a part."""
+    if not CONFIG.get('sms_plain', 1):
+        return text
+    import unicodedata
+    out = unicodedata.normalize('NFKD', str(text))
+    out = ''.join(c for c in out if not unicodedata.combining(c))
+    return out.replace('–', '-').replace('—', '-').replace('„', '"').replace('“', '"')
+
+
+# ---- a Teltonika gateway (TRB140, RUT…), as zigmon speaks to it (1.0.81) -----------
+TELTONIKA = {'token': None, 'until': 0.0, 'modem': None, 'last': 0.0}
+TELTONIKA_LOCK = threading.Lock()
+
+
+def _tel_url(path, params=None):
+    host = str(CONFIG.get('sms_tel_host') or '').strip().rstrip('/')
+    if not host:
+        raise SmsError('no address of the Teltonika gateway is set - Settings → Codes by e-mail '
+                       'and SMS')
+    scheme = 'https' if CONFIG.get('sms_tel_https', 1) else 'http'
+    if '://' in host:
+        scheme, host = host.split('://', 1)
+    url = '%s://%s%s' % (scheme, host, path)
+    if params:
+        url += '?' + urllib.parse.urlencode(params)
+    return url
+
+
+SMS_CA_META = 'sms_ca'          # the gateway's certificates trusted (1.0.89)
+
+
+def sms_ca_pem(store=None):
+    store = store or STORE_NOW.get('store')
+    if store is None:
+        return ''
+    try:
+        return str(store.get_meta(SMS_CA_META) or '')
+    except Exception:                                   # noqa: BLE001
+        return ''
+
+
+def sms_ca_set(store, pem, mode='add', fingerprint=''):
+    """The certificates the Teltonika gateway is checked against - each added
+    and taken out by itself, as the mail server's."""
+    pem = str(pem or '').strip()
+    have = split_certificates(sms_ca_pem(store))
+    if mode == 'add':
+        new = split_certificates(pem)
+        if not new or not all(describe_certificate(b) for b in new):
+            raise ValueError('that is not a certificate this can read: a PEM certificate '
+                             'starts -----BEGIN CERTIFICATE-----')
+        seen = {c['fingerprint'] for c in describe_certificates('\n'.join(have))}
+        have += [b for b, c in zip(new, describe_certificates('\n'.join(new)))
+                 if c['fingerprint'] not in seen]
+    elif mode == 'drop':
+        keep = [b for b, c in zip(have, describe_certificates('\n'.join(have)))
+                if c['fingerprint'] != fingerprint]
+        if len(keep) == len(have):
+            raise ValueError('that certificate is not among the ones kept')
+        have = keep
+    elif mode == 'clear':
+        have = []
+    else:
+        raise ValueError('add, drop or clear?')
+    store.set_meta(SMS_CA_META, '\n'.join(have))
+    return describe_certificates('\n'.join(have))
+
+
+def _tel_is_name(host):
+    host = host.split('://', 1)[-1].split('/')[0]
+    if host.startswith('['):
+        return False
+    host = host.rsplit(':', 1)[0] if host.count(':') == 1 else host
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        return True
+
+
+def _tel_ssl():
+    if not CONFIG.get('sms_tel_verify'):
+        # A TRB makes its own certificate; nothing can check it.
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    pem = sms_ca_pem()
+    if not pem.strip():
+        return ssl.create_default_context()
+    # Only what was imported (1.0.89): the gateway's own certificate, or the
+    # authority of your own that signed it. A gateway reached by its address
+    # has no name to check against - its certificate is: the chain must end
+    # in one of these.
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        ctx.load_verify_locations(cadata=pem)
+    except (ssl.SSLError, ValueError) as e:
+        raise SmsError('the certificates kept for the gateway cannot be read: %s' % e)
+    # Any certificate imported is an anchor of its own (1.0.92): a TRB sends
+    # only its own certificate, signed by a "ca" it never shows, and that
+    # certificate alone - read from it - was refused as "unable to get local
+    # issuer certificate". The strict checks of 3.13 are left out too: a
+    # gateway's own certificate is not a web server's.
+    ctx.verify_flags |= getattr(ssl, 'VERIFY_X509_PARTIAL_CHAIN', 0x80000)
+    ctx.verify_flags &= ~getattr(ssl, 'VERIFY_X509_STRICT', 0x20)
+    ctx.check_hostname = _tel_is_name(str(CONFIG.get('sms_tel_host') or ''))
+    return ctx
+
+
+def tel_peer_chain():
+    """The certificates the gateway shows, read without checking them - for
+    an administrator to look at and trust (1.0.89)."""
+    host = str(CONFIG.get('sms_tel_host') or '').strip().rstrip('/')
+    if not host:
+        raise SmsError('no address of the Teltonika gateway is set')
+    host = host.split('://', 1)[-1].split('/')[0]
+    port = 443
+    if host.startswith('['):
+        name, _, rest = host[1:].partition(']')
+        if rest.startswith(':'):
+            port = int(rest[1:])
+    elif host.count(':') == 1:
+        name, port = host.split(':')
+        port = int(port)
+    else:
+        name = host
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection((name, port), timeout=10) as raw:
+            with ctx.wrap_socket(raw, server_hostname=name if _tel_is_name(name) else None) as tls:
+                chain = []
+                if hasattr(tls, 'get_unverified_chain'):
+                    try:
+                        chain = [c if isinstance(c, bytes) else c.public_bytes(1)
+                                 for c in tls.get_unverified_chain() or []]
+                    except Exception:                   # noqa: BLE001
+                        chain = []
+                if not chain:
+                    chain = [tls.getpeercert(binary_form=True)]
+    except (OSError, ssl.SSLError) as e:
+        raise SmsError('%s:%d could not be reached over TLS: %s' % (name, port, e))
+    pems = [ssl.DER_cert_to_PEM_cert(d).strip() for d in chain if d]
+    return '\n'.join(pems)
+
+
+def _tel_password():
+    pw = CONFIG.get('sms_tel_password') or ''
+    return (unseal_secret(pw, 'setting:sms_tel_password') or '') if pw else ''
+
+
+class _TelAnswer(object):
+    """An answer already read - so that it could be written into the log."""
+
+    def __init__(self, status, body):
+        self.status, self._body = status, body
+
+    def read(self, n=-1):
+        got = self._body if n is None or n < 0 else self._body[:n]
+        self._body = b'' if n is None or n < 0 else self._body[n:]
+        return got
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+_TEL_TEXT = threading.local()     # the text being sent, kept out of the debug log
+
+
+def _tel_hidden(words):
+    """A request or an answer as the debug log may hold it: no password,
+    no token (1.0.113), and not the text with its live code (1.0.146)."""
+    text = getattr(_TEL_TEXT, 'v', '') or ''
+    if text:
+        for form in {text, urllib.parse.quote(text, safe=''), urllib.parse.quote_plus(text),
+                     json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1]}:
+            if form:
+                words = words.replace(form, '<the text, %d characters>' % len(text))
+    words = re.sub(r'(?i)("(?:password|token)"\s*:\s*")[^"]*', r'\1***', words)
+    words = re.sub(r'(?i)((?:password|token)=)[^&\s]*', r'\1***', words)
+    return re.sub(r'(?i)(Bearer )\S+', r'\1***', words)
+
+
+def _tel_open(req, timeout=20.0):
+    loud = debugging('codes')
+    began = time.time()
+    if loud:
+        body = req.data.decode('utf-8', 'replace') if isinstance(req.data, bytes) else ''
+        log('sms: -> %s %s%s (waits %d s)' % (req.get_method(), _tel_hidden(req.full_url),
+                                             (' ' + _tel_hidden(body)[:300]) if body else '',
+                                             timeout), 'debug')
+    try:
+        r = urllib.request.urlopen(req, timeout=timeout, context=_tel_ssl()
+                                   if req.full_url.startswith('https') else None)
+        if not loud:
+            return r
+        with r:
+            body = r.read(65536)
+            status = getattr(r, 'status', 200)
+        log('sms: <- HTTP %s in %.2f s: %s' % (status, time.time() - began, _tel_hidden(
+            body.decode('utf-8', 'replace'))[:400]), 'debug')
+        return _TelAnswer(status, body)
+    except urllib.error.URLError as e:
+        if loud:
+            _tel_said_failed(e, began)
+        # The certificate refused (1.0.89): nothing was sent, and the page
+        # says what to do about it.
+        if isinstance(getattr(e, 'reason', None), ssl.SSLCertVerificationError):
+            raise SmsError('the gateway\'s certificate did not pass the check (%s): import its '
+                           'certificate or the authority that signed it under Settings → Codes '
+                           'by e-mail and SMS, or switch Check its certificate off'
+                           % (getattr(e.reason, 'verify_message', '') or e.reason))
+        raise
+    except Exception as e:                              # noqa: BLE001
+        if loud:
+            _tel_said_failed(e, began)
+        raise
+
+
+def _tel_said_failed(e, began):
+    extra = ''
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            said = e.read(400)
+            extra = ': ' + _tel_hidden(said.decode('utf-8', 'replace'))
+            e.read = (lambda b: (lambda n=-1: b))(said)         # the caller reads it too
+        except Exception:                               # noqa: BLE001
+            pass
+    log('sms: <- FAILED after %.2f s: %s %s%s' % (time.time() - began, type(e).__name__,
+                                               getattr(e, 'reason', e), extra), 'debug')
+
+
+def _tel_never_arrived(e):
+    """Whether a failed request certainly never reached the gateway - a
+    refused or reset connection. A read that timed out did reach it: the box
+    took the message and has not answered, and sending it again is a second
+    SMS on the person's phone (zigmon's lesson)."""
+    if isinstance(e, socket.timeout):
+        return False
+    reason = getattr(e, 'reason', e)
+    if isinstance(reason, socket.timeout):
+        return False
+    words = str(e).lower()
+    if 'timed out' in words or 'timeout' in words:
+        return False
+    return isinstance(reason, (ConnectionRefusedError, ConnectionResetError,
+                               ConnectionAbortedError, socket.gaierror)) or \
+        any(w in words for w in ('refused', 'reset by peer', 'not known', 'no route',
+                                 'broken pipe'))
+
+
+def _tel_who():
+    """What a login is for: another address, user or password is another
+    login - a token kept from before a change is not used after it."""
+    return hashlib.sha256(('%s|%s|%s|%s' % (CONFIG.get('sms_tel_host'), CONFIG.get('sms_tel_https'),
+                                            CONFIG.get('sms_tel_user'), _tel_password()))
+                          .encode('utf-8')).hexdigest()
+
+
+def _tel_logout(token, who=None):
+    """A login given back (1.0.152): every new one used to be left to run out
+    on the box, which lists each as a session of its own until it does. Best
+    effort, a few seconds at most - an older RutOS without it only says no."""
+    if not token:
+        return
+    try:
+        req = urllib.request.Request(_tel_url('/api/logout'), data=b'{}', method='POST',
+                                     headers={'Content-Type': 'application/json',
+                                              'Authorization': 'Bearer ' + token})
+        with _tel_open(req, 4) as r:
+            r.read(200)
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def _tel_drop_token():
+    """The login in hand given back and forgotten."""
+    old, TELTONIKA['token'] = TELTONIKA.get('token'), None
+    _tel_logout(old)
+
+
+def _tel_end_of_process():
+    # A command that sent or tried something gives its login back as it ends
+    # (1.0.152); the daemon keeps its one and renews it.
+    if not IS_DAEMON[0] and TELTONIKA.get('token'):
+        _tel_drop_token()
+
+
+import atexit as _atexit                                # noqa: E402
+_atexit.register(_tel_end_of_process)
+
+
+def _tel_token(fresh=False):
+    """A login on RutOS's own API: a token that lasts five minutes, renewed a
+    minute before - one at a time: the one before is given back first."""
+    now = time.time()
+    if TELTONIKA.get('who') != _tel_who():
+        # Another box or user: the old login is not this one's to give back
+        # with its address gone - it runs out by itself there.
+        TELTONIKA.update(token=None, modem=None, who=_tel_who())
+    if not fresh and TELTONIKA['token'] and now < TELTONIKA['until']:
+        return TELTONIKA['token']
+    _tel_drop_token()
+    body = json.dumps({'username': CONFIG.get('sms_tel_user') or 'admin',
+                       'password': _tel_password()}).encode()
+    tries = 0
+    while True:
+        tries += 1
+        req = urllib.request.Request(_tel_url('/api/login'), data=body, method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        try:
+            with _tel_open(req, 15) as r:
+                answer = json.loads(r.read() or b'{}')
+            break
+        except urllib.error.HTTPError as e:
+            raise SmsError('the Teltonika would not let ai in (HTTP %d) - check its user and '
+                           'password, and that the user may use the API' % e.code)
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            # Signing in is asked again once (1.0.113): a box busy with the
+            # modem leaves a login unanswered now and then, and asking again
+            # sends nothing twice.
+            if tries < 2 and not isinstance(e, ValueError):
+                log('sms: the Teltonika did not answer the sign-in (%s) - asked again'
+                    % getattr(e, 'reason', e), 'warn')
+                time.sleep(1)
+                continue
+            raise SmsError('the Teltonika could not be reached%s: %s' % (
+                ' (asked twice)' if tries > 1 else '', getattr(e, 'reason', e)))
+    data = answer.get('data') or {}
+    token = data.get('token') or answer.get('token') or ''
+    if not token:
+        raise SmsError('the Teltonika gave no token: %s' % json.dumps(answer)[:150])
+    TELTONIKA['token'] = token
+    TELTONIKA['until'] = now + max(30.0, float(data.get('expires') or 299) - 60)
+    return token
+
+
+def _tel_rest(path, method='GET', payload=None, timeout=20.0, again=True):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(_tel_url('/api' + path), data=data, method=method,
+                                 headers={'Content-Type': 'application/json',
+                                          'Authorization': 'Bearer ' + _tel_token()})
+    try:
+        with _tel_open(req, timeout) as r:
+            answer = json.loads(r.read() or b'{}')
+    except urllib.error.HTTPError as e:
+        said = ''
+        try:
+            said = e.read(300).decode('utf-8', 'replace')
+        except Exception:                               # noqa: BLE001
+            pass
+        if e.code in (401, 403) and again:
+            TELTONIKA['token'] = None                   # gone stale - nothing to give back
+            return _tel_rest(path, method, payload, timeout, again=False)
+        raise SmsError('the Teltonika answered %s %s with HTTP %d %s' % (method, path, e.code,
+                                                                         said))
+    if answer.get('success') is False:
+        raise SmsError('the Teltonika refused %s: %s' % (path, json.dumps(
+            answer.get('errors') or answer)[:200]))
+    return answer.get('data', answer)
+
+
+def _tel_modem():
+    if CONFIG.get('sms_tel_modem'):
+        return str(CONFIG['sms_tel_modem']).strip()
+    if TELTONIKA.get('who') != _tel_who():
+        TELTONIKA.update(token=None, modem=None, who=_tel_who())
+    if TELTONIKA['modem']:
+        return TELTONIKA['modem']
+    rows = _tel_rest('/modems/status') or []
+    if isinstance(rows, dict):
+        rows = [rows]
+    first = next((r for r in rows if isinstance(r, dict) and r.get('id')), None)
+    if not first:
+        raise SmsError('the Teltonika named no modem')
+    TELTONIKA['modem'] = str(first['id'])
+    return TELTONIKA['modem']
+
+
+def tel_send(to, text):
+    """One SMS through a Teltonika, one at a time: the box sends one message
+    after another, and a second asked for at once is taken and then left
+    unanswered for a minute."""
+    waited = time.time()
+    with TELTONIKA_LOCK:
+        gap = 2.0 - (time.time() - TELTONIKA['last'])
+        if gap > 0:
+            time.sleep(gap)
+        loud = debugging('codes')
+        if loud:
+            log('sms: to %s, %d characters, through the Teltonika %s (%s), after %.1f s in the '
+                'queue' % (to[:-3] + '***' if len(to) > 6 else to, len(text),
+                           CONFIG.get('sms_tel_host'), CONFIG.get('sms_tel_api') or 'rest',
+                           time.time() - waited), 'debug')
+        began = time.time()
+        _TEL_TEXT.v = text
+        try:
+            said = _tel_send(to, text)
+            if loud:
+                log('sms: done in %.1f s - %s' % (time.time() - began, said), 'debug')
+            return said
+        except Exception as e:
+            if loud:
+                log('sms: FAILED after %.1f s - %s' % (time.time() - began, e), 'debug')
+            raise
+        finally:
+            _TEL_TEXT.v = ''
+            TELTONIKA['last'] = time.time()
+
+
+def _tel_send(to, text):
+    parts = 1 if len(text) <= (160 if all(ord(c) < 128 for c in text) else 70) else 2
+    timeout = 20.0 * parts
+    if (CONFIG.get('sms_tel_api') or 'rest') == 'cgi':
+        number = '00' + to.lstrip('+')                  # Teltonika's CGI wants 00420…
+        url = _tel_url('/cgi-bin/sms_send', {'username': CONFIG.get('sms_tel_user') or '',
+                                             'password': _tel_password(), 'number': number,
+                                             'text': text})
+        tries = 0
+        while True:
+            tries += 1
+            try:
+                with _tel_open(urllib.request.Request(url), timeout) as r:
+                    said = r.read(400).decode('utf-8', 'replace').strip()
+                break
+            except urllib.error.HTTPError as e:
+                raise SmsError('the Teltonika answered HTTP %d: %s' % (
+                    e.code, e.read(200).decode('utf-8', 'replace')))
+            except (urllib.error.URLError, OSError) as e:
+                if tries < 3 and _tel_never_arrived(e):
+                    time.sleep(tries)
+                    continue
+                if not _tel_never_arrived(e):
+                    return 'no answer from the Teltonika in %d s - the SMS has most likely gone' \
+                        % timeout
+                raise SmsError('the Teltonika could not be reached: %s' % getattr(e, 'reason', e))
+        if 'error' in said.lower() and not said.lower().startswith('ok'):
+            raise SmsError('the Teltonika said: %s' % said[:200])
+        return 'the Teltonika said: %s' % (said[:120] or 'OK')
+    tries = 0
+    while True:
+        tries += 1
+        try:
+            # How long each step took, said with the answer (1.0.109): a
+            # test that took long tells whether it was the login, finding
+            # the modem or the sending itself - RutOS answers the send only
+            # once the modem has given the SMS to the network.
+            t0 = time.time()
+            _tel_token()
+            t1 = time.time()
+            modem = _tel_modem()
+            t2 = time.time()
+            out = _tel_rest('/messages/actions/send', 'POST',
+                            {'data': {'number': to, 'message': text, 'modem': modem}},
+                            timeout=timeout)
+            t3 = time.time()
+            steps = []
+            if t1 - t0 > 0.05:
+                steps.append('signing in %.1f s' % (t1 - t0))
+            if t2 - t1 > 0.05:
+                steps.append('finding the modem %.1f s' % (t2 - t1))
+            steps.append('the modem sending it %.1f s' % (t3 - t2))
+            return 'the Teltonika took it (%s; %s)' % (', '.join(steps), json.dumps(out)[:60])
+        except SmsError:
+            raise
+        except (urllib.error.URLError, OSError) as e:
+            if tries < 3 and _tel_never_arrived(e):
+                TELTONIKA['until'] = 0                  # a new connection, a new login
+                time.sleep(tries)
+                continue
+            if not _tel_never_arrived(e):
+                return 'no answer from the Teltonika in %d s - the SMS has most likely gone' \
+                    % timeout
+            raise SmsError('the Teltonika could not be reached: %s' % getattr(e, 'reason', e))
+
+
+def tel_check():
+    """Whether the gateway is there and takes the password - nothing sent."""
+    if (CONFIG.get('sms_tel_api') or 'rest') == 'cgi':
+        url = _tel_url('/cgi-bin/sms_list', {'username': CONFIG.get('sms_tel_user') or '',
+                                             'password': _tel_password()})
+        try:
+            with _tel_open(urllib.request.Request(url), 15) as r:
+                said = r.read(300).decode('utf-8', 'replace')
+        except (urllib.error.URLError, OSError) as e:
+            raise SmsError('the Teltonika could not be reached: %s' % getattr(e, 'reason', e))
+        if 'error' in said.lower() and 'no messages' not in said.lower():
+            raise SmsError('the Teltonika said: %s' % said.strip()[:150])
+        return 'the Teltonika answered and took the password'
+    _tel_token(fresh=True)
+    TELTONIKA['modem'] = None
+    return 'the Teltonika let ai in; its modem is %s' % _tel_modem()
+
+
+# What a modem's status says, in the order shown (1.0.113). RutOS 7 names
+# them so; a field it does not have is left out.
+TEL_MODEM_FIELDS = (
+    ('name', 'Modem'), ('model', 'Model'), ('operator', 'Operator'),
+    ('ntype', 'Network'), ('conntype', 'Connection'), ('band', 'Band'),
+    ('state', 'State'), ('operator_state', 'Registered'), ('netstate', 'Network state'),
+    ('active_sim', 'SIM in use'), ('simstate', 'SIM'), ('pinstate', 'PIN'),
+    ('signal_quality', 'Signal quality (%)'), ('rssi', 'RSSI (dBm)'), ('rsrp', 'RSRP (dBm)'),
+    ('rsrq', 'RSRQ (dB)'), ('sinr', 'SINR (dB)'), ('temperature', 'Temperature (C)'),
+    ('volte', 'VoLTE'), ('sms_center_address', 'SMS centre'), ('imei', 'IMEI'),
+    ('version', 'Modem firmware'))
+
+
+def tel_modem_words(row):
+    out = [('id', str(row.get('id') or ''))]
+    for k, words in TEL_MODEM_FIELDS:
+        v = row.get(k)
+        if v in (None, '', [], {}):
+            continue
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v)[:80]
+        out.append((words, str(v)[:80]))
+    if len(out) < 4:
+        # Another firmware, other names: what it said, plainly.
+        for k, v in list(row.items())[:12]:
+            if k != 'id' and isinstance(v, (str, int, float)) and str(v) != '':
+                out.append((str(k)[:30], str(v)[:80]))
+    return out
+
+
+def tel_test():
+    """The gateway tried, step by step, without sending anything (1.0.113):
+    reached, signed in, its modems and what each says about the network."""
+    mode = (CONFIG.get('sms_tel_api') or 'rest')
+    host = str(CONFIG.get('sms_tel_host') or '').strip()
+    out = {'ok': False, 'steps': [], 'modems': [], 'api': mode, 'host': host,
+           'https': bool(CONFIG.get('sms_tel_https')),
+           'checked': bool(CONFIG.get('sms_tel_https') and CONFIG.get('sms_tel_verify'))}
+    if not host:
+        out['steps'].append({'what': 'the address', 'ok': False, 'secs': 0,
+                             'said': 'no address of the gateway is saved'})
+        return out
+
+    def step(what, fn):
+        t = time.time()
+        try:
+            got = fn()
+        except SmsError as e:
+            out['steps'].append({'what': what, 'ok': False, 'secs': round(time.time() - t, 2),
+                                 'said': str(e)})
+            return None, False
+        out['steps'].append({'what': what, 'ok': True, 'secs': round(time.time() - t, 2),
+                             'said': got if isinstance(got, str) else ''})
+        return got, True
+
+    with TELTONIKA_LOCK:
+        if mode == 'cgi':
+            _x, ok = step('signing in (Post/Get)', tel_check)
+            out['ok'] = ok
+            return out
+        TELTONIKA['modem'] = None
+        _x, ok = step('signing in', lambda: (_tel_token(fresh=True) and 'let in as %s'
+                                            % (CONFIG.get('sms_tel_user') or 'admin')))
+        if not ok:
+            return out
+        rows, ok = step('its modems', lambda: _tel_rest('/modems/status'))
+        if not ok:
+            return out
+        if isinstance(rows, dict):
+            rows = [rows]
+        rows = [r for r in (rows or []) if isinstance(r, dict)]
+        want = str(CONFIG.get('sms_tel_modem') or '').strip()
+        chosen = want or (str(rows[0].get('id')) if rows and rows[0].get('id') else '')
+        for r in rows[:6]:
+            out['modems'].append({'id': str(r.get('id') or ''), 'sends': str(r.get('id')) == chosen,
+                                  'fields': tel_modem_words(r)})
+        out['steps'][-1]['said'] = '%d modem(s)' % len(rows)
+        if want and not any(str(r.get('id')) == want for r in rows):
+            out['steps'].append({'what': 'the modem set', 'ok': False, 'secs': 0,
+                                 'said': 'the gateway has no modem %s - it has %s' % (
+                                     want, ', '.join(str(r.get('id')) for r in rows) or 'none')})
+            return out
+        if not chosen:
+            out['steps'].append({'what': 'the modem', 'ok': False, 'secs': 0,
+                                 'said': 'the gateway named no modem'})
+            return out
+        TELTONIKA['modem'] = chosen
+        out['ok'] = True
+    return out
+
+
+def sms_send(to, text):
+    """One SMS. Returns what the gateway said; raises SmsError."""
+    mode = CONFIG.get('sms_mode') or 'off'
+    if mode == 'off':
+        raise SmsError('sending SMS is switched off - Settings → Codes by mail and SMS')
+    text = sms_plain(text)
+    if mode == 'teltonika':
+        return tel_send(to, text)
+    if mode == 'spool':
+        folder = Path(str(CONFIG.get('sms_spool_dir') or '').strip())
+        if not folder.is_dir():
+            raise SmsError('the spool folder %s is not there' % folder)
+        # smstools3: a file "To: 420…", an empty line, the text. Written
+        # beside and renamed in, so the daemon never reads half of one.
+        body = 'To: %s\nAlphabet: UTF-8\n\n%s\n' % (to.lstrip('+'), text)
+        name = 'ai-%d-%s' % (int(time.time()), secrets.token_hex(4))
+        tmp = folder / ('.' + name)
+        try:
+            with open(str(tmp), 'w', encoding='utf-8') as f:
+                f.write(body)
+            os.chmod(str(tmp), 0o664)
+            os.rename(str(tmp), str(folder / name))
+        except OSError as e:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise SmsError('it could not be written into %s: %s' % (folder, e))
+        return 'written into %s as %s' % (folder, name)
+    url = str(CONFIG.get('sms_url') or '').strip()
+    if not url:
+        raise SmsError('no gateway address is set - Settings → Codes by mail and SMS')
+    token = unseal_secret(CONFIG.get('sms_token') or '', 'setting:sms_token') or '' if CONFIG.get('sms_token') else ''
+    vals = {'to': to, 'to_digits': to.lstrip('+'), 'text': text, 'token': token}
+
+    def fill(tpl, how):
+        def one(m):
+            k = m.group(1)
+            v = vals.get(k)
+            if v is None:
+                return m.group(0)
+            if how == 'url':
+                return urllib.parse.quote(v, safe='')
+            if how == 'json':
+                return json.dumps(v)[1:-1]
+            return v
+        return re.sub(r'\{(to|to_digits|text|token)\}', one, tpl)
+    full = fill(url, 'url')
+    method = (CONFIG.get('sms_method') or 'POST').upper()
+    tpl = str(CONFIG.get('sms_body') or '')
+    data, ctype = None, None
+    if method == 'POST':
+        if tpl.strip().startswith('{'):
+            data, ctype = fill(tpl, 'json').encode('utf-8'), 'application/json'
+        elif tpl.strip():
+            data, ctype = fill(tpl, 'url').encode('utf-8'), 'application/x-www-form-urlencoded'
+        else:
+            data = b''
+    req = urllib.request.Request(full, data=data, method=method)
+    if ctype:
+        req.add_header('Content-Type', ctype)
+    for line in str(CONFIG.get('sms_headers') or '').splitlines():
+        if ':' in line:
+            k, _, v = line.partition(':')
+            if k.strip():
+                req.add_header(k.strip(), fill(v.strip(), 'raw'))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            said = r.read(4000).decode('utf-8', 'replace')
+            status = r.status
+    except urllib.error.HTTPError as e:
+        _TEL_TEXT.v = text
+        try:
+            body = _tel_hidden(e.read(300).decode('utf-8', 'replace'))
+        finally:
+            _TEL_TEXT.v = ''
+        raise SmsError('the gateway answered %d: %s' % (e.code, body))
+    except (urllib.error.URLError, OSError) as e:
+        raise SmsError('the gateway could not be reached: %s' % getattr(e, 'reason', e))
+    want = str(CONFIG.get('sms_ok_status') or '').strip()
+    # A gateway that says back what it was sent (1.0.147): not the code
+    # into the events and the log with it.
+    _TEL_TEXT.v = text
+    try:
+        said = _tel_hidden(said)
+    finally:
+        _TEL_TEXT.v = ''
+    if want and want.lower() not in said.lower():
+        raise SmsError('the gateway answered %d without "%s": %s' % (status, want, said[:300]))
+    return 'the gateway answered %d%s' % (status, (': ' + said[:200]) if said.strip() else '')
+
+
+# ---------------------------------------------------------------------------
 # The database
 # ---------------------------------------------------------------------------
 SCHEMA_SQL = '''
@@ -1969,6 +2739,11 @@ CREATE TABLE IF NOT EXISTS terms (
     exit_status INTEGER
 );
 CREATE TABLE IF NOT EXISTS fails (k TEXT PRIMARY KEY, n INTEGER, first REAL, until REAL);
+CREATE TABLE IF NOT EXISTS outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, kind TEXT, dest TEXT, what TEXT, subject TEXT,
+    state TEXT, said TEXT, who TEXT, secs REAL
+);
+CREATE INDEX IF NOT EXISTS outbox_at ON outbox(at);
 '''
 
 
@@ -6352,7 +7127,7 @@ MFA_ALLOWED = ('/api/auth/mfa', '/api/auth/logout', '/api/auth/whoami')
 MFA_SEND_GAP_S = 30
 MFA_SEND_MOST = 5
 MFA_LOCK = threading.Lock()
-MFA_KIND_WORDS = {'app': 'an authenticator app', 'mail': 'a code by e-mail'}
+MFA_KIND_WORDS = {'app': 'an authenticator app', 'mail': 'a code by e-mail', 'sms': 'a code by SMS'}
 
 
 def mfa_key(name):
@@ -6390,6 +7165,10 @@ def code_channels():
     out = []
     if (CONFIG.get('mail_mode') or 'off') != 'off' and CONFIG.get('mail_from'):
         out.append('mail')
+    mode = CONFIG.get('sms_mode') or 'off'
+    if (mode == 'http' and CONFIG.get('sms_url')) or (mode == 'spool' and CONFIG.get('sms_spool_dir')) or \
+            (mode == 'teltonika' and CONFIG.get('sms_tel_host')):
+        out.append('sms')
     return out
 
 
@@ -6399,12 +7178,14 @@ def mfa_methods():
         out.append('app')
     if CONFIG.get('admin_2fa_mail', True) and 'mail' in code_channels():
         out.append('mail')
+    if CONFIG.get('admin_2fa_sms', True) and 'sms' in code_channels():
+        out.append('sms')
     return out or ['app']
 
 
 def mfa_stage(store, name):
     rec = mfa_get(store, name)
-    if rec and rec.get('kind') in ('app', 'mail'):
+    if rec and rec.get('kind') in ('app', 'mail', 'sms'):
         return 'check'
     return 'enrol'
 
@@ -6472,18 +7253,114 @@ def mail_message(to, subject, body):
     return msg
 
 
+TEXT_KEYS = ('code_subject', 'code_body', 'verify_subject', 'verify_body', 'test_subject', 'test_body',
+             'notice_subject', 'notice_body', 'sms_code', 'sms_verify', 'sms_test')
+TEXT_FIELDS = {'code': ('site', 'code', 'minutes'), 'verify': ('site', 'code', 'minutes'), 'test': ('site',),
+               'notice': ('site', 'n', 'what', 'lines', 'url'), 'sms_code': ('site', 'code', 'minutes'),
+               'sms_verify': ('site', 'code', 'minutes'), 'sms_test': ('site',)}
+
+
+def texts_saved(store):
+    got = store.meta_json('texts', {}) if store else {}
+    return got if isinstance(got, dict) else {}
+
+
+def text_default(lang, key):
+    if key.startswith('sms_'):
+        return SMS_WORDS[lang][key[4:]]
+    return MAIL_WORDS[lang][key]
+
+
+def text_of(lang, key):
+    own = (texts_saved(STORE_NOW.get('store')).get(lang) or {}).get(key)
+    return own if isinstance(own, str) and own.strip() else text_default(lang, key)
+
+
+def text_fields(key):
+    base = key if key.startswith('sms_') else key.rsplit('_', 1)[0]
+    return TEXT_FIELDS[base]
+
+
+def text_fill(text, fields, **kw):
+    """{words} filled in - only the ones the text may have; anything else
+    written in braces is left as it is (a text never breaks a mail)."""
+    return re.sub(r'\{(\w+)\}', lambda m: str(kw[m.group(1)]) if m.group(1) in fields and m.group(1) in kw
+                  else m.group(0), text)
+
+
 def mail_words(key, lang=None, **kw):
-    w = MAIL_WORDS[mail_lang(lang)]
+    lang = mail_lang(lang)
     kw.setdefault('site', site_words())
     kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
-    return w[key + '_subject'].format(**kw), w[key + '_body'].format(**kw)
+    f = TEXT_FIELDS[key]
+    return (text_fill(text_of(lang, key + '_subject'), f, **kw).replace('\n', ' '),
+            text_fill(text_of(lang, key + '_body'), f, **kw))
+
+
+SMS_WORDS = {'cs': {'code': '{site}: kod pro prihlaseni {code} (plati {minutes} min)',
+                    'verify': '{site}: kod k overeni cisla {code} (plati {minutes} min)',
+                    'test': '{site}: zkusebni SMS - odesilani funguje'},
+             'en': {'code': '{site}: your sign-in code {code} (good for {minutes} min)',
+                    'verify': '{site}: the code to check this number {code} (good for {minutes} min)',
+                    'test': '{site}: a test SMS - sending works'}}
+
+
+def sms_words(key, lang=None, **kw):
+    kw.setdefault('site', site_words())
+    kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
+    text = text_fill(text_of(mail_lang(lang), 'sms_' + key), TEXT_FIELDS['sms_' + key], **kw)
+    return sms_plain(text) if CONFIG.get('sms_plain', True) else text
+
+
+def outbox_add(store, kind, dest, what, subject, state, said, who='', secs=0.0):
+    """One line of Outgoing mail and SMS: where it went, what it was, how it
+    went - never what it said (a code goes in no list)."""
+    try:
+        store.x('INSERT INTO outbox(at,kind,dest,what,subject,state,said,who,secs) VALUES(?,?,?,?,?,?,?,?,?)',
+                (time.time(), kind, str(dest)[:300], what, str(subject or '')[:300], state, str(said or '')[:600],
+                 who or '', round(secs, 2)))
+    except sqlite3.Error:
+        pass
+
+
+def send_mail(store, to, subject, body, what, who=''):
+    """A mail of these pages sent now, and written down in Outgoing mail."""
+    t0 = time.time()
+    try:
+        steps = mail_send(store, mail_message(to, subject, body), to)
+    except MailError as e:
+        outbox_add(store, 'mail', ', '.join(to), what, subject, 'failed', str(e), who, time.time() - t0)
+        raise
+    ok = [s for s in steps if s.get('ok')]
+    outbox_add(store, 'mail', ', '.join(to), what, subject, 'sent', ok[-1]['said'] if ok else 'sent', who,
+               time.time() - t0)
+    return steps
+
+
+def send_sms(store, to, text, what, who=''):
+    t0 = time.time()
+    STORE_NOW['store'] = store
+    try:
+        said = sms_send(to, text)
+    except SmsError as e:
+        outbox_add(store, 'sms', dest_masked('sms', to), what, '', 'failed', str(e), who, time.time() - t0)
+        raise
+    outbox_add(store, 'sms', dest_masked('sms', to), what, '', 'sent', said, who, time.time() - t0)
+    return said
 
 
 def code_send(store, kind, dest, code, purpose='signin', lang=None):
+    what = 'a code to check the address' if purpose == 'verify' else 'a sign-in code'
+    if kind == 'sms':
+        try:
+            said = send_sms(store, dest, sms_words('verify' if purpose == 'verify' else 'code', lang, code=code), what)
+        except SmsError as e:
+            raise ValueError(str(e).replace(code, '******'))
+        return str(said or 'sent').replace(code, '******')
     if kind != 'mail':
-        raise ValueError('codes go by mail only here')
+        raise ValueError('codes go by mail or SMS only')
     subject, body = mail_words('verify' if purpose == 'verify' else 'code', lang, code=code)
-    steps = mail_send(store, mail_message([dest], subject, body), [dest])
+    steps = send_mail(store, [dest], subject.replace(code, '******'), body, what)
     ok = [s for s in steps if s.get('ok')]
     return (ok[-1]['said'] if ok else 'sent').replace(code, '******')
 
@@ -6585,7 +7462,7 @@ def api_mfa_do(c):
             return {'kind': 'app', 'qr': qr_data_uri(uri), 'uri': uri,
                     'secret': ' '.join(secret[i:i + 4] for i in range(0, len(secret), 4))}
         try:
-            dest = mail_checked(c.body.get('dest'))
+            dest = mail_checked(c.body.get('dest')) if kind == 'mail' else phone_checked(c.body.get('dest'))
         except ValueError as e:
             raise Refused(str(e))
         return {'kind': kind, 'sent_to': _mfa_send(c, kind, dest, 'mfa_new')}
@@ -6621,12 +7498,13 @@ def api_mfa_do(c):
         if stage != 'check':
             raise Refused('set the second step up first', 409)
         rec = mfa_get(st, name) or {}
-        if rec.get('kind') != 'mail':
+        if rec.get('kind') not in ('mail', 'sms'):
             raise Refused('the code comes from the app - nothing is sent')
-        if 'mail' not in code_channels():
-            raise Refused('codes by mail cannot be sent from here now: another administrator resets your '
-                          'second step (Accounts), or root with  ai --reset-2fa %s' % name, 503)
-        return {'sent_to': _mfa_send(c, 'mail', rec.get('dest'), 'mfa_code')}
+        if rec['kind'] not in code_channels():
+            raise Refused('codes by %s cannot be sent from here now: another administrator resets your '
+                          'second step (Accounts), or root with  ai --reset-2fa %s' % (
+                              'mail' if rec['kind'] == 'mail' else 'SMS', name), 503)
+        return {'sent_to': _mfa_send(c, rec['kind'], rec.get('dest'), 'mfa_code')}
     if act == 'check':
         if stage != 'check':
             raise Refused('set the second step up first', 409)
@@ -6728,7 +7606,7 @@ def api_mail_do(c):
         subject, body = mail_words('test', c.body.get('lang'))
         took = time.time()
         try:
-            steps = mail_send(st, mail_message([to], subject, body), [to])
+            steps = send_mail(st, [to], subject, body, 'a test mail', c.name)
             ok, said = True, 'sent to %s' % to
         except MailError as e:
             steps, ok, said = e.steps, False, str(e)
@@ -6744,6 +7622,111 @@ def api_mail_do(c):
                      'info', who=c.name)
         return {'message': '%d certificate(s) kept' % len(got), 'ca_list': got}
     raise Refused('test or ca')
+
+
+@route('GET', '/api/sms', admin=True)
+def api_sms(c):
+    STORE_NOW['store'] = c.daemon.store
+    return {'mode': CONFIG.get('sms_mode'), 'channels': code_channels(),
+            'ca_list': describe_certificates(sms_ca_pem(c.daemon.store))}
+
+
+@route('POST', '/api/sms', admin=True)
+def api_sms_do(c):
+    act = c.body.get('action')
+    st = c.daemon.store
+    STORE_NOW['store'] = st
+    try:
+        if act == 'test':
+            to = phone_checked(c.body.get('to'))
+            took = time.time()
+            try:
+                said = send_sms(st, to, sms_words('test', c.body.get('lang')), 'a test SMS', c.name)
+                ok = True
+            except SmsError as e:
+                said, ok = str(e), False
+            st.add_event('sms', '%s sent a test SMS to %s: %s' % (c.name, dest_masked('sms', to), 'went' if ok else said),
+                         'info' if ok else 'warn', who=c.name)
+            return {'sent': ok, 'said': str(said or ''), 'took_ms': int((time.time() - took) * 1000)}
+        if act == 'tel_test':
+            return tel_test()
+        if act == 'ca':
+            got = sms_ca_set(st, c.body.get('ca'), c.body.get('mode') or 'add', c.body.get('fingerprint') or '')
+            st.add_event('sms', '%s changed the certificates the SMS gateway is checked against (%d now)' % (
+                c.name, len(got)), 'info', who=c.name)
+            return {'message': '%d certificate(s) kept' % len(got), 'ca_list': got}
+        if act == 'ca_fetch':
+            pem = tel_peer_chain()
+            return {'pem': pem, 'certs': describe_certificates(pem)}
+    except (ValueError, SmsError) as e:
+        raise Refused(str(e))
+    raise Refused('test, tel_test, ca or ca_fetch')
+
+
+@route('GET', '/api/texts', admin=True)
+def api_texts(c):
+    own = texts_saved(c.daemon.store)
+    out = {}
+    for lang in ('cs', 'en'):
+        out[lang] = [{'key': k, 'text': text_of(lang, k), 'default': text_default(lang, k),
+                      'own': bool((own.get(lang) or {}).get(k)), 'fields': list(text_fields(k))} for k in TEXT_KEYS]
+    return {'texts': out}
+
+
+@route('POST', '/api/texts', admin=True)
+def api_texts_do(c):
+    st = c.daemon.store
+    own = texts_saved(st)
+    lang = str(c.body.get('lang') or '')
+    if lang not in ('cs', 'en'):
+        raise Refused('cs or en')
+    said = []
+    for k, v in (c.body.get('texts') or {}).items():
+        if k not in TEXT_KEYS:
+            raise Refused('there is no text %s' % k)
+        v = str(v if v is not None else '')
+        if len(v) > 8000:
+            raise Refused('%s: too long' % k)
+        if (k.endswith('_subject') or k.startswith('sms_')) and '\n' in v.strip():
+            raise Refused('%s: one line' % k)
+        if 'code' in text_fields(k) and k.endswith(('_body', 'sms_code', 'sms_verify')) and v.strip() and '{code}' not in v:
+            raise Refused('%s: the text has to say {code} - the code itself is put there' % k)
+        if not v.strip() or v == text_default(lang, k):
+            (own.get(lang) or {}).pop(k, None)
+            said.append('%s back to its default' % k)
+        else:
+            own.setdefault(lang, {})[k] = v
+            said.append(k)
+    st.set_meta_json('texts', own)
+    st.add_event('settings', '%s changed the message texts (%s): %s' % (c.name, lang, ', '.join(said)), who=c.name)
+    return {'message': 'saved'}
+
+
+@route('GET', '/api/outbox', admin=True)
+def api_outbox(c):
+    st = c.daemon.store
+    keep = float(CONFIG.get('events_keep_days') or 180) * 86400
+    st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
+    where, args = [], []
+    if c.arg('state'):
+        where.append('state=?')
+        args.append(c.arg('state'))
+    if c.arg('q'):
+        where.append('(dest LIKE ? OR what LIKE ? OR said LIKE ? OR subject LIKE ?)')
+        args += ['%' + c.arg('q') + '%'] * 4
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = st.q('SELECT * FROM outbox%s ORDER BY id DESC LIMIT 300' % w, args)
+    counts = {r['state']: r['n'] for r in st.q('SELECT state, COUNT(*) AS n FROM outbox GROUP BY state')}
+    return {'rows': rows, 'counts': counts}
+
+
+@route('POST', '/api/outbox', admin=True)
+def api_outbox_do(c):
+    if c.body.get('action') == 'clear':
+        state = c.body.get('state')
+        n = c.daemon.store.x('DELETE FROM outbox' + (' WHERE state=?' if state else ''), (state,) if state else ())
+        return {'message': 'cleared: %d' % n}
+    raise Refused('clear')
 
 
 NOTICE_WORDS = {'cs': ('upozornění', 'upozornění', 'upozornění'), 'en': ('notice', 'notices', 'notices')}
@@ -6778,7 +7761,7 @@ def notify_tick(store):
                                url='https://%s/#events' % host_name())
     new = {'id': rows[-1]['id'], 'at': time.time(), 'sent': n}
     try:
-        mail_send(store, mail_message(to, subject, body), to)
+        send_mail(store, to, subject, body, 'notices (%d)' % n)
         new['said'] = 'sent %d to %s' % (n, ', '.join(to))
     except MailError as e:
         new['said'] = 'could not be sent: %s' % e
@@ -7568,7 +8551,7 @@ def config_import(daemon, conf, by, replace=False, ip='127.0.0.1', wait=False):
                  (name, pw or hash_password(new_password()), u['role'], run_as,
                   json.dumps(clean_roots(u.get('roots') or [])), 1 if u.get('disabled') else 0, 0 if pw else 1,
                   clean_line(u.get('note'), 300), time.time()))
-        if isinstance(u.get('mfa'), dict) and u['mfa'].get('kind') in ('app', 'mail'):
+        if isinstance(u.get('mfa'), dict) and u['mfa'].get('kind') in ('app', 'mail', 'sms'):
             rec = dict(u['mfa'])
             if rec.get('secret'):
                 rec['secret'] = seal_secret(rec['secret'], mfa_key(name))
@@ -9382,6 +10365,8 @@ class Daemon:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         LOG_TO_FILE[0] = True
         LOG_TO_STDERR[0] = True
+        IS_DAEMON[0] = True
+        STORE_NOW['store'] = self.store
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(str(STATE_DIR), 0o711)
         self.write_token()
@@ -12893,7 +13878,7 @@ def cli_main(argv):
             to = mail_checked(a.mail_test)
             subject, body = mail_words('test')
             try:
-                steps = mail_send(st, mail_message([to], subject, body), [to])
+                steps = send_mail(st, [to], subject, body, 'a test mail', 'the command line')
                 ok = True
             except MailError as e:
                 steps, ok = e.steps, False

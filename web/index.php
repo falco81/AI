@@ -122,7 +122,7 @@ if (isset($_GET['api'])) {
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
         'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
-        'rbackup' => '/api/rbackup', 'software' => '/api/software', 'my-settings' => '/api/auth/settings',
+        'rbackup' => '/api/rbackup', 'software' => '/api/software', 'sms' => '/api/sms', 'texts' => '/api/texts', 'outbox' => '/api/outbox', 'my-settings' => '/api/auth/settings',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -132,7 +132,7 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
         'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
-        'import' => '/api/import', 'rbackup' => '/api/rbackup', 'columns' => '/api/auth/columns',
+        'import' => '/api/import', 'rbackup' => '/api/rbackup', 'sms' => '/api/sms', 'texts' => '/api/texts', 'outbox' => '/api/outbox', 'columns' => '/api/auth/columns',
         'my-settings' => '/api/auth/settings',
     ];
     if ($post) {
@@ -497,19 +497,24 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <div class="ctl-group">Access</div>
     <button type="button" data-pane="people" data-icon="person" title="Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
     <button type="button" data-pane="access" data-icon="shield" title="How long a sign-in lasts, wrong passwords, and changes that go back by themselves unless kept.">Signing in</button>
-    <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages: given, or made here.">Certificate and TLS</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages, and the server's firewall (iptables or firewalld).">Firewall and access</button>
+    <div class="ctl-group">Messages</div>
+    <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
+    <button type="button" data-pane="sms" data-icon="phone" title="How SMS leaves this machine, for the codes of the second step: an HTTP gateway, a modem's spool, or a Teltonika on the network.">SMS</button>
+    <button type="button" data-pane="texts" data-icon="edit" title="What people get from this server - the mails and the SMS, in Czech and English.">Message texts</button>
+    <button type="button" data-pane="mailq" data-icon="list" title="Every mail and SMS this server sent, or tried to: where, what, how it went.">Outgoing mail</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers and host name.">Network</button>
     <button type="button" data-pane="time" data-icon="clock" title="The clock: its time zone and time servers (chrony).">Time</button>
     <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages, looked at and updated, its output shown as it goes.">System updates</button>
     <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
-    <div class="ctl-group">This program</div>
+    <div class="ctl-group">Data</div>
     <button type="button" data-pane="db" data-icon="db" title="The database: copies made every night, downloaded, put back.">Database</button>
     <button type="button" data-pane="backup" data-icon="upload" title="Backups to other machines: a folder, FTP, FTPS, SFTP, SCP or a Windows share - on a schedule, locked with a password; put back from here.">Backups</button>
     <button type="button" data-pane="carry" data-icon="archive" title="The whole configuration as one file: exported, imported.">Export and import</button>
+    <div class="ctl-group">Updates</div>
     <button type="button" data-pane="upgrade" data-icon="up" title="New versions of ai: from the web by themselves, or sent here.">Upgrades</button>
     <button type="button" data-pane="about" data-icon="info" title="Version, the name of the pages, the language, what is running, the log.">About</button>
   </nav>
@@ -601,6 +606,68 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         <button class="btn cmd danger" id="mca-drop" data-icon="trash">Take them all away</button>
         <input type="file" id="mca-input" accept=".pem,.crt,.cer,.txt" hidden>
       </div>
+    </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-texts" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Message texts</h2>
+      <p class="ctl-lede">What people get from this server - the mails and the SMS, in Czech and English. The words
+        in braces are filled in when it is sent: {site} the name of these pages, {code} the code, {minutes} how
+        long it is good for, {n} {what} {lines} {url} in a notice. An empty text is the built-in one.</p></div>
+    <div class="card full">
+      <div class="seg" id="tx-langs" data-no-i18n><button type="button" data-lang="cs" class="on">Čeština</button><button type="button" data-lang="en">English</button></div>
+      <div id="tx-root" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-mailq" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Outgoing mail</h2>
+      <p class="ctl-lede">Every mail and SMS this server sends - a code to sign in with, a code to check an address,
+        a notice, a test - written down here: where it went, what it was and what the other side said. What a
+        message held is never kept: a code goes in no list.</p></div>
+    <div class="card full">
+      <div class="mq-chips" id="mq-chips"></div>
+      <div class="btnrow filters" style="margin-top:12px">
+        <input type="search" id="mq-q" placeholder="an address, a number, what the server said…" style="flex:1;min-width:260px">
+        <select id="mq-state"><option value="">every state</option><option value="sent">sent</option><option value="failed">failed</option></select>
+        <button class="btn cmd" id="mq-drop-sent" data-icon="trash">Clear the sent ones</button>
+        <button class="btn cmd danger" id="mq-drop-failed" data-icon="trash">Clear the failed ones</button>
+      </div>
+      <div id="mq-table" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-sms" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">SMS</h2>
+      <p class="ctl-lede">The codes of the second step of signing in, sent by SMS: through an SMS gateway with an
+        HTTP API, a GSM modem on this machine (smstools3 or gammu-smsd), or a Teltonika gateway (TRB140, RUT…)
+        on the network.</p></div>
+    <div class="card full"><div id="sect-sms"></div></div>
+    <div class="card full">
+      <h2>Try it <span class="right muted small" id="sms-said"></span></h2>
+      <p class="note">A short SMS sent the way the codes go - save the changes first. For a Teltonika, Test the
+        connection signs in to it and asks how its modems are; nothing is sent.</p>
+      <div class="btnrow admin-only filters">
+        <input type="tel" id="sms-to" placeholder="+420 603 123 456" style="flex:1;min-width:200px">
+        <select id="sms-test-lang"><option value="cs">Čeština</option><option value="en">English</option></select>
+        <button class="btn cmd primary" id="sms-test" data-icon="phone">Send a test SMS</button>
+        <button class="btn cmd" id="sms-tel" data-icon="pulse">Test the connection</button>
+      </div>
+      <div id="sms-steps"></div>
+    </div>
+    <div class="card full" id="smsca-card">
+      <h2>The certificates the gateway is checked against <span class="right muted small" id="smsca-when"></span></h2>
+      <p class="note">The gateway's own certificate (a TRB makes one itself), or the root and the chain of the authority
+        that signed it. With some here only these are trusted; with none, the authorities this machine trusts.</p>
+      <div id="smsca-state"></div>
+      <textarea id="smsca-pem" rows="4" class="mono admin-only" style="width:100%;margin-top:10px" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+      <div class="btnrow admin-only" style="margin-top:10px">
+        <button class="btn cmd" id="smsca-fetch" data-icon="download">Read it from the gateway</button>
+        <button class="btn cmd" id="smsca-file" data-icon="upload">Read a file…</button>
+        <button class="btn cmd danger" id="smsca-drop" data-icon="trash">Take them all away</button>
+        <input type="file" id="smsca-input" accept=".pem,.crt,.cer,.txt" hidden>
+      </div>
+      <div id="smsca-seen"></div>
     </div>
   </div>
 
