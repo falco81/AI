@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9974,12 +9974,20 @@ def api_settings_do(c):
     if not isinstance(values, dict):
         raise Refused('values is an object')
     said, saved = [], []
+    file_side = {}
     for k, v in values.items():
         if k not in SCHEMA_KEYS:
             raise Refused('%s: there is no such setting' % k)
         if k in FILE_ONLY_KEYS:
-            raise Refused('%s: kept in %s - changed by the steps of Settings - The database, not saved here'
-                          % (k, CONFIG_FILE))
+            # The address of the database (otp's): written into the config
+            # file, never the database - and only once it opens.
+            if (SCHEMA_KEYS[k][2] == 'password' or SCHEMA_KEYS[k][5].get('secret')) and is_masked(v):
+                continue
+            try:
+                file_side[k] = setting_value(k, v if v is not None else DEFAULTS.get(k))
+            except Refused as e:
+                raise Refused('%s: %s' % (k, e))
+            continue
         if v is None:
             c.daemon.store.drop_setting(k)
             said.append('%s back to its default' % k)
@@ -10001,6 +10009,25 @@ def api_settings_do(c):
             c.daemon.store.set_setting(k, nv, c.name)
         saved.append(k)
         said.append('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(nv)[:80]))
+    if file_side:
+        if any(k in DB_KEYS for k in file_side) and (
+                file_side.get('db_engine', CONFIG.get('db_engine')) != 'sqlite' or
+                CONFIG.get('db_engine') != 'sqlite'):
+            test = dict(CONFIG)
+            test.update(file_side)
+            try:
+                probe = open_db(test)
+                try:
+                    probe.make_tables()
+                finally:
+                    probe.close()
+            except Exception as e:                      # noqa: BLE001
+                raise Refused('the database could not be used, so nothing was changed: %s'
+                              % str(e).split('\n')[0][:300])
+        write_file_settings(file_side)
+        saved += sorted(file_side)
+        said.append('the database settings go into %s and take effect when the service is restarted '
+                    '(systemctl restart ai) - or with Start using it, which does that' % CONFIG_FILE)
     was_2fa = bool(CONFIG.get('admin_2fa'))
     config_rebuild(c.daemon.store)
     CLAUDE_CACHE.clear()
@@ -10010,7 +10037,8 @@ def api_settings_do(c):
         said.append('%d other sign-in(s) ended, to give the second step' % n)
     if said:
         c.daemon.store.add_event('settings', '%s changed: %s' % (c.name, '; '.join(said)), 'info', who=c.name)
-    return {'message': '%d setting(s) saved.' % len(saved), 'saved': sorted(saved)}
+    return {'message': '%d setting(s) saved.' % len(saved) + (' ' + said[-1] if file_side else ''),
+            'saved': sorted(saved)}
 
 
 @route('GET', '/api/users', admin=True)

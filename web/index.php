@@ -511,28 +511,29 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     </div>
     <div class="ctl-group">Claude Code</div>
     <button type="button" data-pane="claude" data-icon="terminal" title="Claude Code itself: installed for which accounts, signed in or not, updated; how every terminal starts it.">Claude Code</button>
-    <div class="ctl-group">Access</div>
-    <button type="button" data-pane="people" data-icon="person" title="Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
-    <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages: given, or made here.">Certificate and TLS</button>
-    <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages, and the server's firewall (iptables or firewalld).">Firewall and access</button>
-    <div class="ctl-group">Messages</div>
-    <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
-    <button type="button" data-pane="codes" data-icon="phone" title="Codes of the second step of signing in sent by e-mail or SMS: how long they last, how many, and the SMS gateway.">Codes by e-mail and SMS</button>
-    <button type="button" data-pane="texts" data-icon="edit" title="What people get from this server - the mails and the SMS, in Czech and English.">Message texts</button>
+    <div class="ctl-group">Signing in</div>
+    <button type="button" data-pane="codes" data-icon="phone" title="Codes sent after the password, by e-mail or SMS: how long they last, how many, and the SMS gateway.">Codes by e-mail and SMS</button>
+    <button type="button" data-pane="texts" data-icon="edit" title="Every word people get from this server - the mails and the SMS of a code - in Czech and in English, edited as they will look.">Message texts</button>
+    <div class="ctl-group">Mail</div>
+    <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: a mail server, or straight to the recipients' - the codes of the second step and the notices.">Mail</button>
     <button type="button" data-pane="mailq" data-icon="list" title="Every mail sent - a code to sign in with, a notice, a test - and what became of it: sent, waiting for another try (greylisting, a server away), failed. Sent again or taken away by hand.">Outgoing mail <span class="nav-badge" id="mq-badge" hidden></span></button>
+    <div class="ctl-group">Access</div>
+    <button type="button" data-pane="people" data-icon="person" title="Who may open these pages, what each of them may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
+    <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages, and how TLS is spoken.">Certificates and TLS</button>
+    <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.">Firewall and access</button>
     <div class="ctl-group">Server</div>
-    <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers and host name.">Network</button>
-    <button type="button" data-pane="time" data-icon="clock" title="The clock: its time zone and time servers (chrony).">Time</button>
-    <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages, looked at and updated, its output shown as it goes.">System updates</button>
-    <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
+    <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
+    <button type="button" data-pane="time" data-icon="clock" title="The clock: chrony, its time servers, how far off it is - codes from the app are worked out from it.">Time</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
+    <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages updated, its output shown as it goes; a restart offered when one is needed.">System updates</button>
+    <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Data</div>
-    <button type="button" data-pane="db" data-icon="db" title="The database: copies made every night, downloaded, put back.">Database</button>
-    <button type="button" data-pane="backup" data-icon="upload" title="Backups to other machines: a folder, FTP, FTPS, SFTP, SCP or a Windows share - on a schedule, locked with a password; put back from here.">Backups</button>
-    <button type="button" data-pane="carry" data-icon="archive" title="The whole configuration as one file: exported, imported.">Export and import</button>
+    <button type="button" data-pane="db" data-icon="db" title="Which database everything lives in, how big it is, copies of it, and how long things are kept.">The database</button>
+    <button type="button" data-pane="backup" data-icon="archive" title="Backups of everything to another machine - FTP, FTPS, SFTP, SCP, SMB or a folder - locked with a password, on a schedule, and putting one back.">Backups</button>
+    <button type="button" data-pane="carry" data-icon="download" title="Everything that makes this installation what it is, as one file to carry to another machine.">Export and import</button>
     <div class="ctl-group">Updates</div>
-    <button type="button" data-pane="upgrade" data-icon="up" title="New versions of ai: from the web by themselves, or sent here.">Upgrades</button>
-    <button type="button" data-pane="about" data-icon="info" title="Version, the name of the pages, the language, what is running, the log.">About</button>
+    <button type="button" data-pane="upgrade" data-icon="up" title="A new version, put in from here: from the web or a package sent, or back to an older one.">Upgrades</button>
+    <button type="button" data-pane="about" data-icon="info" title="Version, what is running, the language, the log.">About</button>
   </nav>
 
   <div class="ctl-main">

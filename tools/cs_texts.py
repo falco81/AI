@@ -1453,6 +1453,34 @@ STRINGS = {
     'signed out - the terminal goes on running':
         'odhlášeno – terminál běží dál',
     # ---- 1.0.6: the database, the outgoing mail, the texts, the upgrades as otp's ----
+    'Codes sent after the password, by e-mail or SMS: how long they last, how many, and the SMS gateway.':
+        'Kódy posílané po hesle e-mailem nebo SMS: jak dlouho platí, kolik jich smí přijít a SMS brána.',
+    'Every word people get from this server - the mails and the SMS of a code - in Czech and in English, edited as they will look.':
+        'Každé slovo, které lidé od tohoto serveru dostanou – e-maily a SMS s kódem – česky i anglicky, upravované tak, jak budou vypadat.',
+    "How the mails of these pages leave this machine: a mail server, or straight to the recipients' - the codes of the second step and the notices.":
+        'Jak e-maily těchto stránek odcházejí z tohoto stroje: přes poštovní server, nebo rovnou na servery příjemců – kódy druhého kroku a upozornění.',
+    'Who may open these pages, what each of them may do, which Linux account their terminals run as, and who is signed in right now.':
+        'Kdo smí otevřít tyto stránky, co kdo smí, pod kterým účtem Linuxu běží jeho terminály a kdo je právě přihlášen.',
+    'The certificate of these pages, and how TLS is spoken.':
+        'Certifikát těchto stránek a jak se mluví TLS.',
+    "Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.":
+        'Kdo se k těmto stránkám dostane; a firewall stroje (iptables nebo firewalld) – co ai potřebuje, se otevře samo.',
+    "The server's address, gateway, DNS servers, host name and IPv6.":
+        'Adresa serveru, brána, servery DNS, název hostitele a IPv6.',
+    'The clock: chrony, its time servers, how far off it is - codes from the app are worked out from it.':
+        'Hodiny: chrony, jeho časové servery, o kolik se odchylují – kódy z aplikace se počítají podle nich.',
+    "The operating system's packages updated, its output shown as it goes; a restart offered when one is needed.":
+        'Aktualizace balíků operačního systému s výstupem průběžně; restart se nabídne, když je potřeba.',
+    'Which database everything lives in, how big it is, copies of it, and how long things are kept.':
+        'V jaké databázi všechno je, jak je velká, její kopie a jak dlouho se co uchovává.',
+    'Backups of everything to another machine - FTP, FTPS, SFTP, SCP, SMB or a folder - locked with a password, on a schedule, and putting one back.':
+        'Zálohy všeho na jiný stroj – FTP, FTPS, SFTP, SCP, SMB nebo složka – zamčené heslem, podle plánu, a jejich obnova.',
+    'Everything that makes this installation what it is, as one file to carry to another machine.':
+        'Všechno, co dělá tuto instalaci tím, čím je, jako jeden soubor k přenesení na jiný stroj.',
+    'A new version, put in from here: from the web or a package sent, or back to an older one.':
+        'Nová verze nasazená odsud: z webu nebo z poslaného balíku, nebo návrat ke starší.',
+    'Version, what is running, the language, the log.':
+        'Verze, co běží, jazyk, log.',
     'Put this one back, without downloading it and uploading it again: everything in the live database is replaced by what is in this file. You are shown what is in it and asked first, and a copy of what is being replaced is made before anything changes.':
         'Vrátit tento soubor bez stahování a nového nahrávání: všechno v živé databázi se nahradí tím, co je v tomto souboru. Nejdřív se ukáže, co v něm je, a zeptá se vás, a než se cokoli změní, udělá se kopie toho, co se nahrazuje.',
     'Codes of the second step of signing in sent by e-mail or SMS: how long they last, how many, and the SMS gateway.':

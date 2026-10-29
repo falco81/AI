@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.7
+
+- **The menu of the settings in otp's order**: Claude Code, Signing in (codes by e-mail and SMS, message
+  texts), Mail (mail, outgoing mail), Access (accounts, certificates and TLS, firewall), Server (network,
+  time, restart, system updates, SSH keys), Data (the database, backups, export and import), Updates.
+- **The menu hides itself and has its pin** on a computer with a touch screen as well: it was only so where
+  the browser said there was a mouse and nothing else (the list of terminals likewise).
+- **The address of the database saved as otp saves it**: with Save, into `/etc/ai/config.json` - and only once
+  that database opens and its tables are put right; it was refused before.
+
 ## 1.0.6
 
 - **The database as otp's**: SQLite, **MariaDB or PostgreSQL**, on this machine or another. *Settings → The
