@@ -84,8 +84,19 @@ b2 = ai.set_directive(block, 'ssl_protocols', 'TLSv1.3')
 check('a line of nginx set in its server, not in a location', 'ssl_protocols             TLSv1.3;' in b2
       and 'ssl_protocols x;' in b2 and b2.count('TLSv1.2') == 0)
 check('the server on 443 found', ai.nginx_tls_block('server {\n listen 80;\n}\n' + block)[1].startswith('server {\n    listen 443'))
-check('a text filled in, only with its own words', ai.text_fill('{site}: {code} {other}', ('site', 'code'),
-                                                               site='s', code='1') == 's: 1 {other}')
+f = ai.text_message('sms_code')['fields'][0]
+try:
+    ai.text_check(f, '{site}: {code} {other}')
+    bad = False
+except ValueError:
+    bad = True
+check('a text with a word it may not have refused', bad)
+check('a text of a mail kept to what mail programs show', ai.text_rich_clean('<b>a</b><script>x</script><i>b</i>')
+      == '<b>a</b><i>b</i>')
+check('a code kept out of the list of the outgoing mail', ai.mailq_subject_kept('Kód 123456', 'code') == 'Kód ••••••')
+check('the outgoing mail searched by field', ai.mailq_match({'to': 'a@b.cz', 'state': 'waiting', 'kind': 'code',
+                                                            'name': '', 'by': '', 'said': 'greylisted', 'subject': '',
+                                                            'tries': 3}, 'to:*@b.cz state:waiting tries:>2 -kind:test'))
 check('a layout of the columns reduced to what it may hold', ai.clean_cols({'t': {'w': {'a': 9999999, 'b': 'x'},
                                                                                    'o': ['a', 3], 'zz': 1}})
       == {'t': {'w': {'a': 3000}, 'o': ['a', '3'], 't': 0}})
