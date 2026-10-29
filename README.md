@@ -49,14 +49,20 @@ In colour (colorama), `--json` for scripts; the console and every command:
 | files | a browser of the server's files; upload by button, drag and drop or Ctrl+V; download of files and of folders as .zip; text files opened and edited; pictures shown; a file for Claude written into `.ai-uploads/` of the working directory and its path typed in (a picture becomes `[Image #1]`) |
 | conversations | every conversation in `~/.claude/projects`, by folder, searched, resumed |
 | Claude Code | installed, updated and checked for each Linux account from the pages (Anthropic's installer or npm); signed in in a terminal; the model, the permission mode and more words chosen per terminal; an environment for all of them |
-| accounts | administrators and users; a user has terminals of their own only, as the Linux account given, and files in their folders; Linux accounts made from the pages; sign-ins listed and ended; pauses after wrong passwords |
+| accounts | administrators and users; a user has terminals of their own only, as the Linux account given, and files in their folders; Linux accounts made from the pages; sign-ins listed and ended; pauses after wrong passwords, the locked out listed and cleared; the columns of every table laid out per person; your own settings to a file and back |
+| second step | after the password a code too, for everybody when switched on: an authenticator app (QR code), or a code by e-mail or SMS; set up by each account at its first sign-in, reset by an administrator or `ai --reset-2fa` |
+| mail and SMS | SMTP (STARTTLS, TLS, PLAIN, LOGIN, CRAM-MD5, XOAUTH2) or straight to the recipients' MX; SMS through an HTTP gateway, a modem's spool (smstools3, gammu) or a Teltonika; the texts editable in Czech and English; every message sent listed; notices of warnings and failures by mail |
+| certificate and TLS | PEM or PFX uploaded, a request (CSR) made here, or self-signed; the chain checked; standard, Mozilla intermediate or modern TLS, DH parameters, HSTS - nginx asked before it is reloaded |
+| data | a copy of the database every night (with the key its secrets are sealed with), downloaded and put back; backups to a folder, FTP, FTPS, SFTP, SCP or SMB, locked (AES-256), on a schedule, put back from the pages; the whole configuration exported and imported |
 | the server | otp's own panes: firewall (iptables or firewalld) and who may reach the pages, network (NetworkManager), time (chrony), system updates (dnf/apt, followed live), root's SSH keys, restart and power off - changes that could cut you off go back by themselves unless kept |
-| upgrades | signed packages (Ed25519) from `https://github.com/falco81/AI/tree/main/release`, the last ten kept there; looked for daily, put in on a click or by themselves; or a package sent from the pages; the terminals go on running through it |
+| upgrades | signed packages (Ed25519) from `https://github.com/falco81/AI/tree/main/release`, the last ten kept there; looked for daily, put in on a click or by themselves; or a package sent from the pages; back to an older version only where that is safe; the terminals go on running through it |
 | languages | Czech and English, chosen per person |
 
 Installing it: [INSTALL.md](INSTALL.md). How it is put together:
 [docs/how-it-works.md](docs/how-it-works.md). The terminals in detail:
-[docs/terminals.md](docs/terminals.md). New versions and how they are made:
+[docs/terminals.md](docs/terminals.md). Signing in, the second step, mail, SMS and TLS:
+[docs/security.md](docs/security.md). Copies, backups and putting them back:
+[docs/backups.md](docs/backups.md). New versions and how they are made:
 [docs/releases.md](docs/releases.md).
 
 ## Checking it

@@ -76,7 +76,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4901,6 +4901,31 @@ def tls_apply_later(store, prof, by):
             TLS_STATE['progress'] = None
             TLS_LOCK.release()
     threading.Thread(target=go, daemon=True).start()
+
+
+def tls_reapply_if_needed(store):
+    """At start: nginx's file written afresh (install.sh --rewrite-nginx) lost
+    the TLS kept here - put back, as otp's root helper does."""
+    prof = tls_prof(store)
+    if not prof or NO_SYSTEM:
+        return
+    try:
+        _h, block, _t = nginx_tls_block(read_text(NGINX_CONF))
+    except Refused:
+        return
+    t = tls_resolved(prof)
+    want = ['ssl_ciphers               %s;' % t['ciphers'], 'ssl_protocols             %s;' % ' '.join(t['protocols'])]
+    if t['hsts']:
+        want.append('"max-age=%d" always;' % t['hsts'])
+    if t['dh'] != 'none':
+        want.append('ssl_dhparam')
+    if all(w in block for w in want):
+        return
+    log('the TLS kept for the pages is not in %s: put in again' % NGINX_CONF, 'warn')
+    try:
+        tls_apply_later(store, prof, 'ai (at start)')
+    except Refused:
+        pass
 
 
 def cert_now_info():
@@ -10378,6 +10403,10 @@ class Daemon:
         log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, DB_FILE))
         self.store.add_event('starting and stopping', 'ai %s started on %s' % (__version__, host_name()), 'info')
         try:
+            tls_reapply_if_needed(self.store)
+        except Exception as e:                          # noqa: BLE001
+            log('the TLS of the pages: %s' % e, 'warn')
+        try:
             power_back(self)
         except Exception as e:                          # noqa: BLE001
             log('after a restart: %s' % e, 'warn')
@@ -11227,6 +11256,7 @@ class Console(object):
             ('7', 'The server: network, time, updates, SSH keys, certificate, power', self.m_server),
             ('8', 'Upgrades', self.m_upgrades),
             ('9', 'The service', self.m_service),
+            ('0', 'Data: copies of the database, backups, mail', self.m_data),
         ]
         os.environ.setdefault('ESCDELAY', '25')     # Esc at once, not after a second
         # Lines and blocks drawn as UTF-8 characters, as PuTTY in UTF-8 shows
@@ -11792,14 +11822,28 @@ class Console(object):
              lambda: self.pick('Accounts of the pages', load, cols, self.account_do)),
             ('2', 'Make one', self.account_new),
             ('3', 'Who is signed in now', lambda: self.act('--sign-ins')),
+            ('4', 'The second step of signing in, for everybody', self.mfa_switch),
+            ('5', 'Who is locked out', lambda: self.act('--lockouts')),
+            ('6', 'Clear every lockout', lambda: self.act('--unlock', 'all')),
         ])
+
+    def mfa_switch(self):
+        got = self.out('--admin-2fa', 'status') or {}
+        on = bool(got.get('admin_2fa')) if isinstance(got, dict) else False
+        if on:
+            if self.confirm('Switch the second step off', 'A password alone signs in again.', 'Switch it off'):
+                self.act('--admin-2fa', 'off')
+        elif self.confirm('Switch the second step on', 'After the password every account gives a code too (an '
+                          'app, e-mail or SMS - set up at its next sign-in). Every sign-in ends now.', 'Switch it on'):
+            self.act('--admin-2fa', 'on')
 
     def account_do(self, u):
         name = u['name']
         opts = [('pw', 'Set its password'), ('role', 'Change its role (now %s)' % u.get('role')),
                 ('runas', 'The Linux account its terminals run as (now %s)' % u.get('run_as')),
                 ('on', 'Switch it on again') if u.get('disabled') else ('off', 'Switch it off'),
-                ('out', 'End its sign-ins'), ('show', 'Show it all'), ('delete', 'Delete it')]
+                ('out', 'End its sign-ins'), ('mfa', 'Reset its second step (it sets one up again)'),
+                ('show', 'Show it all'), ('delete', 'Delete it')]
         what = self.choose(name, opts, '%s, runs as %s, %s' % (u.get('role'), u.get('run_as'),
                                                                'off' if u.get('disabled') else 'on'))
         if what == 'pw':
@@ -11826,6 +11870,10 @@ class Console(object):
             self.act('--enable-user', name)
         elif what == 'out':
             self.act('--end-sign-ins', name)
+        elif what == 'mfa':
+            if self.confirm('Reset the second step', 'The app or address of %s is forgotten and its sign-ins '
+                            'end: at the next sign-in it sets a second step up again.' % name, 'Reset it'):
+                self.act('--reset-2fa', name)
         elif what == 'show':
             self.details(name, u, skip=('prefs',))
         elif what == 'delete':
@@ -12908,11 +12956,48 @@ class Console(object):
                 subprocess.call([sys.executable, '-I', upgrader(), '--run', path])
                 self.pause()
             self.live(run_signed)
+        def back():
+            ver = self.ask_one('Go back to', 'version', '', help_='One that --downgrade-check says may be gone '
+                               'back to. A copy of the database is made first.')
+            if ver and self.confirm('Go back', 'ai %s is fetched, checked and put in instead of %s.' % (
+                    ver, __version__), 'Go back', danger=True):
+                self.live(lambda: self.show_live('--downgrade', ver, '--yes'))
         return self.sub('Upgrades', [
             ('1', 'How it stands', lambda: self.act('--upgrade-status')),
             ('2', 'Look for a new version on the web now', lambda: self.act('--upgrade-check')),
             ('3', 'Upgrade from the web', online),
             ('4', 'Upgrade from a package file', install),
+            ('5', 'Older versions, and whether each may be gone back to', lambda: self.act('--downgrade-check')),
+            ('6', 'Go back to an older version', back),
+        ])
+
+    # ---- 0 data: the database, backups, mail ------------------------------------
+    def m_data(self):
+        def restore():
+            f = self.ask_one('Put a copy back', 'file', str(COPIES_DIR) + '/',
+                             help_='A copy made here (ai --db-copies) or brought from elsewhere. Everything is replaced.')
+            if f and self.confirm('Put the copy back', 'Every account, setting and event is replaced by what is in '
+                                  '%s. A copy of now is made first.' % f, 'Put it back', danger=True):
+                self.act('--db-restore', f, '--yes')
+
+        def export():
+            f = self.ask_one('Export the configuration', 'file', '/root/ai-config-%s.json' % time.strftime('%Y%m%d'))
+            if f:
+                self.act('--export-config', f)
+
+        def mail():
+            to = self.ask_one('A test mail', 'to', '', help_='An address the mail goes to - every step is shown.')
+            if to:
+                self.act('--mail-test', to)
+        return self.sub('Data: copies of the database, backups, mail', [
+            ('1', 'The copies of the database', lambda: self.act('--db-copies')),
+            ('2', 'Make a copy now', lambda: self.act('--db-copy')),
+            ('3', 'Put a copy back', restore),
+            ('4', 'Backups to other machines: how they stand', lambda: self.act('--backups')),
+            ('5', 'Back up now, to every destination', lambda: self.act('--backup-now')),
+            ('6', 'Export the whole configuration into a file', export),
+            ('7', 'Send a test mail', mail),
+            ('8', 'Tidy up what has been kept long enough', lambda: self.act('--tidy')),
         ])
 
     # ---- 11 the service ---------------------------------------------------------
@@ -13244,17 +13329,22 @@ def build_parser():
     g.add_argument('--lockouts', action='store_true', help='who is locked out, or counted, after wrong passwords')
     g.add_argument('--unlock', metavar='WHO|all', help='a lockout cleared: an address, a name, or all')
     g = p.add_argument_group('THE DATABASE AND THE CONFIGURATION')
-    g.add_argument('--db-copy', action='store_true', help='a copy of the database now (with its key)')
+    g.add_argument('--db-copy', '--backup', action='store_true', dest='db_copy', help='a copy of the database now (with its key)')
     g.add_argument('--db-copies', action='store_true', help='the copies kept in /var/lib/ai/copies')
-    g.add_argument('--db-restore', metavar='FILE', help='a copy put back (everything replaced; --yes)')
+    g.add_argument('--db-restore', '--restore', metavar='FILE', dest='db_restore',
+                   help='a copy put back (everything replaced; --yes)')
+    g.add_argument('--tidy', action='store_true', help='delete what has been kept long enough (events, sign-ins, copies)')
     g.add_argument('--export-config', metavar='FILE', help='the whole configuration into a file (- for stdout)')
     g.add_argument('--with-secrets', action='store_true', help='with --export-config: the secrets too, locked')
     g.add_argument('--import-config', metavar='FILE', help='a configuration taken in (--replace: exactly the file; --yes)')
     g.add_argument('--replace', action='store_true', help='with --import-config: what is not in the file goes')
-    g.add_argument('--backup-now', action='store_true', help='a backup made and sent to every destination switched on')
-    g.add_argument('--backups', action='store_true', help='the destinations of the backups and what was sent')
+    g.add_argument('--backup-now', '--rbackup-now', action='store_true', dest='backup_now',
+                   help='a backup made and sent to every destination switched on')
+    g.add_argument('--backups', '--rbackup-status', action='store_true', dest='backups',
+                   help='the destinations of the backups and what was sent')
     g.add_argument('--backup-file', metavar='FILE', help='a backup made into a file here (locked with its password)')
     g.add_argument('--restore-bundle', metavar='FILE', help='a backup put back (AI_BACKUP_PASSWORD; --yes)')
+    g.add_argument('--passphrase-file', metavar='FILE', help='with --restore-bundle: the password of the backups, one line')
     g = p.add_argument_group('MAIL')
     g.add_argument('--mail-test', metavar='ADDRESS', help='a test mail sent, every step shown')
     g = p.add_argument_group('SETTINGS')
@@ -13281,7 +13371,15 @@ def build_parser():
                    help='the system\'s updates: what waits, looked for, or put in (followed here)')
     g.add_argument('--sshkeys', action='store_true', help='the keys that may sign in as root')
     g.add_argument('--sshkey-add', metavar='LINE', help='a public key for root (ssh-ed25519 AAAA…)')
-    g.add_argument('--cert', action='store_true', help='the certificate of the pages')
+    g.add_argument('--cert', '--web-status', action='store_true', dest='cert',
+                   help='the certificate of the pages and how TLS is spoken')
+    g.add_argument('--tls-import', nargs='+', metavar='FILE', help='a certificate in: PEM files (certificate, key, '
+                   'chain, root - in any order, or all in one) or a .pfx / .p12; its password in AI_TLS_PASSWORD')
+    g.add_argument('--tls-preset', choices=['standard', 'intermediate', 'modern'],
+                   help='the protocols and ciphers: standard (TLS 1.2+1.3, ECDHE), intermediate (Mozilla, with DHE), '
+                   'modern (TLS 1.3 only)')
+    g.add_argument('--tls-dh', choices=sorted(DH_WORDS), help='the DH parameters')
+    g.add_argument('--tls-hsts', type=int, metavar='SECONDS', help='Strict-Transport-Security (0 = none)')
     g.add_argument('--reboot', action='store_true', help='restart the server (asks, or --yes)')
     g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
     g = p.add_argument_group('UPGRADES')
@@ -13290,6 +13388,9 @@ def build_parser():
     g.add_argument('--upgrade-online', nargs='?', const='newest', metavar='VERSION',
                    help='fetch the newest (or VERSION) from upgrade_url and put it in')
     g.add_argument('--upgrade-status', action='store_true', help='the last upgrade, and what it said')
+    g.add_argument('--upgrade-follow', action='store_true', help='follow an upgrade going on until it ends')
+    g.add_argument('--downgrade-check', action='store_true', help='the versions at upgrade_url older than this one, '
+                   'and whether each may be gone back to')
     return p
 
 
@@ -13780,7 +13881,7 @@ def cli_main(argv):
             if a.json:
                 say_json({'copies': rows})
             else:
-                print(table([[c['name'], when(c['at']), '%.1f MB' % (c['size'] / 1048576.0)] for c in rows],
+                print(table([[c['name'], when(c['at']), human_bytes(c['size'])] for c in rows],
                             ['copy', 'made', 'size']) if rows else pal.warn_line('no copy yet (ai --db-copy)'))
             return 0
         if a.db_restore:
@@ -13829,7 +13930,8 @@ def cli_main(argv):
                 shutil.rmtree(work, ignore_errors=True)
             return 0
         if a.restore_bundle:
-            pw = os.environ.get('AI_BACKUP_PASSWORD') or rb_password()
+            pw = os.environ.get('AI_BACKUP_PASSWORD') or (read_text(a.passphrase_file).splitlines() or [''])[0] \
+                if a.passphrase_file else os.environ.get('AI_BACKUP_PASSWORD') or rb_password()
             with open(a.restore_bundle, 'rb') as f:
                 locked = f.read(8).startswith(b'Salted__')
             if locked and not pw:
@@ -14010,11 +14112,55 @@ def cli_main(argv):
             print('  root may sign in: %s, with a password: %s, port %s' % (
                 sd.get('permit_root', '?'), sd.get('password', '?'), sd.get('port', '?')))
             return 0
+        if a.tls_import or a.tls_preset or a.tls_dh or a.tls_hsts is not None:
+            prof = tls_prof(st) or {'preset': 'standard', 'dh': 'none', 'hsts': 63072000}
+            if a.tls_import:
+                pem, pfx = '', b''
+                for f in a.tls_import:
+                    with open(f, 'rb') as fh:
+                        raw = fh.read()
+                    if b'-----BEGIN ' in raw:
+                        pem += raw.decode('utf-8', 'replace') + '\n'
+                    elif pfx:
+                        raise Refused('one PFX / PKCS#12 file at a time')
+                    else:
+                        pfx = raw
+                pend = unseal_secret(prof.get('pending_key'), 'web:tls-pending') if prof.get('pending_key') else ''
+                try:
+                    got = cert_bundle(cert=pem, pfx=pfx, password=os.environ.get('AI_TLS_PASSWORD') or '',
+                                      pending_key=pend or '')
+                except ValueError as e:
+                    raise Refused(str(e))
+                got['key'] = seal_secret(got['key'], 'web:tls')
+                prof.update(got)
+                prof.pop('pending_key', None)
+                prof.pop('csr', None)
+                print(pal.ok_line('the certificate of %s, %s' % (got['info'].get('cn') or '?',
+                                                                 'its chain checked' if got.get('verify') == 'ok' else
+                                                                 'no root given to check it against')))
+            pol = {'preset': a.tls_preset or prof.get('preset') or 'standard', 'dh': a.tls_dh or prof.get('dh') or 'none',
+                   'hsts': a.tls_hsts if a.tls_hsts is not None else prof.get('hsts'), 'prefer': prof.get('prefer'),
+                   'protocols': prof.get('protocols'), 'ciphers': prof.get('ciphers')}
+            try:
+                prof.update(tls_policy_checked(pol))
+            except ValueError as e:
+                raise Refused(str(e))
+            for line in tls_apply(st, prof, 'the command line'):
+                print(pal.ok_line(line))
+            return 0
         if a.cert:
             c = cert_facts()
             if a.json:
-                say_json(c)
+                say_json({'cert': c, 'tls': tls_view(tls_prof(st))})
                 return 0
+            prof = tls_prof(st)
+            if prof:
+                t = tls_resolved(prof)
+                print('  %-14s %s' % ('TLS', '%s · %s · DH %s · HSTS %s' % (
+                    ' '.join(t['protocols']), prof.get('preset') or 'standard', t['dh'],
+                    ('%d s' % t['hsts']) if t['hsts'] else 'off')))
+                if prof.get('pending_key'):
+                    print(pal.warn_line('a certificate request waits for its certificate (ai --tls-import FILE)'))
             if not c.get('there'):
                 print(pal.bad_line('there is no certificate at %s' % CERT_FILE))
                 return 1
@@ -14031,6 +14177,40 @@ def cli_main(argv):
             print(pal.ok_line('the server %s in 3 s' % ('restarts' if a.reboot else 'switches off')))
             return 0
         # ---- upgrades ---------------------------------------------------------------------------
+        if a.downgrade_check:
+            v = d.upgrades.view()
+            if not (v.get('online') or {}).get('at'):
+                v = (d.upgrades.look('the command line'), d.upgrades.view())[1]
+            print('  here           ai %s · the oldest safe on this database: %s' % (__version__, v['floor']))
+            if not v['older']:
+                print(pal.ok_line('there is no older version at %s' % v.get('url')))
+            for p_ in v['older']:
+                print((pal.ok_line if p_['safe'] else pal.warn_line)('ai %s: %s' % (
+                    p_['version'], 'may be gone back to (ai --downgrade %s)' % p_['version'] if p_['safe'] else p_['why'])))
+            return 0
+        if a.upgrade_follow:
+            seen = 0
+            while True:
+                s = d.upgrades.status()
+                log_ = read_text(UPGRADE_DIR / 'last.log', 400000)
+                lines = log_.splitlines()
+                for line in lines[seen:]:
+                    print(line)
+                seen = len(lines)
+                if s.get('state') != 'running':
+                    print((pal.ok_line if s.get('state') == 'done' else pal.warn_line)(
+                        'the upgrade: %s %s' % (s.get('state') or 'nothing going on', s.get('version') or '')))
+                    return 0 if s.get('state') in ('done', None, '') else 1
+                time.sleep(1.5)
+        if a.tidy:
+            auth.tidy()
+            keep = float(CONFIG.get('events_keep_days') or 180) * 86400
+            n = st.x('DELETE FROM events WHERE at < ?', (time.time() - keep,))
+            n2 = st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
+            db_copies_trim()
+            print(pal.ok_line('tidied: %d event(s), %d line(s) of outgoing mail; the copies kept to %d' % (
+                n, n2, int(CONFIG.get('db_copy_keep') or 14))))
+            return 0
         if a.upgrade_status:
             v = d.upgrades.view()
             if a.json:

@@ -2411,7 +2411,7 @@ function loadAbout() {
     clear(host);
     host.appendChild(kvTable([
       ['ai', m.software.ai], ['Server', m.host + ' · ' + m.os],
-      ['PHP of the pages', PHP_SAFETY ? PHP_SAFETY.version + (PHP_SAFETY.patched ? '' : ' - not fixed against php2shell, guarded') : '–'],
+      ['PHP of the pages', PHP_SAFETY ? PHP_SAFETY.version + (PHP_SAFETY.patched ? '' : (PHP_SAFETY.guarded ? ' - may not be fixed against php2shell; these pages are guarded' : ' - may not be fixed against php2shell')) : '–'],
       ['Its folders', noI18n(el('span', 'mono small', d.paths.state + ' · ' + d.paths.config + ' · ' + d.paths.log))],
       ['On the command line', noI18n(el('span', 'mono', 'ai --status · ai --sessions · ai --attach ID'))]
     ]));
@@ -2747,9 +2747,10 @@ function loadDb() {
 function dbRestoreAsk(name) {
   api('db', {action: 'inspect', name: name}).then(function (r) {
     var w = r.what;
-    modal('Put ' + name + ' back', function (body) {
+    modal('Put this copy back', function (body) {
       body.appendChild(el('p', 'note warn', 'Everything is replaced by what is in it: every account, every setting, every event. Whoever is signed in may have to sign in again. A copy of what is here now is made first.'));
       body.appendChild(kvTable([
+        ['The copy', noI18n(el('span', 'mono', name))],
         ['Made by', w.about && w.about.version ? 'ai ' + w.about.version + ' on ' + w.about.host : '–'],
         ['Made', w.about && w.about.at ? stamp(w.about.at) : '–'],
         ['Accounts', noI18n(el('span', 'mono', (w.users || []).join(', ')))],

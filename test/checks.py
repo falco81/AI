@@ -68,5 +68,39 @@ check('plain output says ok and fail in words', pal.ok_line('x') == '[ ok ] x' a
 p2 = ai.build_parser()
 a2 = p2.parse_args(['--fw-open', '8080/udp', '--from', '10.0.0.0/8'])
 check('the command line takes the firewall\'s words', a2.fw_open == '8080/udp' and a2.source == '10.0.0.0/8')
+# ---- 1.0.4: what came from otp ------------------------------------------------------------
+check('TOTP of RFC 6238 (SHA-1, 59 s)', ai.totp(ai.base64.b32encode(b'12345678901234567890').decode(), 59, 8)
+      == '94287082')
+sec = ai.b32_new()
+check('a code of now is found, and its step', ai.totp_match(sec, ai.totp(sec)) == ai.totp_step())
+check('a wrong code is not', ai.totp_match(sec, '000000' if ai.totp(sec) != '000000' else '111111') is None)
+q = ai.QrCode('otpauth://totp/x?secret=ABC', 'M')
+check('a QR code drawn', q.size >= 21 and ai.qr_data_uri('hello').startswith('data:image/svg+xml;base64,'))
+sealed = ai.seal_secret('the secret', 'setting:x')
+check('a secret sealed opens only where it was sealed for', ai.unseal_secret(sealed, 'setting:x') == 'the secret'
+      and ai.unseal_secret(sealed, 'setting:y') is None and sealed.startswith('sealed:2:'))
+block = 'server {\n    listen 443 ssl;\n    server_name x;\n    ssl_protocols TLSv1.2;\n    location / { ssl_protocols x; }\n}'
+b2 = ai.set_directive(block, 'ssl_protocols', 'TLSv1.3')
+check('a line of nginx set in its server, not in a location', 'ssl_protocols             TLSv1.3;' in b2
+      and 'ssl_protocols x;' in b2 and b2.count('TLSv1.2') == 0)
+check('the server on 443 found', ai.nginx_tls_block('server {\n listen 80;\n}\n' + block)[1].startswith('server {\n    listen 443'))
+check('a text filled in, only with its own words', ai.text_fill('{site}: {code} {other}', ('site', 'code'),
+                                                               site='s', code='1') == 's: 1 {other}')
+check('a layout of the columns reduced to what it may hold', ai.clean_cols({'t': {'w': {'a': 9999999, 'b': 'x'},
+                                                                                   'o': ['a', 3], 'zz': 1}})
+      == {'t': {'w': {'a': 3000}, 'o': ['a', '3'], 't': 0}})
+lk = ai.lock_with('phrase one', {'a': 1})
+check('a file locked with a passphrase opens with it alone', ai.open_with('phrase one', lk) == {'a': 1})
+try:
+    ai.open_with('another', lk)
+    check('... and not with another', False)
+except ai.Refused:
+    check('... and not with another', True)
+check('a TLS policy checked', ai.tls_policy_checked({'preset': 'modern', 'dh': 'none', 'hsts': 0})
+      == {'preset': 'modern', 'dh': 'none', 'prefer': False, 'hsts': 0})
+check('a mail address and a phone number checked', ai.mail_checked('a@b.cz') == 'a@b.cz'
+      and ai.phone_checked('+420 603 123 456') == '+420603123456')
+check('the oldest version safe to go back to', ai.ver_tuple(ai.DOWNGRADE_FLOOR) <= ai.ver_tuple(ai.__version__))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

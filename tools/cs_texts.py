@@ -765,6 +765,574 @@ STRINGS = {
     'Ctrl+Z: puts what runs in the background (fg brings it back).': 'Ctrl+Z: pošle běžící program na pozadí (fg ho vrátí).',
     'Home': 'Home', 'End': 'End', 'Page Up': 'Page Up', 'Page Down': 'Page Down', 'Insert': 'Insert', 'Delete': 'Delete',
     "this browser keeps some keys for itself (Ctrl+W, Ctrl+T, Ctrl+N): Chrome or Edge give them all": 'tento prohlížeč si některé klávesy nechává (Ctrl+W, Ctrl+T, Ctrl+N): Chrome nebo Edge je předají všechny',
+    # ---- 1.0.4: what otp had and ai had not yet ----
+    'Put this copy back': 'Obnovit tuto kopii',
+    'How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.':
+        'Jak pošta těchto stránek odchází z tohoto stroje: kódy druhého kroku a upozornění na varování a selhání.',
+    "How SMS leaves this machine, for the codes of the second step: an HTTP gateway, a modem's spool, or a Teltonika on the network.":
+        'Jak odcházejí SMS s kódy druhého kroku: HTTP brána, fronta modemu, nebo Teltonika v síti.',
+    'What people get from this server - the mails and the SMS, in Czech and English.':
+        'Co lidé od tohoto serveru dostávají – e-maily a SMS, česky a anglicky.',
+    'Every mail and SMS this server sent, or tried to: where, what, how it went.':
+        'Každý e-mail a SMS, které tento server poslal nebo zkusil poslat: kam, co a jak to dopadlo.',
+    'The database: copies made every night, downloaded, put back.':
+        'Databáze: kopie dělané každou noc, stažení, obnova.',
+    'Backups to other machines: a folder, FTP, FTPS, SFTP, SCP or a Windows share - on a schedule, locked with a password; put back from here.':
+        'Zálohy na jiné stroje: složka, FTP, FTPS, SFTP, SCP nebo sdílená složka Windows – podle plánu, zamčené heslem; obnova odsud.',
+    'The whole configuration as one file: exported, imported.':
+        'Celá konfigurace jako jeden soubor: export a import.',
+    'Updates':
+        'Aktualizace',
+    'Messages':
+        'Zprávy',
+    'Data':
+        'Data',
+    'SMS':
+        'SMS',
+    'Mail':
+        'Pošta',
+    'Message texts':
+        'Texty zpráv',
+    'Outgoing mail':
+        'Odchozí pošta',
+    'Backups':
+        'Zálohy',
+    'Database':
+        'Databáze',
+    'Export and import':
+        'Export a import',
+    'Certificates and TLS':
+        'Certifikáty a TLS',
+    'Addresses and names with wrong passwords or wrong codes still counted - at the limit (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them, and they may try again at once.':
+        'Adresy a jména, kterým se ještě počítají chybná hesla nebo kódy – po dosažení limitu (Nastavení → Přihlašování) jsou zablokované, dokud čas nevyprší. Smažte jedno nebo všechna a mohou to hned zkusit znovu.',
+    'Locked out':
+        'Zablokováno',
+    'Columns of the tables':
+        'Sloupce tabulek',
+    'Second step':
+        'Druhý krok',
+    'at the next sign-in':
+        'při příštím přihlášení',
+    'second step not given yet':
+        'druhý krok ještě nezadán',
+    'Reset the second step':
+        'Zrušit druhý krok',
+    'Reset it':
+        'Zrušit',
+    'e-mail':
+        'e-mail',
+    'app':
+        'aplikace',
+    "The codes of the second step of signing in, sent by e-mail, and notices of what Events marks as a warning or a failure. The mail leaves through your mail server (SMTP), or straight to the server of the recipient's domain with no relay at all.":
+        'Kódy druhého kroku přihlášení posílané e-mailem a upozornění na to, co Události označí jako varování nebo selhání. Pošta odchází přes váš poštovní server (SMTP), nebo rovnou na server domény příjemce, bez jakéhokoli relaye.',
+    'Sends a short message the way the codes and the notices go, and shows every step: the server reached, TLS, signing in, the message handed over and what the server said. Save the changes first.':
+        'Pošle krátkou zprávu stejnou cestou jako kódy a upozornění a ukáže každý krok: spojení se serverem, TLS, přihlášení, předání zprávy a co server odpověděl. Nejdřív uložte změny.',
+    'Try it':
+        'Vyzkoušet',
+    'Send a test':
+        'Poslat zkoušku',
+    'The certificate authority':
+        'Certifikační autorita',
+    'The second step of signing in, for everybody':
+        'Druhý krok přihlášení pro všechny',
+    'After a right password these pages ask for a code too: from an authenticator app, or sent by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the second step, or ai --reset-2fa NAME as root, takes it away again. Switched on, every other sign-in ends, so each gives its second step.':
+        'Po správném hesle se tyto stránky zeptají ještě na kód: z aplikace autentikátoru, nebo poslaný e-mailem či SMS. Poprvé si každý účet zvolí způsob a ověří ho; Účty → Zrušit druhý krok nebo ai --reset-2fa JMÉNO jako root ho zase zruší. Zapnutím skončí všechna ostatní přihlášení, aby každé zadalo svůj druhý krok.',
+    'Offered: an authenticator app':
+        'Nabízeno: aplikace autentikátoru',
+    'Google or Microsoft Authenticator, FreeOTP, 1Password... - a QR code scanned once.':
+        'Google nebo Microsoft Authenticator, FreeOTP, 1Password… – QR kód se naskenuje jednou.',
+    'Offered: a code by e-mail':
+        'Nabízeno: kód e-mailem',
+    'Only where sending mail is set up (Settings → Mail).':
+        'Jen tam, kde je nastavené odesílání pošty (Nastavení → Pošta).',
+    'Offered: a code by SMS':
+        'Nabízeno: kód SMS',
+    'Only where sending SMS is set up (Settings → SMS).':
+        'Jen tam, kde je nastavené odesílání SMS (Nastavení → SMS).',
+    'Codes of the app taken this many periods early or late':
+        'Kódy aplikace přijaté o tolik období dříve či později',
+    'A period is 30 s. 1 forgives a phone half a minute out; 0 takes only the code of now.':
+        'Období je 30 s. 1 odpustí telefonu půl minuty odchylky; 0 bere jen právě platný kód.',
+    'Digits of a code sent by mail':
+        'Číslic kódu posílaného poštou',
+    'A code sent is good for (s)':
+        'Poslaný kód platí (s)',
+    'Sending mail':
+        'Odesílání pošty',
+    'off - no mail is sent':
+        'vypnuto – neposílá se žádná pošta',
+    'through a mail server (SMTP)':
+        'přes poštovní server (SMTP)',
+    "straight to the recipients' servers (MX)":
+        'rovnou na servery příjemců (MX)',
+    "How a mail of these pages leaves this machine: through your mail server, or straight to the recipient's (its MX record, looked up here) - which many networks block on port 25.":
+        'Jak pošta těchto stránek opouští tento stroj: přes váš poštovní server, nebo rovnou na server příjemce (jeho záznam MX, zjištěný zde) – což mnoho sítí na portu 25 blokuje.',
+    'Mail server':
+        'Poštovní server',
+    "The mail server's name or address: smtp.example.cz, or a relay in your network.":
+        'Název nebo adresa poštovního serveru: smtp.example.cz, nebo relay ve vaší síti.',
+    'Port':
+        'Port',
+    '0 picks the usual one for the encryption: 587 for STARTTLS, 465 for TLS, 25 without.':
+        '0 zvolí obvyklý podle šifrování: 587 pro STARTTLS, 465 pro TLS, 25 bez.',
+    'Encryption':
+        'Šifrování',
+    'STARTTLS - plain, then encrypted (587)':
+        'STARTTLS – nejdřív otevřeně, pak šifrovaně (587)',
+    'TLS from the start (465)':
+        'TLS od začátku (465)',
+    'STARTTLS where the server offers it':
+        'STARTTLS, kde ho server nabízí',
+    'none - plain text (25)':
+        'žádné – čistý text (25)',
+    'STARTTLS on 587 is what most servers want; SMTPS on 465 is TLS from the first byte.':
+        'Většina serverů chce STARTTLS na 587; SMTPS na 465 je TLS od prvního bajtu.',
+    'Signing in':
+        'Přihlašování',
+    'what the server offers':
+        'co server nabízí',
+    'none - the server lets this machine send':
+        'žádné – server tomuto stroji odesílání dovolí',
+    'XOAUTH2 (the password is the access token)':
+        'XOAUTH2 (heslo je přístupový token)',
+    'How this machine signs in to the server. None where the relay lets this machine send as it is.':
+        'Jak se tento stroj k serveru přihlašuje. Žádné tam, kde relay tento stroj nechá posílat bez přihlášení.',
+    'Account':
+        'Účet',
+    'Password':
+        'Heslo',
+    'Kept sealed in the database; never shown again. Empty keeps the one saved.':
+        'Uchováno zapečetěné v databázi; už se nikdy neukáže. Prázdné ponechá uložené.',
+    "Check the server's certificate":
+        'Ověřovat certifikát serveru',
+    'Off only for a server with a certificate nobody signed - its password then goes to whoever answers in its place.':
+        'Vypnout jen u serveru s certifikátem, který nikdo nepodepsal – heslo pak dostane kdokoli, kdo odpoví místo něj.',
+    'Wait for the server (s)':
+        'Čekat na server (s)',
+    'From (address)':
+        'Od (adresa)',
+    'The address the mails come from - one your mail server lets this machine send as.':
+        'Adresa, ze které pošta chodí – taková, za kterou smí tento stroj přes váš server posílat.',
+    'From (name)':
+        'Od (jméno)',
+    'Replies to':
+        'Odpovědi na',
+    'Empty: to the From address.':
+        'Prázdné: na adresu Od.',
+    'This machine calls itself (EHLO)':
+        'Tento stroj se představuje (EHLO)',
+    'Empty: its host name.':
+        'Prázdné: název stroje.',
+    "Port of the recipients' servers":
+        'Port serverů příjemců',
+    "Encryption to the recipients' servers":
+        'Šifrování k serverům příjemců',
+    'encrypted where the server offers it':
+        'šifrovaně, kde to server nabízí',
+    'always encrypted, the certificate checked':
+        'vždy šifrovaně, s ověřením certifikátu',
+    "DNS servers for the recipients' domains":
+        'DNS servery pro domény příjemců',
+    'Addresses, separated by commas. Empty: the ones this machine uses (/etc/resolv.conf).':
+        'Adresy oddělené čárkami. Prázdné: ty, které používá tento stroj (/etc/resolv.conf).',
+    'Language of the mail':
+        'Jazyk pošty',
+    'Notices go to':
+        'Upozornění dostává',
+    'Addresses, separated by commas, that are told by mail what Events marks as a warning or a failure - a backup that did not go, a newer version, an account locked out. Empty: nobody.':
+        'Adresy oddělené čárkami, kterým se e-mailem oznámí, co Události označí jako varování nebo selhání – neodeslaná záloha, nová verze, zablokovaný účet. Prázdné: nikdo.',
+    'What they are told':
+        'Co se jim oznamuje',
+    'warnings and failures':
+        'varování a selhání',
+    'failures only':
+        'jen selhání',
+    'At most one notice mail every (minutes)':
+        'Nejvýš jeden e-mail s upozorněním za (minut)',
+    'What happens in between goes in the next one, together.':
+        'Co se stane mezitím, přijde v dalším, pohromadě.',
+    'switched off':
+        'vypnuto',
+    'through a mail server':
+        'přes poštovní server',
+    'straight to the recipients':
+        'rovnou příjemcům',
+    'A copy every night':
+        'Kopie každou noc',
+    "SQLite's own backup of the database in use, with the key its secrets are sealed with and config.json beside it, into /var/lib/ai/copies.":
+        'Vlastní záloha SQLite z používané databáze, spolu s klíčem, kterým jsou zapečetěná její tajemství, a s config.json, do /var/lib/ai/copies.',
+    'At what hour':
+        'V kolik hodin',
+    'Copies kept':
+        'Ponechaných kopií',
+    'The newest ones; older ones are taken away.':
+        'Ty nejnovější; starší se mažou.',
+    'One database holds everything: the accounts and their sign-ins, the settings, the events and the list of terminals. It is a SQLite file on this machine. The secrets in it are sealed with a key kept beside it, in the state folder - and every copy is kept with that key beside it.':
+        'Jedna databáze drží všechno: účty a jejich přihlášení, nastavení, události a seznam terminálů. Je to soubor SQLite na tomto stroji. Tajemství v ní jsou zapečetěná klíčem uloženým vedle ní ve stavové složce – a každá kopie se drží s tímto klíčem vedle sebe.',
+    'The copies it keeps':
+        'Kopie, které drží',
+    "Every night at the hour above, SQLite's own backup of the database in use, packed with the key its secrets are sealed with and config.json. A copy is the database whole: put back, it replaces every account, every setting and every event - and a copy of what is there now is made first, so that can be undone too.":
+        'Každou noc v hodinu výše vlastní záloha SQLite z používané databáze, zabalená s klíčem jejích tajemství a s config.json. Kopie je celá databáze: obnovená nahradí každý účet, každé nastavení a každou událost – a předtím se udělá kopie současného stavu, takže i to jde vrátit.',
+    'Make one now':
+        'Vytvořit hned',
+    'A copy now, rather than waiting for tonight. It is kept with the others and counts as one of them.':
+        'Kopie teď, místo čekání na noc. Uchová se s ostatními a počítá se mezi ně.',
+    'Put a copy back':
+        'Obnovit kopii',
+    'A copy from somewhere else - one downloaded from here, or from another server of ai. Nothing happens until it has been read, checked and shown to you.':
+        'Kopie odjinud – stažená odsud, nebo z jiného serveru ai. Nic se nestane, dokud se nepřečte, neověří a neukáže vám.',
+    'Drop a copy here, or press to choose one':
+        'Přetáhněte sem kopii, nebo klikněte a vyberte ji',
+    'The file':
+        'Soubor',
+    'Its key':
+        'Jeho klíč',
+    'The copies':
+        'Kopie',
+    'The last copy':
+        'Poslední kopie',
+    'none yet':
+        'zatím žádná',
+    'In it':
+        'Obsahuje',
+    'The copy':
+        'Kopie',
+    'Made':
+        'Vytvořeno',
+    'Size':
+        'Velikost',
+    'Download it':
+        'Stáhnout',
+    'Put it back':
+        'Obnovit',
+    'Take it away':
+        'Odebrat',
+    'Take the copy away?':
+        'Odebrat kopii?',
+    'No copy has been made yet.':
+        'Zatím nebyla vytvořena žádná kopie.',
+    'Made by':
+        'Vytvořil',
+    'Accounts':
+        'Účty',
+    'Events':
+        'Události',
+    'The key of its secrets':
+        'Klíč jejích tajemství',
+    'in it - the same as here':
+        'je v ní – stejný jako zde',
+    'in it - it replaces the one here':
+        'je v ní – nahradí ten zdejší',
+    'not in it: secrets sealed elsewhere cannot be opened':
+        'není v ní: tajemství zapečetěná jinde nepůjde otevřít',
+    'Everything is replaced by what is in it: every account, every setting, every event. Whoever is signed in may have to sign in again. A copy of what is here now is made first.':
+        'Vše se nahradí tím, co je v ní: každý účet, každé nastavení, každá událost. Kdo je přihlášen, se možná bude muset přihlásit znovu. Nejdřív se udělá kopie současného stavu.',
+    "The whole configuration as one file: the settings, the accounts of these pages, the certificate and TLS of the pages, who may reach the pages, the firewall and the mail server's authorities. The events and the terminals are not in it: they move with a copy of the database. On the command line: ai --export-config FILE [--with-secrets] and ai --import-config FILE --yes.":
+        'Celá konfigurace jako jeden soubor: nastavení, účty těchto stránek, certifikát a TLS stránek, kdo smí na stránky, firewall a autority poštovního serveru. Události a terminály v něm nejsou: ty se přenášejí s kopií databáze. Na příkazové řádce: ai --export-config SOUBOR [--with-secrets] a ai --import-config SOUBOR --yes.',
+    'Export':
+        'Exportovat',
+    'Export with the secrets':
+        'Export i s tajemstvími',
+    'Import a file…':
+        'Importovat soubor…',
+    "The password hashes of the accounts, their authenticator keys, the mail server's password and the private key of the certificate go into the file - locked with a passphrase made now and shown once. The file opens only with it.":
+        'Do souboru půjdou hashe hesel účtů, jejich klíče autentikátoru, heslo poštovního serveru a soukromý klíč certifikátu – zamčené heslovou frází vytvořenou teď a ukázanou jednou. Soubor otevře jen ona.',
+    'Export them':
+        'Exportovat',
+    'The passphrase of the file':
+        'Heslová fráze souboru',
+    'The file opens only with this passphrase - it is not shown again and not kept here. Write it down apart from the file.':
+        'Soubor otevře jen tato fráze – znovu se neukáže a zde se neuchová. Zapište si ji odděleně od souboru.',
+    'Exactly the file':
+        'Přesně podle souboru',
+    'Add to what is here':
+        'Přidat k tomu, co tu je',
+    'Passphrase':
+        'Heslová fráze',
+    'Going back to an older version':
+        'Návrat ke starší verzi',
+    "Only to a version that is safe: one that reads what the newer versions wrote into the database the same, and has every security fix that matters - each version says how far back it may go, and the highest of what ran on this database counts. A copy of the database is made first (Settings → Database); the package is checked like an upgrade's. The terminals go on running.":
+        'Jen k verzi, která je bezpečná: čte to, co novější verze zapsaly do databáze, stejně, a má všechny podstatné bezpečnostní opravy – každá verze říká, kam až se smí vrátit, a platí nejvyšší z toho, co na této databázi běželo. Nejdřív se udělá kopie databáze (Nastavení → Databáze); balíček se ověří jako při upgradu. Terminály běží dál.',
+    'Version':
+        'Verze',
+    'Published':
+        'Vydáno',
+    'Go back to it':
+        'Vrátit se k ní',
+    'Go back':
+        'Vrátit se',
+    'not safe here':
+        'zde není bezpečná',
+    'What it runs on':
+        'Na čem běží',
+    'The terminals':
+        'Terminály',
+    'The pages':
+        'Stránky',
+    'The system':
+        'Systém',
+    'this one':
+        'tento',
+    'where':
+        'kde',
+    'system':
+        'systém',
+    'kernel':
+        'jádro',
+    'Your account':
+        'Váš účet',
+    'What you may do':
+        'Co smíte',
+    'Anything: terminals as any Linux account, every file, the settings and the server itself.':
+        'Všechno: terminály jako kterýkoli účet Linuxu, každý soubor, nastavení i samotný server.',
+    'Terminals of your own, as the Linux account below, and the files of your folders. No setting and no account.':
+        'Vlastní terminály jako účet Linuxu níže a soubory vašich složek. Žádné nastavení a žádný účet.',
+    'Language and letters':
+        'Jazyk a písmo',
+    'The language of these pages':
+        'Jazyk těchto stránek',
+    'Every table you have laid out goes back as it comes: the widths and the order of the columns, on every page. Nobody else’s change.':
+        'Každá tabulka, kterou jste uspořádali, se vrátí do výchozího stavu: šířky i pořadí sloupců, na všech stránkách. Nikomu jinému se nic nezmění.',
+    'While this is on, the edge of any column’s heading can be dragged to size it and the heading itself to move it, and the right button on a heading hides a column, brings a hidden one back or adds an empty one for room; each change is kept the moment you let go. It is for this sign-in only: signing out or the sign-in running out turns it off again. Off, the tables are drawn as you left them and nothing can move them.':
+        'Dokud je to zapnuté, okraj záhlaví kteréhokoli sloupce jde tažením zúžit či rozšířit a samotné záhlaví přesunout; pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo; každá změna se uloží, jakmile pustíte. Platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení to vypne. Vypnuté se tabulky kreslí, jak jste je nechali, a nic s nimi nepohne.',
+    'Your settings in a file':
+        'Vaše nastavení v souboru',
+    'How you have set these pages up for yourself — the columns of the tables, the language, the letters and keys of the terminal — saved as a JSON file, and read back here or on another machine running ai. Never your password, your role or anything else about the account.':
+        'Jak jste si tyto stránky nastavili – sloupce tabulek, jazyk, písmo a klávesy terminálu – uložené jako soubor JSON a načtené zpět zde nebo na jiném stroji s ai. Nikdy vaše heslo, role ani nic dalšího o účtu.',
+    'Every table is as it comes.':
+        'Všechny tabulky jsou ve výchozím stavu.',
+    'Backups to the destinations on a schedule':
+        'Zálohy do cílů podle plánu',
+    'A backup is made and sent to every destination switched on, at the time below. Back up now sends one whenever wanted.':
+        'Záloha se vytvoří a pošle do všech zapnutých cílů v čase níže. Zálohovat teď ji pošle kdykoli.',
+    'At':
+        'V',
+    "When, as HH:MM on this machine's clock.":
+        'Kdy, jako HH:MM podle hodin tohoto stroje.',
+    'How often':
+        'Jak často',
+    'daily, or weekly on the day below.':
+        'denně, nebo týdně v den níže.',
+    'daily':
+        'denně',
+    'weekly':
+        'týdně',
+    'On (1 Monday - 7 Sunday)':
+        'V den (1 pondělí – 7 neděle)',
+    'The day of a weekly backup.':
+        'Den týdenní zálohy.',
+    'Backups kept at each destination':
+        'Ponechaných záloh v každém cíli',
+    "How many of this server's backups each destination keeps; the oldest go once a new one is there.":
+        'Kolik záloh tohoto serveru si každý cíl ponechá; nejstarší se smažou, jakmile je tam nová.',
+    'And none older than (days)':
+        'A žádná starší než (dní)',
+    'Older ones are taken away too - 0: only the count above decides.':
+        'Starší se smažou také – 0: rozhoduje jen počet výše.',
+    'The password of the backups':
+        'Heslo záloh',
+    'Every backup is locked with it (AES-256, opened with ai or with openssl alone). Keep it apart from the backups: without it none of them can be opened. Without one nothing is sent.':
+        'Každá záloha je jím zamčená (AES-256, otevře ji ai nebo samotný openssl). Držte ho odděleně od záloh: bez něj nejde žádnou otevřít. Bez hesla se nic neposílá.',
+    'saved - empty keeps it':
+        'uloženo – prázdné ho ponechá',
+    'not set':
+        'nenastaveno',
+    "A backup is everything of this program: the whole database (the accounts, every setting, the certificate and TLS, the firewall, the events, the list of terminals), the key its secrets are sealed with and this machine's config.json - with RESTORE.md, the exact steps to bring it all back on a machine installed from nothing. Locked with the password below; sent to every destination switched on - a folder, FTP, FTPS, SFTP, SCP or a Windows/Samba share. The files of the Linux accounts (their projects, ~/.claude) are not in it.":
+        'Záloha je všechno z tohoto programu: celá databáze (účty, každé nastavení, certifikát a TLS, firewall, události, seznam terminálů), klíč jejích tajemství a config.json tohoto stroje – s RESTORE.md, přesným postupem, jak vše obnovit na stroji nainstalovaném od nuly. Zamčená heslem níže; posílá se do všech zapnutých cílů – složka, FTP, FTPS, SFTP, SCP nebo sdílená složka Windows/Samba. Soubory účtů Linuxu (jejich projekty, ~/.claude) v ní nejsou.',
+    'When, how many, and the password':
+        'Kdy, kolik a heslo',
+    'Where they go':
+        'Kam jdou',
+    'What was sent':
+        'Co bylo odesláno',
+    'A whole path on this machine.':
+        'Celá cesta na tomto stroji.',
+    'this server':
+        'tento server',
+    'Only an administrator sees and changes the backups: they hold every secret.':
+        'Zálohy vidí a mění jen administrátor: obsahují všechna tajemství.',
+    'No password of the backups is set: the file will hold <b>every secret of this server</b> readable. Set the password first unless you know where the file goes.':
+        'Heslo záloh není nastavené: soubor bude obsahovat <b>všechna tajemství tohoto serveru</b> čitelně. Nejdřív nastavte heslo, pokud nevíte, kam soubor půjde.',
+    'Everything in the database is replaced with what the backup holds - accounts, settings, the certificate, events, and who is signed in: you sign in again afterwards, with an account the backup has. A copy of what is here now is made first (Settings → Database). The terminals go on running.':
+        'Vše v databázi se nahradí tím, co obsahuje záloha – účty, nastavení, certifikát, události i to, kdo je přihlášen: potom se přihlásíte znovu účtem, který je v záloze. Nejdřív se udělá kopie současného stavu (Nastavení → Databáze). Terminály běží dál.',
+    'No backup of ai there.':
+        'Žádná záloha ai tam není.',
+    'The codes of the second step of signing in, sent by SMS: through an SMS gateway with an HTTP API, a GSM modem on this machine (smstools3 or gammu-smsd), or a Teltonika gateway (TRB140, RUT…) on the network.':
+        'Kódy druhého kroku přihlášení posílané SMS: přes SMS bránu s HTTP API, GSM modem na tomto stroji (smstools3 nebo gammu-smsd), nebo bránu Teltonika (TRB140, RUT…) v síti.',
+    'A short SMS sent the way the codes go - save the changes first. For a Teltonika, Test the connection signs in to it and asks how its modems are; nothing is sent.':
+        'Krátká SMS poslaná stejnou cestou jako kódy – nejdřív uložte změny. U Teltoniky se Otestovat spojení k bráně přihlásí a zeptá se na stav modemů; nic se neodešle.',
+    'Send a test SMS':
+        'Poslat zkušební SMS',
+    'Test the connection':
+        'Otestovat spojení',
+    'The certificates the gateway is checked against':
+        'Certifikáty, proti kterým se brána ověřuje',
+    "The gateway's own certificate (a TRB makes one itself), or the root and the chain of the authority that signed it. With some here only these are trusted; with none, the authorities this machine trusts.":
+        'Vlastní certifikát brány (TRB si ho vytvoří sama), nebo kořen a řetězec autority, která ho podepsala. Jsou-li zde nějaké, věří se jen jim; bez nich autoritám, kterým věří tento stroj.',
+    'Read it from the gateway':
+        'Načíst z brány',
+    'How SMS is sent':
+        'Jak se posílají SMS',
+    'off - no SMS is sent':
+        'vypnuto – SMS se neposílají',
+    'an SMS gateway with an HTTP API':
+        'SMS brána s HTTP API',
+    'a modem on this machine - a file into the spool of smstools / gammu':
+        'modem na tomto stroji – soubor do fronty smstools / gammu',
+    'a Teltonika gateway (TRB140, RUT…) on the network':
+        'brána Teltonika (TRB140, RUT…) v síti',
+    'An SMS gateway with an HTTP API (most operators and services), a GSM modem on this machine run by smstools3 or gammu-smsd (a file into its spool folder), or a Teltonika gateway (TRB140, RUT…) on the network through its own API. Off: no code goes by SMS.':
+        'SMS brána s HTTP API (většina operátorů a služeb), GSM modem na tomto stroji obsluhovaný smstools3 nebo gammu-smsd (soubor do jeho fronty), nebo brána Teltonika (TRB140, RUT…) v síti přes její vlastní API. Vypnuto: žádný kód nejde SMS.',
+    'Country code for numbers written without one':
+        'Předvolba pro čísla zapsaná bez ní',
+    'A number typed as 603 123 456 becomes +420603123456. Empty: a number has to be typed with its country code.':
+        'Číslo zapsané jako 603 123 456 se změní na +420603123456. Prázdné: číslo se musí zapsat s předvolbou.',
+    'Without accents (one SMS, not two)':
+        'Bez diakritiky (jedna SMS, ne dvě)',
+    'A letter with an accent makes the whole SMS the wide alphabet, 70 characters a part instead of 160.':
+        'Písmeno s diakritikou přepne celou SMS do široké abecedy, 70 znaků na díl místo 160.',
+    "The gateway's address (URL)":
+        'Adresa brány (URL)',
+    'Where the message is sent. {to} is the number (+420…), {to_digits} the number without +, {text} the message, {token} the key below. https://sms.example.cz/api/send?to={to}&text={text}':
+        'Kam se zpráva posílá. {to} je číslo (+420…), {to_digits} číslo bez +, {text} zpráva, {token} klíč níže. https://sms.example.cz/api/send?to={to}&text={text}',
+    'HTTP method':
+        'Metoda HTTP',
+    'POST sends the body below; GET only the address.':
+        'POST pošle tělo níže; GET jen adresu.',
+    "The gateway's key ({token})":
+        'Klíč brány ({token})',
+    'Its API key or password, kept sealed in the database and put where {token} is written.':
+        'Její klíč API nebo heslo, uchované zapečetěné v databázi a dosazené tam, kde je napsáno {token}.',
+    'The gateway said it was sent when the answer holds':
+        'Brána potvrdila odeslání, když odpověď obsahuje',
+    'Some gateways answer 200 to everything: a word their answer holds only when it was sent. Empty: any 2xx.':
+        'Některé brány odpovídají 200 na všechno: slovo, které jejich odpověď obsahuje, jen když se odeslalo. Prázdné: jakékoli 2xx.',
+    'What is sent (body)':
+        'Co se posílá (tělo)',
+    'For POST. Starting with { it is JSON: {"to": "{to}", "text": "{text}"}; otherwise a form: to={to}&text={text}. Empty: the address alone.':
+        'Pro POST. Začíná-li {, je to JSON: {"to": "{to}", "text": "{text}"}; jinak formulář: to={to}&text={text}. Prázdné: jen adresa.',
+    'Headers':
+        'Hlavičky',
+    'One a line, Name: value - Authorization: Bearer {token}.':
+        'Jedna na řádek, Název: hodnota – Authorization: Bearer {token}.',
+    'The spool folder':
+        'Složka fronty',
+    'smstools3: /var/spool/sms/outgoing. A file "To: 420…" and the text is written there and the modem\'s daemon sends it.':
+        'smstools3: /var/spool/sms/outgoing. Zapíše se tam soubor „To: 420…“ s textem a démon modemu ho odešle.',
+    "The Teltonika's address":
+        'Adresa Teltoniky',
+    'The gateway on the network: 192.168.1.1, or host:port.':
+        'Brána v síti: 192.168.1.1, nebo host:port.',
+    'Its interface':
+        'Její rozhraní',
+    "RutOS's own API (/api, RutOS 7 - the default)":
+        'Vlastní API RutOS (/api, RutOS 7 – výchozí)',
+    'the older Post/Get SMS service (/cgi-bin/sms_send)':
+        'starší služba Post/Get SMS (/cgi-bin/sms_send)',
+    'RutOS 7 offers its own API out of the box; the older Post/Get service has to be switched on by hand.':
+        'RutOS 7 má vlastní API hned po vybalení; starší službu Post/Get je třeba zapnout ručně.',
+    'Its modem':
+        'Její modem',
+    'Which modem sends - 1-1, 3-1… Empty: the one the gateway names first.':
+        'Který modem posílá – 1-1, 3-1… Prázdné: ten, který brána uvede první.',
+    'Over HTTPS':
+        'Přes HTTPS',
+    'HTTPS keeps its password and the codes off the wire.':
+        'HTTPS udrží heslo i kódy mimo síť v čitelné podobě.',
+    'Check its certificate':
+        'Ověřovat její certifikát',
+    "Checked against the certificates imported below - the gateway's own or the authority that signed it; with none imported, against the authorities this machine trusts. Off: any certificate is taken.":
+        'Ověřuje se proti certifikátům importovaným níže – vlastnímu certifikátu brány nebo autoritě, která ho podepsala; bez importovaných proti autoritám, kterým věří tento stroj. Vypnuto: přijme se jakýkoli certifikát.',
+    'Its user':
+        'Její uživatel',
+    'An account of the gateway that may use its API.':
+        'Účet brány, který smí používat její API.',
+    'Its password':
+        'Její heslo',
+    'Kept sealed in the database. Never shown again.':
+        'Uchováno zapečetěné v databázi. Už se nikdy neukáže.',
+    'an HTTP gateway':
+        'HTTP brána',
+    'a modem on this machine':
+        'modem na tomto stroji',
+    'a Teltonika gateway':
+        'brána Teltonika',
+    'save the SMS settings first':
+        'nejdřív uložte nastavení SMS',
+    'What people get from this server - the mails and the SMS, in Czech and English. The words in braces are filled in when it is sent: {site} the name of these pages, {code} the code, {minutes} how long it is good for, {n} {what} {lines} {url} in a notice. An empty text is the built-in one.':
+        'Co lidé od tohoto serveru dostávají – e-maily a SMS, česky a anglicky. Slova ve složených závorkách se při odeslání doplní: {site} název těchto stránek, {code} kód, {minutes} jak dlouho platí, {n} {what} {lines} {url} v upozornění. Prázdný text je vestavěný.',
+    'A sign-in code by mail':
+        'Kód pro přihlášení e-mailem',
+    'the subject':
+        'předmět',
+    'the text':
+        'text',
+    'Filled in:':
+        'Doplní se:',
+    'Checking an address (setting up the second step)':
+        'Ověření adresy (nastavení druhého kroku)',
+    'A test mail':
+        'Zkušební e-mail',
+    'Notices of warnings and failures':
+        'Upozornění na varování a selhání',
+    'A sign-in code by SMS':
+        'Kód pro přihlášení SMS',
+    'Checking a number by SMS':
+        'Ověření čísla SMS',
+    'A test SMS':
+        'Zkušební SMS',
+    'back to the built-in text':
+        'zpět na vestavěný text',
+    'Every mail and SMS this server sends - a code to sign in with, a code to check an address, a notice, a test - written down here: where it went, what it was and what the other side said. What a message held is never kept: a code goes in no list.':
+        'Každý e-mail a SMS, které tento server posílá – kód pro přihlášení, kód k ověření adresy, upozornění, zkouška – se zde zapíše: kam šel, co to bylo a co odpověděla druhá strana. Obsah zprávy se nikdy neuchovává: kód nejde do žádného seznamu.',
+    'an address, a number, what the server said…':
+        'adresa, číslo, co server odpověděl…',
+    'every state':
+        'všechny stavy',
+    'sent':
+        'odesláno',
+    'failed':
+        'selhalo',
+    'Clear the sent ones':
+        'Smazat odeslané',
+    'Clear the failed ones':
+        'Smazat selhané',
+    'Nothing has been sent yet.':
+        'Zatím se nic neposlalo.',
+    'When':
+        'Kdy',
+    'How':
+        'Jak',
+    'To':
+        'Komu',
+    'What':
+        'Co',
+    'State':
+        'Stav',
+    'What the other side said':
+        'Co odpověděla druhá strana',
+    'Took':
+        'Trvalo',
+    'a test SMS':
+        'zkušební SMS',
+    'a test mail':
+        'zkušební e-mail',
+    'a sign-in code':
+        'kód pro přihlášení',
+    'a code to check the address':
+        'kód k ověření adresy',
+    'save the changes first':
+        'nejdřív uložte změny',
+    'How the pages speak HTTPS: the certificate with its chain, the protocols, the ciphers.':
+        'Jak stránky mluví HTTPS: certifikát s jeho řetězcem, protokoly, šifry.',
+    'Certificates':
+        'Certifikáty',
+    'A certificate is sent as PEM files (the certificate, its key, the chain, the root - in any order, or all in one file) or as a PFX / PKCS#12 file, with its password or without; or the request is made here and only what the authority sends back is uploaded. It is put in nginx and nginx is asked before it is reloaded - one it does not take is never put in.':
+        'Certifikát se posílá jako soubory PEM (certifikát, jeho klíč, řetězec, kořen – v libovolném pořadí, nebo vše v jednom souboru) nebo jako soubor PFX / PKCS#12, s heslem i bez; nebo se žádost vytvoří zde a nahraje se jen to, co autorita pošle zpět. Vloží se do nginx a nginx se zeptá, než se znovu načte – ten, který nevezme, se nikdy nevloží.',
+    "the certificate answered on vm's own name and address":
+        'certifikát, kterým odpovídá vlastní název a adresa vm',
+    'The built-in value: false':
+        'Vestavěná hodnota: vypnuto',
 }
 
 PATTERNS = {
@@ -846,6 +1414,61 @@ PATTERNS = {
     'the server did not answer in {0} s': 'server neodpověděl do {0} s',
     'Claude · {0}': 'Claude · {0}',
     'shell · {0}': 'shell · {0}',
+    # ---- 1.0.4: what otp had and ai had not yet ----
+    'The built-in value: {0}':
+        'Vestavěná hodnota: {0}',
+    '{0} account(s), {1} event(s), {2} terminal(s), {3} setting(s) saved':
+        '{0} {0:účet|účty|účtů}, {1} {1:událost|události|událostí}, {2} {2:terminál|terminály|terminálů}, {3} {3:uložené nastavení|uložená nastavení|uložených nastavení}',
+    '· {0} characters':
+        '· {0} {0:znak|znaky|znaků}',
+    'sent: {0}':
+        'odesláno: {0}',
+    'failed: {0}':
+        'selhalo: {0}',
+    'Put {0} back':
+        'Obnovit {0}',
+    'The oldest that is safe on this database: ai {0}':
+        'Nejstarší bezpečná na této databázi: ai {0}',
+    'older than {0}, the oldest that is safe on this database':
+        'starší než {0}, nejstarší bezpečná na této databázi',
+    'second step: {0}':
+        'druhý krok: {0}',
+    'Reset the second step of {0}?':
+        'Zrušit druhý krok účtu {0}?',
+    'Go back to ai {0}?':
+        'Vrátit se k ai {0}?',
+    'From {0} to {1}: a copy of the database is made first, then that version is fetched, checked and put in. The terminals go on running; these pages are back after a few seconds.':
+        'Z {0} na {1}: nejdřív se udělá kopie databáze, pak se ta verze stáhne, ověří a nainstaluje. Terminály běží dál; stránky se vrátí za pár sekund.',
+    'going back to {0}':
+        'návrat na {0}',
+    'Import {0}':
+        'Import {0}',
+    'imported: {0}':
+        'importováno: {0}',
+    'made: {0}':
+        'vytvořeno: {0}',
+    'taken away: {0}':
+        'odebráno: {0}',
+    'put back - what was there before is kept as {0}':
+        'obnoveno – co tu bylo předtím, je uchováno jako {0}',
+    'The last notice: {0} - {1}':
+        'Poslední upozornění: {0} – {1}',
+    'Sent: {0}':
+        'Odesláno: {0}',
+    'Not sent: {0}':
+        'Neodesláno: {0}',
+    "the certificate answered on {0}'s own name and address":
+        'certifikát, kterým odpovídá vlastní název a adresa {0}',
+    '{0}: the text has to say {code} - the code itself is put there':
+        '{0}: text musí obsahovat {code} – tam se dosadí samotný kód',
+    'reset - {0} sets the second step up again at the next sign-in':
+        'zrušeno – {0} si druhý krok nastaví znovu při příštím přihlášení',
+    '{0} had no second step set up':
+        '{0} neměl nastavený druhý krok',
+    'too many wrong codes - try again in {0} min':
+        'příliš mnoho chybných kódů – zkuste to znovu za {0} min',
+    'cleared: {0}':
+        'smazáno: {0}',
 }
 
 RICH = {
@@ -861,4 +1484,9 @@ RICH = {
         'Nastavuje se přes NetworkManager. Změna se sama vrátí, pokud se nepotvrdí: otevřete stránky na nové adrese a stiskněte <b>Ponechat</b>.',
     'The connection is brought up again with the new settings. Open the pages at the new address and press <b>Keep it</b> - not kept, the old settings come back by themselves.':
         'Připojení se znovu nahodí s novým nastavením. Otevřete stránky na nové adrese a stiskněte <b>Ponechat</b> – bez potvrzení se staré nastavení vrátí samo.',
+    # ---- 1.0.4: what otp had and ai had not yet ----
+    "Every table on these pages can be laid out the way you read it. Press your name at the top right and switch on <b>Edit the columns</b>; then drag the edge of a column's heading to make it wider or narrower, and drag the heading itself to move the column. The right button on a heading hides a column, brings a hidden one back or adds an empty one for room. Twice on an edge puts that table's widths back. Each change is kept with your account the moment you let go, not in this browser, and comes back wherever you sign in; nobody else's tables change. The switch is for this sign-in only: signing out or the sign-in running out turns it off again, and the columns stay as you left them.":
+        'Každou tabulku na těchto stránkách si můžete uspořádat podle sebe. Klikněte na své jméno vpravo nahoře a zapněte <b>Upravit sloupce</b>; pak tažením okraje záhlaví sloupec rozšíříte nebo zúžíte a tažením samotného záhlaví ho přesunete. Pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo. Dvojklik na okraj vrátí šířky té tabulky. Každá změna se uloží k vašemu účtu v okamžiku, kdy pustíte – ne v tomto prohlížeči – a vrátí se, ať se přihlásíte kdekoli; tabulky nikoho jiného se nezmění. Přepínač platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení ho vypne a sloupce zůstanou, jak jste je nechali.',
+    '<b>Edit the columns</b><br>While this is on, the edge of any column’s heading can be dragged to size it and the heading itself to move it, and the right button on a heading hides a column, brings a hidden one back or adds an empty one for room; each change is kept the moment you let go. It is for this sign-in only: signing out or the sign-in running out turns it off again. Off, the tables are drawn as you left them and nothing can move them.':
+        '<b>Upravit sloupce</b><br>Dokud je to zapnuté, okraj záhlaví kteréhokoli sloupce jde tažením zúžit či rozšířit a samotné záhlaví přesunout; pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo; každá změna se uloží, jakmile pustíte. Platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení to vypne. Vypnuté se tabulky kreslí, jak jste je nechali, a nic s nimi nepohne.',
 }

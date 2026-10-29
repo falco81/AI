@@ -3,6 +3,35 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.4
+
+What otp has and ai had not yet - taken over from otp 1.0.161, its code and its pages:
+
+- **The second step of signing in**: an authenticator app (a QR code made here), a code by e-mail or by
+  SMS; for everybody when switched on (`ai --admin-2fa on`), set up by each account at its first sign-in,
+  reset from Accounts or with `ai --reset-2fa NAME`. Until it is given, a sign-in can do nothing else.
+- **Secrets sealed** in the database with `/var/lib/ai/secrets.key`, as otp seals them.
+- **Locked out**: the addresses and names counted after wrong passwords and codes, listed and cleared
+  (Accounts; `ai --lockouts`, `ai --unlock`).
+- **Mail**: SMTP or straight to the recipients' MX, a test with every step, the authorities of your own;
+  notices of warnings and failures by mail.
+- **SMS**: an HTTP gateway, a modem's spool or a Teltonika gateway, a test, its certificates.
+- **Message texts** in Czech and English, edited on the pages; **Outgoing mail**: every mail and SMS sent.
+- **Certificates and TLS** as otp's: PEM or PFX uploaded, a request (CSR) made here, self-signed; the chain
+  sorted and checked; standard, intermediate, modern or custom TLS, DH parameters, HSTS
+  (`ai --tls-import`, `--tls-preset`, `--tls-dh`, `--tls-hsts`).
+- **The database**: a copy every night with its key, downloaded, put back (`ai --db-copy`, `--db-restore`).
+- **Backups to other machines**: a folder, FTP, FTPS, SFTP, SCP, SMB; locked with a password, on a schedule,
+  RESTORE.md beside each, put back from the pages or with `ai --restore-bundle`.
+- **Export and import** of the whole configuration, with the secrets locked by a passphrase.
+- **Going back to an older version** - only to a safe one (`ai --downgrade-check`, `ai --downgrade`).
+- **About**: what the server runs on, Python to PHP's extensions.
+- **The columns of every table** laid out per person (otp's cols.js); your own settings to a file and back.
+- The PHP running the pages said when it may be without the php2shell fix.
+- The settings rail grouped as otp's: Access, Messages, Server, Data, Updates.
+- The console: the second step, the locked out, a reset, the copies, backups, export, a test mail, going back.
+- install.sh puts in smbclient (samba-client) for backups to a share.
+
 ## 1.0.3 — 29 October 2026
 
 **The command line and the console, as otp's**
