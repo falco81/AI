@@ -2953,95 +2953,538 @@ $('pw-ai').onclick = function () { powerDo('restart-ai'); };
 $('pw-web').onclick = function () { powerDo('restart-web'); };
 
 /* ---- upgrades ---------------------------------------------------------------------------- */
-function loadUpgrade(quiet) {
-  api('upgrade').then(function (d) {
-    var host = $('up-web');
-    if (!quiet || host._at !== (d.online && d.online.at)) {
-      host._at = d.online && d.online.at;
-      clear(host);
-      var o = d.online || {};
-      host.appendChild(kvTable([
-        ['Here', 'ai ' + d.here],
-        ['Looked at', noI18n(el('span', 'mono small', d.url || '–'))],
-        ['Last look', o.at ? stamp(o.at) + (o.error ? ' - ' + o.error : '') : 'never'],
-        ['Newest there', o.newest ? o.newest.version : '–'],
-        ['Release keys trusted', (d.keys || []).join(', ') || 'none']
-      ]));
-      if (d.newer.length) {
-        var row = el('div', 'btnrow');
-        row.style.marginTop = '12px';
-        var pick = selectBox(d.newer.map(function (p) { return [p.version, 'ai ' + p.version]; }), d.newer[0].version);
-        row.appendChild(pick);
-        var go = cmdButton('Upgrade now', 'up', 'primary');
-        go.onclick = function () {
-          confirmThen('Upgrade to ' + pick.value + '?', 'It is fetched, checked and put in. The terminals go on running; these pages are back after a few seconds.', 'Upgrade', function () {
-            busy(go, true);
-            api('upgrade', {do: 'install', version: pick.value}, 600).then(function () { toast('the upgrade is running', 'good'); loadUpgrade(); })
-              .catch(oops).then(function () { busy(go, false); });
-          }, false);
-        };
-        row.appendChild(go);
-        host.appendChild(row);
-      } else if (o.at && !o.error) host.appendChild(el('p', 'note good', 'This is the newest version there.'));
-    }
-    var dn = $('up-down');
-    $('up-down-card').hidden = !(d.older || []).length;
-    clear(dn);
-    if ((d.older || []).length) {
-      dn.appendChild(el('p', 'muted small', 'The oldest that is safe on this database: ai ' + d.floor));
-      dn.appendChild(listTable(['Version', 'Published', ''], d.older, function (p) {
-        var tr = el('tr', p.safe ? '' : 'dim');
-        tr.appendChild(noI18n(el('td', 'mono', 'ai ' + p.version)));
-        tr.appendChild(el('td', 'muted small', p.at ? stamp(p.at) : '–'));
-        var t = el('td', 'rowtools');
-        if (p.safe) {
-          var b = cmdButton('Go back to it', 'undo', 'small');
-          b.onclick = function () {
-            confirmThen('Go back to ai ' + p.version + '?', 'From ' + d.here + ' to ' + p.version + ': a copy of the database is made first, then that version is fetched, checked and put in. The terminals go on running; these pages are back after a few seconds.', 'Go back', function () {
-              busy(b, true);
-              api('upgrade', {do: 'downgrade', version: p.version}, 600).then(function () { toast('going back to ' + p.version, 'good'); loadUpgrade(); })
-                .catch(oops).then(function () { busy(b, false); });
-            }, true);
-          };
-          t.appendChild(b);
-        } else t.appendChild(el('span', 'muted small', p.why || 'not safe here'));
-        tr.appendChild(t);
-        return tr;
-      }));
-    }
-    var st = d.status;
-    $('up-state').textContent = st ? (st.version ? 'ai ' + st.version + ' · ' : '') + ({running: 'running', done: 'done', failed: 'failed', lost: 'lost'}[st.state] || st.state || '') + ' · ' + stamp(st.at) + (st.said ? ' · ' + st.said : '') : '';
-    var log = $('up-log');
-    log.textContent = d.log || '–';
-    log.scrollTop = log.scrollHeight;
-  }).catch(function (e) { if (!quiet) oops(e); });
+/* ---- upgrades (as otp's Upgrades and maintenance, one server) ----------------------- */
+/* ---- upgrades and maintenance (1.0.37) ------------------------------------ */
+var UP = {timer: null, held: null, misses: 0};
+var UP_STATE = {waiting: ['waiting', 'dim'], none: ['waiting', 'dim'], draining: ['taken out of service', 'warn'],
+                installing: ['being put in', 'info'], checking: ['checking', 'info'],
+                done: ['done', 'ok'], failed: ['failed', 'crit']};
+function upgradeSend(file) {
+  return sendFile('/files/package?name=' + encodeURIComponent(file.name), file);
 }
-$('up-look').onclick = function () {
-  busy($('up-look'), true);
-  api('upgrade', {do: 'look'}, 60).then(function () { loadUpgrade(); }).catch(oops).then(function () { busy($('up-look'), false); });
-};
-$('up-send').onclick = function () { $('up-input').click(); };
-$('up-input').onchange = function () {
-  var f = $('up-input').files[0];
-  $('up-input').value = '';
-  if (!f) return;
-  var host = $('up-sent');
-  clear(host);
-  host.appendChild(el('p', 'muted', 'sending ' + f.name + '…'));
-  sendFile('/files/package?name=' + encodeURIComponent(f.name), f).then(function (d) {
-    clear(host);
-    var i = d.info;
-    host.appendChild(kvTable([['Version', i.version], ['Signed by', i.signed_by], ['Files', String(i.files)], ['Here now', i.installed]]));
-    if (i.changelog) { var p = el('pre', 'lines'); p.textContent = i.changelog; host.appendChild(p); }
-    var go = cmdButton('Put it in', 'up', 'primary');
-    go.onclick = function () {
-      busy(go, true);
-      sendFile('/files/package?install=1&name=' + encodeURIComponent(f.name), f).then(function () { toast('the upgrade is running', 'good'); loadUpgrade(); })
-        .catch(oops).then(function () { busy(go, false); });
+/* Is this settings pane the one in front, in a tab in front (1.0.57)? The
+   timers asked for their pane every 5 s after leaving Settings, and in tabs
+   in the background, for as long as the page stayed open. */
+function paneLive(name) {
+  return TAB === 'settings' && PANE === name && $('pane-' + name) && !$('pane-' + name).hidden;
+}
+function upgradeAgain(ms) {
+  /* Never dropped while the pane is open (1.0.73): in a tab in the
+     background it waits and goes on when the tab is shown again, where
+     before it stopped for good and only F5 brought it back. */
+  clearTimeout(UP.timer);
+  UP.timer = setTimeout(function () {
+    if (!paneLive('upgrade')) return;
+    if (document.hidden) { UP.sleeping = true; return; }
+    loadUpgrade(true);
+  }, ms);
+}
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden && UP.sleeping) { UP.sleeping = false; if (paneLive('upgrade')) loadUpgrade(); }
+});
+/* Behind the web address the answers come from either node, and while one
+   is restarting or the address moves, the other's copy of a step may be a
+   moment behind (1.0.70): what was shown is never taken back by an older
+   answer - each node's step only goes forward. */
+function upSteady(d) {
+  var p = d && d.plan;
+  if (!p) return d;
+  /* A plan older than the one shown, from a node whose copy is behind
+     (1.0.73): not drawn - the one shown stays. */
+  if (UP.keep && UP.keep.id !== p.id && Number(p.at || 0) < Number(UP.keep.at || 0) && UP.last && UP.last.plan) {
+    d.plan = UP.last.plan;
+    return d;
+  }
+  if (!UP.keep || UP.keep.id !== p.id) UP.keep = {id: p.id, at: p.at, steps: {}};
+  (p.steps || []).forEach(function (st, i) {
+    var k = UP.keep.steps[st.name];
+    if (k && Number(k.at || 0) > Number(st.at || 0)) p.steps[i] = k;
+    else UP.keep.steps[st.name] = st;
+  });
+  var states = (p.steps || []).map(function (x) { return x.state; });
+  if (states.indexOf('failed') >= 0) p.state = 'failed';
+  else if (states.length && states.every(function (x) { return x === 'done'; })) p.state = 'done';
+  return d;
+}
+/* New versions on the web (1.0.123): what the address had when last asked,
+   and one click to put the newest in. */
+function drawUpWeb(d) {
+  var w = d.web || {};
+  var o = w.online || {};
+  liveFill($('up-web'), function (host) {
+    var p = el('p', 'note ' + (o.error ? 'bad' : (o.newer ? 'good' : '')));
+    if (!o.at) p.textContent = w.check ? 'Not looked at yet - within minutes, or press Look now.' : 'Not looked at: looking every day is switched off below. Look now asks once.';
+    else if (o.error) p.textContent = 'Looked ' + ago(o.at) + ': ' + o.error;
+    else if (o.newer) p.textContent = 'ai ' + o.newest.version + ' is there - this server runs ' + (o.here || d.version) + ' (looked ' + ago(o.at) + ')';
+    else if (o.newest) p.textContent = 'Nothing newer: the newest there is ' + o.newest.version + ' and this server runs ' + (o.here || d.version) + ' (looked ' + ago(o.at) + ')';
+    else p.textContent = 'No ai package there (looked ' + ago(o.at) + ')';
+    host.appendChild(p);
+    /* One chain above (1.0.146): the line for several newer versions sat in
+       the middle of it and every case below it said the wrong thing. */
+    if (o.at && !o.error && o.newer && (o.newer_list || []).length > 1) {
+      host.appendChild(el('p', 'note', num(o.newer_list.length) + ' versions there are newer than this one - choose which to go to; the newest is chosen.'));
+    }
+    if (o.url) host.appendChild(noI18n(el('p', 'mono small muted', o.url)));
+    var row = el('div', 'btnrow');
+    var look = cmdButton('Look now', 'refresh', '');
+    look.onclick = function () {
+      busy(look, true);
+      api('upgrade', {action: 'online_look'}).then(function (x) { toast(x.message, 'good'); drawUpgrade(x); })
+        .catch(oops).then(function () { busy(look, false); });
     };
-    host.appendChild(go);
-  }).catch(function (e) { clear(host); host.appendChild(el('p', 'note bad', String(e.message || e))); });
-};
+    row.appendChild(look);
+    var running = !!(d.plan && d.plan.state === 'running');
+    if (o.newer && !running) {
+      /* More than one newer there (1.0.142): which one, the newest chosen. */
+      var list = (o.newer_list || []).filter(function (x) { return x && x.version; });
+      var pick = list[0] && list[0].version === o.newest.version ? list[0] : o.newest;
+      var choose = null;
+      if (list.length > 1) {
+        choose = selectBox(list.map(function (x, i) {
+          return [x.version, x.version + (i === 0 ? ' (the newest)' : '')];
+        }), pick.version);
+        explain(choose, 'The versions there newer than the one this server runs. The newest is chosen; any of them can be put in instead.');
+        row.appendChild(choose);
+      }
+      var up = cmdButton('Upgrade to ' + pick.version + ' now', 'play', 'primary');
+      var chosen = function () {
+        var v = choose ? choose.value : o.newest.version;
+        return list.filter(function (x) { return x.version === v; })[0] || o.newest;
+      };
+      if (choose) {
+        choose.onchange = function () {
+          setButtonIcon(up, 'play', 'Upgrade to ' + chosen().version + ' now');
+        };
+      }
+      up.onclick = function () {
+        var many = (d.nodes || []).length > 1;
+        var c = chosen();
+        confirmThen('Upgrade to ai ' + c.version + '?', htmlText('It is fetched from ' + (c.url || o.url) + ', its signature checked, and '
+          + 'this server is upgraded. The terminals go on running; these pages are back after a few seconds.'), 'Upgrade', function () {
+          busy(up, true);
+          api('upgrade', {action: 'online_get', version: c.version, start: true}).then(function (x) { toast(x.message, 'good'); drawUpgrade(x); })
+            .catch(oops).then(function () { busy(up, false); });
+        }, false);
+      };
+      row.appendChild(up);
+      var only = cmdButton('Only fetch it', 'down', '');
+      explain(only, 'Fetched and checked, and left ready below - put in when Upgrade is pressed.');
+      only.onclick = function () {
+        busy(only, true);
+        api('upgrade', {action: 'online_get', version: chosen().version}).then(function (x) { toast(x.message, 'good'); drawUpgrade(x); })
+          .catch(oops).then(function () { busy(only, false); });
+      };
+      row.appendChild(only);
+    }
+    host.appendChild(row);
+  });
+}
+/* Going back to an older version (1.0.143): asked for on purpose, in a card
+   of its own - the versions at upgrade_url older than this one, each with what
+   stands in its way; the database is checked against the one chosen. */
+function upDownConfirm(version, go) {
+  var d = UP.last || {};
+  var many = (d.nodes || []).filter(function (n) { return n.alive; }).length > 1;
+  confirmThen('Go back to ai ' + version + '?', htmlText('The version running now is replaced by the older ' + version
+    + '. The terminals go on running; these pages are back after a few seconds. A copy of the database is made first; the database itself stays as it is. What came in the newer versions is gone until you upgrade again.'),
+    'Go back', go, true);
+}
+function upDownChangelog(version) {
+  api('upgrade', {action: 'downgrade_changelog', version: version}).then(function (x) {
+    var c = x.changelog || {};
+    modal('What changed in ' + version, function (body) {
+      if (c.from === 'package') body.appendChild(el('p', 'note small', 'Read from the package at the address - it is checked only when it is chosen.'));
+      body.appendChild(c.entry ? noI18n(el('pre', 'lines', c.entry)) : el('p', 'note', 'The package says nothing about this version.'));
+      if ((c.lost || []).length) {
+        var det = el('details', 'fold');
+        det.appendChild(el('summary', '', 'What going back gives up: ' + c.lost.length + ' newer version(s), up to ' + c.here));
+        c.lost.forEach(function (one) { det.appendChild(noI18n(el('pre', 'lines', one.text))); });
+        body.appendChild(det);
+      }
+    }, [{words: 'Close', close: true}], 'medium');
+  }).catch(oops);
+}
+function drawUpDown(d) {
+  var card = $('up-down-card');
+  /* Offered only when switched on (1.0.144): Settings → Upgrades. */
+  if (card) card.hidden = !(d && d.downgrade_on);
+  var host = $('up-down');
+  if (!host || host._made || !(d && d.downgrade_on)) return;
+  host._made = true;
+  var row = el('div', 'btnrow');
+  var show = cmdButton('Show the versions to go back to', 'list', '');
+  row.appendChild(show);
+  host.appendChild(row);
+  var list = el('div', '');
+  host.appendChild(list);
+  show.onclick = function () {
+    busy(show, true);
+    api('upgrade', {action: 'downgrade_list'}).then(function (x) {
+      var g = x.downgrade || {};
+      clear(list);
+      var at = el('p', 'note small', 'At ' + (g.url || '?') + ' - this server runs ' + (g.here || '') + '; it may go back to ' + (g.lowest || g.floor || '?') + ' or newer.');
+      at.style.marginTop = '10px';
+      list.appendChild(at);
+      var vs = g.versions || [];
+      if (!vs.length) { list.appendChild(el('p', 'note', 'No version older than this one is there.')); return; }
+      var running = !!((UP.last || {}).plan && UP.last.plan.state === 'running');
+      var good = vs.filter(function (v) { return !(v.why || []).length; });
+      var bad = vs.filter(function (v) { return (v.why || []).length; });
+      /* One row a version, the buttons side by side (1.0.145): the reasons a
+         version is refused are said once, folded below - not in every row. */
+      var acts = function (v, ok) {
+        var cell = el('div', '');
+        cell.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-left:auto';
+        var notes = cmdButton('What changed', 'list', 'small');
+        notes.style.whiteSpace = 'nowrap';
+        notes.onclick = function () { upDownChangelog(v.version); };
+        cell.appendChild(notes);
+        if (ok && !running) {
+          var go = cmdButton('Go back to ' + v.version, 'undo', 'small danger');
+          go.style.whiteSpace = 'nowrap';
+          go.onclick = function () {
+            upDownConfirm(v.version, function () {
+              busy(go, true);
+              api('upgrade', {action: 'downgrade_get', version: v.version, start: true}).then(function (r) { toast(r.message, 'good'); drawUpgrade(r); })
+                .catch(oops).then(function () { busy(go, false); });
+            });
+          };
+          cell.appendChild(go);
+        }
+        return cell;
+      };
+      /* Rows of their own, not a table (1.0.145): the version and its state on
+         the left, the buttons on the right - on a narrow screen the buttons go
+         below as a whole, never squeezed into a column. */
+      var nowrap = function (node) {
+        node.style.whiteSpace = 'nowrap';
+        Array.prototype.forEach.call(node.querySelectorAll('span'), function (x) { x.style.whiteSpace = 'nowrap'; });
+        return node;
+      };
+      var rows = function (items, ok) {
+        var box = el('div', 'dg-rows');
+        items.forEach(function (v) {
+          var r = el('div', 'dg-row');
+          r.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:8px 10px;border-bottom:1px solid var(--line)';
+          var left = el('div', '');
+          left.style.cssText = 'display:flex;align-items:center;gap:10px;min-width:9em';
+          left.appendChild(noI18n(el('b', '', v.version)));
+          var tag = nowrap(el('span', ok ? 'tag ok' : 'tag warn', ok ? 'yes' : (v.short || 'no')));
+          if (!ok) explain(tag, (v.why || []).join('\n'));
+          left.appendChild(tag);
+          r.appendChild(left);
+          var right = acts(v, ok);
+          Array.prototype.forEach.call(right.children, nowrap);
+          r.appendChild(right);
+          box.appendChild(r);
+        });
+        return box;
+      };
+      if (good.length) list.appendChild(rows(good, true));
+      else list.appendChild(el('p', 'note', 'No version at the address may be gone back to.'));
+      if (bad.length) {
+        var det = el('details', 'fold');
+        det.style.marginTop = '12px';
+        det.appendChild(el('summary', '', bad.length + ' older version(s) it may not go back to' + (g.lowest ? ' - below ' + g.lowest : '')));
+        var reasons = [];
+        bad.forEach(function (v) { (v.why || []).forEach(function (w) { if (reasons.indexOf(w) < 0) reasons.push(w); }); });
+        var why = el('ul', 'note small');
+        why.style.margin = '8px 0';
+        reasons.forEach(function (w) { why.appendChild(el('li', 'bad', w)); });
+        det.appendChild(why);
+        det.appendChild(rows(bad, false));
+        list.appendChild(det);
+      }
+    }).catch(function (e) { clear(list); list.appendChild(el('p', 'note bad', String((e && e.message) || e))); })
+      .then(function () { busy(show, false); });
+  };
+}
+function drawUpgrade(d) {
+  d = upSteady(d);
+  UP.last = d;
+  /* The nodes. */
+  liveFill($('up-nodes'), function (host) {
+  /* By name, so the rows keep their places whichever node answered (1.0.70). */
+  var nodesSorted = (d.nodes || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  host.appendChild(listTable(['Server', 'Version', 'Heard from', 'State', ''], nodesSorted, function (n) {
+    var tr = el('tr');
+    var nm = el('td');
+    nm.appendChild(noI18n(el('b', '', n.name)));
+    if (n.me) { nm.appendChild(document.createTextNode(' ')); nm.appendChild(el('span', 'tag info', 'this page')); }
+    tr.appendChild(nm);
+    tr.appendChild(noI18n(el('td', 'mono', n.version || '?')));
+    tr.appendChild(el('td', 'muted', n.at ? ago(n.at) : '–'));
+    var st = el('td');
+    var m = n.maintenance || {};
+    if (!n.alive) st.appendChild(el('span', 'tag crit', 'gone'));
+    else if (m.on) st.appendChild(el('span', 'tag warn', 'in maintenance'));
+    else st.appendChild(el('span', 'tag ok', 'in service'));
+    if (m.on && m.why) st.appendChild(el('span', 'sub', m.why + (m.by ? ' · ' + m.by : '') + (m.at ? ' · ' + ago(m.at) : '')));
+    tr.appendChild(st);
+    var tools = el('td', 'rowtools');
+    tr.appendChild(tools);
+    return tr;
+  }, 'plain'));
+  });
+  drawUpWeb(d);
+  /* The package. */
+  var plan = d.plan;
+  var running = !!(plan && plan.state === 'running');
+  liveFill($('up-pkg'), function (pk) {
+  if (d.package) {
+    var p = d.package;
+    var box = el('div', 'notice good');
+    box.style.marginTop = '12px';
+    if (p.downgrade) box.className = 'notice warn';
+    box.appendChild(el('b', '', 'ai ' + p.version + (p.downgrade ? ' - older: ready to go back to' : '')));
+    box.appendChild(el('div', 'small', 'signed by ' + (p.signed_by || '?') + ' · ' + bytes(p.bytes) + ' · sent by ' + (p.by || '?') + ' · ' + ago(p.at)));
+    pk.appendChild(box);
+    if (p.changelog) {
+      var det = el('details', 'fold');
+      det.appendChild(el('summary', '', 'What changed in ' + p.version));
+      var pre = el('pre', 'lines', p.changelog);
+      noI18n(pre);
+      det.appendChild(pre);
+      pk.appendChild(det);
+    }
+  }
+  });
+  $('up-forget').hidden = !d.package || running;
+  $('up-start').disabled = !d.package || !d.ready || running;
+  var many = (d.nodes || []).length > 1;
+  var down = !!(d.package && d.package.downgrade);
+  setButtonIcon($('up-start'), down ? 'undo' : 'play', down ? (many ? 'Go back on every node, one at a time' : 'Go back on this server')
+    : (many ? 'Upgrade every node, one at a time' : 'Upgrade this server'));
+  $('up-start').classList.toggle('danger', down);
+  $('up-start').classList.toggle('primary', !down);
+  drawUpDown(d);
+  var rd = $('up-ready');
+  clear(rd);
+  if (d.package && !d.ready && !running) {
+    (d.not_ready || []).forEach(function (w) { rd.appendChild(el('p', 'note bad', w)); });
+  }
+  if (!d.helper || !d.path_unit) {
+    rd.appendChild(el('p', 'note bad', 'This server cannot put a version in by itself yet: ai_upgrade.py is not installed. Upgrade it once on the command line (install.sh --upgrade), which puts it in.'));
+  }
+  /* The plan. */
+  $('up-plan-card').hidden = !plan;
+  liveFill($('up-plan'), function (ph) {
+  if (plan) {
+    ph.appendChild(el('p', 'note', (plan.downgrade ? 'Going back to ' : 'To ') + plan.version + ' · started by ' + (plan.by || '?') + ' · ' + ago(plan.at) + ' · '
+      + ({running: 'going on', done: 'done', failed: 'failed', cancelled: 'stopped'})[plan.state]));
+    /* How far, as bars (1.0.67): the whole and each node. */
+    var steps = plan.steps || [];
+    var all = steps.length ? Math.round(steps.reduce(function (m, st) { return m + upPercent(st, plan); }, 0) / steps.length) : 0;
+    ph.appendChild(upBar(all, plan.state === 'failed' ? 'bad' : (plan.state === 'done' ? 'good' : ''),
+                         num(all) + ' %', true));
+    var upTable = listTable(['Server', 'Step', 'How far', 'What happened', 'When'], steps, function (st) {
+      var tr = el('tr');
+      tr.appendChild(noI18n(el('td', 'mono', st.name)));
+      var w = UP_STATE[st.state] || UP_STATE.waiting;
+      var c = el('td');
+      c.appendChild(el('span', 'tag ' + w[1], w[0]));
+      tr.appendChild(c);
+      var pc = upPercent(st, plan);
+      var bt = el('td', 'up-how');
+      bt.appendChild(upBar(pc, st.state === 'failed' ? 'bad' : (st.state === 'done' ? 'good' : ''),
+                           st.state === 'installing' && st.part_words ? num(pc) + ' % · ' + st.part_words : num(pc) + ' %'));
+      tr.appendChild(bt);
+      var said = el('td', 'small', st.said || '');
+      if ((st.tail || []).length) {
+        var more = el('details', 'fold');
+        more.appendChild(el('summary', '', 'what install.sh said'));
+        more.appendChild(noI18n(el('pre', 'lines', st.tail.join('\n'))));
+        /* Left open across the redraws every 3 s (1.0.69). */
+        UP.tailOpen = UP.tailOpen || {};
+        if (UP.tailOpen[st.name]) more.open = true;
+        more.ontoggle = function () { UP.tailOpen[st.name] = more.open; };
+        said.appendChild(more);
+      }
+      tr.appendChild(said);
+      tr.appendChild(el('td', 'muted', st.at ? ago(st.at) : '–'));
+      return tr;
+    }, 'plain');
+    /* Columns of a fixed width (1.0.69): they jumped about with every redraw
+       as the bars and the words in them changed. */
+    (upTable.querySelector('table') || upTable).classList.add('up-plan-table');
+    ph.appendChild(upTable);
+    if (plan.state === 'done' && d.version !== VERSION_LOADED) {
+      var r = el('p', 'note good');
+      r.appendChild(document.createTextNode('This page is still the one of ' + VERSION_LOADED + '. '));
+      var a = el('a', 'fgo', 'Load it again');
+      a.onclick = function () { location.reload(); };
+      r.appendChild(a);
+      ph.appendChild(r);
+    }
+    if (plan.state !== 'running') ph.appendChild(hideBar(function () {
+      return api('upgrade', {action: 'hide'}).then(function (x) { drawUpgrade(x); });
+    }));
+  }
+  });
+  $('up-cancel').hidden = !running;
+  /* Each node's own install.sh output (1.0.70), kept as it comes - the
+     answering node changes behind the web address, and the one card showed
+     one node's, then the other's. */
+  UP.logs = UP.logs || {};
+  if (d.node) UP.logs[d.node] = d.log || [];
+  var known = Object.keys(UP.logs).sort();
+  if (!UP.logNode || !UP.logs[UP.logNode]) UP.logNode = d.node;
+  var lseg = $('up-log-nodes');
+  if (lseg) {
+    clear(lseg);
+    lseg.hidden = known.length < 2;
+    known.forEach(function (nm) {
+      var b = noI18n(el('button', UP.logNode === nm ? 'on' : '', nm));
+      b.type = 'button';
+      b.onclick = function () { UP.logNode = nm; drawUpgrade(UP.last); };
+      lseg.appendChild(b);
+    });
+  }
+  if ($('up-log-node')) $('up-log-node').textContent = UP.logNode || '';
+  var lg = $('up-log');
+  var lines = UP.logs[UP.logNode] || [];
+  lg.textContent = lines.length ? lines.join('\n') : '–';
+  noI18n(lg);
+  /* Asked again every 3 s while it runs and for two minutes after it ended,
+     every 15 s otherwise - so a change made on the other node, or an answer
+     from a node a moment behind, is never the last word (1.0.73). */
+  if (running) UP.endedAt = 0;
+  else if (UP.wasRunning && !UP.endedAt) UP.endedAt = Date.now() / 1000;
+  UP.wasRunning = running || (UP.wasRunning && !UP.endedAt);
+  upgradeAgain(upRunning() ? 3000 : 15000);
+}
+/* How far one node is (1.0.67), from its step and how long it has been in
+   it: waiting 0, taken out of service up to 20, install.sh 20-82 by its
+   sections, checking 85-95, done 100. */
+function upPercent(st, plan) {
+  var now = Date.now() / 1000, since = now - Number(st.at || now);
+  switch (st.state) {
+    case 'done': return 100;
+    case 'failed': return 100;
+    case 'draining':
+      return Math.round(3 + 17 * Math.min(1, since / Math.max(1, Number(plan.drain_s || 20))));
+    case 'installing':
+      var asked = now - Number(st.asked || st.at || now);
+      return Math.round(Math.min(92, 5 + 85 * Math.min(1, Number(st.part || 0) / 13) + Math.min(2, asked / 60)));
+    case 'checking': return Math.round(85 + Math.min(10, since / 3));
+    default: return 0;
+  }
+}
+function upBar(pc, kind, words, wide) {
+  var box = el('div', 'going up-bar' + (wide ? ' wide' : '') + (kind ? ' ' + kind : ''));
+  var bar = el('div', 'bar');
+  var fill = el('span', '');
+  fill.style.width = Math.max(0, Math.min(100, pc)) + '%';
+  bar.appendChild(fill);
+  box.appendChild(bar);
+  if (words) box.appendChild(wide ? el('div', 'says', words) : noI18n(el('div', 'says', words)));
+  return box;
+}
+/* The version these pages came with: what the script was asked for as. */
+var VERSION_LOADED = (function () {
+  var sc = document.querySelector('script[src*="app.js"]');
+  var m = sc && /[?&]v=([0-9.]+)/.exec(sc.getAttribute('src') || '');
+  return m ? m[1] : '';
+}());
+function loadUpgrade(live) {
+  /* A short deadline while an upgrade runs (1.0.66): the node answering may
+     be restarting, or the web address moving to the other one. */
+  var running = upRunning();
+  clearTimeout(UP.timer);
+  var mine = UP.ask = (UP.ask || 0) + 1;
+  api('upgrade', undefined, running ? 8 : 0).then(function (d) {
+    if (mine !== UP.ask) return;          /* a newer question is on its way */
+    UP.misses = 0;
+    if ($('up-retry')) $('up-retry').textContent = '';
+    if (!VERSION_LOADED) VERSION_LOADED = d.version;
+    if (live) liveRun(function () { drawUpgrade(d); }); else drawUpgrade(d);
+  }).catch(function (e) {
+    if (mine !== UP.ask) return;
+    /* The node that answers these pages may be the one being restarted, or
+       the web address may be moving to the other node: asked again, always
+       (1.0.73) - not only while the last answer said "running", and without
+       a limit. Said once, in a line of its own that is always there. */
+    UP.misses = (UP.misses || 0) + 1;
+    if (running || e.unreachable || UP.misses <= 3) {
+      if ($('up-retry')) $('up-retry').textContent = ('The daemon is starting again with the new version - asking again…');
+      upgradeAgain(Math.min(2000 * UP.misses, 6000));
+      return;
+    }
+    oops(e);
+    upgradeAgain(15000);
+  });
+}
+/* Whether an upgrade is under way, as far as this page knows (1.0.73): the
+   plan says so, or a step is not finished, or it ended a short while ago -
+   behind the web address the next answer may come from the node whose copy
+   is a moment behind. */
+function upRunning() {
+  var p = UP.last && UP.last.plan;
+  if (!p) return false;
+  if (p.state === 'running') return true;
+  if ((p.steps || []).some(function (st) { return st.state !== 'done' && st.state !== 'failed' && st.state !== 'cancelled' && st.state !== 'skipped'; })
+      && p.state !== 'cancelled' && p.state !== 'failed') return true;
+  return Date.now() / 1000 - Number(UP.endedAt || 0) < 120;
+}
+if ($('up-drop')) {
+  (function () {
+    var box = $('up-drop');
+    var sending = false;
+    function send(file) {
+      if (!file || sending) return;     /* chosen twice: sent once (1.0.94) */
+      sending = true;
+      $('up-drop-says').textContent = 'checking ' + file.name + ' (' + bytes(file.size) + ')…';
+      upgradeSend(file).then(function (d) {
+        sending = false;
+        toast(d.message || 'checked', 'good');
+        $('up-drop-says').textContent = 'Drop the ai-X.Y.Z.tar.gz here, or press to choose it';
+        drawUpgrade(d);
+      }).catch(function (e) {
+        sending = false;
+        $('up-drop-says').textContent = 'Drop the ai-X.Y.Z.tar.gz here, or press to choose it';
+        modal('The package was not taken', function (body) {
+          body.appendChild(el('p', 'note bad', String(e.message || e)));
+        }, null, true);
+      });
+    }
+    box.onclick = function () { $('up-file').click(); };
+    $('up-file').onchange = function () { send(this.files && this.files[0]); this.value = ''; };
+    ['dragenter', 'dragover'].forEach(function (name) {
+      box.addEventListener(name, function (e) { e.preventDefault(); box.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (name) {
+      box.addEventListener(name, function (e) {
+        e.preventDefault();
+        box.classList.remove('over');
+        if (name === 'drop' && e.dataTransfer && e.dataTransfer.files) send(e.dataTransfer.files[0]);
+      });
+    });
+    $('up-start').onclick = function () {
+      var d = UP.last || {};
+      var p = d.package || {};
+      var names = (d.nodes || []).filter(function (n) { return n.alive; }).map(function (n) { return n.name; });
+      var many = names.length > 1;
+      if (p.downgrade) { upDownConfirm(p.version, function () {
+        api('upgrade', {action: 'start'}).then(function (r) { toast(r.message, 'good'); drawUpgrade(r); }).catch(oops);
+      }); return; }
+      confirmThen('Upgrade this server to ' + p.version,
+        'Its own install.sh --upgrade runs, as by hand. The terminals go on running; these pages stop answering for a few seconds while the daemon starts again.',
+        'Upgrade', function () {
+          api('upgrade', {action: 'start'}).then(function (r) { toast(r.message, 'good'); drawUpgrade(r); }).catch(oops);
+        }, !many);
+    };
+    $('up-forget').onclick = function () {
+      confirmThen('Throw the package away', 'The uploaded package is deleted; upload it again to upgrade.', 'Throw it away', function () {
+        api('upgrade', {action: 'forget'}).then(function (r) { toast(r.message, 'good'); drawUpgrade(r); }).catch(oops);
+      });
+    };
+    $('up-cancel').onclick = function () {
+      confirmThen('Stop the upgrade', 'What is being put in right now is finished.', 'Stop it', function () {
+        api('upgrade', {action: 'cancel'}).then(function (r) { toast(r.message, 'good'); drawUpgrade(r); }).catch(oops);
+      });
+    };
+  }());
+}
 
 /* ---- about ---------------------------------------------------------------------------- */
 function loadAbout() {

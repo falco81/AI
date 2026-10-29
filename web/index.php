@@ -554,10 +554,15 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         their own only, running as the Linux account given here, and files only in its folders.
         Whoever signs in here is, on the server, the Linux account their terminals run as.</p></div>
     <div class="card full">
-      <div class="btnrow" style="margin-bottom:12px"><button class="btn cmd primary" id="us-add" data-icon="add">Make an account</button></div>
+      <h2>Accounts <span class="right"><button class="btn cmd small primary admin-only" id="us-add" data-icon="add">Make an account</button></span></h2>
       <div id="us-table"></div>
     </div>
-    <div class="card full"><h2>Signed in now</h2><div id="us-sessions"></div></div>
+    <div class="card full admin-only"><h2>Signed in now</h2><div id="us-sessions"></div></div>
+    <div class="card full admin-only" id="lo-card"><h2>Locked out <span class="right" id="lo-tools"></span></h2>
+      <p class="note">Addresses and names with wrong passwords or wrong codes still counted - at the limit
+        (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them,
+        and they may try again at once.</p>
+      <div id="lo-table"></div></div>
     <div class="card full" id="cols-card">
       <h2>Columns of the tables <span class="right" id="cols-count"></span></h2>
       <p class="note">Every table on these pages can be laid out the way you read it. Press
@@ -581,11 +586,6 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       </div>
     </div>
     <div class="card full"><div id="sect-people"></div></div>
-    <div class="card full" id="lo-card"><h2>Locked out <span class="right" id="lo-tools"></span></h2>
-      <p class="note">Addresses and names with wrong passwords or wrong codes still counted - at the limit
-        (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them,
-        and they may try again at once.</p>
-      <div id="lo-table"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-mail" hidden>
@@ -955,33 +955,78 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
   </div>
 
   <div class="ctl-pane" id="pane-upgrade" hidden>
-    <div class="ctl-head"><h2 class="ctl-title">Upgrades</h2>
-      <p class="ctl-lede">A new version of ai is checked before anything is put in: signed by a release
-        key this server trusts, every file the one signed. Then its own install.sh --upgrade runs, as by
-        hand. The terminals go on running; the pages come back after a few seconds.</p></div>
-    <div class="card full"><h2>From the web <span class="right"><button class="btn small cmd" id="up-look" data-icon="refresh">Look now</button></span></h2>
-      <div id="up-web"></div></div>
-    <div class="card full"><h2>A package sent from here</h2>
-      <p class="note">An <span class="mono">ai-X.Y.Z.tar.gz</span> as released.</p>
-      <div class="btnrow"><button class="btn cmd" id="up-send" data-icon="upload">Send a package…</button>
-        <input type="file" id="up-input" accept=".tar.gz,.tgz,application/gzip" hidden></div>
-      <div id="up-sent"></div></div>
-    <div class="card full"><div id="sect-upgrade"></div></div>
+    <div class="ctl-head"><h2 class="ctl-title">Upgrades and maintenance</h2>
+      <p class="ctl-lede">A new version put in from here: send the package, or take it from the web,
+        and this server is upgraded - checked first, then its own install.sh --upgrade, as by hand.
+        The terminals go on running; these pages come back after a few seconds. The command line
+        (install.sh --upgrade) works as it always has.</p></div>
+    <div class="card full">
+      <h2>This server</h2>
+      <p class="note">The version it runs and how it is. An upgrade does not stop the terminals: tmux is
+        not the daemon's, and the daemon finds them again when it starts.</p>
+      <div id="up-nodes"></div>
+    </div>
+    <div class="card full admin-only" id="up-web-card">
+      <h2>From the web</h2>
+      <p class="note">Where new versions are published - the address below - is looked at once a
+        day. A newer ai found there is offered here, and put in with one click: fetched, its
+        signature checked like a package sent by hand, then this server upgraded.
+        Nothing is put in by itself unless the setting below says so.</p>
+      <div id="up-web"></div>
+      <div id="sect-upgrade"></div>
+    </div>
+    <div class="card full admin-only">
+      <h2>A new version</h2>
+      <p class="note">The .tar.gz of a new ai, as it was released. It is checked before
+        anything else: it must be signed by a release key this server trusts, every file in
+        it must be the one signed, and it must not be older than what runs here (unless going back
+        is allowed, and then only to a safe version). Root checks it all again before it is put in.</p>
+      <div class="drop" id="up-drop">
+        <input type="file" id="up-file" accept=".gz,.tgz,application/gzip,application/octet-stream" hidden>
+        <span id="up-drop-says">Drop the ai-X.Y.Z.tar.gz here, or press to choose it</span>
+      </div>
+      <div id="up-pkg"></div>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="btn cmd primary" id="up-start" data-icon="play" disabled>Upgrade</button>
+        <button class="btn cmd" id="up-forget" data-icon="trash" hidden>Forget the package</button>
+      </div>
+      <div id="up-ready"></div>
+    </div>
     <div class="card full admin-only" id="up-down-card" hidden>
       <h2>Going back to an older version</h2>
-      <p class="note">Only to a version that is safe: one that reads what the newer versions wrote into
-        the database the same, and has every security fix that matters - each version says how far back
-        it may go, and the highest of what ran on this database counts. A copy of the database is made
-        first (Settings → Database); the package is checked like an upgrade's. The terminals go on running.</p>
+      <p class="note">Only to a version that is safe: one that reads what the newer versions
+        wrote into the database the same, and has every security fix that matters - each version
+        says how far back it may go, and the highest of what ran on this database counts. The
+        database is not put back nor changed: its tables stay as they are and the older version
+        runs on them (a copy of it is made first). The package is checked like an upgrade's before
+        anything is put in.</p>
       <div id="up-down"></div>
     </div>
-    <div class="card full"><h2>What the last upgrade said <span class="right muted small" id="up-state"></span></h2>
-      <pre class="lines tall" id="up-log">–</pre></div>
-    <div class="card full"><h2>On the command line</h2>
+    <div class="card full" id="up-plan-card" hidden>
+      <h2>The upgrade</h2>
+      <div id="up-plan"></div>
+      <p class="note small" id="up-retry" style="min-height:1.4em;margin:6px 0 0"></p>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="btn cmd danger admin-only" id="up-cancel" data-icon="cancel" hidden>Stop it</button>
+      </div>
+    </div>
+    <div class="card full">
+      <h2>What root said last <span class="mono small muted" id="up-log-node" data-no-i18n></span></h2>
+      <p class="note"><span>The output of install.sh, the last time this server was upgraded from these pages.</span>
+        <span class="mono" data-no-i18n>/var/lib/ai/upgrade/last.log</span></p>
+      <div class="seg" id="up-log-nodes" hidden style="margin-bottom:10px"></div>
+      <pre class="lines" id="up-log">–</pre>
+    </div>
+    <div class="card full">
+      <h2>On the command line</h2>
+      <p class="note">The same, by hand, as root:</p>
       <pre class="lines">ai --upgrade-check              # what is at the address, and whether it is newer
 ai --upgrade-online             # the newest: fetched, checked, put in
 ai --downgrade X.Y.Z            # back to an older one - only a safe one
-tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z && ./install.sh --upgrade</pre></div>
+tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z
+./install.sh --upgrade
+ai --upgrade-status             # an upgrade started on these pages</pre>
+    </div>
   </div>
 
   <div class="ctl-pane" id="pane-about" hidden>

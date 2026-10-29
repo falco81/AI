@@ -7206,6 +7206,28 @@ def versions_ran_note(store):
         store.set_meta_json('versions:floors', ran)
 
 
+def changelog_entry(text, version):
+    """One version's part of a CHANGELOG.md."""
+    m = re.search(r'^## %s\s*$(.*?)(?=^## |\Z)' % re.escape(str(version or '')), str(text or ''), re.M | re.S)
+    return ('## %s\n%s' % (version, m.group(1).rstrip())).strip() if m else ''
+
+
+def changelog_between(version, here):
+    """What going back from `here` to `version` gives up: the entries of the
+    newer versions, from this machine's own CHANGELOG.md."""
+    text = ''
+    for p in (LIB_DIR / 'CHANGELOG.md', HERE / 'CHANGELOG.md'):
+        if p.is_file():
+            text = read_text(p, 2 << 20)
+            break
+    lost = []
+    for m in re.finditer(r'^## (\d+\.\d+\.\d+)\s*$', text, re.M):
+        v = m.group(1)
+        if ver_tuple(version) < ver_tuple(v) <= ver_tuple(here):
+            lost.append({'version': v, 'text': changelog_entry(text, v)})
+    return {'from': 'here', 'entry': changelog_entry(text, version), 'lost': lost, 'here': here}
+
+
 class Upgrades:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -7265,6 +7287,103 @@ class Upgrades:
                 'keys': sorted(p.name for p in (LIB_DIR / 'release-keys').glob('*.pub'))
                 if (LIB_DIR / 'release-keys').is_dir() else []}
 
+    # -- otp's Upgrades pane: one node, this server ---------------------------
+    def held(self):
+        """The package sent or fetched and checked, waiting for Upgrade."""
+        h = self.store.meta_json('upgrade:held', None)
+        if not isinstance(h, dict) or not h.get('path') or not os.path.isfile(str(h['path'])):
+            return None
+        return h
+
+    def hold(self, path, info, by):
+        h = {'path': str(path), 'version': info.get('version'), 'signed_by': info.get('signed_by'),
+             'bytes': os.path.getsize(str(path)), 'by': by, 'at': time.time(),
+             'changelog': changelog_entry(info.get('changelog') or '', info.get('version')),
+             'downgrade': bool(info.get('older'))}
+        was = self.held()
+        if was and was['path'] != h['path']:
+            try:
+                os.unlink(was['path'])
+            except OSError:
+                pass
+        self.store.set_meta_json('upgrade:held', h)
+        self.store.add_event('upgrades', '%s sent ai %s, checked: signed by %s' % (by, h['version'], h['signed_by']),
+                             who=by)
+        return h
+
+    def forget(self, by=''):
+        h = self.held()
+        if h:
+            try:
+                os.unlink(h['path'])
+            except OSError:
+                pass
+        self.store.x('DELETE FROM meta WHERE k = ?', ('upgrade:held',))
+
+    def plan(self):
+        """The upgrade going on or the last one, as otp's plan of one node."""
+        st = self.status()
+        if not st or not st.get('state') or self.store.get_meta('upgrade:hidden') == str(st.get('at')):
+            return None
+        lines = (read_text(UPGRADE_DIR / 'last.log', 400000) or '').splitlines()
+        parts = [x for x in lines if x.lstrip().startswith('==> ')]
+        state = st.get('state')
+        step = {'running': 'installing', 'done': 'done'}.get(state, 'failed')
+        said = st.get('said') or {'running': 'install.sh --upgrade is running',
+                                  'done': 'put in and started again', 'lost': 'it stopped saying how it goes'}.get(state, '')
+        one = {'name': node_name(), 'state': step, 'said': said, 'at': st.get('at'), 'asked': st.get('at'),
+               'tail': [x for x in lines if x.strip()][-12:], 'part': len(parts),
+               'part_words': parts[-1].strip().lstrip('=> ').strip() if parts else ''}
+        return {'id': str(st.get('at')), 'version': st.get('version'), 'by': st.get('by'), 'at': st.get('at'),
+                'state': {'running': 'running', 'done': 'done'}.get(state, 'failed'),
+                'downgrade': bool(st.get('downgrade')), 'steps': [one], 'drain_s': 0}
+
+    def view_otp(self):
+        online = self.store.meta_json('upgrade:online', {}) or {}
+        newer = sorted((p for p in online.get('packages') or []
+                        if ver_tuple(p.get('version')) > ver_tuple(__version__)),
+                       key=lambda p: ver_tuple(p.get('version')), reverse=True)
+        o = dict(online)
+        o['here'] = __version__
+        o['newer'] = bool(newer)
+        o['newer_list'] = newer
+        if newer:
+            o['newest'] = newer[0]
+        h = self.held()
+        plan = self.plan()
+        not_ready = []
+        if h and plan and plan['state'] == 'running':
+            not_ready.append('an upgrade is running')
+        try:
+            helper = bool(upgrader())
+        except Refused:
+            helper = False
+        lines = (read_text(UPGRADE_DIR / 'last.log', 400000) or '').splitlines()
+        return {'version': __version__, 'node': node_name(),
+                'nodes': [{'name': node_name(), 'me': True, 'alive': True, 'version': __version__,
+                           'at': time.time(), 'maintenance': {}}],
+                'web': {'check': bool(CONFIG.get('upgrade_check')), 'online': o},
+                'package': ({k: v for k, v in h.items() if k != 'path'} if h else None),
+                'ready': bool(h) and not not_ready, 'not_ready': not_ready,
+                'helper': helper, 'path_unit': helper, 'plan': plan,
+                'log': lines[-400:], 'downgrade_on': bool(CONFIG.get('upgrade_downgrade', True)),
+                'keys': sorted(p.name for p in (LIB_DIR / 'release-keys').glob('*.pub'))
+                if (LIB_DIR / 'release-keys').is_dir() else []}
+
+    def downgrade_list(self):
+        url = CONFIG.get('upgrade_url')
+        floor = downgrade_floor(self.store)
+        vs = []
+        for p in online_list(url):
+            if ver_tuple(p['version']) >= ver_tuple(__version__):
+                continue
+            why = []
+            if ver_tuple(p['version']) < ver_tuple(floor):
+                why.append('older than %s, the oldest that is safe on this database: what the newer versions '
+                           'wrote into it would not be read the same, or a security fix would be lost' % floor)
+            vs.append({'version': p['version'], 'why': why, 'short': 'too old' if why else ''})
+        return {'url': url, 'here': __version__, 'floor': floor, 'lowest': floor, 'versions': vs}
+
     def fetch(self, version, by, older=False):
         pk = [p for p in online_list(CONFIG.get('upgrade_url')) if p['version'] == str(version)]
         if not pk:
@@ -7310,7 +7429,9 @@ class Upgrades:
         try:
             info = self.take(path, by, older)
             write_atomic(UPGRADE_DIR / 'status.json', json.dumps({'state': 'running', 'version': info['version'],
-                                                                  'by': by, 'at': time.time()}), mode=0o600)
+                                                                  'by': by, 'at': time.time(),
+                                                                  'downgrade': bool(info.get('older'))}), mode=0o600)
+            self.store.x('DELETE FROM meta WHERE k = ?', ('upgrade:held',))
             write_atomic(UPGRADE_DIR / 'last.log', '', mode=0o600)
             cmd = [sys.executable if os.path.exists(sys.executable) else '/usr/bin/python3', '-I', upgrader(),
                    '--job', str(path), '--by', by or 'the pages']
@@ -12968,13 +13089,52 @@ def api_cert_do(c):
 
 @route('GET', '/api/upgrade', admin=True)
 def api_upgrade(c):
-    return c.daemon.upgrades.view()
+    return c.daemon.upgrades.view_otp()
 
 
 @route('POST', '/api/upgrade', admin=True)
 def api_upgrade_do(c):
     up = c.daemon.upgrades
-    do = c.body.get('do')
+    b = c.body
+    act = str(b.get('action') or '')
+    if act:
+        # otp's Upgrades pane: what it asks, answered with the whole pane again.
+        msg = ''
+        if act == 'online_look':
+            got = up.look(c.name)
+            msg = got.get('error') or ('looked: the newest there is %s' % (got.get('newest') or {}).get('version', '–'))
+        elif act in ('online_get', 'downgrade_get'):
+            older = act == 'downgrade_get'
+            path, info = up.fetch(str(b.get('version') or ''), c.name, older=older)
+            up.hold(path, info, c.name)
+            msg = 'ai %s fetched and checked' % info.get('version')
+            if b.get('start'):
+                up.install(path, c.name, older=older)
+                msg = 'ai %s is being put in' % info.get('version')
+        elif act == 'start':
+            h = up.held()
+            if not h:
+                raise Refused('no package is waiting: send one, or fetch one from the web')
+            up.install(Path(h['path']), c.name, older=bool(h.get('downgrade')))
+            msg = 'ai %s is being put in' % h.get('version')
+        elif act == 'forget':
+            up.forget(c.name)
+            msg = 'the package is thrown away'
+        elif act == 'cancel':
+            raise Refused('once install.sh runs it is not stopped half way: it finishes, or puts back what it '
+                          'changed by itself')
+        elif act == 'hide':
+            c.daemon.store.set_meta('upgrade:hidden', str(up.status().get('at')))
+        elif act == 'downgrade_list':
+            return {'downgrade': up.downgrade_list()}
+        elif act == 'downgrade_changelog':
+            return {'changelog': changelog_between(str(b.get('version') or ''), __version__)}
+        else:
+            raise Refused('no such thing to do with the upgrades')
+        out = up.view_otp()
+        out['message'] = msg
+        return out
+    do = b.get('do')
     if do == 'look':
         return {'online': up.look(c.name)}
     if do in ('fetch', 'install', 'downgrade'):
@@ -14292,13 +14452,18 @@ class Handler(BaseHTTPRequestHandler):
             data = self.rfile.read(length) if length > 0 else b''
             write_atomic(tmp, data, mode=0o600)
             try:
-                info = d.upgrades.take(tmp, who['name'])
+                info = d.upgrades.take(tmp, who['name'], older=bool(CONFIG.get('upgrade_downgrade', True)))
             except Refused:
                 tmp.unlink()
                 raise
             if arg('install') == '1':
                 d.upgrades.install(tmp, who['name'])
-            return self.answer(200, {'ok': True, 'info': info})
+                return self.answer(200, {'ok': True, 'info': info})
+            d.upgrades.hold(tmp, info, who['name'])
+            out = d.upgrades.view_otp()
+            out.update(ok=True, info=info, message='ai %s checked: signed by %s%s' % (
+                info.get('version'), info.get('signed_by'), ' - older than this one' if info.get('older') else ''))
+            return self.answer(200, out)
         raise Refused('no such thing here', 404)
 
     def home_of(self, who):
