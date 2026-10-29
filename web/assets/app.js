@@ -209,15 +209,43 @@ function mustChange() {
   }, [{words: 'Sign out', go: function () { $('signout').onclick(); }},
       {words: 'Change the password', cls: 'primary', icon: 'lock', go: function (b) { $('modal-body')._go(b); }}]);
 }
-$('me-btn').onclick = function () {
-  modal('You: ' + ME.name, function (body) {
-    body.appendChild(kvTable([
-      ['Role', roleWords(ME.role)],
+function meInitials(name, display) {
+  var words = String(display || name || '?').replace(/[^\p{L}\p{N}\s._-]/gu, ' ')
+    .split(/[\s._@-]+/).filter(Boolean);
+  var two = words.length > 1 ? words[0][0] + words[words.length - 1][0] : String(words[0] || name || '?').slice(0, 2);
+  return two.toUpperCase();
+}
+/* Your account, as otp draws it: who, what you may do, the language and the
+   letters of the terminal, the columns of the tables, your settings in a
+   file, a new password. */
+function showMe() {
+  modal('Your account', function (body) {
+    var head = el('div', 'me-head');
+    var ava = noI18n(el('div', 'me-ava' + (ME.role === 'admin' ? ' admin' : ''), meInitials(ME.name)));
+    ava.setAttribute('aria-hidden', 'true');
+    head.appendChild(ava);
+    var who = el('div', 'me-who');
+    who.appendChild(noI18n(el('div', 'me-n mono', ME.name)));
+    var tags = el('div', 'me-tags');
+    tags.appendChild(el('span', 'tag ' + (ME.role === 'admin' ? 'violet' : 'dim'), roleWords(ME.role)));
+    if (ME.mfa_kind) tags.appendChild(el('span', 'tag ok', 'second step: ' + (ME.mfa_kind === 'app' ? 'app' : 'e-mail')));
+    who.appendChild(tags);
+    head.appendChild(who);
+    body.appendChild(head);
+    var may = el('div', 'me-sec');
+    may.appendChild(el('h3', '', 'What you may do'));
+    may.appendChild(el('p', '', ME.role === 'admin' ? 'Anything: terminals as any Linux account, every file, the settings and the server itself.'
+      : 'Terminals of your own, as the Linux account below, and the files of your folders. No setting and no account.'));
+    may.appendChild(kvTable([
       ['Terminals run as', noI18n(el('span', 'mono', ME.run_as))],
       ['Files in', noI18n(el('span', 'mono', ME.role === 'admin' ? 'everywhere' : ((ME.roots || []).join(', ') || 'the home of ' + ME.run_as)))],
       ['Last sign-in', stamp(ME.last_login) + (ME.last_ip ? ' · ' + ME.last_ip : '')]
     ]));
+    body.appendChild(may);
+    var lsec = el('div', 'me-sec');
+    lsec.appendChild(el('h3', '', 'Language and letters'));
     var lang = selectBox((window.AI_LANGS || []).map(function (l) { return [l.code, l.name]; }), window.AI_LANG);
+    noI18n(lang);
     lang.onchange = function () {
       savePrefs({lang: lang.value}).then(function () {
         document.cookie = 'ai_lang=' + lang.value + '; path=/; max-age=31536000; samesite=strict'
@@ -229,15 +257,245 @@ $('me-btn').onclick = function () {
     font.type = 'number'; font.min = 8; font.max = 32; font.value = termFont();
     font.onchange = function () { termSetFont(parseInt(font.value, 10) || 14); savePrefs({font: parseInt(font.value, 10) || 14}).catch(oops); };
     var g = el('div', 'formgrid');
-    g.style.marginTop = '14px';
-    g.appendChild(formField('Language of the pages', lang));
+    g.appendChild(formField('The language of these pages', lang));
     g.appendChild(formField('Size of the terminal\'s letters', font));
-    body.appendChild(g);
-    body.appendChild(el('h3', '', 'A new password'));
-    body._go = passwordForm(body, false);
+    lsec.appendChild(g);
+    body.appendChild(lsec);
+
+    /* The columns of the tables - exactly otp's (isemon's). */
+    var cols = el('div', 'me-sec');
+    cols.appendChild(el('h3', '', 'Columns of the tables'));
+    var line = el('div', 'me-row');
+    var say = el('div', 'me-say');
+    say.innerHTML = '<b>Edit the columns</b><br>While this is on, the edge of any column’s '
+      + 'heading can be dragged to size it and the heading itself to move it, and the right '
+      + 'button on a heading hides a column, brings a hidden one back or adds an empty one '
+      + 'for room; each change is kept the moment you let go. It is for this sign-in only: signing out or the sign-in '
+      + 'running out turns it off again. Off, the tables are drawn '
+      + 'as you left them and nothing can move them.';
+    line.appendChild(say);
+    var sw = el('label', 'sw');
+    var box = el('input');
+    box.type = 'checkbox';
+    box.id = 'me-cols-edit';
+    box.checked = COLS_EDIT;
+    box.setAttribute('aria-label', 'Edit the columns');
+    sw.appendChild(box);
+    sw.appendChild(el('span', 'knob'));
+    line.appendChild(sw);
+    cols.appendChild(line);
+    box.onchange = function () {
+      var on = box.checked;
+      box.disabled = true;
+      colsSwitch(on).then(function (d) {
+        box.checked = !!d.edit;
+      }).catch(function (e) {
+        box.checked = COLS_EDIT;
+        oops(e);
+      }).then(function () { box.disabled = false; });
+    };
+    var laid = Object.keys(COLS).length;
+    cols.appendChild(el('p', '', laid ? 'You have laid out ' + num(laid) + ' table(s).'
+      : 'Every table is as it comes.')).style.marginTop = '10px';
+    var acts = el('div', 'me-acts');
+    var back = cmdButton('Put my columns back as they come', 'undo', 'small');
+    explain(back, 'Every table you have laid out goes back as it comes: the widths and the '
+      + 'order of the columns, on every page. Nobody else’s change.');
+    back.disabled = !laid;
+    back.onclick = function () {
+      back.disabled = true;
+      colsReset().then(function () { closeModal(); showMe(); }).catch(function (e) {
+        back.disabled = false;
+        oops(e);
+      });
+    };
+    acts.appendChild(back);
+    cols.appendChild(acts);
+    body.appendChild(cols);
+
+    /* Your own settings, to a file and back. */
+    var mine = el('div', 'me-sec');
+    mine.appendChild(el('h3', '', 'Your settings in a file'));
+    mine.appendChild(el('p', '', 'How you have set these pages up for yourself — the '
+      + 'columns of the tables, the language, the letters and keys of the terminal — saved as a JSON file, and read back here '
+      + 'or on another machine running ai. Never your password, your role or anything else '
+      + 'about the account.'));
+    var io = el('div', 'me-acts');
+    var out = cmdButton('Export my settings', 'download', 'small');
+    out.onclick = function () { meExport(out); };
+    io.appendChild(out);
+    var inn = cmdButton('Import settings…', 'upload', 'small');
+    inn.onclick = function () { mePick(); };
+    io.appendChild(inn);
+    mine.appendChild(io);
+    body.appendChild(mine);
+
+    var pwsec = el('div', 'me-sec');
+    pwsec.appendChild(el('h3', '', 'A new password'));
+    body.appendChild(pwsec);
+    body._go = passwordForm(pwsec, false);
   }, [{words: 'Close', close: true},
-      {words: 'Change the password', cls: 'primary', icon: 'lock', go: function (b) { $('modal-body')._go(b); }}]);
+      {words: 'Change the password', cls: 'primary', icon: 'lock', go: function (b) { $('modal-body')._go(b); }}], 'medium');
+}
+$('me-btn').onclick = showMe;
+
+/** "Edit the columns" on or off for this sign-in: the daemon holds it. */
+function colsSwitch(on) {
+  return api('columns', {edit: !!on}).then(function (d) {
+    colsEditing(!!d.edit);
+    colsCardSay();
+    toast(d.edit ? 'Columns can be sized and moved now — each change is kept at once'
+      : 'Columns are held as they are', 'good');
+    return d;
+  });
+}
+
+/** The file a person's own settings go into: one object with a mark of
+    what it is, where and when it came from, and `settings` by section -
+    `columns` and `prefs`; a version that does not know a section leaves it
+    alone. As isemon's, with its own kind. */
+var ME_FILE_KIND = 'ai-user-settings';
+
+function meExport(button) {
+  if (button) button.disabled = true;
+  api('my-settings').then(function (d) {
+    var file = {
+      kind: ME_FILE_KIND,
+      format: 1,
+      from: location.host,
+      version: d.version || '',
+      user: d.name || (ME && ME.name) || '',
+      exported: new Date().toISOString(),
+      settings: d.settings || {}
+    };
+    var blob = new Blob([JSON.stringify(file, null, 2) + '\n'], {type: 'application/json'});
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'ai-settings-' + String(file.user || 'me').replace(/[^a-z0-9._-]/gi, '_')
+      + '-' + file.exported.slice(0, 10) + '.json';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () { URL.revokeObjectURL(link.href); link.remove(); }, 1500);
+    var n = Object.keys((file.settings || {}).columns || {}).length;
+    toast('your settings were saved to ' + link.download + ' (' + num(n)
+      + ' table layout(s))', 'good');
+  }).catch(oops).then(function () { if (button) button.disabled = false; });
+}
+
+function mePick() {
+  var pick = el('input');
+  pick.type = 'file';
+  pick.accept = '.json,application/json';
+  pick.hidden = true;
+  pick.onchange = function () {
+    var file = pick.files && pick.files[0];
+    pick.remove();
+    if (file) meImport(file);
+  };
+  document.body.appendChild(pick);
+  pick.click();
+}
+
+function meImport(file) {
+  if (file.size > 2 * 1024 * 1024) {
+    toast('that file is far bigger than any settings file (' + bytesWords(file.size) + ')', 'bad');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onerror = function () { toast('that file could not be read', 'bad'); };
+  reader.onload = function () {
+    var got;
+    try { got = JSON.parse(String(reader.result || '')); } catch (e) {
+      toast('that is not a settings file: it is not JSON', 'bad');
+      return;
+    }
+    /* Our own file, or just its `settings` on their own. isemon's file is
+       read as well: the columns are kept the same way in both. */
+    var settings = got && (got.kind === ME_FILE_KIND || got.kind === 'otp-user-settings' || got.kind === 'isemon-user-settings')
+      ? got.settings
+      : (got && got.settings && typeof got.settings === 'object' ? got.settings : got);
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      toast('that is not a settings file', 'bad');
+      return;
+    }
+    var cols = settings.columns && typeof settings.columns === 'object'
+      ? Object.keys(settings.columns).length : null;
+    var other = Object.keys(settings).filter(function (k) {
+      return k !== 'columns' && k !== 'prefs';
+    });
+    var at = got.exported ? Date.parse(String(got.exported)) : NaN;
+    modal('Import settings', function (body) {
+      body.appendChild(peekFacts([
+        ['Whose', got.user ? noI18n(el('span', 'mono', String(got.user))) : '–'],
+        ['From', got.from ? noI18n(el('span', 'mono', String(got.from))) : '–'],
+        ['Saved', isFinite(at) ? stamp(at / 1000) : '–'],
+        ['ai version', got.version ? noI18n(el('span', 'mono', String(got.version))) : '–']]));
+      body.appendChild(el('p', 'note', 'This file holds:'));
+      var list = el('ul', 'me-list');
+      if (cols !== null) list.appendChild(el('li', '', 'the columns of ' + num(cols) + ' table(s)'));
+      if (settings.prefs && typeof settings.prefs === 'object' && settings.prefs.lang) {
+        list.appendChild(el('li', '', 'the language of the page'));
+      }
+      if (other.length) {
+        list.appendChild(el('li', '', other.join(', ') + ' — not kept by this version, left alone'));
+      }
+      body.appendChild(list);
+      body.appendChild(el('p', 'note', 'They replace yours. Your password and your account are not touched.'));
+    }, [{words: 'No, leave it', close: true},
+        {words: 'Import them', cls: 'primary', close: true, go: function () {
+        api('my-settings', {settings: settings}).then(function (d) {
+          if (settings.columns && typeof settings.columns === 'object') {
+            /* What the daemon kept, not what the file said: it is the same
+               less whatever a layout cannot hold. */
+            return api('my-settings').then(function (now) {
+              colsTake((now.settings || {}).columns || {});
+              colsApplyAll();
+              return d;
+            });
+          }
+          return d;
+        }).then(function (d) {
+          toast('imported: the columns of ' + num((d.took || {}).columns || 0) + ' table(s)'
+            + ((d.ignored || []).length ? '; left alone: ' + d.ignored.join(', ') : ''), 'good');
+          var lang = settings.prefs && typeof settings.prefs === 'object'
+            ? String(settings.prefs.lang || '') : '';
+          if (lang && lang !== (window.AI_LANG || 'en')
+              && (window.AI_LANGS || []).some(function (l) { return l.code === lang; })) {
+            location.reload();
+            return;
+          }
+          colsCardSay();
+        }).catch(oops);
+      }}], true);
+  };
+  reader.readAsText(file);
+}
+
+/** The card on the Accounts pane: how many tables are laid out, and the
+    switch's words. */
+function colsCardSay() {
+  var laid = Object.keys(COLS).length;
+  if ($('cols-count')) {
+    $('cols-count').textContent = laid ? num(laid) + ' table(s) laid out by you'
+      : 'every table as it comes';
+  }
+  var b = $('cols-edit-go');
+  if (b) {
+    setButtonIcon(b, COLS_EDIT ? 'check' : 'edit',
+                  COLS_EDIT ? 'Stop editing the columns' : 'Edit the columns');
+    b.classList.toggle('primary', COLS_EDIT);
+  }
+  if ($('cols-reset')) $('cols-reset').disabled = !laid;
+}
+$('cols-edit-go').onclick = function () { colsSwitch(!COLS_EDIT).catch(oops); };
+$('cols-reset').onclick = function () {
+  confirmThen('Put my columns back',
+    'Every table you have laid out goes back as it comes: the widths and the order of the '
+    + 'columns, on every page. Nobody else’s tables change.',
+    'Put them back', function () { colsReset().then(function () { colsCardSay(); loadUsers(); }).catch(oops); });
 };
+$('cols-export').onclick = function () { meExport($('cols-export')); };
+$('cols-import').onclick = function () { mePick(); };
 
 /* ==========================================================================
    The terminals
@@ -1195,7 +1453,7 @@ function showPane(name) {
   document.querySelectorAll('.ctl-pane').forEach(function (p) { p.hidden = p.id !== 'pane-' + name; });
   writeHash();
   if (name === 'claude') loadClaude();
-  if (name === 'people') { loadUsers(); loadLockouts(); }
+  if (name === 'people') { loadUsers(); loadLockouts(); colsCardSay(); }
   if (name === 'mail') loadMail();
   if (name === 'db') loadDb();
   if (name === 'backup') loadRbackup();
@@ -1207,7 +1465,7 @@ function showPane(name) {
   if (name === 'osup') loadOsup(); else if (typeof ouPoll === 'function') ouPoll(false);
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
   if (name === 'upgrade') loadUpgrade();
-  if (name === 'about') { loadAbout(); loadConsoleLogin(); }
+  if (name === 'about') { loadAbout(); loadConsoleLogin(); loadSoftware(); }
   markDirtyCount();
 }
 document.querySelectorAll('#ctl-nav button[data-pane]').forEach(function (b) {
@@ -2084,6 +2342,31 @@ function loadUpgrade(quiet) {
         host.appendChild(row);
       } else if (o.at && !o.error) host.appendChild(el('p', 'note good', 'This is the newest version there.'));
     }
+    var dn = $('up-down');
+    $('up-down-card').hidden = !(d.older || []).length;
+    clear(dn);
+    if ((d.older || []).length) {
+      dn.appendChild(el('p', 'muted small', 'The oldest that is safe on this database: ai ' + d.floor));
+      dn.appendChild(listTable(['Version', 'Published', ''], d.older, function (p) {
+        var tr = el('tr', p.safe ? '' : 'dim');
+        tr.appendChild(noI18n(el('td', 'mono', 'ai ' + p.version)));
+        tr.appendChild(el('td', 'muted small', p.at ? stamp(p.at) : '–'));
+        var t = el('td', 'rowtools');
+        if (p.safe) {
+          var b = cmdButton('Go back to it', 'undo', 'small');
+          b.onclick = function () {
+            confirmThen('Go back to ai ' + p.version + '?', 'From ' + d.here + ' to ' + p.version + ': a copy of the database is made first, then that version is fetched, checked and put in. The terminals go on running; these pages are back after a few seconds.', 'Go back', function () {
+              busy(b, true);
+              api('upgrade', {do: 'downgrade', version: p.version}, 600).then(function () { toast('going back to ' + p.version, 'good'); loadUpgrade(); })
+                .catch(oops).then(function () { busy(b, false); });
+            }, true);
+          };
+          t.appendChild(b);
+        } else t.appendChild(el('span', 'muted small', p.why || 'not safe here'));
+        tr.appendChild(t);
+        return tr;
+      }));
+    }
     var st = d.status;
     $('up-state').textContent = st ? (st.version ? 'ai ' + st.version + ' · ' : '') + ({running: 'running', done: 'done', failed: 'failed', lost: 'lost'}[st.state] || st.state || '') + ' · ' + stamp(st.at) + (st.said ? ' · ' + st.said : '') : '';
     var log = $('up-log');
@@ -2125,7 +2408,6 @@ function loadAbout() {
     clear(host);
     host.appendChild(kvTable([
       ['ai', m.software.ai], ['Server', m.host + ' · ' + m.os],
-      ['Software', noI18n(el('span', 'small', Object.keys(m.software).filter(function (k) { return m.software[k]; }).map(function (k) { return k + ' ' + m.software[k]; }).join(' · ')))],
       ['PHP of the pages', PHP_SAFETY ? PHP_SAFETY.version + (PHP_SAFETY.patched ? '' : ' - not fixed against php2shell, guarded') : '–'],
       ['Its folders', noI18n(el('span', 'mono small', d.paths.state + ' · ' + d.paths.config + ' · ' + d.paths.log))],
       ['On the command line', noI18n(el('span', 'mono', 'ai --status · ai --sessions · ai --attach ID'))]
@@ -3555,4 +3837,107 @@ function busyCount(button) {
    daemon where /files/get hands it to this administrator. */
 function rbDownload(ask) {
   api('rbackup', Object.assign({action: 'download'}, ask)).then(function (d) { download(d.path); }).catch(oops);
+}
+
+/* ---- what it runs on (as otp's About) ---------------------------------------------- */
+function drawSoftware(host) {
+  var box = el('div', 'sw-box');
+  host.appendChild(box);
+  box.appendChild(el('h3', 'sw-h', 'What it runs on'));
+  var wait = el('p', 'muted small', 'asking…');
+  box.appendChild(wait);
+  api('software').then(function (d) {
+    box.removeChild(wait);
+    var nodes = d.nodes || [];
+    var pages = d.pages || {};
+    var sw = function (n, f) { var x = n.software || {}; return f(x) || ''; };
+    var prog = function (k) { return function (x) { return (x.programs || {})[k]; }; };
+    var mod = function (k) { return function (x) { return (x.modules || {})[k] || ''; }; };
+    var rows = [
+      ['ai', function (x) { return x.ai; }],
+      ['Claude Code', function (x) { return x.claude; }],
+      ['group:Python'],
+      ['Python', function (x) { return x.python; }],
+      ['where', function (x) { return x.python_path; }],
+      ['colorama', mod('colorama')],
+      ['OpenSSL (Python’s)', function (x) { return x.openssl; }],
+      ['SQLite (library)', function (x) { return x.sqlite; }],
+      ['group:The terminals'],
+      ['tmux', prog('tmux')],
+      ['git', prog('git')],
+      ['Node.js', prog('node')],
+      ['npm', prog('npm')],
+      ['group:The pages'],
+      ['nginx', prog('nginx')],
+      ['php-fpm', prog('php-fpm')],
+      ['PHP (command line)', function (x) { return x.php_cli; }],
+      ['group:The system'],
+      ['system', function (x) { return x.os; }],
+      ['kernel', function (x) { return x.kernel + (x.arch ? ' · ' + x.arch : ''); }],
+      ['systemd', prog('systemd')],
+      ['OpenSSL (system)', prog('openssl')],
+      ['chrony', prog('chrony')],
+      ['ssh', prog('ssh')],
+      ['smbclient', prog('smbclient')],
+      ['iptables', prog('iptables')],
+      ['firewalld', prog('firewalld')]
+    ];
+    var t = el('table', 'rows sw-table');
+    var th = el('thead'), hr = el('tr');
+    hr.appendChild(el('th', '', ''));
+    nodes.forEach(function (n) {
+      var c = el('th', '');
+      c.appendChild(noI18n(el('span', '', n.name)));
+      if (n.me) c.appendChild(el('span', 'tag info', 'this one'));
+      else if (!n.alive) c.appendChild(el('span', 'tag warn', 'not heard from'));
+      hr.appendChild(c);
+    });
+    th.appendChild(hr); t.appendChild(th);
+    var tb = el('tbody');
+    rows.forEach(function (r) {
+      var tr = el('tr');
+      if (r[0].indexOf('group:') === 0) {
+        tr.className = 'sw-group';
+        var g = el('td', '', r[0].slice(6));
+        g.colSpan = nodes.length + 1;
+        tr.appendChild(g);
+        tb.appendChild(tr);
+        return;
+      }
+      var vals = nodes.map(function (n) { return sw(n, r[1]); });
+      if (!vals.some(function (v) { return v; })) return;     /* nowhere: not shown */
+      var differs = nodes.length > 1 && vals.some(function (v) { return v !== vals[0]; });
+      tr.appendChild(el('td', 'k', r[0]));
+      vals.forEach(function (v) {
+        var c = noI18n(el('td', 'mono small' + (differs ? ' warn' : ''), v || '–'));
+        if (differs) c.title = 'not the same on every node';
+        tr.appendChild(c);
+      });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    box.appendChild(t);
+    /* The pages: this PHP itself, as php-fpm runs it for the node that
+       answered this page. */
+    if (pages.php) {
+      box.appendChild(el('h3', 'sw-h', 'The pages’ PHP (as php-fpm runs it here)'));
+      box.appendChild(peekFacts([['PHP', pages.php], ['How', pages.sapi], ['OPcache', pages.opcache ? 'on' : 'off'],
+                                 ['Web server', pages.server || '–']]));
+      var ex = el('div', 'sw-ext');
+      Object.keys(pages.extensions || {}).forEach(function (k) {
+        var v = pages.extensions[k];
+        ex.appendChild(noI18n(el('span', 'tag namepill', k + (v ? ' ' + v : ''))));
+      });
+      box.appendChild(el('div', 'muted small', 'Its extensions (' + num(Object.keys(pages.extensions || {}).length) + '):'));
+      box.appendChild(ex);
+    }
+    explainWhatWasDrawn(box);
+  }).catch(function (e) { wait.textContent = String(e.message || e); });
+}
+
+function loadSoftware() {
+  var host = $('ab-software');
+  if (!host) return;
+  clear(host);
+  drawSoftware(host);
 }

@@ -20,6 +20,34 @@ if (isset($_GET['api'])) {
     if ($what === 'lang' && !$post) {
         ai_serve_lang();
     }
+    if ($what === 'software' && !$post) {
+        /* What the server runs on - and of the pages, what this PHP itself
+           is: php-fpm's, not the command line's (as otp's). */
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        [$status, $body] = ai_call('/api/software', 'GET', null, 20.0);
+        $data = json_decode((string) $body, true);
+        if ($status !== 200 || !is_array($data)) {
+            http_response_code($status ?: 503);
+            echo $body ?: json_encode(['ok' => false, 'error' => 'the daemon is not answering']);
+            exit;
+        }
+        $ext = [];
+        foreach (get_loaded_extensions() as $e) {
+            $v = phpversion($e);
+            $ext[$e] = ($v === false || $v === PHP_VERSION) ? '' : (string) $v;
+        }
+        ksort($ext, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['pages'] = [
+            'php' => PHP_VERSION, 'sapi' => PHP_SAPI, 'extensions' => $ext,
+            'opcache' => function_exists('opcache_get_status') && is_array(@opcache_get_status(false))
+                && !empty(@opcache_get_status(false)['opcache_enabled']),
+            'server' => (string) ($_SERVER['SERVER_SOFTWARE'] ?? ''),
+            'os' => PHP_OS_FAMILY,
+        ];
+        echo json_encode($data);
+        exit;
+    }
     if ($post) {
         ai_guard_post();
     }
@@ -94,7 +122,7 @@ if (isset($_GET['api'])) {
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
         'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
-        'rbackup' => '/api/rbackup',
+        'rbackup' => '/api/rbackup', 'software' => '/api/software', 'my-settings' => '/api/auth/settings',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -104,7 +132,8 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
         'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
-        'import' => '/api/import', 'rbackup' => '/api/rbackup',
+        'import' => '/api/import', 'rbackup' => '/api/rbackup', 'columns' => '/api/auth/columns',
+        'my-settings' => '/api/auth/settings',
     ];
     if ($post) {
         if (!isset($writes[$what])) {
@@ -508,6 +537,28 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       <div id="us-table"></div>
     </div>
     <div class="card full"><h2>Signed in now</h2><div id="us-sessions"></div></div>
+    <div class="card full" id="cols-card">
+      <h2>Columns of the tables <span class="right" id="cols-count"></span></h2>
+      <p class="note">Every table on these pages can be laid out the way you read it. Press
+        your name at the top right and switch on <b>Edit the columns</b>; then drag the edge of
+        a column's heading to make it wider or narrower, and drag the heading itself to move
+        the column. The right button on a heading hides a column, brings a hidden one back or
+        adds an empty one for room. Twice on an edge puts that table's widths back. Each change
+        is kept with your account the moment you let go, not in this browser, and comes back
+        wherever you sign in; nobody else's tables change. The switch is for this sign-in
+        only: signing out or the sign-in running out turns it off again, and the columns stay
+        as you left them.</p>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn cmd" id="cols-edit-go" data-icon="edit"
+                title="The same switch as under your name: on for this sign-in only.">Edit the columns</button>
+        <button class="btn cmd" id="cols-reset" data-icon="undo"
+                title="Every table back as it comes: the widths and the order of the columns you set, on every page. Nobody else's are touched.">Put my columns back as they come</button>
+        <button class="btn cmd" id="cols-export" data-icon="download"
+                title="How you have set these pages up for yourself, saved as a JSON file.">Export my settings</button>
+        <button class="btn cmd" id="cols-import" data-icon="upload"
+                title="Read a file saved by Export my settings - here or on another machine running ai.">Import settings…</button>
+      </div>
+    </div>
     <div class="card full" id="lo-card"><h2>Locked out <span class="right" id="lo-tools"></span></h2>
       <p class="note">Addresses and names with wrong passwords or wrong codes still counted - at the limit
         (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them,
@@ -701,17 +752,27 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         <input type="file" id="up-input" accept=".tar.gz,.tgz,application/gzip" hidden></div>
       <div id="up-sent"></div></div>
     <div class="card full"><div id="sect-upgrade"></div></div>
+    <div class="card full admin-only" id="up-down-card" hidden>
+      <h2>Going back to an older version</h2>
+      <p class="note">Only to a version that is safe: one that reads what the newer versions wrote into
+        the database the same, and has every security fix that matters - each version says how far back
+        it may go, and the highest of what ran on this database counts. A copy of the database is made
+        first (Settings → Database); the package is checked like an upgrade's. The terminals go on running.</p>
+      <div id="up-down"></div>
+    </div>
     <div class="card full"><h2>What the last upgrade said <span class="right muted small" id="up-state"></span></h2>
       <pre class="lines tall" id="up-log">–</pre></div>
     <div class="card full"><h2>On the command line</h2>
       <pre class="lines">ai --upgrade-check              # what is at the address, and whether it is newer
 ai --upgrade-online             # the newest: fetched, checked, put in
+ai --downgrade X.Y.Z            # back to an older one - only a safe one
 tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z && ./install.sh --upgrade</pre></div>
   </div>
 
   <div class="ctl-pane" id="pane-about" hidden>
     <div class="ctl-head"><h2 class="ctl-title">About</h2></div>
     <div class="card full"><div id="about-state"></div></div>
+    <div class="card full"><div id="ab-software"></div></div>
     <div class="card full"><h2>The console at login</h2>
       <p class="note">The ai console (<code>ai --console</code>) opens by itself when root signs in at the
         server's screen or over SSH; q leaves it for the ordinary shell. Never inside a terminal of these pages.</p>
@@ -752,6 +813,7 @@ var PHP_SAFETY = <?= $admin ? json_encode(ai_php_safety(), JSON_HEX_TAG | JSON_H
 <script nonce="<?= h($nonce) ?>" src="/assets/xterm/xterm.js?v=5.5.0"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/xterm/addon-fit.js?v=0.10.0"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/xterm/addon-web-links.js?v=0.11.0"></script>
+<script nonce="<?= h($nonce) ?>" src="/assets/cols.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/term.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/app.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/system.js?v=<?= h(AI_VERSION) ?>"></script>

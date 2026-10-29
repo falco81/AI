@@ -244,8 +244,10 @@ def status(**fields):
     write_here('status.json', json.dumps(fields))
 
 
-def put_in(package, by='the command line', log_to=print):
-    """Check the package and run its install.sh --upgrade: (rc, info)."""
+def put_in(package, by='the command line', log_to=print, floor=''):
+    """Check the package and run its install.sh --upgrade: (rc, info). An older
+    version only with `floor` - the oldest the daemon says is safe on this
+    database (going back, as otp's) - and not below it."""
     if os.geteuid() != 0:
         raise Refused('putting a version in takes root')
     work = tempfile.mkdtemp(prefix='ai-upgrade-', dir='/var/tmp')
@@ -256,9 +258,13 @@ def put_in(package, by='the command line', log_to=print):
         unpacked = os.path.join(work, 'x')
         os.makedirs(unpacked, mode=0o700)
         info = inspect(copy, extract_to=unpacked)
+        if info['older'] and not floor:
+            raise Refused('%s is older than %s, which is installed: going back is done from the pages '
+                          '(Upgrades - Going back) or ai --downgrade' % (info['version'], info['installed']))
+        if info['older'] and version_tuple(info['version']) < version_tuple(floor):
+            raise Refused('%s is older than %s, the oldest that is safe on this database' % (info['version'], floor))
         if info['older']:
-            raise Refused('%s is older than %s, which is installed: going back is done by hand, '
-                          'with that version\'s install.sh --upgrade' % (info['version'], info['installed']))
+            log_to('going back from %s to %s (the oldest safe here: %s)' % (info['installed'], info['version'], floor))
         log_to('ai %s, signed by %s, %d files - checked' % (info['version'], info['signed_by'], info['files']))
         src = os.path.join(unpacked, info['top'])
         env = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
@@ -314,7 +320,7 @@ def put_in(package, by='the command line', log_to=print):
         shutil.rmtree(work, ignore_errors=True)
 
 
-def job(package, by):
+def job(package, by, floor=''):
     lines = []
     last = [0.0]
 
@@ -328,7 +334,7 @@ def job(package, by):
                 pass
     try:
         status(state='running', by=by, file=os.path.basename(package))
-        rc, info = put_in(package, by, log_to)
+        rc, info = put_in(package, by, log_to, floor)
         status(state='done' if rc == 0 else 'failed', rc=rc, version=info['version'], by=by,
                tail=lines[-40:])
     except Refused as e:
@@ -356,14 +362,16 @@ def main(argv):
         return 0
     if len(argv) >= 2 and argv[0] == '--run':
         try:
-            rc, _info = put_in(os.path.abspath(argv[1]))
+            floor = argv[3] if len(argv) >= 4 and argv[2] == '--floor' else ''
+            rc, _info = put_in(os.path.abspath(argv[1]), floor=floor)
         except Refused as e:
             print('refused: %s' % e)
             return 1
         return rc
     if len(argv) >= 2 and argv[0] == '--job':
         by = argv[3] if len(argv) >= 4 and argv[2] == '--by' else 'the pages'
-        return job(os.path.abspath(argv[1]), by)
+        floor = argv[5] if len(argv) >= 6 and argv[4] == '--floor' else ''
+        return job(os.path.abspath(argv[1]), by, floor)
     print(__doc__)
     return 2
 

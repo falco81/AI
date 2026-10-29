@@ -5710,6 +5710,26 @@ def online_list(url):
     return out
 
 
+# Going back to an older version (otp's, 1.0.143): only to one that is safe -
+# one that reads what the newer versions wrote into the database the same and
+# has every security fix that matters. Each version says how far back it may
+# go (DOWNGRADE_FLOOR); the highest of what ran on this database counts.
+DOWNGRADE_FLOOR = '1.0.4'
+
+
+def downgrade_floor(store):
+    ran = store.meta_json('versions:floors', {}) or {}
+    floors = [DOWNGRADE_FLOOR] + [str(v) for v in ran.values()]
+    return max(floors, key=ver_tuple)
+
+
+def versions_ran_note(store):
+    ran = store.meta_json('versions:floors', {}) or {}
+    if ran.get(__version__) != DOWNGRADE_FLOOR:
+        ran[__version__] = DOWNGRADE_FLOOR
+        store.set_meta_json('versions:floors', ran)
+
+
 class Upgrades:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -5751,19 +5771,35 @@ class Upgrades:
         newer = sorted((p for p in online.get('packages') or []
                         if ver_tuple(p.get('version')) > ver_tuple(__version__)),
                        key=lambda p: ver_tuple(p.get('version')), reverse=True)
+        floor = downgrade_floor(self.store)
+        older = []
+        for p in sorted((p for p in online.get('packages') or [] if ver_tuple(p.get('version')) < ver_tuple(__version__)),
+                        key=lambda p: ver_tuple(p.get('version')), reverse=True):
+            one = dict(p)
+            one['safe'] = ver_tuple(p.get('version')) >= ver_tuple(floor)
+            if not one['safe']:
+                one['why'] = 'older than %s, the oldest that is safe on this database' % floor
+            older.append(one)
         st = self.status()
         hidden = self.store.get_meta('upgrade:hidden') == str(st.get('at'))
-        return {'here': __version__, 'online': online, 'newer': newer, 'url': CONFIG.get('upgrade_url'),
+        return {'here': __version__, 'online': online, 'newer': newer, 'older': older, 'floor': floor,
+                'url': CONFIG.get('upgrade_url'),
                 'check': bool(CONFIG.get('upgrade_check')), 'auto': bool(CONFIG.get('upgrade_auto')),
                 'status': None if hidden else st, 'log': '' if hidden else read_text(UPGRADE_DIR / 'last.log', 400000),
                 'keys': sorted(p.name for p in (LIB_DIR / 'release-keys').glob('*.pub'))
                 if (LIB_DIR / 'release-keys').is_dir() else []}
 
-    def fetch(self, version, by):
+    def fetch(self, version, by, older=False):
         pk = [p for p in online_list(CONFIG.get('upgrade_url')) if p['version'] == str(version)]
         if not pk:
             raise Refused('ai %s is not at %s' % (version, CONFIG.get('upgrade_url')))
-        if ver_tuple(pk[0]['version']) <= ver_tuple(__version__):
+        if older:
+            floor = downgrade_floor(self.store)
+            if ver_tuple(pk[0]['version']) >= ver_tuple(__version__):
+                raise Refused('ai %s is not older than %s, which runs here' % (version, __version__))
+            if ver_tuple(pk[0]['version']) < ver_tuple(floor):
+                raise Refused('ai %s is older than %s, the oldest that is safe on this database' % (version, floor))
+        elif ver_tuple(pk[0]['version']) <= ver_tuple(__version__):
             raise Refused('ai %s is not newer than %s, which runs here' % (version, __version__))
         UPGRADE_DIR.mkdir(parents=True, exist_ok=True)
         data, _ct, final = _online_get(pk[0]['url'], limit=UPGRADE_MOST, timeout=300)
@@ -5777,15 +5813,17 @@ class Upgrades:
             raise
         return path, info
 
-    def take(self, path, by):
+    def take(self, path, by, older=False):
         info = upgrade_inspect(path)
-        if info.get('older'):
-            path = Path(path)
-            raise Refused('%s is older than %s, which runs here: going back is done on the command line '
-                          '(install.sh --upgrade of that version)' % (info['version'], __version__))
+        if info.get('older') and not older:
+            raise Refused('%s is older than %s, which runs here: going back is done with Going back to an '
+                          'older version (or ai --downgrade VERSION)' % (info['version'], __version__))
+        if info.get('older') and ver_tuple(info['version']) < ver_tuple(downgrade_floor(self.store)):
+            raise Refused('%s is older than %s, the oldest that is safe on this database' % (
+                info['version'], downgrade_floor(self.store)))
         return info
 
-    def install(self, path, by):
+    def install(self, path, by, older=False):
         with self.lock:
             st = self.status()
             if st.get('state') == 'running':
@@ -5794,14 +5832,22 @@ class Upgrades:
                 raise Refused('an upgrade is being started already')
             self.busy = True
         try:
-            info = self.take(path, by)
+            info = self.take(path, by, older)
             write_atomic(UPGRADE_DIR / 'status.json', json.dumps({'state': 'running', 'version': info['version'],
                                                                   'by': by, 'at': time.time()}), mode=0o600)
             write_atomic(UPGRADE_DIR / 'last.log', '', mode=0o600)
             cmd = [sys.executable if os.path.exists(sys.executable) else '/usr/bin/python3', '-I', upgrader(),
                    '--job', str(path), '--by', by or 'the pages']
-            self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)' % (
-                by, info['version'], info.get('signed_by')), 'warn', who=by)
+            if info.get('older'):
+                cmd += ['--floor', downgrade_floor(self.store)]
+                # A copy of the database first: what the newer one wrote, kept.
+                try:
+                    db_copy(self.store, 'before going back to %s' % info['version'], by)
+                except Exception as e:                  # noqa: BLE001
+                    log('a copy before going back could not be made: %s' % e, 'warn')
+            self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)%s' % (
+                by, info['version'], info.get('signed_by'), ' - going back from %s' % __version__
+                if info.get('older') else ''), 'warn', who=by)
             if NO_SYSTEM:
                 return info
             if systemd_here():
@@ -5946,7 +5992,11 @@ def api_whoami(c):
     if c.who.get('_mfa'):
         # Signed in with the password only: the page asks for the second step.
         return {'who': {'name': c.who['name'], 'mfa': c.who['_mfa']}, 'mfa': c.who['_mfa']}
-    return {'who': user_view(c.who)}
+    who = user_view(c.who)
+    who['cols'] = user_cols(c.daemon.store, c.name)
+    who['cols_edit'] = bool((c.who.get('_data') or {}).get('cols_edit'))
+    who['mfa_kind'] = (mfa_get(c.daemon.store, c.name) or {}).get('kind') or ''
+    return {'who': who}
 
 
 @route('POST', '/api/auth/password')
@@ -5974,6 +6024,90 @@ def api_prefs(c):
         raise Refused('too much to keep')
     c.daemon.store.x('UPDATE users SET prefs=? WHERE name=?', (text, c.name))
     return {'prefs': prefs}
+
+
+# ---- what this server runs on (as otp's About) --------------------------------------------------
+_SOFTWARE = {'at': 0.0, 'state': None}
+
+
+def _first_line(cmd, timeout=5):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    text = (r.stdout or '') + (r.stderr or '')
+    return (text.strip().splitlines() or [''])[0].strip()[:200]
+
+
+def software_info(store=None):
+    """What this server runs on (otp's, 1.0.99): ai, its Python and the modules
+    it uses, the libraries under them, the programs beside it and the system -
+    for Settings → About. Asked at most once an hour."""
+    if time.time() - _SOFTWARE['at'] < 3600 and _SOFTWARE['state'] is not None:
+        out = dict(_SOFTWARE['state'])
+    else:
+        import platform
+        out = {'ai': __version__,
+               'python': '%s %s' % (platform.python_implementation(), platform.python_version()),
+               'python_path': os.path.realpath(sys.executable),
+               'openssl': ssl.OPENSSL_VERSION, 'sqlite': sqlite3.sqlite_version,
+               'kernel': '%s %s' % (platform.system(), platform.release()),
+               'arch': platform.machine(), 'modules': {}, 'programs': {}}
+        try:
+            with open('/etc/os-release', encoding='utf-8') as f:
+                rel = dict(l.strip().split('=', 1) for l in f if '=' in l)
+            out['os'] = rel.get('PRETTY_NAME', '').strip('"')
+        except OSError:
+            out['os'] = ''
+        for mod, attr in (('colorama', '__version__'),):
+            try:
+                m = __import__(mod)
+                v = str(getattr(m, attr, '') or '').split(' ')[0]
+                if mod == 'psycopg2':
+                    lib = getattr(m, '__libpq_version__', 0)
+                    if lib:
+                        v += ' (libpq %d.%d)' % (lib // 10000, lib % 10000 // 100 if lib < 100000
+                                                 else lib % 100)
+                out['modules'][mod] = v
+            except Exception:                           # noqa: BLE001
+                out['modules'][mod] = ''
+        progs = (('nginx', ['nginx', '-v']), ('php', ['php', '-v']),
+                 ('php-fpm', None), ('tmux', ['tmux', '-V']), ('git', ['git', '--version']),
+                 ('node', ['node', '--version']), ('npm', ['npm', '--version']),
+                 ('ssh', ['ssh', '-V']), ('smbclient', ['smbclient', '--version']),
+                 ('chrony', ['chronyd', '--version']),
+                 ('openssl', ['openssl', 'version']), ('systemd', ['systemctl', '--version']),
+                 ('iptables', ['iptables', '--version']),
+                 ('firewalld', ['firewall-cmd', '--version']))
+        for name, cmd in progs:
+            if name == 'php-fpm':
+                import glob
+                fpm = sorted(glob.glob('/usr/sbin/php-fpm*') + glob.glob('/usr/sbin/php*-fpm*'))
+                line = _first_line([fpm[-1], '-v']) if fpm else ''
+            else:
+                exe = shutil.which(cmd[0]) or next((p for p in ('/usr/sbin/' + cmd[0], '/sbin/' + cmd[0])
+                                                    if os.path.exists(p)), None)
+                line = _first_line([exe] + cmd[1:]) if exe else ''
+            m = re.search(r'(\d+\.\d+(?:\.\d+)?[^\s,()]*)', line or '')
+            if m and not re.search(r'(?i)denied|not found|error', line):
+                out['programs'][name] = m.group(1)
+            elif name == 'systemd':
+                m = re.search(r'^systemd\s+(\d+)', line or '')
+                if m:
+                    out['programs'][name] = m.group(1)
+        _SOFTWARE.update(at=time.time(), state=dict(out))
+    # What changes without a restart, asked each time it is wanted.
+    if store is not None:
+        out['database'] = 'SQLite %s' % sqlite3.sqlite_version
+    try:
+        out['claude'] = (claude_facts(pwd.getpwnam(str(CONFIG.get('default_run_as') or 'root'))) or {}).get('version') or ''
+    except (KeyError, Refused, OSError):
+        out['claude'] = ''
+    try:
+        out['php_cli'] = (php_state() or {}).get('version') or ''
+    except Exception:                                   # noqa: BLE001
+        pass
+    return out
 
 
 # ---- PHP and php2shell (as otp's) ----------------------------------------------------------
@@ -6653,6 +6787,165 @@ def notify_tick(store):
     store.set_meta_json('notify:last', new)
 
 
+# ---- how somebody laid out the tables (otp's cols.js, as on isemon) -----------------------------
+# Kept with the account (meta 'cols:<name>'); "Edit the columns" is switched
+# on for one sign-in only, in its data, so signing out turns it off again.
+COLS_MOST_TABLES = 300
+COLS_MOST_COLUMNS = 60
+COLS_MOST_BYTES = 60000
+SETTINGS_FILE_KIND = 'ai-user-settings'
+
+
+def clean_cols(cols):
+    """A layout as the page sent it, reduced to what a layout can hold:
+    `{table: {"w": {column: pixels}, "o": [order], "h": [hidden],
+    "v": [optional shown], "s": [empty columns], "t": when}}` and nothing
+    else. Anything not understood is dropped rather than kept."""
+    if cols == [] or cols is None:
+        cols = {}                       # PHP passes an empty object on as []
+    if not isinstance(cols, dict):
+        raise ValueError('a layout of the columns is an object of tables')
+    out = {}
+
+    def names(v, most):
+        return [str(c)[:80] for c in v[:most] if isinstance(c, (str, int))] \
+            if isinstance(v, list) else []
+
+    for key, one in list(cols.items())[:COLS_MOST_TABLES]:
+        key = str(key)[:160]
+        if not key or not isinstance(one, dict):
+            continue
+        kept = {}
+        widths = one.get('w')
+        if isinstance(widths, dict):
+            w = {}
+            for col, px in list(widths.items())[:COLS_MOST_COLUMNS]:
+                try:
+                    px = int(round(float(px)))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                w[str(col)[:80]] = max(24, min(3000, px))
+            if w:
+                kept['w'] = w
+        for k in ('o', 'h', 'v'):
+            got = names(one.get(k), COLS_MOST_COLUMNS)
+            if got:
+                kept[k] = got
+        sp = [c for c in names(one.get('s'), 20) if re.match(r'^~\d{1,4}\Z', c)]
+        if sp:
+            kept['s'] = sp
+        if kept:
+            try:
+                kept['t'] = int(float(one.get('t') or 0))
+            except (TypeError, ValueError, OverflowError):
+                kept['t'] = 0
+            out[key] = kept
+    if len(json.dumps(out, separators=(',', ':'))) > COLS_MOST_BYTES:
+        raise ValueError('that layout of the columns is too big to keep (more than %d '
+                         'characters)' % COLS_MOST_BYTES)
+    return out
+
+
+def user_cols(store, name):
+    got = store.meta_json('cols:' + str(name), {})
+    return got if isinstance(got, dict) else {}
+
+
+def put_user_cols(store, name, cols):
+    cols = clean_cols(cols or {})
+    if cols:
+        store.set_meta_json('cols:' + str(name), cols)
+    else:
+        store.x('DELETE FROM meta WHERE k=?', ('cols:' + str(name),))
+    return cols
+
+
+PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste')
+
+
+def clean_prefs(prefs):
+    if prefs == [] or prefs is None:
+        prefs = {}
+    if not isinstance(prefs, dict):
+        raise ValueError('the choices are an object')
+    out = {}
+    for k, v in prefs.items():
+        if k not in PREF_KEYS:
+            continue
+        if k == 'lang' and str(v) not in ('cs', 'en'):
+            raise ValueError('no such language here: %s' % v)
+        out[k] = v
+    if len(json.dumps(out)) > 64000:
+        raise ValueError('too much to keep')
+    return out
+
+
+@route('POST', '/api/auth/columns')
+def api_columns(c):
+    """Anybody signed in: this is how the page looks to that one person."""
+    b = c.body
+    st = c.daemon.store
+    sid = c.who['_sid']
+    if 'edit' in b:
+        st.session_merge(sid, {'cols_edit': 1 if b.get('edit') else None})
+        if 'cols' not in b:
+            return {'edit': bool(b.get('edit'))}
+    reset = bool(b.get('reset'))
+    editing = bool(st.session_data(sid).get('cols_edit'))
+    if not reset and not editing:
+        raise Refused('switch on "Edit the columns" under your name first: the columns are not being '
+                      'edited from this sign-in', 409)
+    try:
+        kept = put_user_cols(st, c.name, {} if reset else (b.get('cols') or {}))
+    except ValueError as e:
+        raise Refused(str(e))
+    if reset:
+        st.add_event('accounts', '%s put the columns of every table back as they come' % c.name, who=c.name)
+    return {'tables': len(kept), 'edit': editing}
+
+
+@route('GET', '/api/auth/settings')
+def api_my_settings(c):
+    """What a person has set for themselves on the page, as one object that
+    can be saved to a file and read back. Never the password or the role."""
+    try:
+        prefs = json.loads(c.who.get('prefs') or '{}')
+    except ValueError:
+        prefs = {}
+    return {'name': c.name, 'version': __version__, 'kind': SETTINGS_FILE_KIND,
+            'settings': {'columns': user_cols(c.daemon.store, c.name), 'prefs': prefs}}
+
+
+@route('POST', '/api/auth/settings')
+def api_my_settings_put(c):
+    got = c.body.get('settings')
+    st = c.daemon.store
+    if not isinstance(got, dict):
+        raise Refused('that is not a file of settings: there is no "settings" in it')
+    ignored = sorted(k for k in got if k not in ('columns', 'prefs'))
+    try:
+        cols = clean_cols(got['columns'] or {}) if 'columns' in got else None
+        prefs = clean_prefs(got['prefs'] or {}) if 'prefs' in got else None
+    except (ValueError, TypeError, AttributeError) as e:
+        raise Refused('in that file: %s' % e)
+    took = {}
+    if cols is not None:
+        took['columns'] = len(put_user_cols(st, c.name, cols))
+    if prefs is not None:
+        try:
+            have = json.loads(c.who.get('prefs') or '{}')
+        except ValueError:
+            have = {}
+        have.update(prefs)
+        st.x('UPDATE users SET prefs=? WHERE name=?', (json.dumps(have), c.name))
+        took['prefs'] = len(prefs)
+    if not took:
+        raise Refused('nothing in that file is a setting this version keeps')
+    st.add_event('accounts', '%s read their own settings back from a file (%s)' % (
+        c.name, ', '.join('%s: %d' % kv for kv in took.items())), who=c.name)
+    return {'took': took, 'ignored': ignored}
+
+
 # ---- settings, accounts, events ---------------------------------------------------------------
 def setting_value(k, v):
     s = SCHEMA_KEYS[k]
@@ -6797,6 +7090,9 @@ def api_users_do(c):
     elif do == 'end':
         c.daemon.store.x('DELETE FROM sessions WHERE id=?', (str(b.get('sid') or ''),))
         c.daemon.store.add_event('sign-in', '%s ended a sign-in of %s' % (c.name, name or '?'), 'info', who=c.name)
+    elif do == 'reset_cols':
+        put_user_cols(c.daemon.store, name, {})
+        c.daemon.store.add_event('accounts', '%s put the columns of %s back as they come' % (c.name, name), who=c.name)
     elif do == 'mfa_reset':
         if not c.daemon.store.user(name):
             raise Refused('no such account', 404)
@@ -7621,16 +7917,21 @@ def api_upgrade_do(c):
     do = c.body.get('do')
     if do == 'look':
         return {'online': up.look(c.name)}
-    if do in ('fetch', 'install'):
+    if do in ('fetch', 'install', 'downgrade'):
         version = str(c.body.get('version') or '')
-        path, info = up.fetch(version, c.name)
-        if do == 'install':
-            up.install(path, c.name)
+        path, info = up.fetch(version, c.name, older=do == 'downgrade')
+        if do in ('install', 'downgrade'):
+            up.install(path, c.name, older=do == 'downgrade')
         return {'info': info}
     if do == 'hide':
         c.daemon.store.set_meta('upgrade:hidden', str(up.status().get('at')))
         return {}
-    raise Refused('look, fetch, install or hide')
+    raise Refused('look, fetch, install, downgrade or hide')
+
+
+@route('GET', '/api/software', admin=True)
+def api_software(c):
+    return {'nodes': [{'name': node_name(), 'me': True, 'alive': True, 'software': software_info(c.daemon.store)}]}
 
 
 @route('GET', '/api/console-login', admin=True)
@@ -9084,6 +9385,7 @@ class Daemon:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(str(STATE_DIR), 0o711)
         self.write_token()
+        versions_ran_note(self.store)
         self.first_account()
         port = int(CONFIG.get('api_port') or 9871)
         Handler.daemon = self
@@ -11999,6 +12301,7 @@ def build_parser():
     g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
     g = p.add_argument_group('UPGRADES')
     g.add_argument('--upgrade-check', action='store_true', help='whether a newer version is out')
+    g.add_argument('--downgrade', metavar='VERSION', help='back to an older version at upgrade_url - only a safe one')
     g.add_argument('--upgrade-online', nargs='?', const='newest', metavar='VERSION',
                    help='fetch the newest (or VERSION) from upgrade_url and put it in')
     g.add_argument('--upgrade-status', action='store_true', help='the last upgrade, and what it said')
@@ -12778,6 +13081,15 @@ def cli_main(argv):
             path, info = d.upgrades.fetch(want, 'the command line')
             print(pal.ok_line('ai %s, signed by %s - checked; putting it in' % (info['version'], info.get('signed_by'))))
             os.execvp(sys.executable, [sys.executable, '-I', upgrader(), '--run', str(path)])
+        if a.downgrade:
+            floor = downgrade_floor(st)
+            if not a.yes and input('go back from ai %s to %s (the oldest safe here: %s)? [y/N] ' % (
+                    __version__, a.downgrade, floor)).strip().lower() not in ('y', 'yes', 'a', 'ano'):
+                return 1
+            path, info = d.upgrades.fetch(a.downgrade, 'the command line', older=True)
+            db_copy(st, 'before going back to %s' % info['version'], 'the command line')
+            print(pal.ok_line('ai %s, signed by %s - checked; going back to it' % (info['version'], info.get('signed_by'))))
+            os.execvp(sys.executable, [sys.executable, '-I', upgrader(), '--run', str(path), '--floor', floor])
         # ---- looking ------------------------------------------------------------------------------
         if a.events:
             where, args = '', []
