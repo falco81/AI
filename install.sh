@@ -88,21 +88,45 @@ write_file() {      # write_file DEST MODE < content
     mv -fT -- "$tmp" "$dest"
 }
 
+# Asked as otp's installer asks: Enter keeps what is in brackets. With --yes,
+# or with no terminal to ask on, what is in brackets is taken.
 confirm() {      # confirm "question" [default y|n]
-    local q="$1" def="${2:-y}" a
-    [[ -n "$ASSUME_YES" ]] && { [[ "$def" == "y" ]]; return; }
-    [[ -t 0 ]] || { [[ "$def" == "y" ]]; return; }
-    read -r -p "    $q [$( [[ "$def" == y ]] && echo Y/n || echo y/N )] " a || true
-    a="${a:-$def}"
-    [[ "$a" =~ ^[YyAa] ]]
+    local default="${2:-y}" answer
+    if [[ -n "$ASSUME_YES" || ! -t 0 ]]; then [[ "$default" == "y" ]]; return; fi
+    read -r -p "    $1 [$( [[ $default == y ]] && echo Y/n || echo y/N )] " answer || true
+    answer="${answer:-$default}"
+    [[ "$answer" =~ ^[YyAa] ]]
 }
 
 ask() {          # ask VAR "prompt" "default"
-    local var="$1" q="$2" def="${3:-}" a
-    if [[ -n "${!var:-}" ]]; then return; fi
-    if [[ -n "$ASSUME_YES" || ! -t 0 ]]; then printf -v "$var" '%s' "$def"; return; fi
-    read -r -p "    $q [$def] " a || true
-    printf -v "$var" '%s' "${a:-$def}"
+    local var="$1" prompt="$2" default="${3:-}" answer
+    if [[ -n "${!var:-}" ]]; then default="${!var}"; fi
+    if [[ -n "$ASSUME_YES" || ! -t 0 ]]; then
+        printf -v "$var" '%s' "$default"
+        return
+    fi
+    if [[ -n "$default" ]]; then
+        read -r -p "    $prompt [$default]: " answer || true
+    else
+        read -r -p "    $prompt: " answer || true
+    fi
+    printf -v "$var" '%s' "${answer:-$default}"
+}
+
+ask_secret() {   # ask_secret VAR "prompt" - typed unseen, twice; empty = none
+    local var="$1" prompt="$2" answer again
+    [[ -n "$ASSUME_YES" || ! -t 0 ]] && return
+    while true; do
+        read -r -s -p "    $prompt: " answer || true; echo
+        [[ -z "$answer" ]] && { printf -v "$var" '%s' ''; return; }
+        if (( ${#answer} < 10 )); then
+            warn "that is shorter than ten characters"
+            continue
+        fi
+        read -r -s -p "    and again: " again || true; echo
+        [[ "$answer" == "$again" ]] && { printf -v "$var" '%s' "$answer"; return; }
+        warn "those two are not the same"
+    done
 }
 
 usage() {
@@ -547,7 +571,8 @@ first_account() {
     local pw="$ADMIN_PASSWORD"
     [[ -n "$pw" ]] || pw="$(tr -dc 'A-HJ-NP-Za-km-z2-9' < /dev/urandom | head -c 16)"
     "$BIN_LINK" --add-user "$ADMIN_USER" --role admin --password "$pw" >/dev/null 2>&1 \
-        || "$BIN_LINK" --passwd "$ADMIN_USER" --password "$pw" >/dev/null
+        || "$BIN_LINK" --passwd "$ADMIN_USER" --password "$pw" >/dev/null \
+        || fail "the password of $ADMIN_USER was not taken (ai --passwd $ADMIN_USER sets it)"
     if [[ "$ADMIN_USER" != "admin" ]] && grep -q '^name: admin' "$STATE_DIR/first-login.txt" 2>/dev/null; then
         "$BIN_LINK" --drop-user admin >/dev/null 2>&1 || true
         rm -f "$STATE_DIR/first-login.txt"
@@ -580,16 +605,42 @@ install_claude() {
 # ---------------------------------------------------------------------------
 # Doing it
 # ---------------------------------------------------------------------------
-if [[ -z "$SERVER_NAME" ]]; then
-    if [[ -f "$NGINX_CONF" ]]; then
-        SERVER_NAME="$(awk '/server_name/{gsub(";","",$2); print $2; exit}' "$NGINX_CONF")"
+RUN_AS=""
+if [[ -z "$SERVER_NAME" && -f "$NGINX_CONF" ]]; then
+    SERVER_NAME="$(awk '/server_name/{gsub(";","",$2); print $2; exit}' "$NGINX_CONF")"
+    [[ "$SERVER_NAME" == "ai.example.local" ]] && SERVER_NAME=""
+fi
+[[ -n "$SERVER_NAME" ]] || SERVER_NAME="$(hostname -f 2>/dev/null || hostname)"
+if [[ -z "$DO_UPGRADE" ]]; then
+    if [[ -z "$ASSUME_YES" && -t 0 ]]; then
+        step "A few questions"
+        note "Enter to keep what is in brackets."
     fi
-    [[ -n "$SERVER_NAME" && "$SERVER_NAME" != "ai.example.local" ]] || SERVER_NAME="$(hostname -f 2>/dev/null || hostname)"
-    [[ -n "$DO_UPGRADE" ]] || ask SERVER_NAME "The pages' host name" "$SERVER_NAME"
+    ask SERVER_NAME "The pages' hostname (FQDN)"
+    if [[ ! -f "$NGINX_CONF" || -n "$REWRITE_NGINX" ]]; then
+        ask ALLOW "Who may reach the pages (CIDRs, comma between; all = everybody)" "192.168.0.0/16,172.16.0.0/12,10.0.0.0/8"
+    fi
+    ask ADMIN_USER "The first account of the pages"
+    [[ -n "$ADMIN_PASSWORD" ]] || ask_secret ADMIN_PASSWORD "Its password (empty = make one and print it)"
+    ask RUN_AS "The Linux account the terminals run as" "root"
+    if [[ -z "$WITH_CLAUDE" ]]; then
+        if command -v claude >/dev/null 2>&1 || [[ -x /root/.local/bin/claude ]]; then
+            WITH_CLAUDE="no"
+        elif confirm "Install Claude Code for root now (Anthropic's installer, claude.ai/install.sh)?" y; then
+            WITH_CLAUDE="yes"
+        else
+            WITH_CLAUDE="no"
+        fi
+    fi
 fi
 [[ "$SERVER_NAME" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || fail "$SERVER_NAME is not a host name"
-if [[ -z "$DO_UPGRADE" && -z "$ALLOW" && ! -f "$NGINX_CONF" ]]; then
-    ask ALLOW "Who may reach the pages (networks, comma between; all = everybody)" "192.168.0.0/16,172.16.0.0/12,10.0.0.0/8"
+[[ "$ADMIN_USER" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$ ]] || fail "$ADMIN_USER is not a name for an account"
+if [[ -n "$RUN_AS" ]] && ! id "$RUN_AS" >/dev/null 2>&1; then
+    if [[ "$RUN_AS" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && confirm "There is no Linux account $RUN_AS - make it (useradd -m)?" y; then
+        run useradd -m -s /bin/bash "$RUN_AS"
+    else
+        fail "there is no Linux account $RUN_AS"
+    fi
 fi
 
 FIRST_PW=""
@@ -599,6 +650,9 @@ install_pages
 [[ -z "$DO_UPGRADE" ]] && open_firewall
 start_all
 first_account
+if [[ -n "$RUN_AS" && "$RUN_AS" != "root" && -z "$DRY_RUN" ]]; then
+    "$BIN_LINK" --setting default_run_as "$RUN_AS" >/dev/null && good "the terminals run as $RUN_AS (Settings - Claude Code)"
+fi
 install_claude
 
 step "Done: ai $AI_VERSION"

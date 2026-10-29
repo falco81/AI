@@ -72,7 +72,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4266,6 +4266,7 @@ class Daemon:
                 self.trials.tick()
                 osup_tick(self)
                 if n % 4 == 0:
+                    config_rebuild(self.store)          # a setting changed on the command line
                     self.auth.tidy()
                     self.terms.sync()
                 if n % 40 == 1:

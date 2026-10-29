@@ -3,8 +3,8 @@
 ## The short version
 
 ```bash
-tar xzf ai-1.0.0.tar.gz
-cd ai-1.0.0
+tar xzf ai-1.0.1.tar.gz
+cd ai-1.0.1
 sudo ./install.sh --server-name ai.example.local
 ```
 

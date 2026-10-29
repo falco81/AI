@@ -3,6 +3,18 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.1 — 29 October 2026
+
+**install.sh asks, as otp's does**
+- A fresh install asks *A few questions* before it does anything, Enter keeping
+  what is in brackets: the pages' hostname (FQDN), who may reach the pages, the
+  first account and its password (typed twice, unseen; empty = one made and
+  printed), the Linux account the terminals run as (made when it is not there),
+  and whether to install Claude Code for root. The hostname was taken from the
+  machine without asking. `--yes` takes what is in brackets, as before.
+- A setting changed on the command line (`ai --setting`) is taken by the
+  running daemon within a minute.
+
 ## 1.0.0 — 29 October 2026
 
 **The first version: Claude Code on the server, from the browser**
