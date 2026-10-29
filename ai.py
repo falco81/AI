@@ -53,6 +53,7 @@ import pwd
 import re
 import secrets
 import select
+import fnmatch
 import shlex
 import shutil
 import signal
@@ -2807,20 +2808,11 @@ DB_SCHEMA = [
         created {N}, ended {N}, last_screen {B}, exit_status {I})'''),
     ('fails', '''CREATE TABLE IF NOT EXISTS fails (
         k {K} PRIMARY KEY, n {I}, first {N}, until_ts {N})'''),
-    ('outbox', '''CREATE TABLE IF NOT EXISTS outbox (
-        id {ID}, at {N}, kind {K}, dest {T}, what {T}, subject {T}, state {K}, said {T},
-        who {K}, secs {N})'''),
-    ('mailq', '''CREATE TABLE IF NOT EXISTS mailq (
-        id {ID}, qid {K} NOT NULL UNIQUE, at {N}, kind {K}, dest {T}, subject {T}, state {K},
-        tries {I}, next_at {N}, last_at {N}, said {T}, who {K}, purpose {K}, expires {N},
-        body {B})'''),
 ]
 DB_INDEXES = [
     'CREATE INDEX IF NOT EXISTS events_at ON events (at)',
     'CREATE INDEX IF NOT EXISTS events_kind_at ON events (kind, at)',
-    'CREATE INDEX IF NOT EXISTS outbox_at ON outbox (at)',
     'CREATE INDEX IF NOT EXISTS sessions_name ON sessions (name)',
-    'CREATE INDEX IF NOT EXISTS mailq_state ON mailq (state, next_at)',
 ]
 DB_TYPES = {
     'sqlite': {'ID': 'INTEGER PRIMARY KEY AUTOINCREMENT', 'K': 'TEXT', 'T': 'TEXT',
@@ -2832,7 +2824,7 @@ DB_TYPES = {
                  'N': 'DOUBLE PRECISION', 'I': 'BIGINT'},
 }
 DB_TABLES = [name for name, _ in DB_SCHEMA]
-DB_ID_TABLES = ('events', 'outbox', 'mailq')
+DB_ID_TABLES = ('events',)
 
 
 class RawSql(str):
@@ -3448,8 +3440,6 @@ class Store:
         days = int(CONFIG.get('retain_events_days') or 0)
         if days > 0:
             said['events'] = self.delete_older('events', time.time() - days * 86400)
-        keep = int(CONFIG.get('mail_keep_days') or 14)
-        said['outbox'] = self.delete_older('outbox', time.time() - keep * 86400)
         return said
 
     # -- meta and settings --------------------------------------------------
@@ -7674,6 +7664,7 @@ def status_view(c):
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
         'upgrade_state': st.get('state') if st else '', 'started': d.started, 'now': time.time(),
         'php': php_state() if c.who['role'] == 'admin' else None,
+        'mailq': mailq_counted(d.store) if c.who['role'] == 'admin' else {},
     }
 
 
@@ -7917,173 +7908,1096 @@ def code_hash(salt, code):
                     hashlib.sha256).hexdigest()
 
 
-MAIL_WORDS = {
-    'cs': {'code_subject': 'Kód pro přihlášení: {code}',
-           'code_body': 'Dobrý den,\n\nkód pro přihlášení na stránky {site} je\n\n    {code}\n\nPlatí {minutes} min. '
-                        'Pokud jste se nepřihlašovali, někdo zná vaše heslo: změňte ho.\n',
-           'verify_subject': 'Ověření adresy: {code}',
-           'verify_body': 'Dobrý den,\n\nkód, kterým potvrdíte tuto adresu pro druhý krok přihlášení na '
-                          'stránky {site}, je\n\n    {code}\n\nPlatí {minutes} min.\n',
-           'test_subject': 'Zkušební e-mail z {site}',
-           'test_body': 'Tento e-mail poslaly stránky {site} na zkoušku. Odesílání pošty funguje.\n',
-           'notice_subject': '{site}: {n} {what}',
-           'notice_body': 'Stránky {site} hlásí:\n\n{lines}\n\nVše je v Událostech: {url}\n'},
-    'en': {'code_subject': 'Your sign-in code: {code}',
-           'code_body': 'Hello,\n\nthe code to sign in to {site} is\n\n    {code}\n\nIt is good for {minutes} min. '
-                        'If you did not sign in, somebody knows your password: change it.\n',
-           'verify_subject': 'Checking the address: {code}',
-           'verify_body': 'Hello,\n\nthe code that proves this address for the second step of signing in to '
-                          '{site} is\n\n    {code}\n\nIt is good for {minutes} min.\n',
-           'test_subject': 'A test mail from {site}',
-           'test_body': 'This mail was sent by {site} as a test. Sending mail works.\n',
-           'notice_subject': '{site}: {n} {what}',
-           'notice_body': '{site} says:\n\n{lines}\n\nEverything is in Events: {url}\n'},
+# ---- the texts of the codes (otp's CODE_TEXTS, the words of these pages) ----------------
+# The second step of signing in to these pages, and checking the address or
+# the number it goes to: the mail (HTML with a plain-text part, or plain text
+# only - code_mail_fmt) and the SMS, in Czech and English. Changed on the
+# pages under Settings → Message texts, as otp's.
+CODE_PURPOSES = {
+    'signin': {'p': '', 'subject': 'mail_subject', 'body': 'mail_body', 'sms': 'sms',
+               'warn': True, 'note': 'h_warn', 'queue': 'code'},
+    'verify': {'p': 'v_', 'subject': 'verify_subject', 'body': 'verify_body', 'sms': 'sms_verify',
+               'warn': False, 'note': 'h_v_note', 'queue': 'verify'},
 }
+
+
+def code_purpose(purpose):
+    return CODE_PURPOSES.get(purpose) or CODE_PURPOSES['verify']
+
+
+CODE_TEXTS = {
+    'cs': {
+        'mail_subject': 'Kód pro přihlášení: {code}',
+        'mail_body': ('Váš kód pro přihlášení na stránky {site} je\n\n    {code}\n\n'
+                      'Platí {minutes} min a jen jednou. Pokud jste se právě nepřihlašovali, '
+                      'kód nikomu nesdělujte a změňte si heslo - někdo ho zná.\n\n-- \n{site}'),
+        'verify_subject': 'Ověření adresy: {code}',
+        'verify_body': ('Kód pro ověření této adresy pro přihlašování na stránky {site} je\n\n'
+                        '    {code}\n\nZadejte ho na stránce, kde si nastavujete druhý krok '
+                        'přihlášení. Platí {minutes} min.\n\nPokud jste o nic nežádali, zprávu '
+                        'smažte.\n\n-- \n{site}'),
+        'sms': '{code} je váš kód pro přihlášení ({site}). Platí {minutes} min. Nikomu ho '
+               'nesdělujte.',
+        'sms_verify': '{code} je kód pro ověření tohoto čísla ({site}).',
+        'h_title': 'Druhý krok přihlášení',
+        'h_hello': 'Dobrý den, {name},', 'h_hello_anon': 'Dobrý den,',
+        'h_lede': 'váš kód pro přihlášení k účtu <b>{account}</b>:',
+        'h_lede_anon': 'váš kód pro přihlášení:',
+        'h_facts': 'Zadejte ho na přihlašovací stránce. Platí {minutes} min a jen jednou.',
+        'h_warn': 'Pokud jste se právě nepřihlašovali, kód nikomu nesdělujte a změňte si heslo '
+                  '– někdo ho zná.',
+        'h_foot': 'Posláno automaticky z {site}. Na tento e-mail neodpovídejte.',
+        'h_v_title': 'Druhý krok přihlášení',
+        'h_v_hello': 'Dobrý den, {name},', 'h_v_hello_anon': 'Dobrý den,',
+        'h_v_lede': 'kód pro ověření této adresy pro přihlašování k účtu <b>{account}</b>:',
+        'h_v_lede_anon': 'kód pro ověření této adresy pro přihlašování:',
+        'h_v_facts': 'Zadejte ho na stránce, kde si nastavujete druhý krok přihlášení. Platí '
+                     '{minutes} min.',
+        'h_v_note': 'Pokud jste o nic nežádali, e-mail smažte – bez kódu se nic nezmění.',
+        'h_v_foot': 'Posláno automaticky z {site}. Na tento e-mail neodpovídejte.',
+    },
+    'en': {
+        'mail_subject': 'Your sign-in code: {code}',
+        'mail_body': ('Your code to sign in to {site} is\n\n    {code}\n\nIt is good for '
+                      '{minutes} min and once. If you are not signing in just now, tell nobody '
+                      'the code and change your password - somebody knows it.\n\n-- \n{site}'),
+        'verify_subject': 'Checking this address: {code}',
+        'verify_body': ('The code to check this address for signing in to {site} is\n\n'
+                        '    {code}\n\nType it on the page where you are setting up the second '
+                        'step. It is good for {minutes} min.\n\nIf you asked for nothing, delete '
+                        'this mail.\n\n-- \n{site}'),
+        'sms': '{code} is your sign-in code ({site}). Good for {minutes} min. Tell nobody.',
+        'sms_verify': '{code} is the code to check this number ({site}).',
+        'h_title': 'Second step of signing in',
+        'h_hello': 'Hello {name},', 'h_hello_anon': 'Hello,',
+        'h_lede': 'your code to sign in as <b>{account}</b>:',
+        'h_lede_anon': 'your code to sign in:',
+        'h_facts': 'Type it on the sign-in page. It is good for {minutes} min and once.',
+        'h_warn': 'If you are not signing in just now, tell nobody the code and change your '
+                  'password - somebody knows it.',
+        'h_foot': 'Sent automatically by {site}. Do not reply to this mail.',
+        'h_v_title': 'Second step of signing in',
+        'h_v_hello': 'Hello {name},', 'h_v_hello_anon': 'Hello,',
+        'h_v_lede': 'the code to check this address for signing in as <b>{account}</b>:',
+        'h_v_lede_anon': 'the code to check this address for signing in:',
+        'h_v_facts': 'Type it on the page where you are setting up the second step. It is good '
+                     'for {minutes} min.',
+        'h_v_note': 'If you asked for nothing, delete this mail - without the code nothing '
+                    'changes.',
+        'h_v_foot': 'Sent automatically by {site}. Do not reply to this mail.',
+    },
+}
+
+
+def code_lang():
+    lang = str(CONFIG.get('code_lang') or CONFIG.get('mail_lang') or 'cs')
+    return lang if lang in CODE_TEXTS else 'cs'
 
 
 def mail_lang(lang=None):
     lang = lang or CONFIG.get('mail_lang') or 'cs'
-    return lang if lang in MAIL_WORDS else 'en'
+    return lang if lang in CODE_TEXTS else 'en'
 
 
 def site_words():
     return str(CONFIG.get('site_name') or host_name())
 
 
-def mail_message(to, subject, body):
-    from email.message import EmailMessage
+def code_words(key, lang=None, w=None, **kw):
+    """One of the texts of codes, as Settings → Message texts has it, its
+    {words} filled in."""
+    if w is None:
+        w = texts_for('code', lang if lang in CODE_TEXTS else code_lang())
+    kw.setdefault('site', site_words())
+    kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
+    return w[key].format(**kw)
+
+
+def mail_headers(msg, to, subject):
     from email.utils import formataddr, formatdate, make_msgid
-    msg = EmailMessage()
-    sender = str(CONFIG.get('mail_from') or '')
+    sender = str(CONFIG.get('mail_from') or '').strip()
     if not sender:
-        raise MailError('no From address is set - Settings → Mail')
-    msg['From'] = formataddr((str(CONFIG.get('mail_from_name') or 'ai'), sender))
-    msg['To'] = ', '.join(to)
-    if CONFIG.get('mail_reply_to'):
-        msg['Reply-To'] = str(CONFIG['mail_reply_to'])
+        raise MailError('no sender address is set - Settings → Mail → From (address)')
     msg['Subject'] = subject
+    msg['From'] = formataddr((str(CONFIG.get('mail_from_name') or site_words()), sender))
+    msg['To'] = ', '.join(to) if isinstance(to, (list, tuple)) else to
+    if CONFIG.get('mail_reply_to'):
+        msg['Reply-To'] = str(CONFIG.get('mail_reply_to'))
     msg['Date'] = formatdate(localtime=True)
-    msg['Message-ID'] = make_msgid(domain=sender.rsplit('@', 1)[-1])
+    msg['Message-ID'] = make_msgid(domain=sender.rsplit('@', 1)[-1] or None)
     msg['Auto-Submitted'] = 'auto-generated'
+    return msg
+
+
+def mail_message(to, subject, body):
+    """A mail of plain text (the notices)."""
+    from email.message import EmailMessage
+    msg = mail_headers(EmailMessage(), to, subject)
     msg.set_content(body)
     return msg
 
 
-TEXT_KEYS = ('code_subject', 'code_body', 'verify_subject', 'verify_body', 'test_subject', 'test_body',
-             'notice_subject', 'notice_body', 'sms_code', 'sms_verify', 'sms_test')
-TEXT_FIELDS = {'code': ('site', 'code', 'minutes'), 'verify': ('site', 'code', 'minutes'), 'test': ('site',),
-               'notice': ('site', 'n', 'what', 'lines', 'url'), 'sms_code': ('site', 'code', 'minutes'),
-               'sms_verify': ('site', 'code', 'minutes'), 'sms_test': ('site',)}
+def test_mail(to, lang='cs'):
+    from email.message import EmailMessage
+    site = site_words()
+    msg = mail_headers(EmailMessage(), to, ('Zkušební zpráva z %s' if lang == 'cs'
+                                            else 'A test message from %s') % site)
+    msg.set_content(('Tato zpráva ověřuje, že %s umí odesílat poštu. Není třeba nic dělat.'
+                     if lang == 'cs' else 'This message checks that %s can send mail. '
+                     'Nothing needs doing.') % site)
+    return msg
 
 
-def texts_saved(store):
-    got = store.meta_json('texts', {}) if store else {}
-    return got if isinstance(got, dict) else {}
-
-
-def text_default(lang, key):
-    if key.startswith('sms_'):
-        return SMS_WORDS[lang][key[4:]]
-    return MAIL_WORDS[lang][key]
-
-
-def text_of(lang, key):
-    own = (texts_saved(STORE_NOW.get('store')).get(lang) or {}).get(key)
-    return own if isinstance(own, str) and own.strip() else text_default(lang, key)
-
-
-def text_fields(key):
-    base = key if key.startswith('sms_') else key.rsplit('_', 1)[0]
-    return TEXT_FIELDS[base]
-
-
-def text_fill(text, fields, **kw):
-    """{words} filled in - only the ones the text may have; anything else
-    written in braces is left as it is (a text never breaks a mail)."""
-    return re.sub(r'\{(\w+)\}', lambda m: str(kw[m.group(1)]) if m.group(1) in fields and m.group(1) in kw
-                  else m.group(0), text)
-
-
-def mail_words(key, lang=None, **kw):
-    lang = mail_lang(lang)
-    kw.setdefault('site', site_words())
-    kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
-    f = TEXT_FIELDS[key]
-    return (text_fill(text_of(lang, key + '_subject'), f, **kw).replace('\n', ' '),
-            text_fill(text_of(lang, key + '_body'), f, **kw))
-
-
-SMS_WORDS = {'cs': {'code': '{site}: kod pro prihlaseni {code} (plati {minutes} min)',
-                    'verify': '{site}: kod k overeni cisla {code} (plati {minutes} min)',
-                    'test': '{site}: zkusebni SMS - odesilani funguje'},
-             'en': {'code': '{site}: your sign-in code {code} (good for {minutes} min)',
-                    'verify': '{site}: the code to check this number {code} (good for {minutes} min)',
-                    'test': '{site}: a test SMS - sending works'}}
-
-
-def sms_words(key, lang=None, **kw):
-    kw.setdefault('site', site_words())
-    kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
-    text = text_fill(text_of(mail_lang(lang), 'sms_' + key), TEXT_FIELDS['sms_' + key], **kw)
-    return sms_plain(text) if CONFIG.get('sms_plain', True) else text
-
-
-def outbox_add(store, kind, dest, what, subject, state, said, who='', secs=0.0):
-    """One line of Outgoing mail and SMS: where it went, what it was, how it
-    went - never what it said (a code goes in no list)."""
-    try:
-        store.x('INSERT INTO outbox(at,kind,dest,what,subject,state,said,who,secs) VALUES(?,?,?,?,?,?,?,?,?)',
-                (time.time(), kind, str(dest)[:300], what, str(subject or '')[:300], state, str(said or '')[:600],
-                 who or '', round(secs, 2)))
-    except Exception:                                   # noqa: BLE001
+def code_mail_html(code, purpose, lang, name='', display='', w=None):
+    """The mail of a code (otp's): the blue band, the white card, the code in
+    a grey box, the warning in orange - tables and styles on each element, as
+    every mail program shows them alike. Its words as Settings → Message
+    texts has them, or `w` - the editor's, not yet saved."""
+    lang = lang if lang in CODE_TEXTS else code_lang()
+    if w is None:
+        w = texts_for('code', lang)
+    h = lambda t: html.escape(str(t or ''), quote=True)
+    site = site_words()
+    issuer = str(CONFIG.get('totp_issuer') or '') or site
+    minutes = max(1, int(CONFIG.get('code_ttl_s') or 300) // 60)
+    acc = ('<span style="white-space:nowrap">%s</span>' % h(name).replace('@', '@&#8205;')
+           if name else '')
+    font = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+    rows = []
+    cp = code_purpose(purpose)
+    v = cp['p']
+    hello = (w['h_%shello' % v].format(name=h(display)) if display
+             else w['h_%shello_anon' % v].format())
+    if hello.strip():
+        rows.append('<p style="margin:0 0 6px;font-size:16px;color:#111827">%s</p>' % hello)
+    lede = (w['h_%slede' % v].format(account=acc) if name
+            else w['h_%slede_anon' % v].format())
+    facts, note, warn = w['h_%sfacts' % v], w[cp['note']], cp['warn']
+    if lede.strip():
+        rows.append('<p style="margin:0 0 18px;font-size:15px;line-height:1.55;color:#374151">'
+                    '%s</p>' % lede)
+    spaced = ' '.join(code[i:i + 3] for i in range(0, len(code), 3)) if len(code) == 6 else code
+    rows.append('<table role="presentation" width="100%%" cellspacing="0" cellpadding="0" '
+                'border="0" style="margin:0 0 10px"><tr><td align="center">'
+                '<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>'
+                '<td align="center" bgcolor="#f3f4f6" style="padding:16px 30px;background:#f3f4f6;'
+                'border:1px solid #e5e7eb;border-radius:12px;font-family:Consolas,Menlo,'
+                '\'Courier New\',monospace;font-size:34px;font-weight:700;letter-spacing:6px;'
+                'color:#111827;white-space:nowrap">%s</td></tr></table></td></tr></table>' % h(spaced))
+    if facts.strip():
+        rows.append('<p style="margin:0 0 22px;font-size:13.5px;line-height:1.5;color:#6b7280;'
+                    'text-align:center;%s">%s</p>' % (font, facts.format(minutes=minutes)))
+    else:
+        rows.append('<div style="height:12px;line-height:12px;font-size:1px">&nbsp;</div>')
+    note = note.format()
+    if not note.strip():
         pass
+    elif warn:
+        rows.append('<table role="presentation" width="100%%" cellspacing="0" cellpadding="0" '
+                    'border="0"><tr><td bgcolor="#fff7ed" style="padding:12px 16px;'
+                    'background:#fff7ed;border-left:4px solid #f59e0b;font-size:13px;'
+                    'line-height:1.5;color:#7c2d12;%s">%s</td></tr></table>' % (font, note))
+    else:
+        rows.append('<table role="presentation" width="100%%" cellspacing="0" cellpadding="0" '
+                    'border="0"><tr><td bgcolor="#eff6ff" style="padding:12px 16px;'
+                    'background:#eff6ff;border-left:4px solid #2563eb;font-size:13px;'
+                    'line-height:1.5;color:#1e3a8a;%s">%s</td></tr></table>' % (font, note))
+    subject = w[cp['subject']].format(code=code, site=site, minutes=minutes)
+    title = w['h_%stitle' % v].format(site=site)
+    foot = w['h_%sfoot' % v].format(site=h(site))
+    return ('<!doctype html><html lang="%s" xmlns:v="urn:schemas-microsoft-com:vml" '
+            'xmlns:o="urn:schemas-microsoft-com:office:office"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title>'
+            '<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch>'
+            '</o:OfficeDocumentSettings></xml><![endif]--></head>'
+            '<body style="margin:0;padding:0;background:#f3f4f6;%s">'
+            '<table role="presentation" width="100%%" cellspacing="0" cellpadding="0" '
+            'border="0" bgcolor="#f3f4f6" style="background:#f3f4f6"><tr><td align="center" '
+            'style="padding:28px 12px">'
+            '<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" '
+            'bgcolor="#ffffff" style="max-width:560px;width:100%%;background:#ffffff;'
+            'border-radius:14px;overflow:hidden;border:1px solid #e5e7eb">'
+            '<tr><td bgcolor="#1e3a8a" style="background:#1e3a8a;padding:20px 28px;'
+            'color:#ffffff;%s">'
+            '<p style="margin:0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;'
+            'color:#c7d2fe">%s</p><p style="margin:4px 0 0;font-size:20px;font-weight:700;'
+            'color:#ffffff">%s</p></td></tr>'
+            '<tr><td style="padding:26px 28px;%s">%s</td></tr>'
+            '<tr><td style="padding:14px 28px 22px;font-size:12px;color:#9ca3af;%s;'
+            'border-top:1px solid #f3f4f6">%s</td></tr></table></td></tr></table></body></html>'
+            % (lang, h(subject), font, font, h(issuer), h(title), font, ''.join(rows),
+               font, foot))
 
 
-def send_mail(store, to, subject, body, what, who=''):
-    """A mail of these pages sent now, and written down in Outgoing mail."""
-    t0 = time.time()
-    try:
-        steps = mail_send(store, mail_message(to, subject, body), to)
-    except MailError as e:
-        outbox_add(store, 'mail', ', '.join(to), what, subject, 'failed', str(e), who, time.time() - t0)
-        raise
-    ok = [s for s in steps if s.get('ok')]
-    outbox_add(store, 'mail', ', '.join(to), what, subject, 'sent', ok[-1]['said'] if ok else 'sent', who,
-               time.time() - t0)
-    return steps
+def code_message(kind, to, code, purpose='signin', lang=None, name='', display='', fmt=None,
+                 w=None):
+    """The mail or the SMS text of a code. `w`: the words to use instead of
+    those saved - the message texts editor's test."""
+    from email.message import EmailMessage
+    cp = code_purpose(purpose)
+    if kind == 'sms':
+        return code_words(cp['sms'], lang=lang, w=w, code=code)
+    msg = mail_headers(EmailMessage(), to, code_words(cp['subject'], lang=lang, w=w, code=code))
+    msg.set_content(code_words(cp['body'], lang=lang, w=w, code=code))
+    if (fmt or ('text' if CONFIG.get('code_mail_fmt') == 'text' else 'html')) != 'text':
+        msg.add_alternative(code_mail_html(code, purpose, lang, name, display, w=w),
+                            subtype='html')
+    return msg
 
 
+# ---- the notices (ai's own: what Events marks as a warning or a failure) -----------------
+NOTICE_TEXTS = {
+    'cs': {'subject': '{site}: {n} {what}', 'body': 'Stránky {site} hlásí:\n\n{lines}\n\nVše je v Událostech: {url}\n',
+           'what': ('upozornění', 'upozornění', 'upozornění')},
+    'en': {'subject': '{site}: {n} {what}', 'body': '{site} says:\n\n{lines}\n\nEverything is in Events: {url}\n',
+           'what': ('notice', 'notices', 'notices')},
+}
+
+
+# ---- an SMS ----------------------------------------------------------------------------
 def send_sms(store, to, text, what, who=''):
-    t0 = time.time()
+    """An SMS sent now; what the gateway said, written into the events - never
+    what it held."""
     STORE_NOW['store'] = store
     try:
         said = sms_send(to, text)
     except SmsError as e:
-        outbox_add(store, 'sms', dest_masked('sms', to), what, '', 'failed', str(e), who, time.time() - t0)
+        store.add_event('sms', 'the SMS to %s (%s) was not sent: %s' % (dest_masked('sms', to), what, e),
+                        'warn', who=who or None)
         raise
-    outbox_add(store, 'sms', dest_masked('sms', to), what, '', 'sent', said, who, time.time() - t0)
+    store.add_event('sms', 'an SMS to %s (%s): %s' % (dest_masked('sms', to), what, str(said or 'sent')[:300]),
+                    who=who or None)
     return said
 
 
-def code_send(store, kind, dest, code, purpose='signin', lang=None):
-    what = 'a code to check the address' if purpose == 'verify' else 'a sign-in code'
-    if kind == 'sms':
+# ---------------------------------------------------------------------------
+# The outgoing mail (otp's, 1.0.95)
+# ---------------------------------------------------------------------------
+# Every mail goes through here: tried at once, and what the receiving side
+# did not take yet - greylisting's "try again later", a server away, a full
+# mailbox - waits and is tried again, for mail_retry_hours (a code to sign
+# in with only while it is good). Kept in the database as rows of meta under
+# keys of their own; the pages can send one again or take it away. What a
+# mail holds - a code - is sealed while it waits and thrown away once it went.
+MAILQ_PREFIX = 'mailq:'
+MAILB_PREFIX = 'mailb:'
+MAILQ_DELAYS = (60, 120, 300, 600, 900, 1800)           # then every hour
+MAILQ_CODE_DELAYS = (30, 60)                            # then every minute
+MAILQ_KIND_WORDS = {'code': 'a code to sign in', 'verify': 'a code to check an address',
+                    'test': 'a test', 'notice': 'notices', 'other': 'a mail'}
+MAILQ_STATES = ('sending', 'waiting', 'sent', 'failed', 'expired')
+MAILQ_LOCK = threading.Lock()
+
+
+def mailq_new_id():
+    return '%013d-%s' % (int(time.time() * 1000), secrets.token_hex(4))
+
+
+def mailq_read(store, qid):
+    raw = store.get_meta(MAILQ_PREFIX + qid)
+    if not raw:
+        return None, None
+    try:
+        return json.loads(raw), raw
+    except ValueError:
+        return None, None
+
+
+def mailq_cas(store, qid, raw, rec):
+    """Written only over what was read: of two writers, one wins."""
+    return bool(store.db.run('UPDATE meta SET v = ? WHERE k = ? AND v = ?',
+                             (json.dumps(rec), MAILQ_PREFIX + qid, raw)))
+
+
+def mailq_body(store, qid):
+    sealed = store.get_meta(MAILB_PREFIX + qid)
+    if not sealed:
+        return None
+    raw = unseal_secret(sealed, 'mailq:' + qid)
+    if not raw:
+        return None
+    try:
+        import email
+        import email.policy
+        return email.message_from_bytes(base64.b64decode(raw), policy=email.policy.default)
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def mailq_body_drop(store, qid):
+    store.db.run('DELETE FROM meta WHERE k = ?', (MAILB_PREFIX + qid,))
+
+
+def mailq_delay(rec):
+    n = int(rec.get('tries') or 1)
+    row = MAILQ_CODE_DELAYS if rec.get('kind') in ('code', 'verify') else MAILQ_DELAYS
+    last = 60 if row is MAILQ_CODE_DELAYS else 3600
+    return row[n - 1] if 0 < n <= len(row) else last
+
+
+def mailq_subject_kept(subject, kind):
+    """The subject as the outgoing-mail list shows it: a code's mail has the
+    code in its subject - kept as dots there. The mail itself, sealed, still
+    has it."""
+    said = str(subject or '')[:300]
+    if kind in ('code', 'verify'):
+        said = re.sub(r'\d{4,10}', '••••••', said)
+    return said
+
+
+def mail_deliver(store, msg, to, kind='other', name='', by='', purpose='', expires=None):
+    """A mail sent now, and kept for another try when it was not taken.
+    Returns the steps; raises MailError (with .queued = the state it is left
+    in: waiting, failed) when it did not go now."""
+    if (CONFIG.get('mail_mode') or 'off') == 'off':
+        raise MailError('sending mail is switched off - Settings → Mail', [])
+    to = [str(x) for x in (to or [])]
+    qid = mailq_new_id()
+    now = time.time()
+    rec = {'qid': qid, 'created': now, 'node': node_name(), 'kind': kind,
+           'purpose': str(purpose or ''), 'name': str(name or ''), 'by': str(by or ''),
+           'to': to, 'subject': mailq_subject_kept(msg.get('Subject'), kind),
+           'size': 0, 'state': 'sending', 'tries': 0, 'last_try': now, 'next_at': 0,
+           'expires': float(expires) if expires else
+           now + 3600 * int(CONFIG.get('mail_retry_hours') or 24),
+           'history': [], 'said': '', 'steps': []}
+    data = msg.as_bytes()
+    rec['size'] = len(data)
+    store.set_meta(MAILB_PREFIX + qid, seal_secret(base64.b64encode(data).decode('ascii'),
+                                                   'mailq:' + qid))
+    store.set_meta(MAILQ_PREFIX + qid, json.dumps(rec))
+    return mailq_attempt(store, qid, msg=msg, raise_err=True, claimed=True)
+
+
+def mailq_attempt(store, qid, msg=None, raise_err=False, claimed=False):
+    rec, raw = mailq_read(store, qid)
+    if not rec:
+        return None
+    now = time.time()
+    if not claimed:
+        if rec.get('state') not in ('waiting',):
+            return None
+        rec.update(state='sending', last_try=now, node=node_name())
+        if not mailq_cas(store, qid, raw, rec):
+            return None                 # taken by another meanwhile
+        raw = json.dumps(rec)
+    if msg is None:
+        msg = mailq_body(store, qid)
+    if msg is None:
+        rec.update(state='expired', said='what the mail held is gone - it cannot be sent')
+        store.set_meta(MAILQ_PREFIX + qid, json.dumps(rec))
+        return None
+    err = None
+    try:
+        steps = mail_send(store, msg, rec.get('to') or [])
+    except MailError as e:
+        err, steps = e, e.steps
+    except Exception as e:                              # noqa: BLE001
+        err, steps = MailError(str(e) or e.__class__.__name__, []), []
+    rec['tries'] = int(rec.get('tries') or 0) + 1
+    rec['last_try'] = now
+    rec['steps'] = steps[-12:]
+    rec['history'] = (rec.get('history') or [])[-19:] + [{
+        'at': now, 'node': node_name(), 'ok': err is None,
+        'said': (str(err) if err else (([s for s in steps if s.get('ok')] or [{}])[-1]
+                                       .get('said') or 'sent'))[:400]}]
+    who = ', '.join(rec.get('to') or [])
+    if err is None:
+        rec.update(state='sent', sent_at=now, said=rec['history'][-1]['said'], next_at=0)
+        store.set_meta(MAILQ_PREFIX + qid, json.dumps(rec))
+        mailq_body_drop(store, qid)
+        if rec['tries'] > 1:
+            store.add_event('mail', 'the mail to %s (%s) went on try %d' % (
+                who, MAILQ_KIND_WORDS.get(rec.get('kind'), 'a mail'), rec['tries']))
+        return steps
+    rec['said'] = str(err)[:400]
+    if err.permanent:
+        rec['state'] = 'failed'
+        store.add_event('mail', 'the mail to %s (%s) was refused for good: %s' % (
+            who, MAILQ_KIND_WORDS.get(rec.get('kind'), 'a mail'), str(err)[:300]), 'error')
+    elif now >= float(rec.get('expires') or 0):
+        rec['state'] = 'expired'
+        store.add_event('mail', 'the mail to %s (%s) was given up after %d tries: %s' % (
+            who, MAILQ_KIND_WORDS.get(rec.get('kind'), 'a mail'), rec['tries'],
+            str(err)[:300]), 'error')
+    else:
+        rec['state'] = 'waiting'
+        rec['next_at'] = min(now + mailq_delay(rec), float(rec.get('expires') or now))
+        if rec['tries'] == 1:
+            store.add_event('mail', 'the mail to %s (%s) did not go yet - tried again from '
+                            'the outgoing mail: %s' % (
+                                who, MAILQ_KIND_WORDS.get(rec.get('kind'), 'a mail'),
+                                str(err)[:300]), 'warn')
+    store.set_meta(MAILQ_PREFIX + qid, json.dumps(rec))
+    if rec['state'] in ('expired',):
+        mailq_body_drop(store, qid)
+    err.queued = rec['state']
+    err.next_at = rec.get('next_at')
+    err.qid = qid
+    if raise_err:
+        raise err
+    return None
+
+
+def mailq_all(store, open_only=False):
+    """Every mail remembered - or, `open_only`, those still to do something
+    with."""
+    out = []
+    sql = "SELECT k, v FROM meta WHERE k LIKE 'mailq:%'"
+    if open_only:
+        sql += (" AND (v LIKE '%\"state\": \"waiting\"%' OR v LIKE '%\"state\": \"sending\"%'"
+                " OR v LIKE '%\"state\": \"failed\"%')")
+    for r in store.db.rows(sql):
         try:
-            said = send_sms(store, dest, sms_words('verify' if purpose == 'verify' else 'code', lang, code=code), what)
-        except SmsError as e:
-            raise ValueError(str(e).replace(code, '******'))
-        return str(said or 'sent').replace(code, '******')
-    if kind != 'mail':
-        raise ValueError('codes go by mail or SMS only')
-    subject, body = mail_words('verify' if purpose == 'verify' else 'code', lang, code=code)
-    steps = send_mail(store, [dest], subject.replace(code, '******'), body, what)
-    ok = [s for s in steps if s.get('ok')]
-    return (ok[-1]['said'] if ok else 'sent').replace(code, '******')
+            rec = json.loads(r['v'] or '{}')
+        except ValueError:
+            continue
+        rec['qid'] = r['k'][len(MAILQ_PREFIX):]
+        out.append(rec)
+    out.sort(key=lambda x: -float(x.get('created') or 0))
+    return out
+
+
+MAILQ_FULL_AT = [0.0]
+
+
+def mailq_tick(store):
+    """What the outgoing mail does every few seconds."""
+    if not MAILQ_LOCK.acquire(False):
+        return
+    try:
+        now = time.time()
+        keep_s = 86400 * int(CONFIG.get('mail_keep_days') or 14)
+        sent_now = 0
+        paused = (CONFIG.get('mail_mode') or 'off') == 'off'
+        # All of them - to forget the old ones - every ten minutes; the open
+        # ones every time.
+        full = now - MAILQ_FULL_AT[0] > 600
+        if full:
+            MAILQ_FULL_AT[0] = now
+        for rec in mailq_all(store, open_only=not full):
+            qid = rec['qid']
+            state = rec.get('state')
+            if state in ('sent', 'failed', 'expired') and \
+                    now - float(rec.get('sent_at') or rec.get('last_try') or
+                                rec.get('created') or 0) > keep_s:
+                store.db.run('DELETE FROM meta WHERE k IN (?, ?)',
+                             (MAILQ_PREFIX + qid, MAILB_PREFIX + qid))
+                continue
+            if state == 'failed' and now > float(rec.get('expires') or 0):
+                # Refused for good stays "refused for good", not "given up":
+                # what it held goes, the reason stays.
+                if store.get_meta(MAILB_PREFIX + qid):
+                    mailq_body_drop(store, qid)
+                continue
+            if paused and rec.get('kind') not in ('code', 'verify'):
+                continue        # kept as it is until mail is switched on again
+            if state in ('waiting', 'sending') and \
+                    now > float(rec.get('expires') or 0) + (0 if state != 'sending' else 600):
+                _, raw = mailq_read(store, qid)
+                if raw:
+                    rec.pop('qid', None)
+                    rec.update(state='expired', next_at=0, said=rec.get('said') or 'not sent in time')
+                    if mailq_cas(store, qid, raw, rec):
+                        mailq_body_drop(store, qid)
+                continue
+            if paused:
+                # Mail switched off: nothing tried while it is - and nothing
+                # but a code past its time given up for it either.
+                continue
+            if state == 'sending' and now - float(rec.get('last_try') or 0) > 600:
+                # Left half way by a daemon that stopped: tried again.
+                _, raw = mailq_read(store, qid)
+                if raw:
+                    rec.pop('qid', None)
+                    rec.update(state='waiting', next_at=now, node=node_name())
+                    mailq_cas(store, qid, raw, rec)
+                continue
+            if state != 'waiting':
+                continue
+            if float(rec.get('next_at') or 0) > now or sent_now >= 25:
+                continue
+            sent_now += 1
+            try:
+                mailq_attempt(store, qid)
+            except Exception as e:                      # noqa: BLE001
+                log('the outgoing mail %s: %s' % (qid, e), 'warn')
+    finally:
+        MAILQ_LOCK.release()
+
+
+def mailq_counts(store):
+    c = collections.Counter()
+    for r in store.db.rows("SELECT v FROM meta WHERE k LIKE 'mailq:%'"):
+        m = re.search(r'"state": "([a-z]+)"', r['v'] or '')
+        if m:
+            c[m.group(1)] += 1
+    return {k: int(c.get(k, 0)) for k in MAILQ_STATES}
+
+
+def mailq_view(rec):
+    """A row as the pages see it: no body, never."""
+    out = {k: rec.get(k) for k in ('qid', 'created', 'node', 'kind', 'purpose', 'name', 'by',
+                                    'to', 'subject', 'size', 'state', 'tries', 'last_try',
+                                    'next_at', 'expires', 'sent_at', 'said')}
+    out['kind_words'] = MAILQ_KIND_WORDS.get(rec.get('kind'), 'a mail')
+    out['subject'] = mailq_subject_kept(out.get('subject'), rec.get('kind'))
+    return out
+
+
+MAILQ_RETRY_WHY = {}
+
+
+def mailq_retry(store, qids, by=''):
+    """Tried again now."""
+    done, skipped = [], []
+    MAILQ_RETRY_WHY.clear()
+    for qid in qids:
+        rec, raw = mailq_read(store, qid)
+        if not rec or rec.get('state') not in ('waiting', 'failed'):
+            skipped.append(qid)
+            continue
+        if not store.get_meta(MAILB_PREFIX + qid):
+            skipped.append(qid)
+            continue
+        if time.time() > float(rec.get('expires') or 0):
+            # Asked by hand: given the time of a new mail again - a code to
+            # sign in with is not, it is no good any more.
+            if rec.get('kind') in ('code', 'verify'):
+                skipped.append(qid)
+                MAILQ_RETRY_WHY['code'] = MAILQ_RETRY_WHY.get('code', 0) + 1
+                continue
+            rec['expires'] = time.time() + 3600 * int(CONFIG.get('mail_retry_hours') or 24)
+        rec.update(state='waiting', next_at=0, node=node_name())
+        if mailq_cas(store, qid, raw, rec):
+            done.append(qid)
+        else:
+            skipped.append(qid)
+    if done:
+        store.add_event('mail', '%s asked for %d mail(s) of the outgoing mail to be sent again '
+                        'now' % (by or 'somebody', len(done)), who=by or None)
+        threading.Thread(target=lambda: [mailq_attempt(store, q) for q in done],
+                         name='mail-again', daemon=True).start()
+    return done, skipped
+
+
+def mailq_drop(store, qids, by=''):
+    n = 0
+    for qid in qids:
+        n += int(store.db.run('DELETE FROM meta WHERE k = ?', (MAILQ_PREFIX + qid,)) or 0)
+        store.db.run('DELETE FROM meta WHERE k = ?', (MAILB_PREFIX + qid,))
+    if n:
+        store.add_event('mail', '%s took %d mail(s) out of the outgoing mail' % (
+            by or 'somebody', n), 'warn', who=by or None)
+    return n
+
+
+def mailq_search_row(r):
+    return {'to': ' '.join(r.get('to') or []), 'state': r.get('state') or '',
+            'kind': r.get('kind') or '', 'name': r.get('name') or '', 'by': r.get('by') or '',
+            'said': r.get('said') or '', 'subject': mailq_subject_kept(r.get('subject'), r.get('kind')),
+            'tries': int(r.get('tries') or 0)}
+
+
+MAILQ_FIELDS = [('to', 'whom it goes to', 'to:*@example.cz'),
+                ('state', 'waiting, sending, sent, failed or expired', 'state:waiting'),
+                ('kind', 'code, verify, test or notice', 'kind:code'),
+                ('name', 'the account it is about', 'name:novak*'),
+                ('said', 'what the receiving server said', 'said~greylist'),
+                ('tries', 'how many times it was tried', 'tries:>2'),
+                ('by', 'who had it sent', 'by:admin'),
+                ('subject', 'its subject', 'subject~code')]
+
+
+def mailq_match(row, q):
+    """The search words of otp's lists, as far as the outgoing mail needs them:
+    words found anywhere, field:value (with * for anything), field~words
+    (contained), field:>n / field:<n, and - or ! before one for NOT."""
+    try:
+        parts = shlex.split(q)
+    except ValueError:
+        raise ValueError('a " that is not closed')
+    whole = ' '.join(str(v) for v in row.values()).lower()
+    for p in parts:
+        neg = p[:1] in ('-', '!') and len(p) > 1
+        if neg:
+            p = p[1:]
+        m = re.match(r'^([a-z_]+)(:|~|=)(.*)\Z', p, re.I | re.S)
+        if m and m.group(1).lower() in row:
+            k, op, want = m.group(1).lower(), m.group(2), m.group(3).lower()
+            have = str(row[k]).lower()
+            if k == 'tries' and re.match(r'^[<>]=?\d+\Z', want):
+                n, lim = int(row[k]), int(want.lstrip('<>='))
+                ok = {'>': n > lim, '<': n < lim, '>=': n >= lim, '<=': n <= lim}[re.match(r'^[<>]=?', want).group(0)]
+            elif op == '~':
+                ok = want in have
+            else:
+                vals = have.split() if k == 'to' else [have]
+                ok = any(fnmatch.fnmatchcase(v, want if '*' in want else want) for v in vals)
+        elif m:
+            raise ValueError('%s: the outgoing mail has no such field - it has %s'
+                             % (m.group(1), ', '.join(f[0] for f in MAILQ_FIELDS)))
+        else:
+            ok = p.lower().strip('*') in whole
+        if ok == neg:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# The texts of the messages, edited on the pages (otp's, 1.0.103)
+# ---------------------------------------------------------------------------
+# Every word a person gets from this server - the mails and the SMS of a code
+# - in both languages, as it is written here in CODE_TEXTS, unless changed in
+# Settings → Message texts. What is changed is kept in the database (meta
+# texts:<message>:<lang>, the fields changed only). Put back to the default,
+# a text is exactly as it was before it was changed.
+import html.parser as _html_parser
+
+TEXT_MESSAGES = [
+    {'id': 'code_mail', 'kind': 'mail', 'group': 'code', 'purpose': 'signin',
+     'title': 'The sign-in code by mail',
+     'says': 'Sent when somebody signs in to these pages with the second step by mail.',
+     'fields': [
+         ('mail_subject', 'line', 'Subject', ('code', 'minutes', 'site'), 'subject'),
+         ('h_title', 'line', 'The band at the top', ('site',), 'layout'),
+         ('h_hello', 'rich', 'Greeting', ('name',), 'layout'),
+         ('h_lede', 'rich', 'What it is', ('account',), 'layout'),
+         ('h_facts', 'rich', 'Under the code', ('minutes',), 'layout'),
+         ('h_warn', 'rich', 'The warning', (), 'layout'),
+         ('h_foot', 'rich', 'The foot', ('site',), 'layout'),
+         ('h_hello_anon', 'rich', 'Greeting when the name is not known', (), 'other'),
+         ('h_lede_anon', 'rich', 'What it is when the account is not known', (), 'other'),
+         ('mail_body', 'text', 'The plain text version', ('code', 'minutes', 'site'), 'plain'),
+     ]},
+    {'id': 'verify_mail', 'kind': 'mail', 'group': 'code', 'purpose': 'verify',
+     'title': 'Checking an address',
+     'says': 'Sent when somebody sets up the second step by mail, to check the address.',
+     'fields': [
+         ('verify_subject', 'line', 'Subject', ('code', 'minutes', 'site'), 'subject'),
+         ('h_v_title', 'line', 'The band at the top', ('site',), 'layout'),
+         ('h_v_hello', 'rich', 'Greeting', ('name',), 'layout'),
+         ('h_v_lede', 'rich', 'What it is', ('account',), 'layout'),
+         ('h_v_facts', 'rich', 'Under the code', ('minutes',), 'layout'),
+         ('h_v_note', 'rich', 'The note', (), 'layout'),
+         ('h_v_foot', 'rich', 'The foot', ('site',), 'layout'),
+         ('h_v_hello_anon', 'rich', 'Greeting when the name is not known', (), 'other'),
+         ('h_v_lede_anon', 'rich', 'What it is when the account is not known', (), 'other'),
+         ('verify_body', 'text', 'The plain text version', ('code', 'minutes', 'site'), 'plain'),
+     ]},
+    {'id': 'sms_code', 'kind': 'sms', 'group': 'code', 'title': 'The sign-in code by SMS',
+     'says': 'Sent when somebody signs in to these pages with the second step by SMS.',
+     'fields': [('sms', 'text', 'The SMS', ('code', 'minutes', 'site'), 'sms')]},
+    {'id': 'sms_verify', 'kind': 'sms', 'group': 'code', 'title': 'Checking a number',
+     'says': 'Sent when somebody sets up the second step by SMS, to check the number.',
+     'fields': [('sms_verify', 'text', 'The SMS', ('code', 'minutes', 'site'), 'sms')]},
+]
+TEXT_LANGS = ('cs', 'en')
+TEXT_PLACEHOLDERS = {
+    'code': 'the code', 'minutes': 'minutes it is good for', 'site': 'the server’s name',
+    'name': 'the person’s name', 'account': 'the account', 'dest': 'where it was sent'}
+TEXT_FIELD_MOST = {'line': 300, 'rich': 3000, 'text': 4000}
+TEXT_CACHE = {}
+TEXT_CACHE_S = 5.0
+TEXT_LOCK = threading.Lock()
+
+
+def text_message(mid):
+    return next((m for m in TEXT_MESSAGES if m['id'] == mid), None)
+
+
+def text_defaults(group, lang):
+    return dict(CODE_TEXTS.get(lang) or CODE_TEXTS['cs'])
+
+
+def text_saved(store, mid, lang):
+    """What is saved for one message in one language: {'f': {...}, 'at', 'by'}."""
+    try:
+        got = json.loads(store.get_meta('texts:%s:%s' % (mid, lang)) or 'null')
+    except ValueError:
+        got = None
+    if not isinstance(got, dict) or not isinstance(got.get('f'), dict):
+        return {'f': {}, 'at': None, 'by': None}
+    return got
+
+
+def texts_for(group, lang):
+    """The words of one group in one language - the defaults with what was
+    changed on the pages over them. Read again every few seconds; if the
+    database cannot be asked, the defaults, never nothing."""
+    lang = lang if lang in TEXT_LANGS else 'cs'
+    key = (group, lang)
+    now = time.time()
+    with TEXT_LOCK:
+        got = TEXT_CACHE.get(key)
+        if got and now - got[0] < TEXT_CACHE_S:
+            return dict(got[1])
+    words = text_defaults(group, lang)
+    store = STORE_NOW.get('store')
+    if store is not None:
+        try:
+            for m in TEXT_MESSAGES:
+                if m['group'] != group:
+                    continue
+                keys = {f[0] for f in m['fields']}
+                for k, v in text_saved(store, m['id'], lang)['f'].items():
+                    if k in keys and isinstance(v, str):
+                        words[k] = v
+        except Exception as e:                          # noqa: BLE001
+            log_sparing('texts', 'the message texts could not be read - the defaults are used: '
+                        '%s' % str(e).split('\n')[0][:200], 'warn')
+            return text_defaults(group, lang)
+    with TEXT_LOCK:
+        TEXT_CACHE[key] = (now, words)
+    return dict(words)
+
+
+def texts_forget():
+    with TEXT_LOCK:
+        TEXT_CACHE.clear()
+
+
+# ---- what may be written ---------------------------------------------------------
+class _RichClean(_html_parser.HTMLParser):
+    """HTML of a text in a mail, kept to what mail programs show alike: bold,
+    italic, underline, a colour, a link, a line break. Everything else goes,
+    its text stays."""
+    COLOR = re.compile(r'\s*(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,'
+                       r'\s*\d{1,3}\s*\))\s*\Z')
+
+    def __init__(self):
+        _html_parser.HTMLParser.__init__(self, convert_charrefs=True)
+        self.out = []
+        self.stack = []
+
+    @staticmethod
+    def _style(attrs):
+        st = {}
+        for part in str(dict(attrs).get('style') or '').split(';'):
+            k, _, v = part.partition(':')
+            if k.strip():
+                st[k.strip().lower()] = v.strip().lower()
+        return st
+
+    def _open_styled(self, st, color=None):
+        opened = []
+        c = color or st.get('color')
+        if c and self.COLOR.match(c):
+            self.out.append('<span style="color:%s">' % c.strip())
+            opened.append('span')
+        if st.get('font-weight') in ('bold', 'bolder', '600', '700', '800', '900'):
+            self.out.append('<b>')
+            opened.append('b')
+        if st.get('font-style') == 'italic':
+            self.out.append('<i>')
+            opened.append('i')
+        if 'underline' in (st.get('text-decoration') or '') + (st.get('text-decoration-line') or ''):
+            self.out.append('<u>')
+            opened.append('u')
+        return opened
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag == 'br':
+            self.out.append('<br>')
+            return
+        if tag in ('b', 'strong'):
+            self.out.append('<b>')
+            self.stack.append((tag, ['b']))
+        elif tag in ('i', 'em'):
+            self.out.append('<i>')
+            self.stack.append((tag, ['i']))
+        elif tag == 'u':
+            self.out.append('<u>')
+            self.stack.append((tag, ['u']))
+        elif tag == 'a':
+            href = str(dict(attrs).get('href') or '').strip()
+            if re.match(r'(https?://|mailto:)[^\s"<>]+\Z', href, re.I):
+                self.out.append('<a href="%s" style="color:#1d4ed8">' % html.escape(href, quote=True))
+                self.stack.append((tag, ['a']))
+            else:
+                self.stack.append((tag, []))
+        elif tag in ('span', 'font'):
+            st = self._style(attrs)
+            self.stack.append((tag, self._open_styled(
+                st, dict(attrs).get('color') if tag == 'font' else None)))
+        elif tag in ('div', 'p'):
+            # A new paragraph typed in the editor is a line break here.
+            if self.out and not self.out[-1].endswith('<br>'):
+                self.out.append('<br>')
+            self.stack.append((tag, []))
+        else:
+            self.stack.append((tag, []))
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                while len(self.stack) > i:
+                    _t, opened = self.stack.pop()
+                    for o in reversed(opened):
+                        self.out.append('</%s>' % o)
+                return
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() == 'br':
+            self.out.append('<br>')
+
+    def handle_data(self, data):
+        if any(t in ('script', 'style', 'title', 'head') for t, _o in self.stack):
+            return
+        self.out.append(html.escape(data, quote=False))
+
+    def result(self):
+        while self.stack:
+            _t, opened = self.stack.pop()
+            for o in reversed(opened):
+                self.out.append('</%s>' % o)
+        text = ''.join(self.out)
+        text = re.sub(r'(<br>)+\Z', '', text)
+        return re.sub(r'\A(<br>)+', '', text).strip()
+
+
+def text_rich_clean(value):
+    p = _RichClean()
+    p.feed(str(value or ''))
+    p.close()
+    return p.result()
+
+
+def text_samples(lang='cs'):
+    return {'code': '482913', 'minutes': max(1, int(CONFIG.get('code_ttl_s') or 300) // 60),
+            'site': site_words(), 'name': 'Jan Novák' if lang == 'cs' else 'Jan Novak',
+            'account': 'jan.novak', 'dest': 'j•••@example.cz'}
+
+
+def text_check(field, value):
+    """A field's new text, cleaned, or ValueError saying what is wrong."""
+    import string
+    key, kind, label, allowed, _where = field
+    if value is not None and not isinstance(value, str):
+        raise ValueError('%s: a piece of text' % label)
+    value = str(value if value is not None else '')
+    value = value.replace('\r\n', '\n').replace('\r', '\n')
+    if kind != 'text':
+        value = value.replace('\n', ' ')
+    value = ''.join(c for c in value if c in '\n\t' or ord(c) >= 32)
+    if kind == 'rich':
+        value = text_rich_clean(value)
+    else:
+        value = value.strip() if kind == 'line' else value.strip('\n ')
+    if len(value) > TEXT_FIELD_MOST[kind]:
+        raise ValueError('%s: at most %d characters' % (label, TEXT_FIELD_MOST[kind]))
+    try:
+        parts = list(string.Formatter().parse(value))
+    except ValueError:
+        raise ValueError('%s: a { or } on its own - write it twice, {{ or }}' % label)
+    for _lit, name, spec, conv in parts:
+        if name is None:
+            continue
+        if name in allowed and (spec or conv):
+            raise ValueError('%s: write {%s} with nothing after its name' % (label, name))
+        if name not in allowed:
+            raise ValueError('%s: {%s} is not something this text can have - it can have %s'
+                             % (label, name, ', '.join('{%s}' % a for a in allowed) or 'none'))
+    try:
+        value.format(**text_samples())
+    except (ValueError, IndexError, KeyError) as e:
+        raise ValueError('%s: a { or } on its own - write it twice, {{ or }} (%s)' % (label, e))
+    if field[4] in ('subject', 'sms') and not value.strip():
+        raise ValueError('%s cannot be empty' % label)
+    if field[4] in ('sms', 'plain') and 'code' in allowed and '{code}' not in value:
+        raise ValueError('%s: the text has to say {code} - the code itself is put there' % label)
+    return value
+
+
+# ---- what the editor shows -------------------------------------------------------
+TEXT_MARK = '⟦f:%s⟧'
+
+
+def text_words(mid, lang, fields=None, mark=False):
+    """The words of a message's group with those of the editor (`fields`,
+    not yet saved) over the saved ones; `mark`: each field of this message
+    as a mark the editor puts its box in."""
+    m = text_message(mid)
+    w = texts_for(m['group'], lang)
+    for k, v in (fields or {}).items():
+        if any(f[0] == k for f in m['fields']):
+            w[k] = v
+    if mark:
+        for f in m['fields']:
+            w[f[0]] = TEXT_MARK % f[0]
+    return w
+
+
+def text_render(store, mid, lang, fields=None, mark=False):
+    """A message as it would go out, with sample values: the mail's HTML,
+    its subject and its text; the SMS."""
+    m = text_message(mid)
+    w = text_words(mid, lang, fields, mark)
+    smp = text_samples(lang)
+    out = {'id': mid, 'lang': lang}
+    if m['kind'] == 'mail':
+        out['html'] = code_mail_html(smp['code'], m['purpose'], lang, smp['account'], smp['name'],
+                                     w=w)
+        sub = w[code_purpose(m['purpose'])['subject']]
+        body = w[code_purpose(m['purpose'])['body']]
+        out['subject'] = sub.format(**smp)
+        out['text'] = body.format(**smp)
+    else:
+        text = w[m['fields'][0][0]].format(**smp)
+        out['sms'] = sms_plain(text) if CONFIG.get('sms_plain', True) else text
+        out['sms_written'] = text
+    return out
+
+
+def text_state(store, mid=None):
+    """Every message, its fields, their defaults and what is saved now."""
+    out = []
+    for m in TEXT_MESSAGES:
+        if mid and m['id'] != mid:
+            continue
+        one = {'id': m['id'], 'kind': m['kind'], 'title': m['title'], 'says': m['says'],
+               'short': m.get('short') or m['title'],
+               'fields': [], 'saved': {}}
+        for lang in TEXT_LANGS:
+            sv = text_saved(store, m['id'], lang)
+            one['saved'][lang] = {'at': sv.get('at'), 'by': sv.get('by'),
+                                  'changed': sorted(k for k in sv['f']
+                                                    if any(f[0] == k for f in m['fields']))}
+        for key, kind, label, allowed, where in m['fields']:
+            f = {'key': key, 'kind': kind, 'label': label, 'where': where,
+                 'placeholders': list(allowed), 'default': {}, 'value': {}}
+            for lang in TEXT_LANGS:
+                d = text_defaults(m['group'], lang).get(key, '')
+                f['default'][lang] = d
+                f['value'][lang] = text_saved(store, m['id'], lang)['f'].get(key, d)
+            one['fields'].append(f)
+        out.append(one)
+    return out
+
+
+class TextConflict(ValueError):
+    pass
+
+
+def text_save(store, mid, lang, fields, by, was_at=None):
+    """The fields of a message in one language saved; those equal to their
+    default are not kept (so a default changed in a later version reaches
+    them). Refused if somebody else saved it meanwhile (`was_at`)."""
+    m = text_message(mid)
+    if not m or lang not in TEXT_LANGS:
+        raise ValueError('no such message or language')
+    k = 'texts:%s:%s' % (mid, lang)
+    raw = store.get_meta(k)
+    now = text_saved(store, mid, lang)
+    if was_at is not None and (now.get('at') or 0) != (was_at or 0):
+        raise TextConflict('%s changed these words meanwhile (%s) - load them again'
+                           % (now.get('by') or 'somebody',
+                              datetime.fromtimestamp(float(now.get('at') or 0)).strftime('%d-%m-%Y %H:%M')))
+    defaults = text_defaults(m['group'], lang)
+    keep = dict(now['f'])
+    for f in m['fields']:
+        if f[0] not in fields:
+            continue
+        v = text_check(f, fields[f[0]])
+        if v == defaults.get(f[0]):
+            keep.pop(f[0], None)
+        else:
+            keep[f[0]] = v
+    new = {'f': keep, 'at': time.time(), 'by': by}
+    if raw is None:
+        store.set_meta(k, json.dumps(new))
+    elif not store.db.run('UPDATE meta SET v = ? WHERE k = ? AND v = ?', (json.dumps(new), k, raw)):
+        raise TextConflict('somebody saved these words at the same moment - load them again')
+    texts_forget()
+    return new
+
+
+def text_reset(store, mid, lang, keys=None):
+    """A message in one language - or only `keys` of it - back to its default."""
+    m = text_message(mid)
+    if not m or lang not in TEXT_LANGS:
+        raise ValueError('no such message or language')
+    k = 'texts:%s:%s' % (mid, lang)
+    if not keys:
+        store.db.run('DELETE FROM meta WHERE k = ?', (k,))
+    else:
+        for _round in range(8):
+            raw = store.get_meta(k)
+            if raw is None:
+                break
+            now = text_saved(store, mid, lang)
+            for key in keys:
+                now['f'].pop(key, None)
+            if store.db.run('UPDATE meta SET v = ? WHERE k = ? AND v = ?',
+                            (json.dumps(dict(now, at=time.time())), k, raw)):
+                break
+    texts_forget()
+
+
+def texts_from_before(store):
+    """The texts ai 1.0.5 kept (meta 'texts': {lang: {key: text}}) carried
+    over once into otp's shape, where a field of the same meaning exists."""
+    old = store.meta_json('texts', None)
+    if not isinstance(old, dict):
+        return
+    where = {'code_subject': ('code_mail', 'mail_subject'), 'code_body': ('code_mail', 'mail_body'),
+             'verify_subject': ('verify_mail', 'verify_subject'), 'verify_body': ('verify_mail', 'verify_body'),
+             'sms_code': ('sms_code', 'sms'), 'sms_verify': ('sms_verify', 'sms_verify')}
+    for lang, got in old.items():
+        if lang not in TEXT_LANGS or not isinstance(got, dict):
+            continue
+        for key, text in got.items():
+            if key not in where or not isinstance(text, str) or not text.strip():
+                continue
+            mid, field = where[key]
+            try:
+                text_save(store, mid, lang, {field: text.replace('{code}', '{code}')}, 'ai 1.0.5')
+            except ValueError:
+                pass
+    store.x('DELETE FROM meta WHERE k = ?', ('texts',))
+
+
+def code_send(store, kind, to, code, purpose='signin', name='', lang=None, fmt=None, display=''):
+    """A code sent now, with the code taken out of whatever the server said
+    (an SMS gateway that echoes the message would put a live code into the
+    events and the log). A mail goes through the outgoing mail: greylisted,
+    it is tried again while the code is good."""
+    def hide(t):
+        return str(t).replace(str(code), '******') if code else str(t)
+    lang = lang if lang in CODE_TEXTS else code_lang()
+    try:
+        if kind == 'mail':
+            msg = code_message('mail', to, code, purpose, lang=lang, name=name, display=display, fmt=fmt)
+            try:
+                steps = mail_deliver(store, msg, [to], kind=code_purpose(purpose)['queue'],
+                                     name=name, purpose=purpose,
+                                     expires=time.time() + int(CONFIG.get('code_ttl_s') or 300))
+            except MailError as e:
+                if e.queued == 'waiting':
+                    return hide('not taken yet (%s) - it waits in the outgoing mail and is tried again' % e)
+                raise
+            last = [s for s in steps if s.get('ok')]
+            return hide((last[-1].get('said') or 'sent') if last else 'sent')
+        if kind == 'sms':
+            return hide(send_sms(store, to, code_message('sms', to, code, purpose, lang=lang),
+                                 MAILQ_KIND_WORDS[code_purpose(purpose)['queue']], name))
+    except MailError as e:
+        new = MailError(hide(e), steps=e.steps, permanent=e.permanent)
+        for a, v in vars(e).items():
+            if a not in ('steps', 'permanent'):
+                setattr(new, a, v)
+        raise new
+    except SmsError as e:
+        raise SmsError(hide(e))
+    raise ValueError('codes go by mail or SMS only')
+
 
 
 def mfa_lang(c):
     got = str(c.body.get('lang') or c.arg('lang') or '')
-    return got if got in MAIL_WORDS else None
+    return got if got in CODE_TEXTS else None
 
 
 def _mfa_code_ok(saved, code):
@@ -8107,8 +9021,8 @@ def _mfa_send(c, kind, dest, field):
              'exp': t + int(CONFIG.get('code_ttl_s') or 300)}
     try:
         said = code_send(c.daemon.store, kind, dest, code, 'verify' if field == 'mfa_new' else 'signin',
-                         mfa_lang(c))
-    except (MailError, ValueError, OSError) as e:
+                         name=c.name, lang=mfa_lang(c))
+    except (MailError, SmsError, ValueError, OSError) as e:
         c.daemon.store.add_event('sign-in', 'the code of the second step for %s could not be sent (%s): %s' % (
             c.name, kind, e), 'warn', who=c.name)
         raise Refused('the code could not be sent: %s' % e, 502)
@@ -8306,7 +9220,8 @@ def api_lockouts_do(c):
 @route('GET', '/api/mail', admin=True)
 def api_mail(c):
     STORE_NOW['store'] = c.daemon.store
-    return {'mode': CONFIG.get('mail_mode'), 'channels': code_channels(),
+    return {'mode': CONFIG.get('mail_mode') or 'off', 'channels': code_channels(),
+            'from': CONFIG.get('mail_from') or '', 'lang': CONFIG.get('mail_lang') or 'cs',
             'ca_list': describe_certificates(mail_ca_pem(c.daemon.store)),
             'sms_ca_list': describe_certificates(sms_ca_pem(c.daemon.store)),
             'notices': c.daemon.store.meta_json('notify:last', {}) or {}}
@@ -8321,16 +9236,38 @@ def api_mail_do(c):
             to = mail_checked(c.body.get('to'))
         except ValueError as e:
             raise Refused(str(e))
-        subject, body = mail_words('test', c.body.get('lang'))
-        took = time.time()
+        b = c.body
+        began = time.time()
+        queued = str(b.get('via') or '') == 'queue'
         try:
-            steps = send_mail(st, [to], subject, body, 'a test mail', c.name)
-            ok, said = True, 'sent to %s' % to
+            lang = str(b.get('lang') or 'cs')
+            if b.get('kind') in ('code', 'verify'):
+                # The mail of a sign-in code, or of checking an address -
+                # with a code that opens nothing.
+                msg = code_message('mail', to, code_new(),
+                                   'signin' if b.get('kind') == 'code' else 'verify',
+                                   lang=lang if lang in CODE_TEXTS else None, name='jan.novak',
+                                   display='Jan Novák' if lang == 'cs' else 'John Doe')
+            else:
+                msg = test_mail(to, lang)
+            # Through the outgoing mail, as codes go: tried now, and if the
+            # other side does not take it yet (greylisting) tried again by
+            # itself - or straight, once, with every step said here.
+            if queued:
+                steps = mail_deliver(st, msg, [to], kind='test', by=c.name, purpose='test')
+            else:
+                steps = mail_send(st, msg, [to])
         except MailError as e:
-            steps, ok, said = e.steps, False, str(e)
-        st.add_event('mail', '%s sent a test mail to %s: %s' % (c.name, to, 'went' if ok else said),
-                     'info' if ok else 'warn', who=c.name)
-        return {'sent': ok, 'said': said, 'steps': steps, 'took_ms': int((time.time() - took) * 1000)}
+            st.add_event('mail', 'a test mail to %s failed: %s' % (to, e), 'warn', who=c.name)
+            return {'sent': False, 'said': str(e), 'steps': e.steps,
+                    'queued': getattr(e, 'queued', None) if queued else None,
+                    'took_ms': int((time.time() - began) * 1000)}
+        st.add_event('mail', '%s sent a test mail%s to %s%s' % (
+            c.name, {'code': ' shaped as a sign-in code\'s',
+                     'verify': ' shaped as an address check\'s'}.get(b.get('kind'), ''), to,
+            mail_reply_words(steps)), who=c.name)
+        return {'sent': True, 'said': 'sent to %s' % to, 'steps': steps,
+                'queued': 'sent' if queued else None, 'took_ms': int((time.time() - began) * 1000)}
     if act == 'ca':
         try:
             got = mail_ca_set(st, c.body.get('ca'), c.body.get('mode') or 'add', c.body.get('fingerprint') or '')
@@ -8348,7 +9285,7 @@ def api_mail_do(c):
             raise Refused(str(e))
         began = time.time()
         try:
-            said = send_sms(st, to, sms_words('code', c.body.get('lang'), code=code_new()), 'a test SMS', c.name)
+            said = send_sms(st, to, code_message('sms', to, code_new(), 'verify'), 'a test', c.name)
         except SmsError as e:
             st.add_event('settings', 'a test SMS to %s failed: %s' % (dest_masked('sms', to), e), 'warn', who=c.name)
             return {'sent': False, 'said': str(e), 'took_ms': int((time.time() - began) * 1000)}
@@ -8383,71 +9320,211 @@ def api_mail_do(c):
 
 @route('GET', '/api/texts', admin=True)
 def api_texts(c):
-    own = texts_saved(c.daemon.store)
-    out = {}
-    for lang in ('cs', 'en'):
-        out[lang] = [{'key': k, 'text': text_of(lang, k), 'default': text_default(lang, k),
-                      'own': bool((own.get(lang) or {}).get(k)), 'fields': list(text_fields(k))} for k in TEXT_KEYS]
-    return {'texts': out}
+    st = c.daemon.store
+    STORE_NOW['store'] = st
+    mid = c.arg('render')
+    if mid:
+        if not text_message(mid):
+            raise Refused('no such message', 404)
+        lang = c.arg('lang') if c.arg('lang') in TEXT_LANGS else 'cs'
+        return text_render(st, mid, lang, mark=c.arg('mark') == '1')
+    return {'messages': text_state(st), 'placeholders': TEXT_PLACEHOLDERS,
+            'langs': list(TEXT_LANGS), 'may_change': True,
+            'samples': {lang: text_samples(lang) for lang in TEXT_LANGS},
+            'sender': '%s <%s>' % (CONFIG.get('mail_from_name') or site_words(), CONFIG.get('mail_from') or ''),
+            'sms_plain': bool(CONFIG.get('sms_plain', True)), 'node': node_name(), 'ha': False}
 
 
 @route('POST', '/api/texts', admin=True)
 def api_texts_do(c):
+    st, b = c.daemon.store, c.body
+    STORE_NOW['store'] = st
+    act = str(b.get('action') or '')
+    mid = str(b.get('id') or '')
+    m = text_message(mid)
+    lang = str(b.get('lang') or '')
+    if not m or lang not in TEXT_LANGS:
+        raise Refused('no such message or language')
+    fields = b.get('fields') if isinstance(b.get('fields'), dict) else {}
+    if act == 'preview':
+        # What the editor holds now, each field checked and cleaned as a
+        # save would - and said which one is wrong, not saved.
+        clean, bad = {}, {}
+        for f in m['fields']:
+            if f[0] in fields:
+                try:
+                    clean[f[0]] = text_check(f, fields[f[0]])
+                except ValueError as e:
+                    bad[f[0]] = str(e)
+        out = text_render(st, mid, lang, clean)
+        out['bad'] = bad
+        out['clean'] = clean
+        return out
+    if act == 'save':
+        try:
+            new = text_save(st, mid, lang, fields, c.name, was_at=b.get('was_at') if 'was_at' in b else None)
+        except TextConflict as e:
+            raise Refused(str(e), 409)
+        except ValueError as e:
+            raise Refused(str(e))
+        st.add_event('settings', '%s changed the texts of “%s” (%s)' % (c.name, m['title'], lang.upper()), who=c.name)
+        return {'message': 'saved - these words are sent from now on', 'saved': new,
+                'state': text_state(st, mid)[0]}
+    if act == 'reset':
+        keys = [str(k) for k in (b.get('keys') or []) if isinstance(k, str)]
+        text_reset(st, mid, lang, keys or None)
+        st.add_event('settings', '%s put %s of “%s” (%s) back as it comes'
+                     % (c.name, 'the texts' if not keys else ', '.join(keys), m['title'], lang.upper()),
+                     'warn', who=c.name)
+        return {'message': 'put back as it comes', 'state': text_state(st, mid)[0]}
+    if act == 'test':
+        to = str(b.get('to') or '').strip()
+        clean = {}
+        for f in m['fields']:
+            if f[0] in fields:
+                try:
+                    clean[f[0]] = text_check(f, fields[f[0]])
+                except ValueError as e:
+                    raise Refused(str(e))
+        w = text_words(mid, lang, clean)
+        smp = text_samples(lang)
+        try:
+            if m['kind'] == 'sms':
+                to = dest_checked('sms', to)
+                text = w[m['fields'][0][0]].format(**smp)
+                said = send_sms(st, to, sms_plain(text) if CONFIG.get('sms_plain', True) else text,
+                                'a sample of the texts', c.name)
+            else:
+                to = dest_checked('mail', to)
+                msg = code_message('mail', to, smp['code'], m['purpose'], lang=lang,
+                                   name=smp['account'], display=smp['name'], fmt='html', w=w)
+                steps = mail_deliver(st, msg, [to], kind='test', by=c.name, purpose='texts')
+                last = [x for x in steps if x.get('ok')]
+                said = (last[-1].get('said') or 'sent') if last else 'sent'
+        except ValueError as e:
+            raise Refused(str(e))
+        except (MailError, SmsError) as e:
+            raise Refused(str(e), 502)
+        st.add_event('settings', '%s sent a sample of “%s” (%s) to %s' % (c.name, m['title'], lang.upper(), to),
+                     who=c.name)
+        return {'message': 'sent to %s with sample values: %s' % (to, said)}
+    raise Refused('no such thing to do with the texts')
+
+
+# ---- the outgoing mail on the pages (otp's) ---------------------------------------------
+MAILQ_COUNT_CACHE = [0.0, {}]
+
+
+def mailq_counted(store):
+    """What waits and what failed, for the badge beside Outgoing mail -
+    counted at most every 10 s."""
+    now = time.time()
+    if now - MAILQ_COUNT_CACHE[0] > 10:
+        try:
+            MAILQ_COUNT_CACHE[1] = mailq_counts(store)
+        except Exception:                               # noqa: BLE001
+            pass
+        MAILQ_COUNT_CACHE[0] = now
+    return MAILQ_COUNT_CACHE[1]
+
+
+@route('GET', '/api/mailq', admin=True)
+def api_mailq(c):
+    """The outgoing mail: what waits, what went, what failed."""
     st = c.daemon.store
-    own = texts_saved(st)
-    lang = str(c.body.get('lang') or '')
-    if lang not in ('cs', 'en'):
-        raise Refused('cs or en')
-    said = []
-    for k, v in (c.body.get('texts') or {}).items():
-        if k not in TEXT_KEYS:
-            raise Refused('there is no text %s' % k)
-        v = str(v if v is not None else '')
-        if len(v) > 8000:
-            raise Refused('%s: too long' % k)
-        if (k.endswith('_subject') or k.startswith('sms_')) and '\n' in v.strip():
-            raise Refused('%s: one line' % k)
-        if 'code' in text_fields(k) and k.endswith(('_body', 'sms_code', 'sms_verify')) and v.strip() and '{code}' not in v:
-            raise Refused('%s: the text has to say {code} - the code itself is put there' % k)
-        if not v.strip() or v == text_default(lang, k):
-            (own.get(lang) or {}).pop(k, None)
-            said.append('%s back to its default' % k)
-        else:
-            own.setdefault(lang, {})[k] = v
-            said.append(k)
-    st.set_meta_json('texts', own)
-    st.add_event('settings', '%s changed the message texts (%s): %s' % (c.name, lang, ', '.join(said)), who=c.name)
-    return {'message': 'saved'}
+    q = c.arg('q')
+    state = c.arg('state')
+    every = mailq_all(st)
+    rows = [r for r in every
+            if (not state or r.get('state') == state or
+                (state == 'open' and r.get('state') in ('waiting', 'sending', 'failed')))]
+    base = {'node': node_name(), 'retry_hours': int(CONFIG.get('mail_retry_hours') or 24),
+            'keep_days': int(CONFIG.get('mail_keep_days') or 14), 'mode': CONFIG.get('mail_mode') or 'off'}
+    if q.strip():
+        try:
+            rows = [r for r in rows if mailq_match(mailq_search_row(r), q)]
+        except ValueError as e:
+            return dict(base, rows=[], total=0, q_error=str(e), counts={k: 0 for k in MAILQ_STATES})
+    try:
+        limit = max(1, min(1000, int(c.arg('limit') or 100)))
+        offset = max(0, int(c.arg('offset') or 0))
+    except ValueError:
+        limit, offset = 100, 0
+    counts = collections.Counter(r.get('state') for r in every)
+    MAILQ_COUNT_CACHE[0] = 0
+    return dict(base, rows=[mailq_view(r) for r in rows[offset:offset + limit]], total=len(rows),
+                counts={k: int(counts.get(k, 0)) for k in MAILQ_STATES})
 
 
-@route('GET', '/api/outbox', admin=True)
-def api_outbox(c):
+@route('GET', '/api/mailq/one', admin=True)
+def api_mailq_one(c):
     st = c.daemon.store
-    keep = float(CONFIG.get('retain_events_days') or 180) * 86400
-    st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
-    where, args = [], []
-    if c.arg('state'):
-        where.append('state=?')
-        args.append(c.arg('state'))
-    if c.arg('q'):
-        where.append('(dest LIKE ? OR what LIKE ? OR said LIKE ? OR subject LIKE ?)')
-        args += ['%' + c.arg('q') + '%'] * 4
-    w = (' WHERE ' + ' AND '.join(where)) if where else ''
-    rows = st.q('SELECT * FROM outbox%s ORDER BY id DESC LIMIT 300' % w, args)
-    counts = {r['state']: r['n'] for r in st.q('SELECT state, COUNT(*) AS n FROM outbox GROUP BY state')}
-    return {'rows': rows, 'counts': counts}
+    rec, _raw = mailq_read(st, c.arg('id'))
+    if not rec:
+        raise Refused('that mail is not in the outgoing mail any more', 404)
+    out = mailq_view(rec)
+    out['history'] = rec.get('history') or []
+    out['steps'] = rec.get('steps') or []
+    out['has_body'] = bool(st.get_meta(MAILB_PREFIX + c.arg('id')))
+    return out
 
 
-@route('POST', '/api/outbox', admin=True)
-def api_outbox_do(c):
-    if c.body.get('action') == 'clear':
-        state = c.body.get('state')
-        n = c.daemon.store.x('DELETE FROM outbox' + (' WHERE state=?' if state else ''), (state,) if state else ())
-        return {'message': 'cleared: %d' % n}
-    raise Refused('clear')
+@route('POST', '/api/mailq', admin=True)
+def api_mailq_do(c):
+    st, b = c.daemon.store, c.body
+    act = str(b.get('action') or '')
+    ids = b.get('ids') or []
+    if not isinstance(ids, list) or not all(isinstance(x, str) and re.fullmatch(r'[0-9]{13}-[0-9a-f]{8}', x)
+                                            for x in ids):
+        raise Refused('ids is a list of the mails\' own ids')
+    if act in ('retry_all', 'drop_sent', 'drop_failed'):
+        want = {'retry_all': ('waiting', 'failed'), 'drop_sent': ('sent',),
+                'drop_failed': ('failed', 'expired')}[act]
+        ids = [r['qid'] for r in mailq_all(st) if r.get('state') in want]
+        act = 'retry' if act == 'retry_all' else 'drop'
+    MAILQ_COUNT_CACHE[0] = 0
+    if act == 'retry':
+        if (CONFIG.get('mail_mode') or 'off') == 'off':
+            raise Refused('sending mail is switched off - Settings → Mail', 409)
+        done, skipped = mailq_retry(st, ids, c.name)
+        codes = MAILQ_RETRY_WHY.get('code', 0)
+        rest = len(skipped) - codes
+        msg = '%d mail(s) are being sent again now' % len(done)
+        if codes:
+            msg += ' - %d code(s) to sign in with are past their time and no good any more' % codes
+        if rest:
+            msg += ' - %d could not be (sent already, or what they held is gone)' % rest
+        return {'done': len(done), 'skipped': len(skipped), 'message': msg}
+    if act == 'drop':
+        n = mailq_drop(st, ids, c.name)
+        return {'done': n, 'message': '%d mail(s) taken out of the outgoing mail' % n}
+    raise Refused('no such thing to do with the outgoing mail')
 
 
-NOTICE_WORDS = {'cs': ('upozornění', 'upozornění', 'upozornění'), 'en': ('notice', 'notices', 'notices')}
+@route('GET', '/api/suggest', admin=True)
+def api_suggest(c):
+    """The fields of a list, or what one of them holds - what the search box
+    over it offers as somebody types (otp's; the outgoing mail's)."""
+    if c.arg('list') != 'mailq':
+        return {'fields': [], 'values': []}
+    field = c.arg('field').lower()
+    if not field:
+        return {'fields': [list(f) for f in MAILQ_FIELDS]}
+    typed = c.arg('typed')[:120]
+    got = collections.Counter()
+    for r in mailq_all(c.daemon.store):
+        v = str(mailq_search_row(r).get(field) or '')
+        for one in (v.split() if field == 'to' else [v]):
+            if one and (not typed or typed.strip('*').lower() in one.lower()):
+                got[one] += 1
+    return {'values': [{'val': v, 'n': n} for v, n in got.most_common(15)]}
+
+
+def mail_reply_words(steps):
+    """What the receiving server said when it took the message, for the
+    event: its queue id is what its own log can be searched by."""
+    last = (steps or [{}])[-1].get('said', '') if steps else ''
+    return (' - the server said: %s' % last.split(' · ', 1)[1]) if ' · ' in last else ''
 
 
 def notify_tick(store):
@@ -8470,20 +9547,23 @@ def notify_tick(store):
     if not rows:
         return
     lang = mail_lang()
-    w = NOTICE_WORDS[lang]
+    t = NOTICE_TEXTS[lang]
+    w = t['what']
     n = len(rows)
     what = w[0] if n == 1 else (w[1] if lang != 'cs' or n < 5 else w[2])
     lines = '\n'.join('%s  %s  %s' % (datetime.fromtimestamp(r['at']).strftime('%Y-%m-%d %H:%M:%S'),
                                       r['kind'], r['text']) for r in rows)
-    subject, body = mail_words('notice', lang, n=n, what=what, lines=lines,
-                               url='https://%s/#events' % host_name())
+    site = site_words()
+    subject = t['subject'].format(site=site, n=n, what=what)
+    body = t['body'].format(site=site, lines=lines, url='https://%s/#events' % host_name())
     new = {'id': rows[-1]['id'], 'at': time.time(), 'sent': n}
     try:
-        send_mail(store, to, subject, body, 'notices (%d)' % n)
+        mail_deliver(store, mail_message(to, subject, body), to, kind='notice', purpose='notices')
         new['said'] = 'sent %d to %s' % (n, ', '.join(to))
     except MailError as e:
         new['said'] = 'could not be sent: %s' % e
-        new['id'] = last_id                 # tried again after the gap
+        if not getattr(e, 'queued', None) == 'waiting':
+            new['id'] = last_id             # tried again after the gap
         log_sparing('notify', 'the notices could not be mailed: %s' % e)
     store.set_meta_json('notify:last', new)
 
@@ -9636,9 +10716,11 @@ def _db_give_back(db, progress):
 
 
 def db_prune(store, days):
-    """Forget the events and the list of mails sent older than `days`."""
+    """Forget the events and the outgoing mail older than `days`."""
     edge = time.time() - int(days) * 86400 if int(days) > 0 else time.time() + 86400
-    return {t: store.delete_older(t, edge) for t in ('events', 'outbox')}
+    mails = [r['qid'] for r in mailq_all(store)
+             if r.get('state') in ('sent', 'failed', 'expired') and float(r.get('created') or 0) < edge]
+    return {'events': store.delete_older('events', edge), 'mailq': mailq_drop(store, mails)}
 
 
 # ---- the server's own settings, for its machine (isemon's DbTune, smaller) --
@@ -10791,28 +11873,31 @@ def db_cache(store):
 
 
 # ---- erasing what was collected -----------------------------------------------
+# (key, the table, what of it - a WHERE, the name, what it is)
 ERASABLE = [
-    ('events', 'events', 'the event log',
+    ('events', 'events', '', 'the event log',
      'what this program noted about itself: sign-ins, terminals started and ended, changes, copies, '
      'starts and stops.'),
-    ('outbox', 'outbox', 'the list of mails and SMS sent',
-     'where each went and what the other side said - never what it held.'),
-    ('ended', 'terms', 'the ended terminals',
+    ('mailq', 'meta', "k LIKE 'mailq:%' OR k LIKE 'mailb:%'", 'the outgoing mail',
+     'every mail sent or waiting, where it went and what the other side said. One still waiting is not '
+     'sent any more.'),
+    ('ended', 'terms', 'ended IS NOT NULL', 'the ended terminals',
      'the list of terminals that have ended, with their last screens. Running ones are not touched.'),
 ]
 
 
 def db_erasable(store):
     groups = []
-    for key, table, name, says in ERASABLE:
+    for key, table, where, name, says in ERASABLE:
         groups.append({'key': key, 'name': name, 'says': says,
                        'rows': int(store.db.value('SELECT COUNT(*) FROM %s%s' % (
-                           table, ' WHERE ended IS NOT NULL' if table == 'terms' else '')) or 0)})
+                           table, ' WHERE k LIKE \'mailq:%%\'' if key == 'mailq'
+                           else (' WHERE ' + where if where else ''))) or 0)})
     return {'groups': groups, 'bytes': int(store.db.size() or 0)}
 
 
 def db_erase_job(store, groups, tidy, by):
-    tables = [(t, n) for k, t, n, _ in ERASABLE if k in groups]
+    tables = [(t, n, w) for k, t, w, n, _ in ERASABLE if k in groups]
     if not tables:
         raise ValueError('nothing was ticked')
 
@@ -10820,9 +11905,9 @@ def db_erase_job(store, groups, tidy, by):
         progress(0, len(tables) + 2, 'making a copy first')
         copy = make_backup(store, 'before erasing, by %s' % by)
         gone = {}
-        for i, (t, n) in enumerate(tables):
+        for i, (t, n, w) in enumerate(tables):
             progress(i + 1, len(tables) + 2, 'emptying %s' % n)
-            gone[t] = store.db.run('DELETE FROM terms WHERE ended IS NOT NULL') if t == 'terms' \
+            gone[n] = store.db.run('DELETE FROM %s%s' % (t, ' WHERE ' + w if w else '')) if w \
                 else store.db.run('DELETE FROM %s' % t)
         given = None
         if tidy:
@@ -11400,7 +12485,7 @@ def api_db_do(c):
                 raise ApiError(400, 'older than how many days? 1 at least')
             gone = db_prune(st, days)
             st.add_event('settings', '%s forgot the events older than %d day(s): %s' % (by, days, gone), 'warn', who=by)
-            return {'message': 'forgotten: %d event(s), %d line(s) of the mails sent' % (gone['events'], gone['outbox'])}
+            return {'message': 'forgotten: %d event(s), %d mail(s) of the outgoing mail' % (gone['events'], gone['mailq'])}
         if act == 'tune_plan':
             return tune_plan_for(st, b.get('machine') or {})
         if act == 'tune_apply':
@@ -13339,6 +14424,18 @@ class Daemon:
         write_atomic(STATE_DIR / 'first-login.txt', 'name: admin\npassword: %s\n' % pw, mode=0o600)
         log('there was no account: admin was made, its password is in %s' % (STATE_DIR / 'first-login.txt'), 'warn')
 
+    def mail_going(self):
+        """The outgoing mail, every few seconds: what waits tried again."""
+        try:
+            texts_from_before(self.store)
+        except Exception as e:                          # noqa: BLE001
+            log('the message texts of 1.0.5 could not be carried over: %s' % e, 'warn')
+        while not self.stop.wait(5):
+            try:
+                mailq_tick(self.store)
+            except Exception as e:                      # noqa: BLE001
+                log_sparing('mailq', 'the outgoing mail: %s' % str(e).split('\n')[0][:200], 'warn')
+
     def housekeeping(self):
         n = 0
         while not self.stop.wait(15):
@@ -13403,6 +14500,7 @@ class Daemon:
         except Exception as e:                          # noqa: BLE001
             log('after a restart: %s' % e, 'warn')
         threading.Thread(target=self.housekeeping, name='ai-house', daemon=True).start()
+        threading.Thread(target=self.mail_going, name='ai-mailq', daemon=True).start()
 
         def bye(sig, _frame):
             log('stopping (signal %d); the terminals go on running' % sig)
@@ -16990,9 +18088,8 @@ def cli_main(argv):
             return 0
         if a.mail_test:
             to = mail_checked(a.mail_test)
-            subject, body = mail_words('test')
             try:
-                steps = send_mail(st, [to], subject, body, 'a test mail', 'the command line')
+                steps = mail_send(st, test_mail(to, mail_lang()), [to])
                 ok = True
             except MailError as e:
                 steps, ok = e.steps, False
@@ -17218,8 +18315,9 @@ def cli_main(argv):
             auth.tidy()
             keep = float(CONFIG.get('retain_events_days') or 180) * 86400
             n = st.x('DELETE FROM events WHERE at < ?', (time.time() - keep,))
-            n2 = st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
-            print(pal.ok_line('tidied: %d event(s), %d line(s) of outgoing mail' % (n, n2)))
+            mailq_tick(st)
+            print(pal.ok_line('tidied: %d event(s); the outgoing mail keeps %d day(s)' % (
+                n, int(CONFIG.get('mail_keep_days') or 14))))
             return 0
         if a.upgrade_status:
             v = d.upgrades.view()

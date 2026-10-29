@@ -63,6 +63,7 @@ function onTab(name, sub) {
 /* ---- the header, the live updates ------------------------------------------- */
 function paintHeader(s) {
   STATUS = s;
+  if (s.mailq && typeof mailqBadge === 'function') mailqBadge(s.mailq);
   var pill = $('state-pill');
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
   if (s.upgrade_state === 'running') kind = 'warn';
@@ -1596,7 +1597,7 @@ function showPane(name) {
   if (name === 'people') { loadUsers(); loadLockouts(); colsCardSay(); }
   if (name === 'mail') loadMail();
   if (name === 'texts') loadTexts();
-  if (name === 'mailq') loadOutbox();
+  if (name === 'mailq') loadMailq();
   if (name === 'db') loadDb();
   if (name === 'backup') loadRbackup();
   if (name === 'web') loadWeb();
@@ -3277,24 +3278,51 @@ function loadMail() {
       }));
     }
     $('mail-said').textContent = {off: 'switched off', smtp: 'through a mail server', direct: 'straight to the recipients'}[d.mode] || '';
+    mailViaShown();
     var nt = d.notices || {};
     $('mail-notices').textContent = nt.said ? 'The last notice: ' + ago(nt.at) + ' - ' + nt.said : '';
     return d;
   }).catch(oops);
 }
+function mailSteps(host, d) {
+  clear(host);
+  if (d.queued === 'waiting') {
+    /* Through the outgoing mail: not taken yet, tried again by itself. */
+    var p = el('p', 'note warn', 'Waiting in the outgoing mail: ' + d.said + ' - it is tried again by itself.');
+    host.appendChild(p);
+    var go = cmdButton('Outgoing mail', 'list', 'small');
+    go.onclick = function () { showPane('mailq'); };
+    host.appendChild(go);
+  } else {
+    host.appendChild(el('p', 'note ' + (d.sent ? 'good' : 'bad'), (d.sent ? (d.queued ? 'Sent through the outgoing mail: ' : 'Sent: ') : 'Not sent: ') + d.said
+      + (d.took_ms !== undefined ? ' · ' + num(d.took_ms) + ' ms' : '')));
+  }
+  if ((d.steps || []).length) host.appendChild(stepsList(d.steps));
+  host.appendChild(hideBar(function () { clear(host); }));
+}
+/* The choice of how a test mail goes - there only while mail goes
+   straight to the recipient's server. */
+function mailViaShown() {
+  var via = $('mail-test-via');
+  if (!via) return;
+  var mode = $('set-mail_mode');
+  var v = mode ? String(mode._get ? mode._get() : mode.value) : String(((settingByKey('mail_mode') || {}).value) || '');
+  via.hidden = v !== 'direct';
+}
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'set-mail_mode') mailViaShown();
+}, true);
 $('mail-test').onclick = function () {
   var b = $('mail-test');
+  /* Only a change to the mail settings stops the test, not one left on
+     another page. */
   if (Object.keys(DIRTY || {}).some(function (k) { return /^(mail_|smtp_)/.test(k); })) {
     toast('save the mail settings first', 'bad'); return;
   }
   busy(b, true);
-  api('mail', {action: 'test', to: $('mail-to').value.trim(), lang: $('mail-test-lang').value}).then(function (d) {
-    var host = $('mail-steps');
-    clear(host);
-    host.appendChild(el('p', 'note ' + (d.sent ? 'good' : 'bad'), (d.sent ? 'Sent: ' : 'Not sent: ') + d.said
-      + (d.took_ms !== undefined ? ' · ' + num(d.took_ms) + ' ms' : '')));
-    if ((d.steps || []).length) host.appendChild(stepsList(d.steps));
-    host.appendChild(hideBar(function () { clear(host); }));
+  var via = $('mail-test-via') && !$('mail-test-via').hidden ? $('mail-test-via').value : 'queue';
+  api('mail', {action: 'test', to: $('mail-to').value.trim(), lang: $('mail-test-lang').value, kind: $('mail-test-kind') ? $('mail-test-kind').value : 'short', via: via}).then(function (d) {
+    mailSteps($('mail-steps'), d);
   }).catch(oops).then(function () { busy(b, false); });
 };
 $('mca-pem').addEventListener('input', function () {
@@ -5519,116 +5547,857 @@ if ($('sms-try')) {
   };
 }
 
-/* ---- the texts of the messages (as otp's, 1.0.103) ------------------------------------- */
-var TX = {d: null, lang: 'cs', dirty: {}};
-var TX_WORDS = {
-  code_subject: ['A sign-in code by mail', 'the subject'], code_body: ['A sign-in code by mail', 'the text'],
-  verify_subject: ['Checking an address (setting up the second step)', 'the subject'], verify_body: ['Checking an address (setting up the second step)', 'the text'],
-  test_subject: ['A test mail', 'the subject'], test_body: ['A test mail', 'the text'],
-  notice_subject: ['Notices of warnings and failures', 'the subject'], notice_body: ['Notices of warnings and failures', 'the text'],
-  sms_code: ['A sign-in code by SMS', 'the text'], sms_verify: ['Checking a number by SMS', 'the text'], sms_test: ['A test SMS', 'the text']
-};
-function loadTexts() {
-  api('texts').then(function (d) { TX.d = d; TX.dirty = {}; drawTexts(); }).catch(oops);
+/* ---- the outgoing mail and the message texts (as otp's) ------------------------------ */
+/* ---- the outgoing mail (1.0.95) -------------------------------------------- */
+var MQ = {page: 0, per: 100, timer: null};
+var MQ_STATE_WORDS = {sending: ['being sent', 'info'], waiting: ['waiting', 'warn'], sent: ['sent', 'ok'],
+                      failed: ['failed', 'crit'], expired: ['given up', 'dim']};
+function mailqBadge(c) {
+  var b = $('mq-badge');
+  if (!b || !c) return;
+  var n = (c.waiting || 0) + (c.failed || 0) + (c.sending || 0);
+  b.hidden = !n;
+  b.textContent = num(n);
+  b.className = 'nav-badge' + (c.failed ? ' bad' : '');
+  b.title = (c.waiting || 0) + ' waiting · ' + (c.failed || 0) + ' failed';
 }
-function drawTexts() {
-  var host = $('tx-root');
-  clear(host);
-  var last = '';
-  var box = null;
-  (TX.d.texts[TX.lang] || []).forEach(function (t) {
-    var w = TX_WORDS[t.key] || [t.key, ''];
-    if (w[0] !== last) {
-      last = w[0];
-      box = el('section', 'set-sec');
-      var h = el('h3', 'set-sec-head');
-      h.appendChild(el('span', '', w[0]));
-      box.appendChild(h);
-      host.appendChild(box);
-    }
-    var item = el('div', 'set-item tall');
-    item.appendChild(el('label', '', w[1]));
-    var one = /_subject$/.test(t.key) || /^sms_/.test(t.key);
-    var input = one ? textBox(t.text, '', 'mono') : el('textarea', 'mono');
-    if (!one) { input.rows = Math.min(14, Math.max(4, t.text.split('\n').length + 1)); input.value = t.text; input.spellcheck = false; }
-    input.oninput = function () {
-      if (input.value === t.text) delete TX.dirty[t.key]; else TX.dirty[t.key] = input.value;
-      item.classList.toggle('dirty', t.key in TX.dirty);
-      if (Object.keys(TX.dirty).length) pendingSet('texts', {save: textsSave, reset: function () { TX.dirty = {}; drawTexts(); }});
-      else { delete PENDING.texts; markDirtyCount(); }
-      count();
-    };
-    item.appendChild(input);
-    var tail = el('div', 'set-tail');
-    var chips = el('div', 'says');
-    chips.appendChild(document.createTextNode('Filled in: '));
-    t.fields.forEach(function (f) { chips.appendChild(noI18n(el('code', '', '{' + f + '}'))); chips.appendChild(document.createTextNode(' ')); });
-    var count = function () {
-      if (/^sms_/.test(t.key)) chips.lastChild.textContent = ' · ' + input.value.length + ' characters';
-    };
-    if (/^sms_/.test(t.key)) chips.appendChild(el('span', 'muted', ''));
-    count();
-    tail.appendChild(chips);
-    if (t.own) {
-      var back = el('button', 'link small', 'back to the built-in text');
-      back.type = 'button';
-      back.onclick = function () { input.value = t['default']; input.oninput(); };
-      tail.appendChild(back);
-    }
-    item.appendChild(tail);
-    box.appendChild(item);
-  });
+function mailqWatch(on) {
+  clearInterval(MQ.timer);
+  MQ.timer = null;
+  /* Drawn again every 10 s while it is looked at - what waits moves by itself. */
+  if (on) MQ.timer = setInterval(function () {
+    if (PANE !== 'mailq' || TAB !== 'settings' || document.hidden) { mailqWatch(false); return; }
+    if (!document.querySelector('.modal:not([hidden])')) loadMailq(true);
+  }, 10000);
 }
-function textsSave() {
-  return api('texts', {lang: TX.lang, texts: TX.dirty}).then(function (r) { toast(r.message, 'good'); loadTexts(); return true; });
+function mailqStateTag(st) {
+  var w = MQ_STATE_WORDS[st] || [st || '?', 'dim'];
+  return el('span', 'tag ' + w[1], w[0]);
 }
-document.querySelectorAll('#tx-langs button').forEach(function (b) {
-  b.onclick = function () {
-    if (Object.keys(TX.dirty).length) { toast('save the changes first', 'warn'); return; }
-    TX.lang = b.dataset.lang;
-    document.querySelectorAll('#tx-langs button').forEach(function (x) { x.classList.toggle('on', x === b); });
-    drawTexts();
-  };
-});
-
-/* ---- outgoing mail and SMS (as otp's Outgoing mail) -------------------------------------- */
-function loadOutbox() {
-  var q = $('mq-q').value.trim(), st = $('mq-state').value;
-  api('outbox&q=' + encodeURIComponent(q) + '&state=' + encodeURIComponent(st)).then(function (d) {
+function loadMailq(quiet) {
+  if (!$('mq-table')) return;
+  if (!quiet) mailqWatch(true);
+  apiLatest('mailq', 'mailq&q=' + encodeURIComponent($('mq-q').value) + '&state=' + $('mq-state').value
+      + '&limit=' + MQ.per + '&offset=' + MQ.page * MQ.per).then(function (d) {
+    qSuggest($('mq-q'), 'mailq').said(d.q_error || '');
+    var c = d.counts || {};
+    mailqBadge(c);
     var chips = $('mq-chips');
     clear(chips);
-    [['sent', 'sent', 'ok'], ['failed', 'failed', 'crit']].forEach(function (c) {
-      var n = (d.counts || {})[c[0]] || 0;
-      var b = el('button', 'tag ' + (n ? c[2] : 'dim'), c[1] + ': ' + num(n));
-      b.type = 'button';
-      b.onclick = function () { $('mq-state').value = c[0]; loadOutbox(); };
-      chips.appendChild(b);
-      chips.appendChild(document.createTextNode(' '));
+    [['waiting', 'waiting for another try'], ['sending', 'being sent'], ['failed', 'failed'],
+     ['sent', 'sent'], ['expired', 'given up']].forEach(function (x) {
+      var ch = el('button', 'mq-chip ' + (MQ_STATE_WORDS[x[0]] || ['', ''])[1] + ($('mq-state').value === x[0] ? ' on' : ''));
+      ch.type = 'button';
+      ch.appendChild(el('b', '', num(c[x[0]] || 0)));
+      ch.appendChild(el('span', '', x[1]));
+      ch.onclick = function () { $('mq-state').value = $('mq-state').value === x[0] ? '' : x[0]; MQ.page = 0; loadMailq(); };
+      chips.appendChild(ch);
     });
-    var host = $('mq-table');
-    clear(host);
-    if (!d.rows.length) { host.appendChild(el('p', 'note', 'Nothing has been sent yet.')); return; }
-    host.appendChild(listTable(['When', 'How', 'To', 'What', 'State', 'What the other side said', 'Took'], d.rows, function (r) {
+    $('mq-said').textContent = (d.mode === 'off' ? 'Sending mail is switched off (Settings → Mail): nothing is sent or tried again. · ' : '')
+      + 'A mail not taken is tried again for ' + d.retry_hours + ' h (a code to sign in with only while it is good); the list keeps what went or failed for ' + d.keep_days + ' days.';
+    liveFill($('mq-table'), function (host) {
+    var cluster = false;
+    var heads = ['Made', 'To', 'What', 'State', {words: 'Tries', cls: 'num'}, 'Next try / went', 'What it said'];
+    if (cluster) heads.push('Node');
+    heads.push('');
+    host.appendChild(listTable(heads, d.rows, function (r) {
       var tr = el('tr');
-      tr.appendChild(stampCell(r.at));
-      tr.appendChild(el('td', '', r.kind === 'sms' ? 'SMS' : 'e-mail'));
-      tr.appendChild(noI18n(el('td', 'mono small', r.dest)));
-      var w = el('td', 'small', r.what);
-      if (r.subject) w.appendChild(noI18n(el('div', 'muted', r.subject)));
-      tr.appendChild(w);
-      var s = el('td');
-      s.appendChild(el('span', 'tag ' + (r.state === 'sent' ? 'ok' : 'crit'), r.state === 'sent' ? 'sent' : 'failed'));
-      tr.appendChild(s);
-      tr.appendChild(noI18n(el('td', 'small muted', r.said || '')));
-      tr.appendChild(el('td', 'num small muted', (r.secs || 0) + ' s'));
+      tr.appendChild(stampCell(r.created));
+      var to = el('td');
+      to.appendChild(noI18n(el('span', 'mono', (r.to || []).join(', '))));
+      if (r.name && (r.to || []).join() !== r.name) to.appendChild(noI18n(el('span', 'sub', r.name)));
+      tr.appendChild(to);
+      var what = el('td');
+      what.appendChild(el('span', '', r.kind_words || r.kind));
+      if (r.subject) what.appendChild(noI18n(el('span', 'sub', r.subject)));
+      tr.appendChild(what);
+      var st = el('td');
+      st.appendChild(mailqStateTag(r.state));
+      tr.appendChild(st);
+      tr.appendChild(el('td', 'num', num(r.tries || 0)));
+      if (r.state === 'sent') tr.appendChild(stampCell(r.sent_at));
+      else if (r.state === 'waiting') {
+        var nx = el('td', 'small');
+        var left = (r.next_at || 0) - Date.now() / 1000;
+        nx.textContent = left > 5 ? 'in ' + span(left) : 'now';
+        nx.title = 'tried until ' + dayWords(new Date((r.expires || 0) * 1000)) + ' ' + clockWords(new Date((r.expires || 0) * 1000));
+        tr.appendChild(nx);
+      } else tr.appendChild(el('td', 'muted small', r.state === 'sending' ? 'now' : '–'));
+      var said = el('td', 'muted small mq-said');
+      said.textContent = r.said || '';
+      said.title = r.said || '';
+      noI18n(said);
+      tr.appendChild(said);
+      if (cluster) tr.appendChild(noI18n(el('td', 'muted small', r.node || '')));
+      var tools = el('td', 'rowtools');
+      if (ADMIN) {
+        if (r.state === 'waiting' || r.state === 'failed') {
+          var again = iconButton('refresh', 'Send it again now');
+          again.onclick = function (e) { e.stopPropagation(); mailqDo('retry', [r.qid]); };
+          tools.appendChild(again);
+        }
+        var x = iconButton('trash', 'Take it out of the outgoing mail');
+        x.onclick = function (e) {
+          e.stopPropagation();
+          confirmThen('Take the mail out', 'The mail to <b>' + htmlText((r.to || []).join(', ')) + '</b> ('
+            + htmlText(r.kind_words || '') + ') goes from the list' + (r.state === 'waiting' ? ' and is not tried again' : '') + '.',
+            'Take it out', function () { mailqDo('drop', [r.qid]); }, true);
+        };
+        tools.appendChild(x);
+      }
+      tr.appendChild(tools);
+      tr.onclick = function () { mailqPeek(r.qid); };
+      tr.classList.add('tappable');
       return tr;
-    }));
+    }, 'rows'));
+    }, !!quiet);
+    pager('mq-pager', MQ.page, MQ.per, d.total, function (p) { MQ.page = p; loadMailq(); });
+    explainWhatWasDrawn($('pane-mailq'));
   }).catch(oops);
 }
-$('mq-q').addEventListener('input', function () { clearTimeout(loadOutbox._t); loadOutbox._t = setTimeout(loadOutbox, 300); });
-$('mq-state').onchange = loadOutbox;
-$('mq-drop-sent').onclick = function () { api('outbox', {action: 'clear', state: 'sent'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };
-$('mq-drop-failed').onclick = function () { api('outbox', {action: 'clear', state: 'failed'}).then(function (r) { toast(r.message, 'good'); loadOutbox(); }).catch(oops); };
+function mailqDo(act, ids) {
+  return api('mailq', {action: act, ids: ids || []}).then(function (x) {
+    toast(x.message, 'good');
+    loadMailq(true);
+    setTimeout(function () { if (PANE === 'mailq') loadMailq(true); }, 2500);
+  }).catch(oops);
+}
+function mailqPeek(qid) {
+  api('mailq-one&id=' + encodeURIComponent(qid)).then(function (r) {
+    modal('A mail to ' + (r.to || []).join(', '), function (body) {
+      var kv = el('div', 'me-kv');
+      var row = function (k, v) { kv.appendChild(el('div', 'k', k)); var d = el('div', 'v'); if (typeof v === 'string') d.appendChild(noI18n(el('span', '', v))); else d.appendChild(v); kv.appendChild(d); };
+      var at = function (ts) { var d = new Date((ts || 0) * 1000); return dayWords(d) + ' ' + clockWords(d); };
+      row('State', mailqStateTag(r.state));
+      row('What', el('span', '', r.kind_words || '')); if (r.subject) row('Subject', r.subject);
+      row('Made', at(r.created) + (r.by ? ' · ' + r.by : ''));
+      if (r.state === 'sent') row('Went', at(r.sent_at));
+      if (r.state === 'waiting') row('Next try', at(r.next_at));
+      row('Tried until', at(r.expires));
+      body.appendChild(kv);
+      if ((r.history || []).length) {
+        body.appendChild(el('h3', '', 'Tries'));
+        body.appendChild(listTable(['When', '', 'What it said'], r.history.slice().reverse(), function (h) {
+          var tr = el('tr');
+          tr.appendChild(stampCell(h.at));
+          var t = el('td'); t.appendChild(el('span', 'tag ' + (h.ok ? 'ok' : 'warn'), h.ok ? 'taken' : 'not taken')); tr.appendChild(t);
+          var w = noI18n(el('td', 'small', h.said || '')); tr.appendChild(w);
+          return tr;
+        }, 'rows'));
+      }
+      if ((r.steps || []).length) {
+        body.appendChild(el('h3', '', 'The last try, step by step'));
+        body.appendChild(stepsList(r.steps));
+      }
+      if (!r.has_body && (r.state === 'sent' || r.state === 'expired'))
+        body.appendChild(el('p', 'note muted small', 'What the mail held is not kept once it went or was given up.'));
+    }, [{words: 'Take it out', icon: 'trash', cls: 'danger', hidden: !ADMIN, go: function () { closeModal(); mailqDo('drop', [qid]); }},
+        {spacer: true},
+        {words: 'Send it again now', icon: 'refresh', cls: 'primary', hidden: !ADMIN || !r.has_body || !(r.state === 'waiting' || r.state === 'failed'),
+         go: function () { closeModal(); mailqDo('retry', [qid]); }},
+        {words: 'Close', close: true}].filter(function (b) { return !b.hidden; }), 'medium');
+  }).catch(oops);
+}
+if ($('mq-q')) {
+  var mqTimer = null;
+  $('mq-q').addEventListener('input', function () { clearTimeout(mqTimer); mqTimer = setTimeout(function () { MQ.page = 0; loadMailq(); }, 300); });
+  $('mq-state').onchange = function () { MQ.page = 0; loadMailq(); };
+  $('mq-retry-all').onclick = function () { mailqDo('retry_all'); };
+  $('mq-drop-sent').onclick = function () {
+    confirmThen('Clear the sent mails', 'The mails that went leave the list (the events still say they went).', 'Clear them', function () { mailqDo('drop_sent'); });
+  };
+  $('mq-drop-failed').onclick = function () {
+    confirmThen('Clear the failed mails', 'The mails refused for good, or given up, leave the list - they are not tried again.', 'Clear them', function () { mailqDo('drop_failed'); }, true);
+  };
+}
+
+/* ==========================================================================
+   The texts of the messages (1.0.103): every mail, SMS and question of the
+   mail and SMS of a code, in Czech and English, edited as they will look. A mail is shown as it
+   arrives - its texts written into where they stand; what is filled in when
+   it is sent stands in blue chips. Saved in the database.
+   ========================================================================== */
+var TX = {data: null, id: null, lang: 'cs', dirty: {}, eds: {}, active: null, range: null, frame: null};
+var TX_KINDS = [['mail', 'E-mails', 'mail'], ['sms', 'SMS', 'phone']];
+var TX_COLORS = ['#111827', '#1d4ed8', '#b91c1c', '#15803d', '#b45309', '#7c3aed', '#6b7280'];
+function txMsg(id) { return ((TX.data || {}).messages || []).filter(function (m) { return m.id === (id || TX.id); })[0]; }
+function txField(key) { var m = txMsg(); return m ? m.fields.filter(function (f) { return f.key === key; })[0] : null; }
+function txDirtyCount() { return Object.keys(TX.dirty).length; }
+function txValue(f) { return Object.prototype.hasOwnProperty.call(TX.dirty, f.key) ? TX.dirty[f.key] : f.value[TX.lang]; }
+
+function loadTexts() {
+  api('texts').then(function (d) {
+    TX.data = d;
+    if (!txMsg(TX.id)) TX.id = d.messages[0].id;
+    drawTexts();
+  }).catch(oops);
+}
+/* Leaving what is not saved is asked first. */
+function txLeave(go) {
+  if (!txDirtyCount()) { go(); return; }
+  confirmThen('Leave the changes unsaved?', 'What was written since the last save is thrown away.', 'Throw them away', function () {
+    TX.dirty = {};
+    go();
+  }, true);
+}
+
+/* ---- a template and its picture in an editor ---------------------------- */
+/* {code} as a chip, {{ and }} as braces; a plain text's lines as breaks. */
+function txChipHtml(name, doc) {
+  var label = (TX.data.placeholders || {})[name] || name;
+  return '<span data-ph="' + name + '" contenteditable="false" title="{' + name + '}" style="display:inline-block;'
+    + 'padding:0 6px;margin:0 1px;border-radius:5px;background:#dbeafe;color:#1e3a8a;border:1px solid #bfdbfe;'
+    + 'font-size:.86em;line-height:1.5;font-weight:600;white-space:nowrap;vertical-align:baseline;cursor:default;'
+    + 'user-select:all">' + htmlText(txT(label)) + '</span>';
+}
+function txToHtml(tpl, kind) {
+  var s = String(tpl || '').replace(/\{\{/g, '').replace(/\}\}/g, '');
+  if (kind !== 'rich') s = htmlText(s).replace(/\n/g, '<br>');
+  s = s.replace(/\{([A-Za-z_]+)\}/g, function (_m, n) { return txChipHtml(n); });
+  return s.replace(//g, '{').replace(//g, '}');
+}
+function txFromNode(node, kind) {
+  var out = '';
+  Array.prototype.forEach.call(node.childNodes, function (n) {
+    if (n.nodeType === 3) {
+      var t = n.nodeValue.replace(/​/g, '').replace(/\{/g, '{{').replace(/\}/g, '}}');
+      out += kind === 'rich' ? htmlText(t).replace(/&#39;/g, "'").replace(/&quot;/g, '"') : t;
+      return;
+    }
+    if (n.nodeType !== 1) return;
+    var tag = n.tagName.toLowerCase();
+    if (n.hasAttribute('data-ph')) { out += '{' + n.getAttribute('data-ph') + '}'; return; }
+    if (tag === 'br') { out += kind === 'rich' ? '<br>' : (kind === 'line' ? ' ' : '\n'); return; }
+    var inner = txFromNode(n, kind);
+    if (tag === 'div' || tag === 'p') {
+      out += (out && !/(<br>|\n)$/.test(out) ? (kind === 'rich' ? '<br>' : (kind === 'line' ? ' ' : '\n')) : '') + inner;
+      return;
+    }
+    if (kind !== 'rich') { out += inner; return; }
+    if (tag === 'b' || tag === 'strong') out += '<b>' + inner + '</b>';
+    else if (tag === 'i' || tag === 'em') out += '<i>' + inner + '</i>';
+    else if (tag === 'u') out += '<u>' + inner + '</u>';
+    else if (tag === 'a' && n.getAttribute('href')) out += '<a href="' + htmlText(n.getAttribute('href')) + '">' + inner + '</a>';
+    else if (tag === 'font' && n.getAttribute('color')) out += '<span style="color:' + n.getAttribute('color') + '">' + inner + '</span>';
+    else if (tag === 'span' && n.getAttribute('style')) out += '<span style="' + htmlText(n.getAttribute('style')) + '">' + inner + '</span>';
+    else out += inner;
+  });
+  return out;
+}
+function txSerialize(ed) {
+  var v = txFromNode(ed, ed._f.kind);
+  if (ed._f.kind === 'line') v = v.replace(/\s+/g, ' ').trim();
+  return v;
+}
+
+/* One box of words: in the page, or in the picture of the mail. */
+function txEditable(ed, f, doc) {
+  ed._f = f;
+  ed._doc = doc || document;
+  ed.innerHTML = txToHtml(txValue(f), f.kind);
+  ed.setAttribute('data-f', f.key);
+  ed.setAttribute('spellcheck', 'true');
+  ed.setAttribute('lang', TX.lang);
+  var may = TX.data.may_change;
+  ed.contentEditable = may ? 'true' : 'false';
+  TX.eds[f.key] = ed;
+  var mark = function () {
+    var on = TX.active && TX.active.ed === ed;
+    var changed = txValue(f) !== f.default[TX.lang];
+    if (ed._inFrame) {
+      ed.style.outline = on ? '2px solid #2563eb' : (ed._hover ? '1px dashed #60a5fa' : (changed ? '1px dashed #f59e0b' : '1px dashed transparent'));
+      ed.style.outlineOffset = '3px';
+      ed.style.borderRadius = '3px';
+      ed.style.background = on ? 'rgba(37,99,235,.06)' : '';
+    }
+    ed.classList.toggle('tx-changed', changed);
+    if (ed._mark2) ed._mark2(changed);
+  };
+  ed._markIt = mark;
+  if (!may) { mark(); return ed; }
+  ed.addEventListener('focus', function () { TX.active = {ed: ed, f: f, doc: ed._doc}; txToolsState(); Object.keys(TX.eds).forEach(function (k) { TX.eds[k]._markIt(); }); });
+  ed.addEventListener('mouseenter', function () { ed._hover = true; mark(); });
+  ed.addEventListener('mouseleave', function () { ed._hover = false; mark(); });
+  ed.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (f.kind !== 'line') ed._doc.execCommand('insertLineBreak');
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && /^[biu]$/i.test(e.key) && f.kind !== 'rich') e.preventDefault();
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('set-save').click(); }
+  });
+  ed.addEventListener('paste', function (e) {
+    e.preventDefault();
+    var t = (e.clipboardData || window.clipboardData).getData('text/plain') || '';
+    if (f.kind === 'line') t = t.replace(/\s*\n\s*/g, ' ');
+    ed._doc.execCommand('insertText', false, t);
+  });
+  ed.addEventListener('drop', function (e) { e.preventDefault(); });
+  ed.addEventListener('input', function () {
+    var v = txSerialize(ed);
+    if (v === f.value[TX.lang]) delete TX.dirty[f.key]; else TX.dirty[f.key] = v;
+    mark();
+    txBarState();
+    if (ed._onChange) ed._onChange(v);
+    if (ed._inFrame) txFitFrame();
+  });
+  mark();
+  return ed;
+}
+/* Put in where the cursor is, in the box last written in. */
+function txInsertChip(name, ed) {
+  ed = ed || (TX.active && TX.active.ed);
+  if (!ed || !TX.data.may_change) return;
+  if ((ed._f.placeholders || []).indexOf(name) < 0) { toast(txT('this text cannot have it'), 'bad'); return; }
+  ed.focus();
+  if (TX.range && TX.range.ed === ed) {
+    var sel = ed._doc.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(TX.range.r);
+  }
+  ed._doc.execCommand('insertHTML', false, txChipHtml(name) + '​');
+  ed.dispatchEvent(new Event('input'));
+}
+function txKeepRange() {
+  var a = TX.active;
+  if (!a) return;
+  var sel = a.doc.getSelection();
+  if (sel && sel.rangeCount && a.ed.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+    TX.range = {ed: a.ed, r: sel.getRangeAt(0).cloneRange()};
+  }
+}
+function txChipsFor(f, ed) {
+  var row = el('div', 'tx-chips');
+  if (!(f.placeholders || []).length || !TX.data.may_change) return row;
+  row.appendChild(el('span', 'small muted', 'Put in:'));
+  f.placeholders.forEach(function (p) {
+    var b = el('button', 'tx-chip', (TX.data.placeholders || {})[p] || p);
+    b.type = 'button';
+    b.title = '{' + p + '}';
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.onclick = function () { txInsertChip(p, ed); };
+    row.appendChild(b);
+  });
+  return row;
+}
+function txResetField(f) {
+  var ed = TX.eds[f.key];
+  if (!ed) return;
+  ed.innerHTML = txToHtml(f.default[TX.lang], f.kind);
+  ed.dispatchEvent(new Event('input'));
+}
+
+/* ---- the whole pane ------------------------------------------------------ */
+function drawTexts() {
+  var host = $('tx-root');
+  if (!host || !TX.data) return;
+  saveBarHome();
+  clear(host);
+  TX.eds = {};
+  TX.active = null;
+  TX.range = null;
+  /* One scroll, the page's (1.0.128): the list is short enough to stay in
+     view beside the editor, which runs down the page - no scroll bars of
+     their own. */
+  var shell = el('div', 'tx-shell');
+  txFitShell(shell);
+  /* The messages, by whom they are for, then by how they go. */
+  var list = el('div', 'tx-list card');
+  var isAdmin = function (m) { return /^admin_/.test(m.id); };
+  TX_KINDS.concat([['admin', 'The administration', 'shield']]).forEach(function (k) {
+    var ms = TX.data.messages.filter(function (m) { return k[0] === 'admin' ? isAdmin(m) : (m.kind === k[0] && !isAdmin(m)); });
+    if (!ms.length) return;
+    var hd = el('div', 'tx-list-h');
+    hd.innerHTML = iconMarkup(k[2], 14);
+    hd.appendChild(el('span', '', k[1]));
+    list.appendChild(hd);
+    ms.forEach(function (m) {
+      var b = el('button', 'tx-item' + (m.id === TX.id ? ' on' : ''));
+      b.type = 'button';
+      b.appendChild(el('span', 'tx-item-t', m.short || m.title));
+      var st = el('span', 'tx-item-s');
+      var ch = TX.data.langs.filter(function (l) { return (m.saved[l].changed || []).length; });
+      ch.forEach(function (l) { st.appendChild(noI18n(el('span', 'tag warn', l.toUpperCase()))); });
+      if (ch.length) b.title = 'Changed here - not as it comes';
+      b.appendChild(st);
+      b.onclick = function () { if (m.id !== TX.id) txLeave(function () { TX.id = m.id; drawTexts(); }); };
+      list.appendChild(b);
+    });
+  });
+  var ha = el('div', 'tx-ha small muted');
+  ha.innerHTML = iconMarkup('db', 13);
+  ha.appendChild(el('span', '', 'Kept in the database: they go with every copy of it, and to another engine with it.'));
+  list.appendChild(ha);
+  shell.appendChild(list);
+  var ed = el('div', 'tx-ed');
+  shell.appendChild(ed);
+  host.appendChild(shell);
+  txDrawEditor(ed);
+}
+
+function txDrawEditor(host) {
+  var m = txMsg();
+  var head = el('div', 'tx-head card');
+  var ttl = el('div', 'tx-title');
+  ttl.appendChild(el('h3', '', m.title));
+  ttl.appendChild(el('p', 'small muted', m.says));
+  head.appendChild(ttl);
+  var seg = el('div', 'seg tx-lang');
+  TX.data.langs.forEach(function (l) {
+    var b = el('button', l === TX.lang ? 'on' : '');
+    b.type = 'button';
+    b.appendChild(noI18n(el('span', '', {cs: 'Čeština', en: 'English'}[l] || l)));
+    if ((m.saved[l].changed || []).length) b.appendChild(el('span', 'tx-dot'));
+    b.onclick = function () { if (l !== TX.lang) txLeave(function () { TX.lang = l; drawTexts(); }); };
+    seg.appendChild(b);
+  });
+  head.appendChild(seg);
+  /* What is saved, and what can be done with it. */
+  var bar = el('div', 'tx-bar');
+  var said = el('span', 'tx-said small');
+  said.id = 'tx-said';
+  bar.appendChild(said);
+  var spacer = el('span', 'tx-spacer');
+  bar.appendChild(spacer);
+  var may = TX.data.may_change;
+  var prev = cmdButton('Preview', 'eye', '');
+  prev.onclick = txPreview;
+  bar.appendChild(prev);
+  if (may) {
+    var test = cmdButton('Send a sample…', 'mail', '');
+    test.onclick = txTest;
+    bar.appendChild(test);
+  }
+  if (may) {
+    var back = cmdButton('Put back as it comes', 'undo', 'danger');
+    back.id = 'tx-reset';
+    back.onclick = txResetAll;
+    bar.appendChild(back);
+  }
+  head.appendChild(bar);
+  host.appendChild(head);
+  if (!may) host.appendChild(el('p', 'note', 'Only an administrator changes these words.'));
+  if (m.kind === 'mail') txDrawMail(host, m);
+  else txDrawSms(host, m);
+  txBarState();
+}
+
+function txBarState() {
+  var m = txMsg();
+  if (!m) return;
+  var n = txDirtyCount();
+  var s = $('tx-said');
+  if (s) {
+    clear(s);
+    var sv = m.saved[TX.lang];
+    if (n) { s.className = 'tx-said small warn'; s.textContent = num(n) + ' text(s) changed, not saved yet'; }
+    else if ((sv.changed || []).length && sv.at) {
+      s.className = 'tx-said small';
+      s.textContent = 'Saved ' + dayWords(new Date(sv.at * 1000)) + ' ' + clockWords(new Date(sv.at * 1000)) + (sv.by ? ' by ' + sv.by : '')
+        + ' · ' + num(sv.changed.length) + ' text(s) not as they come';
+    } else { s.className = 'tx-said small muted'; s.textContent = 'As it comes with ai'; }
+  }
+  /* Saved with the bar at the bottom (1.0.123), as everything else. */
+  if (n && TX.data.may_change) {
+    if (!PENDING.texts) pendingSet('texts', {pane: 'texts', save: txSave, reset: function () { TX.dirty = {}; drawTexts(); }});
+  } else if (PENDING.texts) { delete PENDING.texts; markDirtyCount(); }
+  if ($('tx-reset')) $('tx-reset').disabled = !(m.saved[TX.lang].changed || []).length && !n;
+}
+
+/* ---- a mail: drawn as it arrives, written into where it stands ----------- */
+function txDrawMail(host, m) {
+  var may = TX.data.may_change;
+  var subj = m.fields.filter(function (f) { return f.where === 'subject'; })[0];
+  /* The window of a mail program, with the toolbar over it. */
+  var win = el('div', 'tx-mailwin card');
+  var meta = el('div', 'tx-meta');
+  var r1 = el('div', 'tx-meta-row');
+  r1.appendChild(el('span', 'tx-meta-k', 'From'));
+  r1.appendChild(noI18n(el('span', 'tx-meta-v mono small', TX.data.sender || '')));
+  meta.appendChild(r1);
+  var r2 = el('div', 'tx-meta-row');
+  r2.appendChild(el('span', 'tx-meta-k', 'Subject'));
+  var se = el('div', 'tx-line tx-subject');
+  txEditable(se, subj);
+  r2.appendChild(se);
+  meta.appendChild(r2);
+  var sc = txChipsFor(subj, se);
+  sc.classList.add('tx-meta-chips');
+  meta.appendChild(sc);
+  win.appendChild(meta);
+  if (may) win.appendChild(txToolbar());
+  var stage = el('div', 'tx-stage');
+  var frame = el('iframe', 'tx-frame');
+  frame.setAttribute('title', m.title);
+  TX.frame = frame;
+  stage.appendChild(frame);
+  var loading = el('p', 'note tx-loading', 'drawing the mail…');
+  stage.appendChild(loading);
+  win.appendChild(stage);
+  host.appendChild(win);
+  api('texts&render=' + encodeURIComponent(m.id) + '&lang=' + TX.lang + '&mark=1').then(function (d) {
+    var page = String(d.html || '').replace(/<title>[\s\S]*?<\/title>/, '<title></title>')
+      .replace(/⟦f:([a-z0-9_]+)⟧/g, function (_m, k) { return '<span data-slot="' + k + '"></span>'; });
+    frame.onload = function () {
+      loading.remove();
+      var doc = frame.contentDocument;
+      Array.prototype.forEach.call(doc.querySelectorAll('[data-slot]'), function (slot) {
+        var f = txField(slot.getAttribute('data-slot'));
+        if (!f) return;
+        slot._inFrame = true;
+        slot.style.minWidth = '24px';
+        slot.style.display = 'inline-block';
+        slot.style.cursor = may ? 'text' : 'default';
+        slot.title = txT(f.label);
+        txEditable(slot, f, doc);
+      });
+      doc.addEventListener('selectionchange', txKeepRange);
+      doc.addEventListener('keyup', txKeepRange);
+      doc.addEventListener('mouseup', txKeepRange);
+      /* Links in the picture are not followed while it is written in. */
+      doc.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a'); if (a) e.preventDefault(); });
+      txFitFrame();
+      setTimeout(txFitFrame, 300);
+    };
+    frame.srcdoc = page;
+  }).catch(function (e) { loading.textContent = e.message; });
+  /* What is not in the picture: a greeting without a name, the text version. */
+  var others = m.fields.filter(function (f) { return f.where === 'other'; });
+  if (others.length) {
+    var card = el('div', 'card tx-card');
+    card.appendChild(el('h3', 'peek-h', 'When the name is not known'));
+    card.appendChild(el('p', 'small muted', 'Used instead of the texts above when there is no name or account to put in.'));
+    others.forEach(function (f) { card.appendChild(txFieldBox(f, 'tx-rich')); });
+    host.appendChild(card);
+  }
+  var plain = m.fields.filter(function (f) { return f.where === 'plain'; });
+  if (plain.length) {
+    var pc = el('div', 'card tx-card');
+    pc.appendChild(el('h3', 'peek-h', 'The plain text version'));
+    pc.appendChild(el('p', 'small muted', 'What a mail program shows that does not show HTML, and what is sent alone when Settings → Codes by e-mail and SMS says a mail with a code is plain text.'));
+    plain.forEach(function (f) { pc.appendChild(txFieldBox(f, 'tx-plain')); });
+    host.appendChild(pc);
+  }
+}
+/* One field in the page: its name, a box, what can be put in, its default. */
+function txFieldBox(f, cls) {
+  var wrap = el('div', 'tx-field');
+  var top = el('div', 'tx-field-h');
+  top.appendChild(el('b', '', f.label));
+  var flag = el('span', 'tag warn small', 'changed');
+  top.appendChild(flag);
+  var sp = el('span', 'tx-spacer');
+  top.appendChild(sp);
+  var ed = el('div', 'tx-box ' + (cls || ''));
+  if (TX.data.may_change) {
+    var rb = cmdButton('As it comes', 'undo', 'small');
+    rb.title = txT('Put this text back as it comes with ai');
+    rb.onclick = function () { txResetField(f); };
+    top.appendChild(rb);
+  }
+  wrap.appendChild(top);
+  txEditable(ed, f);
+  ed._mark2 = function (changed) { flag.hidden = !changed; if (rb) rb.disabled = !changed; };
+  ed._markIt();
+  wrap.appendChild(ed);
+  wrap.appendChild(txChipsFor(f, ed));
+  return wrap;
+}
+function txFitFrame() {
+  var f = TX.frame;
+  if (!f || !f.contentDocument || !f.contentDocument.documentElement) return;
+  f.style.height = Math.max(200, f.contentDocument.documentElement.scrollHeight + 4) + 'px';
+}
+/* Bold, italic, a colour, a link - what mail programs show alike. */
+function txToolbar() {
+  var bar = el('div', 'tx-tools');
+  bar.id = 'tx-tools';
+  var cmd = function (icon, title, run, cls) {
+    var b = el('button', 'tx-tool' + (cls ? ' ' + cls : ''));
+    b.type = 'button';
+    b.title = txT(title);
+    b.setAttribute('aria-label', txT(title));
+    if (/^</.test(icon)) b.innerHTML = icon; else b.appendChild(el('span', '', icon));
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.onclick = function () {
+      var a = TX.active;
+      if (!a) { toast(txT('click into a text of the mail first'), 'bad'); return; }
+      run(a);
+      a.ed.dispatchEvent(new Event('input'));
+    };
+    bar.appendChild(b);
+    return b;
+  };
+  var rich = function (a) { if (a.f.kind !== 'rich') { toast(txT('this text is one plain line'), 'bad'); return false; } return true; };
+  cmd('<b>B</b>', 'Bold (Ctrl+B)', function (a) { if (rich(a)) a.doc.execCommand('bold'); }, 'rich-only');
+  cmd('<i>I</i>', 'Italic (Ctrl+I)', function (a) { if (rich(a)) a.doc.execCommand('italic'); }, 'rich-only');
+  cmd('<u>U</u>', 'Underline (Ctrl+U)', function (a) { if (rich(a)) a.doc.execCommand('underline'); }, 'rich-only');
+  bar.appendChild(el('span', 'tx-sep'));
+  var colors = el('span', 'tx-colors rich-only');
+  TX_COLORS.forEach(function (c) {
+    var b = el('button', 'tx-swatch');
+    b.type = 'button';
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.onclick = function () {
+      var a = TX.active;
+      if (!a || !rich(a)) return;
+      a.doc.execCommand('styleWithCSS', false, true);
+      a.doc.execCommand('foreColor', false, c);
+      a.doc.execCommand('styleWithCSS', false, false);
+      a.ed.dispatchEvent(new Event('input'));
+    };
+    colors.appendChild(b);
+  });
+  bar.appendChild(colors);
+  bar.appendChild(el('span', 'tx-sep'));
+  cmd(iconMarkup('globe', 15), 'A link', function (a) {
+    if (!rich(a)) return;
+    txKeepRange();
+    var keep = TX.range;
+    modalOver(function () {
+      modal('A link', function (body) {
+        var u = textBox('https://', 'https://…', 'mono');
+        noI18n(u);
+        body.appendChild(formField('Where it goes', u, 'https://…, http://… or mailto:…'));
+        setTimeout(function () { u.focus(); u.select(); }, 50);
+        u.addEventListener('keydown', function (e) { if (e.key === 'Enter') MODAL_GO(); });
+        MODAL_GO = function () {
+          var url = u.value.trim();
+          if (!/^(https?:\/\/|mailto:)\S+$/i.test(url)) { toast(txT('a link starts with https://, http:// or mailto:'), 'bad'); return; }
+          closeModal();
+          a.ed.focus();
+          if (keep) { var sel = a.doc.getSelection(); sel.removeAllRanges(); sel.addRange(keep.r); }
+          if (a.doc.getSelection().isCollapsed) a.doc.execCommand('insertHTML', false, '<a href="' + htmlText(url) + '">' + htmlText(url) + '</a>');
+          else a.doc.execCommand('createLink', false, url);
+          a.ed.dispatchEvent(new Event('input'));
+        };
+      }, [{words: 'Close', close: true}, {words: 'Put it in', cls: 'primary', icon: 'check', go: function () { MODAL_GO(); }}], 'small');
+    });
+  }, 'rich-only');
+  cmd(iconMarkup('close', 15), 'Take the link away', function (a) { if (rich(a)) a.doc.execCommand('unlink'); }, 'rich-only');
+  cmd(iconMarkup('broom', 15), 'Take the formatting away', function (a) { if (rich(a)) { a.doc.execCommand('removeFormat'); a.doc.execCommand('unlink'); } }, 'rich-only');
+  bar.appendChild(el('span', 'tx-sep'));
+  cmd(iconMarkup('undo', 15), 'Undo (Ctrl+Z)', function (a) { a.doc.execCommand('undo'); });
+  cmd(iconMarkup('refresh', 15), 'Redo (Ctrl+Y)', function (a) { a.doc.execCommand('redo'); });
+  bar.appendChild(el('span', 'tx-sep'));
+  /* What can be put into the text being written. */
+  var ph = el('span', 'tx-tool-ph');
+  ph.id = 'tx-tool-ph';
+  bar.appendChild(ph);
+  var sp = el('span', 'tx-spacer');
+  bar.appendChild(sp);
+  var which = el('span', 'tx-which small muted');
+  which.id = 'tx-which';
+  which.textContent = txT('Click into a text of the mail to write in it.');
+  bar.appendChild(which);
+  var fr = cmd(iconMarkup('undo', 15) + '<span>' + htmlText(txT('This text as it comes')) + '</span>', 'Put the text being written back as it comes with ai', function (a) { txResetField(a.f); }, 'tx-tool-wide');
+  fr.id = 'tx-field-reset';
+  return bar;
+}
+function txToolsState() {
+  var a = TX.active;
+  var bar = $('tx-tools');
+  if (!bar || !a) return;
+  var rich = a.f.kind === 'rich';
+  Array.prototype.forEach.call(bar.querySelectorAll('.rich-only'), function (b) {
+    if (b.tagName === 'BUTTON') b.disabled = !rich;
+    else Array.prototype.forEach.call(b.querySelectorAll('button'), function (x) { x.disabled = !rich; });
+  });
+  var which = $('tx-which');
+  if (which) which.textContent = txT(a.f.label) + (rich ? '' : ' · ' + txT('one plain line'));
+  var ph = $('tx-tool-ph');
+  clear(ph);
+  (a.f.placeholders || []).forEach(function (p) {
+    var b = el('button', 'tx-chip', (TX.data.placeholders || {})[p] || p);
+    b.type = 'button';
+    b.title = '{' + p + '}';
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.onclick = function () { txInsertChip(p, a.ed); };
+    ph.appendChild(b);
+  });
+  if (!(a.f.placeholders || []).length) ph.appendChild(el('span', 'small muted', 'nothing to put in here'));
+  var fr = $('tx-field-reset');
+  if (fr) fr.disabled = txValue(a.f) === a.f.default[TX.lang];
+}
+
+/* ---- an SMS: written, counted, shown on a phone -------------------------- */
+function txFill(tpl, field) {
+  var smp = (TX.data.samples || {})[TX.lang] || {};
+  return String(tpl || '').replace(/\{\{/g, '').replace(/\}\}/g, '').replace(/\{([A-Za-z_]+)\}/g, function (_m, n) {
+    if (n === 'dest' && field === 'ask_sms') return '+420 6•• ••• 456';
+    return smp[n] !== undefined ? String(smp[n]) : '{' + n + '}';
+  }).replace(//g, '{').replace(//g, '}');
+}
+var TX_GSM = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+var TX_GSM_EXT = '^{}\\[~]|€\f';
+function txSmsCount(text) {
+  var gsm = true, units = 0;
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charAt(i);
+    if (TX_GSM.indexOf(c) >= 0) units += 1;
+    else if (TX_GSM_EXT.indexOf(c) >= 0) units += 2;
+    else { gsm = false; break; }
+  }
+  if (!gsm) units = text.length;
+  var one = gsm ? 160 : 70, part = gsm ? 153 : 67;
+  return {gsm: gsm, chars: units, parts: units <= one ? 1 : Math.ceil(units / part), one: one};
+}
+function txPlainSms(t) {
+  if (!TX.data.sms_plain || !t.normalize) return t;
+  return t.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+}
+function txDrawSms(host, m) {
+  var f = m.fields[0];
+  var grid = el('div', 'tx-sms');
+  var left = el('div', 'card tx-card');
+  left.appendChild(txFieldBox(f, 'tx-plain tx-smsbox'));
+  var count = el('div', 'tx-count small');
+  left.appendChild(count);
+  if (TX.data.sms_plain) left.appendChild(el('p', 'small muted', 'Letters with accents go without them (Settings → Codes by e-mail and SMS → Without accents): the phone gets 160 characters a part instead of 70.'));
+  grid.appendChild(left);
+  var right = el('div', 'tx-phone');
+  var screen = el('div', 'tx-phone-screen');
+  var from = el('div', 'tx-phone-from small');
+  from.textContent = TX.data.samples && TX.data.samples[TX.lang] ? TX.data.samples[TX.lang].site : '';
+  noI18n(from);
+  screen.appendChild(from);
+  var bubble = noI18n(el('div', 'tx-bubble'));
+  screen.appendChild(bubble);
+  right.appendChild(screen);
+  grid.appendChild(right);
+  host.appendChild(grid);
+  var draw = function () {
+    var text = txPlainSms(txFill(txValue(f), f.key));
+    bubble.textContent = text;
+    var c = txSmsCount(text);
+    clear(count);
+    count.appendChild(el('span', c.parts > 1 ? 'tag warn' : 'tag ok', num(c.parts) + ' SMS'));
+    count.appendChild(el('span', 'muted', num(c.chars) + ' / ' + num(c.parts > 1 ? c.parts * (c.gsm ? 153 : 67) : c.one) + ' · '
+      + (c.gsm ? txT('GSM alphabet') : txT('Unicode - an accent or a sign outside GSM'))));
+  };
+  TX.eds[f.key]._onChange = draw;
+  draw();
+}
+
+/* ---- saved, put back, looked at, sent ------------------------------------ */
+function txSave() {
+  var m = txMsg();
+  if (!txDirtyCount() || !TX.data.may_change) return Promise.resolve(true);
+  return api('texts', {action: 'save', id: m.id, lang: TX.lang, fields: TX.dirty, was_at: m.saved[TX.lang].at || null}).then(function (d) {
+    TX.dirty = {};
+    txPutState(d.state);
+    toast(d.message, 'good');
+    drawTexts();
+    return true;
+  }).catch(function (e) {
+    if (e.status === 409) {
+      modalOver(function () {
+        confirmThen('Changed meanwhile', htmlText(e.message) + '<br><br>' + htmlText(txT('Load them again - what was written here is then lost - or copy it out first.')),
+          'Load them again', function () { TX.dirty = {}; delete PENDING.texts; markDirtyCount(); loadTexts(); }, false);
+      });
+      return false;
+    }
+    throw e;
+  });
+}
+function txPutState(st) {
+  if (!st) return;
+  TX.data.messages = TX.data.messages.map(function (x) { return x.id === st.id ? st : x; });
+}
+function txResetAll() {
+  var m = txMsg();
+  var lang = {cs: 'Czech', en: 'English'}[TX.lang] || TX.lang;
+  confirmThen('Put “' + htmlText(m.title) + '” back as it comes', 'Every text of this message in <b>' + htmlText(txT(lang))
+    + '</b> goes back to how it comes with ai - exactly as it was before it was changed. The other language stays as it is.',
+    'Put back', function () {
+      api('texts', {action: 'reset', id: m.id, lang: TX.lang}).then(function (d) {
+        TX.dirty = {};
+        txPutState(d.state);
+        toast(d.message, 'good');
+        drawTexts();
+      }).catch(oops);
+    }, true);
+}
+function txPreview() {
+  var m = txMsg();
+  api('texts', {action: 'preview', id: m.id, lang: TX.lang, fields: TX.dirty}).then(function (d) {
+    modal('Preview: ' + m.title, function (body) {
+      var bad = Object.keys(d.bad || {});
+      if (bad.length) {
+        var w = el('div', 'note warn');
+        bad.forEach(function (k) { w.appendChild(el('div', '', d.bad[k])); });
+        body.appendChild(w);
+      }
+      body.appendChild(el('p', 'small muted', 'With sample values, as it would go out now - what is not saved yet included.'));
+      if (d.html) {
+        var sub = el('div', 'tx-meta-row');
+        sub.appendChild(el('span', 'tx-meta-k', 'Subject'));
+        sub.appendChild(noI18n(el('b', '', d.subject || '')));
+        body.appendChild(sub);
+        var fr = el('iframe', 'tx-frame tx-frame-preview');
+        fr.setAttribute('title', 'Preview');
+        fr.onload = function () {
+          try { fr.style.height = Math.max(200, fr.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { }
+          try { fr.contentDocument.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('a')) e.preventDefault(); }); } catch (e) { }
+        };
+        fr.srcdoc = d.html;
+        body.appendChild(fr);
+        if (d.text) {
+          body.appendChild(el('h3', 'peek-h', 'The plain text version'));
+          var pre = noI18n(el('pre', 'wrap mono small tx-pre'));
+          pre.textContent = d.text;
+          body.appendChild(pre);
+        }
+      } else if (d.sms !== undefined) {
+        var bub = noI18n(el('div', 'tx-bubble'));
+        bub.textContent = d.sms;
+        body.appendChild(bub);
+      }
+    }, [{words: 'Close', close: true}], 'large');
+  }).catch(oops);
+}
+function txTest() {
+  var m = txMsg();
+  var sms = m.kind === 'sms';
+  modalOver(function () {
+    modal('Send a sample', function (body) {
+      body.appendChild(el('p', 'note', sms ? 'The SMS as it is written now - saved or not - with sample values, to one number.' : 'The mail as it is written now - saved or not - with sample values (a code that opens nothing, a name), to one address.'));
+      var to = textBox('', sms ? '+420 603 123 456' : 'jan.novak@example.cz', 'mono');
+      noI18n(to);
+      body.appendChild(formField(sms ? 'The number' : 'The address', to));
+      setTimeout(function () { to.focus(); }, 50);
+      to.addEventListener('keydown', function (e) { if (e.key === 'Enter') MODAL_GO(); });
+      var out = el('div', 'said');
+      body.appendChild(out);
+      MODAL_GO = function (button) {
+        busy(button, true);
+        api('texts', {action: 'test', id: m.id, lang: TX.lang, fields: TX.dirty, to: to.value.trim()}).then(function (d) {
+          out.className = 'said good';
+          out.textContent = d.message;
+        }).catch(function (e) { out.className = 'said bad'; out.textContent = e.message; }).then(function () { busy(button, false); });
+      };
+    }, [{words: 'Close', close: true}, {words: 'Send', cls: 'primary', icon: sms ? 'phone' : 'mail', go: function (b) { MODAL_GO(b); }}], 'small');
+  });
+}
+var TX_FIT = null;
+function txFitShell(shell) {
+  var fit = function () {
+    if (!shell.isConnected) { window.removeEventListener('resize', fit); if (TX_FIT === fit) TX_FIT = null; return; }
+    if (window.innerWidth < 900) { shell.style.height = ''; shell.classList.remove('split'); return; }
+    var main = shell.closest('.ctl-main');
+    if (!main) return;
+    main.scrollTop = 0;
+    var h = main.getBoundingClientRect().bottom - shell.getBoundingClientRect().top - 14;
+    shell.style.height = Math.max(380, Math.floor(h)) + 'px';
+    shell.classList.add('split');
+    saveBarPlace();
+  };
+  TX_FIT = fit;
+  setTimeout(fit, 0);
+  window.addEventListener('resize', fit);
+}
 
 /* ==========================================================================
    A menu on the right mouse button (1.0.5) - drawn as claude.ai draws its own:

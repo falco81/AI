@@ -122,7 +122,7 @@ if (isset($_GET['api'])) {
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
         'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
-        'rbackup' => '/api/rbackup', 'software' => '/api/software',  'texts' => '/api/texts', 'outbox' => '/api/outbox', 'my-settings' => '/api/auth/settings',
+        'rbackup' => '/api/rbackup', 'software' => '/api/software',  'texts' => '/api/texts', 'mailq' => '/api/mailq', 'mailq-one' => '/api/mailq/one', 'suggest' => '/api/suggest', 'my-settings' => '/api/auth/settings',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -132,7 +132,7 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
         'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
-        'import' => '/api/import', 'rbackup' => '/api/rbackup',  'texts' => '/api/texts', 'outbox' => '/api/outbox', 'columns' => '/api/auth/columns',
+        'import' => '/api/import', 'rbackup' => '/api/rbackup',  'texts' => '/api/texts', 'mailq' => '/api/mailq', 'mailq-one' => '/api/mailq/one', 'suggest' => '/api/suggest', 'columns' => '/api/auth/columns',
         'my-settings' => '/api/auth/settings',
     ];
     if ($post) {
@@ -519,7 +519,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
     <button type="button" data-pane="codes" data-icon="phone" title="Codes of the second step of signing in sent by e-mail or SMS: how long they last, how many, and the SMS gateway.">Codes by e-mail and SMS</button>
     <button type="button" data-pane="texts" data-icon="edit" title="What people get from this server - the mails and the SMS, in Czech and English.">Message texts</button>
-    <button type="button" data-pane="mailq" data-icon="list" title="Every mail and SMS this server sent, or tried to: where, what, how it went.">Outgoing mail</button>
+    <button type="button" data-pane="mailq" data-icon="list" title="Every mail sent - a code to sign in with, a notice, a test - and what became of it: sent, waiting for another try (greylisting, a server away), failed. Sent again or taken away by hand.">Outgoing mail <span class="nav-badge" id="mq-badge" hidden></span></button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers and host name.">Network</button>
     <button type="button" data-pane="time" data-icon="clock" title="The clock: its time zone and time servers (chrony).">Time</button>
@@ -601,7 +601,9 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         changes first.</p>
       <div class="btnrow admin-only filters">
         <input type="email" id="mail-to" placeholder="somebody@example.cz" style="flex:1;min-width:240px">
+        <select id="mail-test-kind"><option value="short">a short message</option><option value="code">a sample sign-in code</option><option value="verify">a sample address check</option></select>
         <select id="mail-test-lang"><option value="cs">Čeština</option><option value="en">English</option></select>
+        <select id="mail-test-via" title="With mail sent straight to the recipient's server: this once, every step shown here - or through the outgoing mail, as codes go: tried now, and tried again by itself while the other side does not take it yet (greylisting)." hidden><option value="queue">through the outgoing mail</option><option value="straight">straight, this once (to see every step)</option></select>
         <button class="btn cmd primary" id="mail-test" data-icon="mail">Send a test</button>
       </div>
       <div id="mail-steps"></div>
@@ -623,29 +625,37 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
   <div class="ctl-pane" id="pane-texts" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Message texts</h2>
-      <p class="ctl-lede">What people get from this server - the mails and the SMS, in Czech and English. The words
-        in braces are filled in when it is sent: {site} the name of these pages, {code} the code, {minutes} how
-        long it is good for, {n} {what} {lines} {url} in a notice. An empty text is the built-in one.</p></div>
-    <div class="card full">
-      <div class="seg" id="tx-langs" data-no-i18n><button type="button" data-lang="cs" class="on">Čeština</button><button type="button" data-lang="en">English</button></div>
-      <div id="tx-root" style="margin-top:14px"></div>
-    </div>
+      <p class="ctl-lede">What people get from this server - the mails and the SMS of a code, in Czech and English. Click into a text to write; the blue parts are filled in when it is sent.</p></div>
+    <div id="tx-root"></div>
   </div>
 
   <div class="ctl-pane" id="pane-mailq" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Outgoing mail</h2>
-      <p class="ctl-lede">Every mail and SMS this server sends - a code to sign in with, a code to check an address,
-        a notice, a test - written down here: where it went, what it was and what the other side said. What a
-        message held is never kept: a code goes in no list.</p></div>
+      <p class="ctl-lede">Every mail this server sends - a code to sign in with, a code to check an
+        address, the notices, a test - goes through here. What the receiving side does not take at
+        once (greylisting's "try again later", a server away, a full mailbox) waits and is tried
+        again by itself; what it refuses for good is shown as failed. What a mail held is never
+        kept once it went. The SMS are in the events.</p></div>
     <div class="card full">
       <div class="mq-chips" id="mq-chips"></div>
       <div class="btnrow filters" style="margin-top:12px">
-        <input type="search" id="mq-q" placeholder="an address, a number, what the server said…" style="flex:1;min-width:260px">
-        <select id="mq-state"><option value="">every state</option><option value="sent">sent</option><option value="failed">failed</option></select>
-        <button class="btn cmd" id="mq-drop-sent" data-icon="trash">Clear the sent ones</button>
-        <button class="btn cmd danger" id="mq-drop-failed" data-icon="trash">Clear the failed ones</button>
+        <input type="search" id="mq-q" placeholder="an address, a name, what the server said… (to:*@example.cz, state:waiting, kind:code…)" style="flex:1;min-width:260px">
+        <select id="mq-state">
+          <option value="">every state</option>
+          <option value="open">waiting or failed</option>
+          <option value="waiting">waiting for another try</option>
+          <option value="sending">being sent</option>
+          <option value="sent">sent</option>
+          <option value="failed">failed</option>
+          <option value="expired">given up</option>
+        </select>
+        <button class="btn cmd admin-only" id="mq-retry-all" data-icon="refresh">Send every waiting one now</button>
+        <button class="btn cmd admin-only" id="mq-drop-sent" data-icon="trash">Clear the sent ones</button>
+        <button class="btn cmd danger admin-only" id="mq-drop-failed" data-icon="trash">Clear the failed ones</button>
       </div>
+      <div id="mq-said" class="muted small" style="margin:8px 0 0"></div>
       <div id="mq-table" style="margin-top:10px"></div>
+      <div id="mq-pager"></div>
     </div>
   </div>
 
