@@ -605,6 +605,7 @@ function drawTermList() {
       e.preventDefault();
       termMenu(t, e.clientX, e.clientY, row);
     });
+    longPress(row, function (x, y) { termMenu(t, x, y, row); });
     host.appendChild(row);
   };
   if (pinned.length) {
@@ -745,7 +746,10 @@ function newTermAsk(kind, cwd) {
     body.appendChild(seg);
     var g = el('div', 'formgrid');
     g.style.marginTop = '14px';
-    var dir = textBox(cwd || prefs().last_cwd || (STATUS && STATUS.who && STATUS.who.default_cwd) || '', 'the home folder', 'mono');
+    var root = (STATUS && STATUS.chat_root) || '';
+    var inRoot = function (p) { return !root || p === root || String(p || '').indexOf(root.replace(/\/+$/, '') + '/') === 0; };
+    var first = cwd || prefs().last_cwd || '';
+    var dir = textBox(inRoot(first) && first ? first : (root || first), root || 'the home folder', 'mono');
     var dirWrap = el('div', 'btnrow');
     dir.style.flex = '1';
     dirWrap.appendChild(dir);
@@ -774,7 +778,7 @@ function newTermAsk(kind, cwd) {
     }
     body.appendChild(g);
     var chips = el('div', 'btnrow chips');
-    var favs = (prefs().favs || []).concat(prefs().recent || []).filter(function (p, i, a) { return a.indexOf(p) === i; }).slice(0, 12);
+    var favs = (prefs().favs || []).concat(prefs().recent || []).filter(function (p, i, a) { return a.indexOf(p) === i && inRoot(p); }).slice(0, 12);
     favs.forEach(function (p) {
       var b = el('button', 'chip', baseName(p));
       b.type = 'button';
@@ -835,49 +839,161 @@ function startTerm(want) {
   }).catch(function (e) { oops(e); return false; });
 }
 
-/* ---- a folder, chosen ------------------------------------------------------------- */
+/* ---- a folder, chosen (1.0.9) ------------------------------------------------------
+   Its folders and files, from the folder of the chats down (Settings -
+   Claude Code), never above it; folders and files made, renamed and deleted
+   here - by the buttons, the right mouse button, or a finger held still on a
+   tablet - and the folder shown chosen. */
 function pickFolder(start, then) {
-  var st = {path: start || ''};
-  modal('Choose a folder', function (body) {
-    var bar = el('div', 'btnrow');
+  var root = (STATUS && STATUS.chat_root) || '';
+  var st = {path: start || root || '', d: null};
+  var under = function (p) { return !root || p === root || String(p).indexOf(root.replace(/\/+$/, '') + '/') === 0; };
+  if (root && !under(st.path)) st.path = root;
+  modal(root ? 'Choose a folder in ' + baseName(root) : 'Choose a folder', function (body) {
+    var bar = el('div', 'btnrow pick-bar');
     var up = cmdButton('Up', 'up', 'small');
     var path = textBox('', '', 'mono');
     path.style.flex = '1';
+    noI18n(path);
     var mk = cmdButton('New folder', 'add', 'small');
-    bar.appendChild(up);
-    bar.appendChild(path);
-    bar.appendChild(mk);
+    var mkf = cmdButton('New file', 'edit', 'small');
+    var again = iconButton('refresh', 'Read the folder again');
+    [up, path, mk, mkf, again].forEach(function (x) { bar.appendChild(x); });
     body.appendChild(bar);
+    if (root) body.appendChild(el('p', 'muted small', 'Only ' + root + ' and what is under it (Settings - Claude Code - The folder of the chats).'));
+    var ask = el('div', 'pick-ask');
+    ask.hidden = true;
+    body.appendChild(ask);
     var list = el('div', 'pick-list');
     body.appendChild(list);
+    var said = el('p', 'muted small pick-said');
+    body.appendChild(said);
+    var op = function (what, extra) {
+      return filesApi('op', '', Object.assign({op: what, root: root || undefined}, extra));
+    };
+    /* A name asked for in the picker itself, not in a popup over it. */
+    var askName = function (words, value, go) {
+      clear(ask);
+      ask.hidden = false;
+      ask.appendChild(el('span', 'small', words));
+      var box = textBox(value || '', '', 'mono');
+      noI18n(box);
+      box.style.flex = '1';
+      ask.appendChild(box);
+      var ok = cmdButton('OK', 'check', 'small primary');
+      var no = cmdButton('Cancel', 'close', 'small');
+      ask.appendChild(ok);
+      ask.appendChild(no);
+      var done = function () { ask.hidden = true; clear(ask); };
+      ok.onclick = function () {
+        var v = box.value.trim();
+        if (!v) { box.focus(); return; }
+        go(v).then(done).catch(oops);
+      };
+      no.onclick = done;
+      box.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); ok.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); }
+      });
+      setTimeout(function () { box.focus(); if (value) box.setSelectionRange(0, value.replace(/\.[^.]*$/, '').length || value.length); }, 30);
+    };
+    var newFolder = function (inside) {
+      askName('A new folder in ' + baseName(inside) + ':', '', function (name) {
+        return op('mkdir', {path: inside, name: name}).then(function (d) { toast('made: ' + d.path, 'good'); go(inside === st.path ? st.path : inside); });
+      });
+    };
+    var newFile = function (inside) {
+      askName('A new file in ' + baseName(inside) + ':', '', function (name) {
+        return op('touch', {path: inside, name: name}).then(function (d) { toast('made: ' + d.path, 'good'); go(inside); });
+      });
+    };
+    var rename = function (full, name) {
+      askName('A new name for ' + name + ':', name, function (v) {
+        return op('rename', {path: full, name: v}).then(function () { go(st.path); });
+      });
+    };
+    var remove = function (full, e) {
+      modalOver(function () {
+        confirmThen(e.kind === 'dir' ? 'Delete the folder ' + e.name + '?' : 'Delete ' + e.name + '?',
+          htmlText(full) + (e.kind === 'dir' ? '<br>' + htmlText(txT('With everything in it. It cannot be undone.')) : '<br>' + htmlText(txT('It cannot be undone.'))),
+          'Delete it', function () {
+            op('delete', {path: full}).then(function () { toast('deleted: ' + full, 'good'); go(st.path); }).catch(oops);
+          }, true);
+      });
+    };
+    var rowMenu = function (e, x, y) {
+      var full = pathJoin(st.path, e.name);
+      var dir = e.kind === 'dir';
+      ctxMenu(x, y, [{head: e.name}].concat(dir ? [
+        {icon: 'archive', words: 'Open it', go: function () { go(full); }},
+        {icon: 'check', words: 'Choose this folder', go: function () { closeModal(); then(full); }},
+        'sep',
+        {icon: 'add', words: 'A new folder in it…', go: function () { newFolder(full); }},
+        {icon: 'edit', words: 'A new file in it…', go: function () { newFile(full); }}
+      ] : [
+        {icon: 'download', words: 'Download it', go: function () { download(full); }}
+      ]).concat(['sep',
+        {icon: 'edit', words: 'Rename…', go: function () { rename(full, e.name); }},
+        {icon: 'trash', words: 'Delete…', danger: true, go: function () { remove(full, e); }}
+      ]));
+    };
+    var hereMenu = function (x, y) {
+      ctxMenu(x, y, [{head: baseName(st.path)},
+        {icon: 'check', words: 'Choose this folder', go: function () { closeModal(); then(st.path); }},
+        {icon: 'add', words: 'A new folder here…', go: function () { newFolder(st.path); }},
+        {icon: 'edit', words: 'A new file here…', go: function () { newFile(st.path); }},
+        {icon: 'refresh', words: 'Read it again', go: function () { go(st.path); }}]);
+    };
     var go = function (p) {
-      filesApi('list', 'hidden=0&path=' + encodeURIComponent(p || '')).then(function (d) {
+      var q = 'hidden=0&path=' + encodeURIComponent(p || '') + (root ? '&root=' + encodeURIComponent(root) : '');
+      return filesApi('list', q).then(function (d) {
         st.path = d.path;
+        st.d = d;
         path.value = d.path;
-        up.disabled = !d.up;
+        up.disabled = !d.up || (root && !under(d.up));
         up.onclick = function () { go(d.up); };
         clear(list);
-        var dirs = d.entries.filter(function (e) { return e.kind === 'dir'; });
-        if (!dirs.length) list.appendChild(el('p', 'muted small', 'No folders in it.'));
-        dirs.forEach(function (e) {
-          var b = el('button', 'pick-row');
-          b.type = 'button';
-          b.innerHTML = iconMarkup('archive', 15);
-          b.appendChild(noI18n(el('span', '', e.name)));
-          b.onclick = function () { go(pathJoin(d.path, e.name)); };
+        var ents = d.entries.filter(function (e) { return e.kind === 'dir'; })
+          .concat(d.entries.filter(function (e) { return e.kind !== 'dir'; }));
+        if (!ents.length) list.appendChild(el('p', 'muted small', 'Nothing in it yet.'));
+        ents.forEach(function (e) {
+          var dir = e.kind === 'dir';
+          var b = el('div', 'pick-row' + (dir ? '' : ' file'));
+          b.tabIndex = 0;
+          b.innerHTML = iconMarkup(dir ? 'folder' : 'file', 15);
+          b.appendChild(noI18n(el('span', 'pick-name', e.name)));
+          if (!dir && e.size !== undefined) b.appendChild(el('span', 'muted small', bytes(e.size)));
+          var more = iconButton('more', 'What can be done with it');
+          more.classList.add('pick-more');
+          more.onclick = function (ev) { ev.stopPropagation(); var r = more.getBoundingClientRect(); rowMenu(e, r.left, r.bottom); };
+          b.appendChild(more);
+          b.onclick = function () { if (dir) go(pathJoin(d.path, e.name)); };
+          b.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && dir) go(pathJoin(d.path, e.name)); });
+          b.addEventListener('contextmenu', function (ev) { ev.preventDefault(); ev.stopPropagation(); rowMenu(e, ev.clientX, ev.clientY); });
+          longPress(b, function (x, y) { rowMenu(e, x, y); });
           list.appendChild(b);
         });
-      }).catch(oops);
+        said.textContent = num(ents.filter(function (e) { return e.kind === 'dir'; }).length) + ' ' + txT('folder(s)') + ' · '
+          + num(ents.filter(function (e) { return e.kind !== 'dir'; }).length) + ' ' + txT('file(s)');
+      }).catch(function (e) { oops(e); if (root && p !== root) go(root); });
     };
-    path.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(path.value); } });
-    mk.onclick = function () {
-      var name = prompt('The name of the new folder');
-      if (!name) return;
-      filesApi('op', '', {op: 'mkdir', path: st.path, name: name}).then(function (d) { go(d.path); }).catch(oops);
-    };
+    list.addEventListener('contextmenu', function (ev) {
+      if (ev.target.closest('.pick-row')) return;
+      ev.preventDefault();
+      hereMenu(ev.clientX, ev.clientY);
+    });
+    path.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (root && !under(path.value.trim())) { toast('only ' + root + ' and what is under it', 'bad'); path.value = st.path; return; }
+      go(path.value.trim());
+    });
+    mk.onclick = function () { newFolder(st.path); };
+    mkf.onclick = function () { newFile(st.path); };
+    again.onclick = function () { go(st.path); };
     go(st.path);
   }, [{words: 'Close', close: true},
-      {words: 'Choose this one', cls: 'primary', icon: 'check', go: function () { closeModal(); then(st.path); }}]);
+      {words: 'Choose this one', cls: 'primary', icon: 'check', go: function () { closeModal(); then(st.path); }}], 'medium');
 }
 
 /* ---- the one open ---------------------------------------------------------------- */
@@ -1006,6 +1122,7 @@ $('tb-attach').onclick = function () {
   i.onchange = function () { termGiveFiles(i.files); };
   i.click();
 };
+$('tb-history').onclick = function () { var t = termById(TL.open); if (t) termHistory(t); };
 $('tb-files').onclick = function () {
   var t = TL.terms.filter(function (x) { return x.id === TL.open; })[0];
   if (!t) return;
@@ -7092,6 +7209,11 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
     if (e.shiftKey) return;           /* Shift: the browser's own menu */
     e.preventDefault();
     e.stopPropagation();
+    termCtx(e.clientX, e.clientY);
+  }, true);
+  /* On a tablet the right button is a finger held still (1.0.9). */
+  longPress(host, function (x, y) { termCtx(x, y); });
+  function termCtx(cx, cy) {
     var t = termById(TL.open);
     var sel = TERM.t && TERM.t.hasSelection() ? TERM.t.getSelection() : '';
     var items = [
@@ -7100,6 +7222,8 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
         if (!navigator.clipboard || !navigator.clipboard.readText) { toast('this browser lets only Ctrl+V paste', 'warn'); return; }
         navigator.clipboard.readText().then(function (text) { if (text) termType(text, false); }, function () { toast('the browser did not let the page read the clipboard - Ctrl+V does', 'warn'); });
       }},
+      {icon: 'list', words: 'The whole history', go: function () { if (t) termHistory(t); }},
+      {icon: 'down', words: 'Back to now', disabled: !TERM.pos.mode, go: function () { termAsk({t: 'live'}); }},
       {icon: 'selectall', words: 'Select everything on the screen', go: function () { if (TERM.t) { TERM.t.selectAll(); TERM.t.focus(); } }},
       {icon: 'copy', words: 'Copy everything on the screen', go: function () {
         if (!TERM.t) return;
@@ -7118,9 +7242,86 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
     if (t) items = items.concat(['sep'], termActions(t, null).filter(function (x) {
       return !x || x === 'sep' || (!x.head && x.icon !== 'folder');
     }));
-    ctxMenu(e.clientX, e.clientY, items);
-  }, true);
+    ctxMenu(cx, cy, items);
+  }
 }());
+
+/* A finger held still on something (1.0.9): what the right button is on a
+   computer. Moving the finger, or a second one, is not it. */
+function longPress(node, go, ms) {
+  var timer = null, x0 = 0, y0 = 0;
+  var stop = function () { clearTimeout(timer); timer = null; };
+  node.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) { stop(); return; }
+    var tt = e.touches[0];
+    x0 = tt.clientX; y0 = tt.clientY;
+    var target = e.target;
+    stop();
+    timer = setTimeout(function () {
+      timer = null;
+      node._longPressed = Date.now();
+      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (er) { } }
+      go(x0, y0, target);
+    }, ms || 550);
+  }, {passive: true});
+  node.addEventListener('touchmove', function (e) {
+    var tt = e.touches[0];
+    if (timer && (Math.abs(tt.clientX - x0) > 10 || Math.abs(tt.clientY - y0) > 10)) stop();
+  }, {passive: true});
+  node.addEventListener('touchend', function (e) {
+    stop();
+    /* The tap that ends a long press opens nothing under it. */
+    if (node._longPressed && Date.now() - node._longPressed < 800) e.preventDefault();
+  });
+  node.addEventListener('touchcancel', stop);
+}
+
+/* The whole history of a terminal (1.0.9): every line tmux keeps, with its
+   colours, in a window of its own that scrolls as any page does - by finger
+   on a tablet - with copy and download. */
+function termHistory(t) {
+  var view = null;
+  modal('The whole history: ' + (t.title || t.id), function (body) {
+    var host = el('div', 'term-history');
+    host.appendChild(el('p', 'note', 'reading what tmux keeps…'));
+    body.appendChild(host);
+    api('term&id=' + encodeURIComponent(t.id) + '&lines=all&ansi=1').then(function (d) {
+      clear(host);
+      var text = String((d.term && d.term.screen) || '').replace(/\s+$/, '');
+      var lines = text.split('\n').length;
+      view = new window.Terminal({
+        fontFamily: '"JetBrains Mono", "Cascadia Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
+        fontSize: termFont(), lineHeight: 1.1, scrollback: lines + 50, disableStdin: true, cursorBlink: false,
+        theme: termTheme(), convertEol: true
+      });
+      var fit = new window.FitAddon.FitAddon();
+      view.loadAddon(fit);
+      view.open(host);
+      try { fit.fit(); } catch (e) { }
+      view.write(text, function () { view.scrollToBottom(); });
+      host._plain = text.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '').replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, '');
+      host._lines = lines;
+      $('modal-title').textContent = txT('The whole history') + ': ' + (t.title || t.id) + ' · ' + num(lines) + ' ' + txT('lines');
+    }).catch(function (e) { clear(host); host.appendChild(el('p', 'note bad', String(e.message || e))); });
+  }, [
+    {words: 'Copy it all', icon: 'copy', go: function () {
+      var h = document.querySelector('#modal-body .term-history');
+      if (h && h._plain) copyText2(h._plain, 'the whole history was copied');
+    }},
+    {words: 'Download it', icon: 'download', go: function () {
+      var h = document.querySelector('#modal-body .term-history');
+      if (!h || !h._plain) return;
+      var a = el('a');
+      a.href = URL.createObjectURL(new Blob([h._plain + '\n'], {type: 'text/plain'}));
+      a.download = (t.title || t.id).replace(/[^\w.-]+/g, '-') + '-history.txt';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }},
+    {spacer: true},
+    {words: 'Close', close: true}], 'large');
+  MODAL_CLOSE = function () { if (view) { try { view.dispose(); } catch (e) { } } };
+}
 
 /* ==========================================================================
    The files of one chat (1.0.5): its own folder and what is in it, beside its
@@ -7172,6 +7373,7 @@ function cfDraw(d) {
     r.title = full;
     r.onclick = function () { if (e.kind === 'dir') cfLoad(full); else openFile(full, e); };
     r.addEventListener('contextmenu', function (ev) { ev.preventDefault(); cfMenu(e, full, ev.clientX, ev.clientY, r); });
+    longPress(r, function (x, y) { cfMenu(e, full, x, y, r); });
     host.appendChild(r);
   });
   $('tf-foot').textContent = num(d.entries.length) + ' item(s) · right button: what to do with one';
@@ -7186,6 +7388,8 @@ function cfMenu(e, full, x, y, row) {
     {icon: 'at', words: 'Hand it to Claude (@' + (rel.length > 28 ? '…' + rel.slice(-27) : rel) + ')', go: function () { termType('@' + rel + ' ', false); }},
     {icon: 'copy', words: 'Copy its path', go: function () { copyText2(full); }},
     dir ? {icon: 'terminal', words: 'A new Claude Code in it', go: function () { startTerm({kind: 'claude', cwd: full}); }} : null,
+    dir ? {icon: 'add', words: 'A new folder in it…', go: function () { cfNew('mkdir', full); }} : null,
+    dir ? {icon: 'file', words: 'A new file in it…', go: function () { cfNew('touch', full); }} : null,
     'sep',
     {icon: 'download', words: dir ? 'Download it as a .zip' : 'Download it', go: function () { download(full); }},
     {icon: 'edit', words: 'Rename', go: function () {
@@ -7204,11 +7408,30 @@ function cfMenu(e, full, x, y, row) {
 $('tf-up').onclick = function () { if (CF.data && CF.data.up) cfLoad(CF.data.up); };
 $('tf-reload').onclick = function () { cfLoad(CF.path); };
 $('tf-close').onclick = function () { chatFiles(null, false); };
-$('tf-mkdir').onclick = function () {
-  var name = prompt('The name of the new folder');
+function cfNew(what, inside) {
+  var name = prompt(txT(what === 'mkdir' ? 'The name of the new folder' : 'The name of the new file'));
   if (!name) return;
-  filesApi('op', '', {op: 'mkdir', path: CF.path, name: name}).then(function () { cfLoad(CF.path); }).catch(oops);
-};
+  filesApi('op', '', {op: what, path: inside, name: name, root: CF.root || undefined})
+    .then(function () { cfLoad(CF.path); }).catch(oops);
+}
+$('tf-mkdir').onclick = function () { cfNew('mkdir', CF.path); };
+/* The list itself, where there is no row: what can be made in the folder shown. */
+(function () {
+  var host = $('tf-list');
+  var here = function (x, y) {
+    ctxMenu(x, y, [{head: baseName(CF.path || '')},
+      {icon: 'add', words: 'A new folder here…', go: function () { cfNew('mkdir', CF.path); }},
+      {icon: 'file', words: 'A new file here…', go: function () { cfNew('touch', CF.path); }},
+      {icon: 'upload', words: 'Upload files here…', go: function () { $('tf-input').click(); }},
+      {icon: 'refresh', words: 'Read it again', go: function () { cfLoad(CF.path); }}]);
+  };
+  host.addEventListener('contextmenu', function (ev) {
+    if (ev.target.closest('.tf-row, button')) return;
+    ev.preventDefault();
+    here(ev.clientX, ev.clientY);
+  });
+  longPress(host, function (x, y, target) { if (!target.closest('.tf-row, button')) here(x, y); });
+}());
 $('tf-send').onclick = function () { $('tf-input').click(); };
 function cfSend(files) {
   var list = Array.prototype.slice.call(files || []);

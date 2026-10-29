@@ -3344,3 +3344,35 @@ pre.lines.tall{max-height:60vh;overflow:auto}
 .tl-item .tl-icon .tl-dot{position:absolute;right:-3px;bottom:-2px;width:7px;height:7px;border-radius:50%;
   background:var(--ok);box-shadow:0 0 0 2px var(--panel2)}
 .tl-item.ended .tl-icon .tl-dot{background:var(--tx-mut)}
+
+/* tmux's history beside the terminal (1.0.9): a bar that is always there,
+   wide enough for a finger, and a way back to now. */
+.term-sb{position:absolute;top:4px;bottom:4px;right:2px;width:14px;border-radius:7px;z-index:5;
+  background:rgba(255,255,255,.04);cursor:pointer;touch-action:none}
+.term-sb-thumb{position:absolute;left:2px;right:2px;min-height:18px;border-radius:5px;
+  background:rgba(139,148,158,.55)}
+.term-sb:hover .term-sb-thumb{background:rgba(88,166,255,.75)}
+@media (pointer:coarse){.term-sb{width:22px;right:0}}
+.term-live{position:absolute;right:28px;bottom:12px;z-index:6;display:flex;align-items:center;gap:6px;
+  padding:6px 12px;border-radius:999px;border:1px solid rgba(88,166,255,.5);background:#0d2340;color:#cfe3ff;
+  font:600 12.5px var(--font,system-ui);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.term-live .muted{color:#8aa4c6;font-weight:500}
+.term-host .xterm{padding-right:16px}
+.term-history{height:min(70vh,900px);background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:6px;overflow:hidden}
+.term-history .xterm{height:100%}
+.term-history .xterm-viewport{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+/* The folder picker (1.0.9). */
+.pick-bar{flex-wrap:wrap}
+.pick-ask{display:flex;align-items:center;gap:8px;margin:10px 0 0;padding:10px;border:1px solid rgba(88,166,255,.4);
+  border-radius:10px;background:rgba(88,166,255,.06);flex-wrap:wrap}
+.pick-list{margin-top:10px;max-height:min(55vh,520px);overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);border-radius:10px;padding:4px}
+.pick-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.pick-row:hover,.pick-row:focus-visible{background:var(--panel2);outline:none}
+.pick-row.file{cursor:default;color:var(--tx-mut)}
+.pick-row .pick-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-row .pick-more{opacity:.55}
+.pick-row:hover .pick-more{opacity:1}
+@media (pointer:coarse){.pick-row{padding:12px 10px}.pick-row .pick-more{opacity:1}}
+.pick-said{margin:8px 2px 0}

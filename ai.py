@@ -125,6 +125,7 @@ DEFAULTS = {
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
     'default_cwd': '',
+    'chat_root': '',
     'chat_upload_dir': '.ai-uploads',
     'upload_most_mb': 4096,
     'retain_events_days': 180,
@@ -220,6 +221,10 @@ SCHEMA = [
      'LANG of every terminal. A UTF-8 one is needed for Claude Code to draw itself.', {}),
     ('default_run_as', 'claude', 'str', 'Runs as, unless the account says otherwise',
      'The Linux account a terminal runs as for an account that has none of its own.', {}),
+    ('chat_root', 'claude', 'str', 'The folder of the chats',
+     'A new chat starts in this folder or in one under it, and nowhere else: the folder picker '
+     'offers it and what is under it, never the rest of the machine. Empty: anywhere the account '
+     'may go.', {}),
     ('default_cwd', 'claude', 'str', 'Working directory offered first',
      'The directory a new terminal starts in, unless one is chosen. Empty: the home directory '
      'of the account it runs as.', {}),
@@ -4076,13 +4081,17 @@ class Terms:
             raise Refused('only an administrator starts a command', 403)
         who_as = run_as if (run_as and u['role'] == 'admin') else run_as_of(u)
         pw = linux_user(who_as)
-        cwd = str(cwd or CONFIG.get('default_cwd') or pw.pw_dir).strip()
+        root = chat_root_of(pw)
+        cwd = str(cwd or CONFIG.get('default_cwd') or root or pw.pw_dir).strip()
         if cwd.startswith('~'):
             cwd = pw.pw_dir + cwd[1:]
         if not cwd.startswith('/'):
-            cwd = os.path.join(pw.pw_dir, cwd)
+            cwd = os.path.join(root or pw.pw_dir, cwd)
         cwd = os.path.normpath(cwd)
         path_allowed(u, cwd)
+        if root and not path_under(cwd, root):
+            raise Refused('a chat starts in %s or a folder under it (Settings - Claude Code - The folder '
+                          'of the chats), not in %s' % (root, cwd))
         if not os.path.isdir(cwd):
             if opts.get('mkdir'):
                 os.makedirs(cwd, exist_ok=True)
@@ -4160,7 +4169,7 @@ class Terms:
 
     def capture(self, r, lines=40, escapes=False):
         pw = self.pw_of(r)
-        args = ['capture-pane', '-p', '-J', '-t', 'ai-' + r['id'], '-S', str(-int(lines))]
+        args = ['capture-pane', '-p', '-J', '-t', 'ai-' + r['id'], '-S', '-' if lines == 'all' else str(-int(lines))]
         if escapes:
             args.insert(2, '-e')
         rc, so, se = self.tmux(pw, args, timeout=10)
@@ -4437,6 +4446,45 @@ VIEWERS = {}                # tid -> set of viewer threads' names (for the list)
 VIEWERS_LOCK = threading.Lock()
 
 
+def term_pos(terms, pw, target):
+    rc, so, _se = terms.tmux(pw, ['display-message', '-p', '-t', target,
+                                  '#{history_size}|#{scroll_position}|#{pane_in_mode}|#{pane_height}'], timeout=5)
+    bits = [x.strip() for x in (so or '').strip().split('|')]
+    num = lambda i: int(bits[i]) if len(bits) > i and bits[i].lstrip('-').isdigit() else 0
+    return {'size': num(0), 'at': num(1) if num(2) else 0, 'mode': bool(num(2)), 'rows': num(3)}
+
+
+def term_scroll(terms, pw, target, msg):
+    """tmux's history moved: `scroll` by lines (more than 0 back, less than 0
+    on), `scrollto` a place (0 the top, 1 the live screen), `live` back to it."""
+    t = msg.get('t')
+    now = term_pos(terms, pw, target)
+    if t == 'pos':
+        return now
+
+    def keys(*a):
+        terms.tmux(pw, ['send-keys', '-t', target, '-X'] + list(a), timeout=5)
+    if t == 'live':
+        if now['mode']:
+            keys('cancel')
+        return term_pos(terms, pw, target)
+    if t == 'scroll':
+        n = max(-5000, min(5000, int(msg.get('n') or 0)))
+    else:
+        frac = max(0.0, min(1.0, float(msg.get('f') or 0)))
+        n = int(round((1 - frac) * now['size'])) - now['at']
+    if n > 0:
+        if not now['mode']:
+            terms.tmux(pw, ['copy-mode', '-e', '-t', target], timeout=5)
+        keys('-N', str(n), 'scroll-up')
+    elif n < 0 and now['mode']:
+        if now['at'] + n <= 0:
+            keys('cancel')
+        else:
+            keys('-N', str(-n), 'scroll-down')
+    return term_pos(terms, pw, target)
+
+
 def term_bridge(daemon, ws, u, r, cols, rows, readonly=False):
     """One browser window looking at one terminal, until either side goes."""
     pw = linux_user(r['run_as'])
@@ -4563,6 +4611,18 @@ def term_bridge(daemon, ws, u, r, cols, rows, readonly=False):
                         ws.send(json.dumps({'t': 'pong', 'at': time.time()}))
                     except WsClosed:
                         break
+                elif msg.get('t') in ('scroll', 'scrollto', 'live', 'pos'):
+                    # Back through tmux's own history (1.0.9): a finger on a
+                    # tablet, or the scroll bar beside the terminal, moves
+                    # it as the mouse wheel does - in tmux's copy mode, which
+                    # the pages leave again at the bottom.
+                    try:
+                        got = term_scroll(terms, pw, 'ai-' + r['id'], msg)
+                        ws.send(json.dumps(dict(got, t='pos')))
+                    except WsClosed:
+                        break
+                    except Exception:                   # noqa: BLE001 - tmux away for a moment
+                        pass
     finally:
         done.set()
         try:
@@ -4748,11 +4808,44 @@ def take_upload(rfile, length, dest_dir, name, u, overwrite=False, uid=None, gid
     return target, got
 
 
+def path_under(path, root):
+    """`path` is `root` or inside it, links followed."""
+    real, top = os.path.realpath(path), os.path.realpath(root)
+    return real == top or real.startswith(top.rstrip('/') + '/')
+
+
+def chat_root_of(pw=None):
+    """The folder chats start in (Settings - Claude Code), ~ as the account's home."""
+    root = str(CONFIG.get('chat_root') or '').strip()
+    if not root:
+        return ''
+    if root.startswith('~') and pw is not None:
+        root = pw.pw_dir + root[1:]
+    return os.path.normpath(root) if root.startswith('/') else ''
+
+
 def files_op(u, body):
     op = str(body.get('op') or '')
     path = str(body.get('path') or '')
     if not path.startswith('/'):
         raise Refused('a full path, please')
+    # Kept inside a folder when the page says so (the chat's, the folder of
+    # the chats): nothing above it is made, renamed or deleted from there.
+    root = str(body.get('root') or '')
+    if root:
+        if not path_under(path, root):
+            raise Refused('that is outside %s' % root, 403)
+        if op in ('rename', 'delete') and os.path.realpath(path) == os.path.realpath(root):
+            raise Refused('%s itself is not renamed or taken away from here' % root)
+    if op == 'touch':
+        full = os.path.join(path_allowed(u, path), safe_name(body.get('name')))
+        path_allowed(u, full)
+        if os.path.lexists(full):
+            raise Refused('there is a %s there already' % os.path.basename(full))
+        with open(full, 'x', encoding='utf-8'):
+            pass
+        give(full, u)
+        return {'path': full}
     if op == 'mkdir':
         full = os.path.join(path_allowed(u, path), safe_name(body.get('name')))
         path_allowed(u, full)
@@ -4805,7 +4898,7 @@ def files_op(u, body):
         if not existed:
             give(real, u)
         return {'path': real, 'mtime': os.path.getmtime(real)}
-    raise Refused('mkdir, rename, delete, read or write')
+    raise Refused('mkdir, touch, rename, delete, read or write')
 
 
 def human_bytes(n):
@@ -7766,6 +7859,14 @@ def php_state():
     return out
 
 
+def status_chat_root(u):
+    """The folder of the chats as the account's Linux account sees it."""
+    try:
+        return chat_root_of(linux_user(run_as_of(u)))
+    except Refused:
+        return chat_root_of(None)
+
+
 def status_view(c):
     d = c.daemon
     problems = []
@@ -7786,6 +7887,7 @@ def status_view(c):
         'upgrade_state': st.get('state') if st else '', 'started': d.started, 'now': time.time(),
         'php': php_state() if c.who['role'] == 'admin' else None,
         'mailq': mailq_counted(d.store) if c.who['role'] == 'admin' else {},
+        'chat_root': status_chat_root(c.who),
     }
 
 
@@ -7825,8 +7927,11 @@ def api_term(c):
     tm.may(c.who, r)
     live = tm.live()
     v = tm.view(r, live)
-    lines = max(5, min(2000, int(c.arg('lines', '40') or 40)))
-    v['screen'] = tm.capture(r, lines) if v['state'] != 'ended' else (r.get('last_screen') or '')
+    # The whole history of it (1.0.9): every line tmux keeps, with its colours
+    # when asked - what a tablet cannot scroll back to in the terminal itself.
+    lines = 'all' if c.arg('lines') == 'all' else max(5, min(2000, int(c.arg('lines', '40') or 40)))
+    v['screen'] = tm.capture(r, lines, escapes=c.arg('ansi') == '1') if v['state'] != 'ended' \
+        else (r.get('last_screen') or '')
     return {'term': v}
 
 

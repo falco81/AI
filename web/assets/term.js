@@ -11,8 +11,99 @@
 var TERM = {
   t: null, fit: null, ws: null, id: '', host: null, want: false, tries: 0,
   timer: null, ping: null, onState: null, ro: false, font: 14, lastSize: '',
-  mods: {ctrl: false, alt: false}, onMods: null, locked: false
+  mods: {ctrl: false, alt: false}, onMods: null, locked: false,
+  pos: {size: 0, at: 0, mode: false, rows: 0}, sb: null, posTimer: null
 };
+
+/* ---- tmux's history, moved from here (1.0.9) --------------------------------
+   The page is one more tmux client: tmux draws the screen in place, so the
+   history is tmux's, not xterm's. A mouse wheel reaches it by itself (tmux's
+   mouse mode); a finger on a tablet and the scroll bar beside the terminal
+   ask the daemon to move it - in tmux's copy mode, left again at the bottom. */
+function termAsk(msg) {
+  if (TERM.ws && TERM.ws.readyState === 1) TERM.ws.send(JSON.stringify(msg));
+}
+function termPosDraw() {
+  var sb = TERM.sb;
+  if (!sb) return;
+  var p = TERM.pos, total = p.size + Math.max(1, p.rows || (TERM.t ? TERM.t.rows : 24));
+  var shown = Math.max(1, p.rows || (TERM.t ? TERM.t.rows : 24));
+  sb.bar.hidden = !p.size;
+  var h = Math.max(8, 100 * shown / total);
+  var top = 100 * (p.size - p.at) / total;
+  sb.thumb.style.height = h + '%';
+  sb.thumb.style.top = Math.min(100 - h, top) + '%';
+  sb.live.hidden = !p.mode;
+  if (p.mode) sb.liveWords.textContent = p.at + ' / ' + p.size;
+}
+function termScrollBar(host) {
+  if (TERM.sb) return;
+  var bar = el('div', 'term-sb');
+  var thumb = el('div', 'term-sb-thumb');
+  bar.appendChild(thumb);
+  var live = el('button', 'term-live');
+  live.type = 'button';
+  live.hidden = true;
+  live.innerHTML = iconMarkup('down', 14);
+  var liveWords = el('span', '', '');
+  live.appendChild(el('span', '', 'Back to now'));
+  live.appendChild(liveWords);
+  liveWords.className = 'muted';
+  live.onclick = function () { termAsk({t: 'live'}); if (TERM.t) TERM.t.focus(); };
+  host.appendChild(bar);
+  host.appendChild(live);
+  TERM.sb = {bar: bar, thumb: thumb, live: live, liveWords: liveWords};
+  var dragging = false, sent = 0;
+  var place = function (y) {
+    var r = bar.getBoundingClientRect();
+    var p = TERM.pos, total = p.size + Math.max(1, p.rows || 24);
+    var h = Math.max(1, p.rows || 24) / total;
+    var f = Math.max(0, Math.min(1, (y - r.top) / r.height - h / 2) / Math.max(0.0001, 1 - h));
+    var now = Date.now();
+    if (now - sent > 70) { sent = now; termAsk({t: 'scrollto', f: Math.min(1, f)}); }
+  };
+  var down = function (e) {
+    dragging = true;
+    var y = e.touches ? e.touches[0].clientY : e.clientY;
+    place(y);
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  var move = function (e) {
+    if (!dragging) return;
+    place(e.touches ? e.touches[0].clientY : e.clientY);
+    e.preventDefault();
+  };
+  var up = function () { dragging = false; };
+  bar.addEventListener('mousedown', down);
+  bar.addEventListener('touchstart', down, {passive: false});
+  window.addEventListener('mousemove', move);
+  window.addEventListener('touchmove', move, {passive: false});
+  window.addEventListener('mouseup', up);
+  window.addEventListener('touchend', up);
+  /* A finger on the terminal itself: up and down moves the history, as on
+     a phone - a tap is still a tap (the keyboard, a selection). */
+  var ty = null, acc = 0, moved = false;
+  host.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1 || e.target.closest('.term-sb, .term-live')) return;
+    ty = e.touches[0].clientY; acc = 0; moved = false;
+  }, {passive: true});
+  host.addEventListener('touchmove', function (e) {
+    if (ty === null || e.touches.length !== 1) return;
+    var y = e.touches[0].clientY;
+    acc += y - ty;
+    ty = y;
+    if (!moved && Math.abs(acc) < 10) return;
+    moved = true;
+    var cell = (TERM.host && TERM.t) ? TERM.host.clientHeight / Math.max(1, TERM.t.rows) : 18;
+    var n = Math.trunc(acc / cell);
+    if (n) { acc -= n * cell; termAsk({t: 'scroll', n: n}); }
+    e.preventDefault();
+  }, {passive: false});
+  host.addEventListener('touchend', function () { ty = null; });
+  /* The wheel is tmux's own: only the bar is told where it got to. */
+  host.addEventListener('wheel', debounce(function () { termAsk({t: 'pos'}); }, 120), {passive: true});
+}
 
 /* What a key with Ctrl held sends, as a terminal sends it: a letter its
    control character, and the few others a terminal knows. */
@@ -292,6 +383,7 @@ function termClose() {
   TERM.want = false;
   clearTimeout(TERM.timer);
   clearInterval(TERM.ping);
+  clearInterval(TERM.posTimer);
   if (TERM.ws) { try { TERM.ws.close(); } catch (e) { } }
   TERM.ws = null;
   TERM.id = '';
@@ -313,6 +405,7 @@ function termOpen(id, host, onState) {
     if (window.ResizeObserver) new ResizeObserver(debounce(termFit, 60)).observe(host);
     window.addEventListener('resize', debounce(termFit, 100));
     termWireFiles(host);
+    termScrollBar(host);
   }
   TERM.t.reset();
   termFit();
@@ -346,6 +439,13 @@ function termConnect() {
     TERM.ping = setInterval(function () {
       if (ws.readyState === 1) ws.send(JSON.stringify({t: 'ping'}));
     }, 25000);
+    /* Where in the history, for the bar: asked now and then while it is seen. */
+    clearInterval(TERM.posTimer);
+    TERM.pos = {size: 0, at: 0, mode: false, rows: 0};
+    termAsk({t: 'pos'});
+    TERM.posTimer = setInterval(function () {
+      if (ws.readyState === 1 && !document.hidden && TERM.host && TERM.host.offsetWidth) ws.send(JSON.stringify({t: 'pos'}));
+    }, 2000);
   };
   ws.onmessage = function (m) {
     if (TERM.ws !== ws) return;
@@ -353,6 +453,7 @@ function termConnect() {
       var d = null;
       try { d = JSON.parse(m.data); } catch (e) { return; }
       if (d && d.t === 'error') termSay('lost', d.error || 'the terminal could not be reached');
+      if (d && d.t === 'pos') { TERM.pos = d; termPosDraw(); return; }
       /* This sign-in has ended (signed out here or elsewhere, or ended by an
          administrator): the terminal goes on running, the page asks for a
          sign-in again. */

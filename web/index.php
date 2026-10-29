@@ -374,6 +374,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
           <span class="spacer"></span>
           <button class="btn small" id="tb-cmds" data-icon="list" title="Claude Code's commands - /model, /compact, /resume... - put into the terminal, ready to be sent.">Commands</button>
           <button class="btn small" id="tb-attach" data-icon="upload" title="Give Claude a file: it is written into the working directory's upload folder and its path typed into the terminal. Dropping a file onto the terminal, or pasting one (Ctrl+V), does the same.">File for Claude</button>
+          <button class="btn small" id="tb-history" data-icon="list" title="Everything this terminal has shown since it started - tmux keeps it - in a window of its own that scrolls by finger too; copied or downloaded.">History</button>
           <button class="btn small" id="tb-files" data-icon="archive" title="The files of this chat: its own folder and what is in it, beside the terminal - nothing above it.">Files</button>
           <button class="btn small" id="tb-compose" data-icon="edit" title="A box to write longer text in, sent to the terminal at once - handy on a phone, or for many lines.">Write</button>
           <button class="btn small iconly" id="tb-font-" title="Smaller letters">A−</button>
