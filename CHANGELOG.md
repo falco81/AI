@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.8
+
+- **Settings → Accounts as otp's**: every account in one row with its role chosen right there and the same
+  buttons in the same places - its Linux account and folders, a new password typed by the administrator,
+  stop or let it sign in, remove it, **put its columns back as they come**, reset its second step - a button
+  that does not apply dimmed and saying why; how many tables each has laid out; *Signed in now* as otp's,
+  each sign-in ended with a question first.
+- **The menus hide themselves with their pin on every screen 981 px wide or more**, whatever the browser says
+  about a touch screen or a mouse; narrower, they lie across the top as before.
+
 ## 1.0.7
 
 - **The menu of the settings in otp's order**: Claude Code, Signing in (codes by e-mail and SMS, message

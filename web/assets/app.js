@@ -2348,53 +2348,174 @@ $('cc-look').onclick = function () { loadClaude(true); };
 
 /* ---- the accounts ------------------------------------------------------------- */
 var US = null;
+/* A few boxes asked for in a popup (otp's). */
+function askInModal(title, lede, fields, words, icon, go) {
+  var boxes = [];
+  modal(title, function (body) {
+    if (lede) body.appendChild(el('p', 'note', lede));
+    var g = el('div', 'formgrid');
+    fields.forEach(function (f) {
+      var input = f.type === 'password' ? maskBox('', '', '') : el('input');
+      if (f.type !== 'password') input.type = f.type || 'text';
+      input.placeholder = f.placeholder || '';
+      input.autocomplete = 'off';
+      if (f.mono) input.className = 'mono';
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); $('modal-foot').querySelector('.btn.primary').click(); }
+      });
+      boxes.push(input);
+      g.appendChild(formField(f.label, input, f.says));
+    });
+    body.appendChild(g);
+    setTimeout(function () { if (boxes[0]) boxes[0].focus(); }, 60);
+  }, [{words: 'Close', close: true}, {words: words, cls: 'primary', icon: icon, go: function (b) {
+    go(boxes.map(function (x) { return x.value; }), b);
+  }}], 'medium');
+}
 function loadUsers() {
+  colsCardSay();
   api('users').then(function (d) {
     US = d;
     var host = $('us-table');
     clear(host);
-    host.appendChild(listTable(['Name', 'Role', 'Terminals run as', 'Files in', 'Second step', 'Last sign-in', ''], d.users, function (u) {
-      var tr = el('tr', 'clickable' + (u.disabled ? ' dim' : ''));
-      var n = noI18n(el('td', '', u.name));
-      if (u.disabled) n.appendChild(tagEl('off', 'crit'));
-      if (u.must_change) n.appendChild(tagEl('to choose a password', 'warn'));
+    host.appendChild(listTable(['Name', 'Role', 'Terminals run as', 'State', 'Second step', 'Last signed in', 'From', 'Columns', 'Note', ''], d.users, function (u) {
+      var tr = el('tr');
+      var n = el('td'); n.appendChild(noI18n(el('span', 'mono', u.name)));
+      if (u.must_change) n.appendChild(el('span', 'sub', 'chooses a password at the next sign-in'));
       tr.appendChild(n);
-      tr.appendChild(el('td', '', roleWords(u.role)));
-      tr.appendChild(noI18n(el('td', 'mono', u.run_as + (u.run_as_own ? '' : ' *'))));
-      tr.appendChild(noI18n(el('td', 'mono small', u.role === 'admin' ? 'everywhere' : (u.roots.join(', ') || '~' + u.run_as))));
+      var r = el('td'); r.appendChild(el('span', 'tag ' + (u.role === 'admin' ? 'violet' : 'dim'), roleWords(u.role))); tr.appendChild(r);
+      var ra = el('td');
+      ra.appendChild(noI18n(el('span', 'mono', u.run_as + (u.run_as_own ? '' : ' *'))));
+      if (u.role === 'admin') ra.appendChild(el('span', 'sub', 'files everywhere'));
+      else ra.appendChild(noI18n(el('span', 'sub mono', u.roots.join(', ') || '~' + u.run_as)));
+      tr.appendChild(ra);
+      var st = el('td'); st.appendChild(el('span', 'tag ' + (u.disabled ? 'crit' : 'ok'), u.disabled ? 'off' : 'on')); tr.appendChild(st);
+      /* The second step of signing in: how it is given, or not yet. */
       var mf = el('td', 'small');
       if (u.mfa) {
-        mf.appendChild(tagEl(u.mfa.kind === 'app' ? 'app' : 'e-mail', 'ok'));
-        if (u.mfa.dest) mf.appendChild(noI18n(el('span', 'muted mono', ' ' + u.mfa.dest)));
-      } else mf.appendChild(el('span', d.mfa_on ? 'warn' : 'muted', d.mfa_on ? 'at the next sign-in' : '–'));
+        mf.appendChild(el('span', 'tag ok', {app: 'an app', mail: 'e-mail', sms: 'SMS'}[u.mfa.kind] || u.mfa.kind));
+        if (u.mfa.dest) mf.appendChild(noI18n(el('span', 'sub mono', u.mfa.dest)));
+      } else {
+        mf.appendChild(el('span', 'muted', d.mfa_on ? 'set up at the next sign-in' : '–'));
+      }
       tr.appendChild(mf);
-      tr.appendChild(el('td', 'muted', u.last_login ? ago(u.last_login) + (u.last_ip ? ' · ' + u.last_ip : '') : 'never'));
-      tr.appendChild(el('td', 'tools'));
-      tr.onclick = function () { editUser(u); };
+      tr.appendChild(u.last_login ? stampCell(u.last_login) : el('td', 'muted', 'never'));
+      tr.appendChild(noI18n(el('td', 'mono small', u.last_ip || '')));
+      tr.appendChild(el('td', 'muted small', u.cols_tables ? num(u.cols_tables) + ' table(s) laid out' : 'as they come'));
+      tr.appendChild(noI18n(el('td', 'muted small', u.note || '')));
+      var tools = el('td', 'rowtools');
+      /* Every row has the same buttons in the same places (otp's): one that
+         does not apply to this account is there, dimmed, and says why. */
+      var role = selectBox([['admin', roleWords('admin')], ['user', roleWords('user')]], u.role);
+      role.onchange = function () {
+        api('users', {do: 'edit', name: u.name, role: role.value}).then(function () { toast('the role of ' + u.name + ' is changed', 'good'); loadUsers(); })
+          .catch(function (e) { role.value = u.role; oops(e); });
+      };
+      role.style.marginRight = '10px';
+      tools.appendChild(role);
+      var info = iconButton('person', 'Its Linux account, its folders and its note');
+      info.onclick = function (ev) { ev.stopPropagation(); editUser(u); };
+      tools.appendChild(info);
+      var pw = iconButton('lock', 'Set a new password');
+      pw.onclick = function () {
+        askInModal('A new password for ' + u.name, 'They choose their own at the next sign-in.',
+          [{label: 'The new one (8 characters at least)', type: 'password'},
+           {label: 'Again', type: 'password'}], 'Set it', 'lock', function (v) {
+            if (v[0].length < 8) { toast('8 characters at least', 'bad'); return; }
+            if (v[0] !== v[1]) { toast('the two are not the same', 'bad'); return; }
+            closeModal();
+            api('users', {do: 'password', name: u.name, password: v[0], must_change: true})
+              .then(function () { toast('the password of ' + u.name + ' is set', 'good'); loadUsers(); }).catch(oops);
+          });
+      };
+      tools.appendChild(pw);
+      var off = iconButton('power', u.disabled ? 'Let it sign in again' : 'Stop it signing in');
+      if (u.name === ME.name && !u.disabled) { off.disabled = true; off.title = 'Not your own account'; }
+      off.onclick = function () {
+        api('users', {do: 'edit', name: u.name, disabled: !u.disabled}).then(function () { loadUsers(); }).catch(oops);
+      };
+      var x = iconButton('trash', 'Remove it');
+      if (u.name === ME.name) { x.disabled = true; x.title = 'Not your own account - sign in as another administrator for that'; }
+      x.onclick = function () {
+        confirmThen('Remove the account ' + u.name, 'It cannot sign in any more. Its terminals go on running as the Linux account they run as.', 'Remove it', function () {
+          api('users', {do: 'drop', name: u.name}).then(function () { loadUsers(); }).catch(oops);
+        });
+      };
+      tools.appendChild(off); tools.appendChild(x);
+      /* Somebody's own layout of the tables, put back as it comes. */
+      var cb = iconButton('undo', u.cols_tables
+        ? u.name + ' has laid out ' + num(u.cols_tables) + ' table(s) by hand. Put every one of them back as it comes: the widths, the order and the hidden columns. Nothing else of theirs changes.'
+        : u.name + ' has every table as it comes: nothing to put back.');
+      cb.classList.add('cols-back');
+      if (u.cols_tables) {
+        cb.onclick = function (ev) {
+          ev.stopPropagation();
+          confirmThen('The columns of ' + u.name,
+            'Every table ' + htmlText(u.name) + ' has laid out goes back as it comes. They see it '
+            + 'the next time a page loads.',
+            'Put them back', function () {
+              colsReset(u.name).then(function () {
+                if (ME && u.name === ME.name) colsCardSay();
+                loadUsers();
+              }).catch(oops);
+            });
+        };
+      } else {
+        cb.disabled = true;
+      }
+      tools.appendChild(cb);
+      var mr = iconButton('shield', u.mfa
+        ? 'Reset the second step: ' + u.name + ' sets it up again at the next sign-in. Their sign-ins are ended.'
+        : u.name + ' has no second step set up: nothing to reset.');
+      if (u.mfa) {
+        mr.onclick = function (ev) {
+          ev.stopPropagation();
+          confirmThen('Reset the second step of ' + u.name + '?',
+            htmlText('The way ' + u.name + ' gives the second step is taken away, and their sign-ins are ended. At the next sign-in they choose and set it up again - with the password alone, so do it only when you know it is them (a lost phone, a new one).'),
+            'Reset it', function () {
+              api('users', {do: 'mfa_reset', name: u.name}).then(function (r) { toast(r.message, 'good'); loadUsers(); }).catch(oops);
+            }, true);
+        };
+      } else {
+        mr.disabled = true;
+      }
+      tools.appendChild(mr);
+      tr.appendChild(tools);
       return tr;
     }));
     host.appendChild(el('p', 'muted small', '* the default (Settings - Claude Code), ' + d.default_run_as + ' now'));
+    explainWhatWasDrawn(host);
     var sh = $('us-sessions');
     clear(sh);
-    sh.appendChild(listTable(['Who', 'Since', 'Last', 'From', 'Browser', ''], d.sessions, function (s) {
+    sh.appendChild(listTable(['Who', 'Where', 'From', 'Since', 'Last asked', ''], d.sessions, function (s) {
       var tr = el('tr');
-      var who = noI18n(el('td', '', s.name));
-      if (s.mfa_pending) who.appendChild(tagEl('second step not given yet', 'warn'));
+      var who = el('td');
+      who.appendChild(noI18n(el('span', 'mono', s.name)));
+      if (s.id === d.me_sid) { who.appendChild(document.createTextNode(' ')); who.appendChild(el('span', 'tag info', 'this page')); }
+      if (s.mfa_pending) who.appendChild(el('span', 'sub', 'the second step not given yet'));
       tr.appendChild(who);
+      var where = el('td', '', 'these pages');
+      if (s.agent) explain(where, s.agent);
+      tr.appendChild(where);
+      tr.appendChild(noI18n(el('td', 'mono small', s.ip)));
       tr.appendChild(stampCell(s.created));
       tr.appendChild(el('td', 'muted', ago(s.seen)));
-      tr.appendChild(noI18n(el('td', 'mono', s.ip)));
-      tr.appendChild(noI18n(el('td', 'small muted', (s.agent || '').slice(0, 60))));
-      var tools = el('td', 'tools');
-      if (s.id !== d.me_sid) {
-        var b = iconButton('out', 'End this sign-in');
-        b.onclick = function () { api('users', {do: 'end', sid: s.id, name: s.name}).then(loadUsers).catch(oops); };
-        tools.appendChild(b);
-      } else tools.appendChild(tagEl('you', 'info'));
+      var tools = el('td', 'rowtools');
+      var x = cmdButton('End it', 'cancel', 'small');
+      x.onclick = function () {
+        confirmThen('End this sign-in', htmlText(String(s.name || '?')) + (s.ip ? ' from ' + htmlText(String(s.ip)) : '')
+          + ' is signed out at once.' + (s.id === d.me_sid ? ' It is this one: you are signed out.' : ''), 'End it', function () {
+          api('users', {do: 'end', sid: s.id, name: s.name}).then(function () {
+            if (s.id === d.me_sid) location.href = '/'; else loadUsers();
+          }).catch(oops);
+        });
+      };
+      tools.appendChild(x);
       tr.appendChild(tools);
       return tr;
     }));
   }).catch(oops);
+  if (typeof loadLockouts === 'function') loadLockouts();
 }
 function userForm(body, u) {
   var g = el('div', 'formgrid');

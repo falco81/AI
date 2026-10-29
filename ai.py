@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10049,6 +10049,7 @@ def api_users(c):
     for u in d.store.users():
         one = user_view(u)
         one['mfa'] = mfa.get(u['name'].lower())
+        one['cols_tables'] = len([k for k in user_cols(d.store, u['name']) if not str(k).startswith('_')])
         users.append(one)
     sessions = d.store.q('SELECT id, name, created, seen, ip, agent, data FROM sessions ORDER BY seen DESC')
     for s in sessions:

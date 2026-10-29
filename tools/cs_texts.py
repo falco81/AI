@@ -1677,6 +1677,23 @@ STRINGS = {
         'čeká na další pokus',
     'given up':
         'vzdáno',
+    # ---- 1.0.8: the accounts as otp's ----
+    'files everywhere':
+        'soubory všude',
+    'Its Linux account, its folders and its note':
+        'Jeho účet Linuxu, složky a poznámka',
+    'chooses a password at the next sign-in':
+        'zvolí si heslo při příštím přihlášení',
+    'the second step not given yet':
+        'druhý krok zatím nezadán',
+    'Not your own account':
+        'Ne vlastní účet',
+    'Not your own account - sign in as another administrator for that':
+        'Ne vlastní účet – přihlaste se k tomu jako jiný administrátor',
+    'It cannot sign in any more. Its terminals go on running as the Linux account they run as.':
+        'Už se nepřihlásí. Jeho terminály běží dál pod účtem Linuxu, pod kterým běží.',
+    ' It is this one: you are signed out.':
+        ' Je to toto přihlášení: budete odhlášeni.',
 }
 
 PATTERNS = {
@@ -1849,6 +1866,13 @@ PATTERNS = {
         'E-mail pro {0}',
     'They are files on this machine, under {0}, each with the key that opens its secrets beside it. Copy them off it if they are to survive the machine.':
         'Jsou to soubory na tomto stroji v {0}, každý s klíčem k jeho tajným údajům vedle sebe. Zkopírujte je jinam, pokud mají stroj přežít.',
+    # ---- 1.0.8: the accounts as otp's ----
+    '{0} table(s) laid out':
+        '{0} {0:tabulka upravena|tabulky upraveny|tabulek upraveno}',
+    'the role of {0} is changed':
+        'role účtu {0} je změněna',
+    'the password of {0} is set':
+        'heslo účtu {0} je nastaveno',
 }
 
 RICH = {

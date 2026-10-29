@@ -806,7 +806,7 @@
       overflow-y:auto;overscroll-behavior:contain;padding-right:8px;padding-bottom:28px;
       box-sizing:border-box;scrollbar-gutter:stable}
   }
-  @media (min-width:981px) and (any-hover:hover) and (any-pointer:fine){
+  @media (min-width:981px){
     /* Settings keeps its own frame: the rail must not scroll with the cards. */
     body.app-shell .wrap > section#tab-settings:not([hidden]){overflow:hidden;
       padding-right:0;padding-bottom:0;display:flex;flex-direction:column}
@@ -841,7 +841,7 @@
   /* The pin only means anything where the rail hides itself, which is only
      where there is a pointer for it to hide from. */
   .ctl-nav .ctl-pin{display:none}
-  @media (min-width:981px) and (any-hover:hover) and (any-pointer:fine){
+  @media (min-width:981px){
     .ctl-nav .ctl-pin{display:grid}
   }
   .ctl-nav .ctl-pin{appearance:none;place-items:center;width:34px;height:30px;
@@ -857,7 +857,7 @@
      takes one is worse than the column. So the collapsing rail is asked for
      by hover, not by width - a desk gets the overlay, a tablet of the same
      width gets a plain column that is always there. */
-  @media (min-width:981px) and (any-hover:hover) and (any-pointer:fine){
+  @media (min-width:981px){
     .ctl-layout{display:block;position:relative;padding-left:72px;
       transition:padding-left .18s ease}
     .ctl-layout.nav-pinned{padding-left:266px}
