@@ -49,6 +49,32 @@ if (isset($_GET['api'])) {
         echo json_encode(is_array($data) ? $data : ['ok' => false, 'error' => 'sign-in failed']);
         exit;
     }
+    if ($what === 'mfa' && $post) {
+        /* The second step given: the daemon ends the sign-in the password
+           opened and hands a new one - its cookie set here, the token never
+           shown to the page (as otp's). */
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        $sent = sent_body();
+        $sent['lang'] = (string) ($_COOKIE['ai_lang'] ?? '');
+        [$status, $body] = ai_call('/api/auth/mfa', 'POST', $sent, 90.0);
+        if ($status === 0) {
+            http_response_code(503);
+            echo json_encode(['ok' => false, 'error' =>
+                'the daemon is not answering — is ai.service running?']);
+            exit;
+        }
+        $data = json_decode($body, true);
+        if (is_array($data) && !empty($data['token'])) {
+            if ($status === 200) {
+                ai_set_session((string) $data['token']);
+            }
+            unset($data['token']);
+        }
+        http_response_code($status);
+        echo json_encode(is_array($data) ? $data : ['ok' => false, 'error' => 'the second step failed']);
+        exit;
+    }
     if ($what === 'logout' && $post) {
         ai_call('/api/auth/logout', 'POST', [], 10.0);
         ai_clear_session();
@@ -66,7 +92,8 @@ if (isset($_GET['api'])) {
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
-        'console-login' => '/api/console-login',
+        'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
+        'mail' => '/api/mail',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -75,6 +102,7 @@ if (isset($_GET['api'])) {
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
+        'lockouts' => '/api/lockouts', 'mail' => '/api/mail',
     ];
     if ($post) {
         if (!isset($writes[$what])) {
@@ -100,6 +128,10 @@ if (isset($_GET['api'])) {
 
 /* ---- the page ------------------------------------------------------------ */
 $me      = ai_whoami();
+/* Signed in with the password, the second step still to give: the sign-in
+   page, asking for it - nothing of the pages yet. */
+$mfa     = (is_array($me) && !empty($me['mfa'])) ? (string) $me['mfa'] : '';
+if ($mfa !== '') { $me = null; }
 $health  = ai_get('/api/health', 5.0);
 $alive   = is_array($health);
 $token_there = file_exists(AI_TOKEN);
@@ -172,7 +204,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       <div class="offline">There is no account on this machine yet. Make one on the server:<br>
         <span class="mono">ai --add-user yourname --role admin</span></div>
     <?php endif; ?>
-    <form id="signin-form" autocomplete="on">
+    <div id="mfa-box" data-stage="<?= h($mfa) ?>" hidden></div>
+    <form id="signin-form" autocomplete="on"<?= $mfa !== '' ? ' hidden' : '' ?>>
       <input type="text" id="in-name" name="username" placeholder="name" autocomplete="username"
              autocapitalize="none" spellcheck="false" required>
       <input type="password" id="in-pass" name="password" placeholder="password"
@@ -218,7 +251,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     go.disabled = true;
     var words = go.querySelector('span');
     words.textContent = 'Signing in…';
-    api('login', {name: $('in-name').value, password: $('in-pass').value}).then(function () {
+    api('login', {name: $('in-name').value, password: $('in-pass').value}).then(function (d) {
+      if (d && d.mfa) { form.hidden = true; mfaStep(); return; }
       said.className = 'said good';
       said.textContent = 'Welcome back.';
       location.reload();
@@ -231,7 +265,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       $('in-pass').focus();
     });
   });
-  $('in-name').focus();
+  if ($('mfa-box').dataset.stage) mfaStep(); else $('in-name').focus();
 }());
 </script>
 </body>
@@ -252,6 +286,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 </header>
 
 <div id="offline" class="offline" hidden></div>
+<div id="phpsafety" class="offline" hidden></div>
 <div id="problems" class="offline warnish" hidden></div>
 <div id="trials" class="trials" hidden></div>
 
@@ -431,6 +466,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <div class="ctl-group">Access</div>
     <button type="button" data-pane="people" data-icon="person" title="Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
     <button type="button" data-pane="access" data-icon="shield" title="How long a sign-in lasts, wrong passwords, and changes that go back by themselves unless kept.">Signing in</button>
+    <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages: given, or made here.">Certificate and TLS</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages, and the server's firewall (iptables or firewalld).">Firewall and access</button>
     <div class="ctl-group">Server</div>
@@ -467,11 +503,49 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       <div id="us-table"></div>
     </div>
     <div class="card full"><h2>Signed in now</h2><div id="us-sessions"></div></div>
+    <div class="card full" id="lo-card"><h2>Locked out <span class="right" id="lo-tools"></span></h2>
+      <p class="note">Addresses and names with wrong passwords or wrong codes still counted - at the limit
+        (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them,
+        and they may try again at once.</p>
+      <div id="lo-table"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-access" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Signing in</h2></div>
     <div class="card full"><div id="sect-access"></div></div>
+  </div>
+
+  <div class="ctl-pane" id="pane-mail" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Mail</h2>
+      <p class="ctl-lede">The codes of the second step of signing in, sent by e-mail, and notices of what
+        Events marks as a warning or a failure. The mail leaves through your mail server (SMTP), or
+        straight to the server of the recipient's domain with no relay at all.</p></div>
+    <div class="card full"><div id="sect-mail"></div></div>
+    <div class="card full">
+      <h2>Try it <span class="right muted small" id="mail-said"></span></h2>
+      <p class="note">Sends a short message the way the codes and the notices go, and shows every step:
+        the server reached, TLS, signing in, the message handed over and what the server said. Save the
+        changes first.</p>
+      <div class="btnrow admin-only filters">
+        <input type="email" id="mail-to" placeholder="somebody@example.cz" style="flex:1;min-width:240px">
+        <select id="mail-test-lang"><option value="cs">Čeština</option><option value="en">English</option></select>
+        <button class="btn cmd primary" id="mail-test" data-icon="mail">Send a test</button>
+      </div>
+      <div id="mail-steps"></div>
+      <div class="muted small" id="mail-notices" style="margin-top:8px"></div>
+    </div>
+    <div class="card full">
+      <h2>The certificate authority <span class="right muted small" id="mca-when"></span></h2>
+      <p class="note">Needed only when the mail server's certificate was signed by an authority of your own that this machine does not already trust. Paste one (or a whole chain), or read it from the .crt / .pem / .cer file, and press Save the changes below. Each is listed and can be taken out by itself.</p>
+      <div id="mca-state"></div>
+      <textarea id="mca-pem" rows="5" class="mono admin-only" style="width:100%;margin-top:10px"
+                placeholder="-----BEGIN CERTIFICATE-----&#10;MIID...&#10;-----END CERTIFICATE-----"></textarea>
+      <div class="btnrow admin-only" style="margin-top:10px">
+        <button class="btn cmd" id="mca-file" data-icon="upload">Read a file…</button>
+        <button class="btn cmd danger" id="mca-drop" data-icon="trash">Take them all away</button>
+        <input type="file" id="mca-input" accept=".pem,.crt,.cer,.txt" hidden>
+      </div>
+    </div>
   </div>
 
   <div class="ctl-pane" id="pane-web" hidden>

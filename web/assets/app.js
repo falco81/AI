@@ -1195,7 +1195,8 @@ function showPane(name) {
   document.querySelectorAll('.ctl-pane').forEach(function (p) { p.hidden = p.id !== 'pane-' + name; });
   writeHash();
   if (name === 'claude') loadClaude();
-  if (name === 'people') loadUsers();
+  if (name === 'people') { loadUsers(); loadLockouts(); }
+  if (name === 'mail') loadMail();
   if (name === 'web') loadCert();
   if (name === 'fw') loadFw();
   if (name === 'network') loadNet();
@@ -1267,7 +1268,7 @@ $('ctl-find').addEventListener('input', function () {
 });
 
 /* ---- the settings that are only values ---------------------------------------- */
-var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general'};
+var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail'};
 function loadSettings() {
   return api('settings').then(function (d) {
     SETTINGS = d;
@@ -1279,6 +1280,7 @@ function loadSettings() {
       d.settings.filter(function (s) { return s.pane === pane; }).forEach(function (s) { g.appendChild(settingItem(s)); });
       host.appendChild(g);
     });
+    applyWhen();
     markDirtyCount();
     explainWhatWasDrawn(document.querySelector('#tab-settings'));
   }).catch(oops);
@@ -1300,6 +1302,9 @@ function settingItem(s) {
     input.rows = 5;
     input.value = s.value || '';
     input.spellcheck = false;
+    input.oninput = function () { mark(); };
+  } else if (s.kind === 'password') {
+    input = secretBox('', s.set ? 'saved - empty keeps it' : 'not set');
     input.oninput = function () { mark(); };
   } else {
     input = textBox(s.value === null || s.value === undefined ? '' : s.value, '', s.kind === 'int' ? '' : 'mono');
@@ -1326,8 +1331,21 @@ function settingItem(s) {
     if (String(v) === String(s.value === null ? '' : s.value)) delete DIRTY[s.key]; else DIRTY[s.key] = v;
     item.classList.toggle('dirty', s.key in DIRTY);
     markDirtyCount();
+    applyWhen();
   }
+  item._value = value;
+  if (s.extra && s.extra.when) item.dataset.when = JSON.stringify(s.extra.when);
   return item;
+}
+/* What only one choice uses is there only while that choice is made (otp's
+   ONLY_WHEN): not a page of boxes that do nothing. */
+function applyWhen() {
+  document.querySelectorAll('.set-item[data-when]').forEach(function (item) {
+    var w = JSON.parse(item.dataset.when);
+    var master = document.querySelector('.set-item[data-key="' + w[0] + '"]');
+    var v = master && master._value ? master._value() : null;
+    item.hidden = !!master && w[1].map(String).indexOf(String(v)) < 0;
+  });
 }
 var SAVE_PANES = ['fw', 'time'];
 function pendingSet(key, p) { p.pane = p.pane || PANE; PENDING[key] = p; markDirtyCount(); }
@@ -1428,7 +1446,7 @@ function loadUsers() {
     US = d;
     var host = $('us-table');
     clear(host);
-    host.appendChild(listTable(['Name', 'Role', 'Terminals run as', 'Files in', 'Last sign-in', ''], d.users, function (u) {
+    host.appendChild(listTable(['Name', 'Role', 'Terminals run as', 'Files in', 'Second step', 'Last sign-in', ''], d.users, function (u) {
       var tr = el('tr', 'clickable' + (u.disabled ? ' dim' : ''));
       var n = noI18n(el('td', '', u.name));
       if (u.disabled) n.appendChild(tagEl('off', 'crit'));
@@ -1437,6 +1455,12 @@ function loadUsers() {
       tr.appendChild(el('td', '', roleWords(u.role)));
       tr.appendChild(noI18n(el('td', 'mono', u.run_as + (u.run_as_own ? '' : ' *'))));
       tr.appendChild(noI18n(el('td', 'mono small', u.role === 'admin' ? 'everywhere' : (u.roots.join(', ') || '~' + u.run_as))));
+      var mf = el('td', 'small');
+      if (u.mfa) {
+        mf.appendChild(tagEl(u.mfa.kind === 'app' ? 'app' : 'e-mail', 'ok'));
+        if (u.mfa.dest) mf.appendChild(noI18n(el('span', 'muted mono', ' ' + u.mfa.dest)));
+      } else mf.appendChild(el('span', d.mfa_on ? 'warn' : 'muted', d.mfa_on ? 'at the next sign-in' : '–'));
+      tr.appendChild(mf);
       tr.appendChild(el('td', 'muted', u.last_login ? ago(u.last_login) + (u.last_ip ? ' · ' + u.last_ip : '') : 'never'));
       tr.appendChild(el('td', 'tools'));
       tr.onclick = function () { editUser(u); };
@@ -1447,7 +1471,9 @@ function loadUsers() {
     clear(sh);
     sh.appendChild(listTable(['Who', 'Since', 'Last', 'From', 'Browser', ''], d.sessions, function (s) {
       var tr = el('tr');
-      tr.appendChild(noI18n(el('td', '', s.name)));
+      var who = noI18n(el('td', '', s.name));
+      if (s.mfa_pending) who.appendChild(tagEl('second step not given yet', 'warn'));
+      tr.appendChild(who);
       tr.appendChild(stampCell(s.created));
       tr.appendChild(el('td', 'muted', ago(s.seen)));
       tr.appendChild(noI18n(el('td', 'mono', s.ip)));
@@ -1524,7 +1550,12 @@ function showPassword(name, pw) {
   }, [{words: 'Close', close: true}], true);
 }
 function editUser(u) {
-  modal('The account ' + u.name, function (body) { body._f = userForm(body, u); }, [
+  var reset = {words: 'Reset the second step', icon: 'key', go: function () {
+    confirmThen('Reset the second step of ' + u.name + '?', 'Its app or mail address is forgotten and its sign-ins end: at the next sign-in it sets a second step up again - with only its password.', 'Reset it', function () {
+      api('users', {do: 'mfa_reset', name: u.name}).then(function (r) { toast(r.message, 'good'); closeModal(); loadUsers(); }).catch(oops);
+    }, true);
+  }};
+  modal('The account ' + u.name, function (body) { body._f = userForm(body, u); }, (u.mfa ? [reset] : []).concat([
     {words: 'Take it away', cls: 'danger', icon: 'trash', go: function () {
       api('users', {do: 'drop', name: u.name}).then(function () { closeModal(); loadUsers(); }).catch(oops);
     }},
@@ -1539,7 +1570,7 @@ function editUser(u) {
       api('users', {do: 'edit', name: u.name, role: f.role.value, run_as: f.run_as.value, roots: f.roots.value,
                     note: f.note.value, disabled: !!f.off._get()})
         .then(function () { closeModal(); loadUsers(); }).catch(oops).then(function () { busy(b, false); });
-    }}], 'wide');
+    }}]), 'wide');
 }
 
 /* ---- the certificate ------------------------------------------------------------- */
@@ -1694,6 +1725,7 @@ $('ab-log').onclick = function () {
   dressButtons(document);
   explainWhatWasDrawn(document);
   if (STATUS) paintHeader(STATUS);
+  phpSafety();
   var h = (location.hash || '').replace(/^#/, '').split('/');
   var tab = h[0] || 'terms', sub = h.slice(1).join('/');
   if (tab === 'files' && sub) sub = decodeURIComponent(sub);
@@ -1702,3 +1734,252 @@ $('ab-log').onclick = function () {
   if (ME && ME.must_change) setTimeout(mustChange, 50);
   window.addEventListener('beforeunload', function () { termClose(); });
 }());
+
+/* ---- from otp: who is locked out (1.0.112) -------------------------------------
+   Who has wrong attempts counted, how long the lockout still runs - cleared
+   one by one or all at once. Fetched again every 10 s while the card is on
+   the screen; the time left counts down every second in between. */
+var LO = {data: null, skew: 0, fetched: 0, timer: null};
+function loadLockouts() {
+  if (!ADMIN || !$('lo-table')) return;
+  api('lockouts').then(function (d) {
+    LO.data = d;
+    LO.skew = d.now - Date.now() / 1000;
+    LO.fetched = Date.now();
+    drawLockouts();
+    if (!LO.timer) LO.timer = setInterval(loTick, 1000);
+  }).catch(function (e) { if (LO.timer) { clearInterval(LO.timer); LO.timer = null; } oops(e); });
+}
+function loTick() {
+  var c = $('lo-card');
+  if (!c || !c.offsetParent || document.hidden) { clearInterval(LO.timer); LO.timer = null; return; }
+  if (Date.now() - LO.fetched > 10000) { LO.fetched = Date.now(); loadLockouts(); return; }
+  drawLockouts();
+}
+function loNow() { return Date.now() / 1000 + LO.skew; }
+function loClear(body, words) {
+  api('lockouts', body).then(function (r) { toast(words || r.message, 'good'); loadLockouts(); }).catch(oops);
+}
+function loBar(n, limit, locked) {
+  var bar = el('div', 'lo-bar' + (locked ? ' full' : ''));
+  var fill = el('i');
+  fill.style.width = (limit ? Math.min(100, Math.round(100 * n / limit)) : 0) + '%';
+  bar.appendChild(fill);
+  return bar;
+}
+function drawLockouts() {
+  var d = LO.data, host = $('lo-table');
+  if (!d || !host) return;
+  var now = loNow();
+  var rows = [];
+  (d.nodes || []).forEach(function (n) {
+    (n.rows || []).forEach(function (r) {
+      if (r.forgets <= now) return;
+      var x = Object.assign({}, r);
+      if (x.locked && x.until <= now) x.locked = false;
+      rows.push(x);
+    });
+  });
+  rows.sort(function (a, b) { return (b.locked - a.locked) || (b.last - a.last); });
+  liveFill($('lo-tools'), function (tools) {
+    var locked = rows.filter(function (r) { return r.locked; }).length;
+    if (!rows.length) return;
+    if (locked) { var lc = el('span', 'small bad', num(locked) + ' locked out'); lc.style.marginRight = '12px'; tools.appendChild(lc); }
+    var all = cmdButton('Clear them all', 'broom', 'small');
+    all.onclick = function () {
+      confirmThen('Clear every lockout?', 'Every count of wrong attempts is forgotten - the locked out may try again at once. Events keeps a line saying who did it.', 'Clear them all', function () {
+        loClear({action: 'clear_all'});
+      }, false);
+    };
+    tools.appendChild(all);
+  }, true);
+  liveFill(host, function (host) {
+    if (!rows.length) { host.appendChild(el('p', 'note good', 'Nobody is locked out, and no wrong attempt is being counted.')); return; }
+    host.appendChild(listTable(['State', 'Who', 'Where', 'How many', 'Last', ''], rows, function (r) {
+      var tr = el('tr', r.locked ? 'lo-locked' : '');
+      var st = el('td');
+      if (r.locked) {
+        st.appendChild(el('span', 'tag crit', 'locked out'));
+        st.appendChild(el('div', 'small', span(r.until - now) + ' left'));
+      } else {
+        st.appendChild(el('span', 'tag load', 'counting'));
+        st.appendChild(el('div', 'small muted', 'forgotten in ' + span(r.forgets - now)));
+      }
+      tr.appendChild(st);
+      var who = el('td');
+      who.appendChild(noI18n(el('div', 'mono', r.who)));
+      who.appendChild(el('div', 'small muted', r.by === 'address' ? 'an address' : 'a name'));
+      tr.appendChild(who);
+      tr.appendChild(el('td', 'small', r.what));
+      var w = el('td', 'num lo-count');
+      var line = el('div');
+      line.appendChild(noI18n(el('b', '', num(r.fails))));
+      line.appendChild(document.createTextNode(' / ' + num(r.limit)));
+      w.appendChild(line);
+      w.appendChild(loBar(r.fails, r.limit, r.locked));
+      tr.appendChild(w);
+      tr.appendChild(el('td', 'muted small', ago(r.last - LO.skew)));
+      var a = el('td', 'rowtools');
+      var x = cmdButton('Clear', 'broom', 'small');
+      explain(x, 'Its count of wrong attempts is forgotten: it may try again at once.');
+      x.onclick = function () { loClear({action: 'clear', who: r.who}, 'cleared: ' + r.who); };
+      a.appendChild(x);
+      tr.appendChild(a);
+      return tr;
+    }, 'plain'));
+  }, true);
+}
+
+/* ---- from otp: mail (1.0.20) ------------------------------------------------------ */
+function stepsList(steps) {
+  var list = el('div', 'steps');
+  (steps || []).forEach(function (s) {
+    var row = el('div', 'step ' + (s.ok ? 'ok' : 'bad'));
+    var mark = el('span', 'step-mark');
+    mark.innerHTML = iconMarkup(s.ok ? 'check' : 'cancel', 15);
+    row.appendChild(mark);
+    var words = el('span', 'step-words');
+    words.appendChild(el('b', '', s.what));
+    if (s.said) words.appendChild(el('span', 'd', s.said));
+    if (s.ms !== undefined) words.appendChild(el('span', 'd', s.ms + ' ms'));
+    row.appendChild(words);
+    list.appendChild(row);
+  });
+  return list;
+}
+function certTable(list, drop) {
+  return listTable(['It is', 'Signed by', 'Good from', 'Good until', 'Fingerprint (SHA-256)', ''], list, function (c) {
+    var tr = el('tr');
+    tr.appendChild(noI18n(el('td', '', c.subject || '–')));
+    var by = el('td');
+    if (c.self_signed) by.appendChild(el('span', 'tag info', 'itself - a root'));
+    else by.appendChild(noI18n(el('span', '', c.issuer || '–')));
+    tr.appendChild(by);
+    var when = function (t) { var ms = Date.parse(t || ''); return isNaN(ms) ? (t || '–') : dayWords(new Date(ms)); };
+    tr.appendChild(el('td', 'muted small', when(c.from)));
+    var left = c.until ? (Date.parse(c.until) - Date.now()) / 86400000 : null;
+    var tone = left === null || isNaN(left) ? '' : (left < 0 ? 'bad' : (left < 60 ? 'warn' : 'good'));
+    tr.appendChild(el('td', 'small ' + tone, when(c.until)));
+    var fp = noI18n(el('td', 'mono small muted fp-full'));
+    var hex = (c.fingerprint || '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+    var half = Math.ceil(hex.length / 4) * 2;
+    [hex.slice(0, half), hex.slice(half)].forEach(function (part) {
+      if (part) fp.appendChild(el('div', '', part.replace(/(..)(?=.)/g, '$1:')));
+    });
+    fp.title = hex.replace(/(..)(?=.)/g, '$1:');
+    tr.appendChild(fp);
+    var tools = el('td', 'rowtools');
+    if (ADMIN && drop) {
+      var x = iconButton('trash', 'Take this certificate out');
+      x.onclick = function () { drop(c); };
+      tools.appendChild(x);
+    }
+    tr.appendChild(tools);
+    return tr;
+  });
+}
+/** A certificate file read into a box: PEM as it is, a DER .cer written out as PEM. */
+function readCertFile(file, box) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var bytes = new Uint8Array(reader.result || new ArrayBuffer(0));
+    var text = '';
+    try { text = new TextDecoder('utf-8').decode(bytes); } catch (e) { text = ''; }
+    if (text.indexOf('-----BEGIN CERTIFICATE-----') < 0 && bytes.length && bytes[0] === 0x30) {
+      var bin = '';
+      for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      text = '-----BEGIN CERTIFICATE-----\n' + btoa(bin).replace(/(.{64})/g, '$1\n').replace(/\n$/, '')
+        + '\n-----END CERTIFICATE-----';
+    }
+    var ok = text.indexOf('-----BEGIN CERTIFICATE-----') >= 0;
+    box.value = ok ? text.trim() : '';
+    box.dispatchEvent(new Event('input'));
+    toast(ok ? 'read ' + file.name + ' - Save the changes adds it' : file.name + ' is not a certificate', ok ? 'good' : 'bad');
+  };
+  reader.readAsArrayBuffer(file);
+}
+function saveFile(name, text, type) {
+  var a = el('a');
+  a.href = URL.createObjectURL(new Blob([text], {type: type || 'application/json'}));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function loadMail() {
+  return api('mail').then(function (d) {
+    var list = d.ca_list || [];
+    $('mca-when').textContent = list.length ? num(list.length) + ' certificate(s) kept' : 'none imported';
+    $('mca-drop').hidden = !list.length;
+    var host = $('mca-state');
+    clear(host);
+    if (list.length) {
+      host.appendChild(certTable(list, function (c) {
+        confirmThen('Take this certificate out', '<b>' + htmlText(c.subject || 'this certificate')
+          + '</b> is no longer trusted for the mail server. The others stay.', 'Take it out', function () {
+            api('mail', {action: 'ca', mode: 'drop', fingerprint: c.fingerprint}).then(function (r) {
+              toast(r.message, 'good'); loadMail();
+            }).catch(oops);
+          });
+      }));
+    }
+    $('mail-said').textContent = {off: 'switched off', smtp: 'through a mail server', direct: 'straight to the recipients'}[d.mode] || '';
+    var nt = d.notices || {};
+    $('mail-notices').textContent = nt.said ? 'The last notice: ' + ago(nt.at) + ' - ' + nt.said : '';
+    return d;
+  }).catch(oops);
+}
+$('mail-test').onclick = function () {
+  var b = $('mail-test');
+  if (Object.keys(DIRTY || {}).some(function (k) { return /^(mail_|smtp_)/.test(k); })) {
+    toast('save the mail settings first', 'bad'); return;
+  }
+  busy(b, true);
+  api('mail', {action: 'test', to: $('mail-to').value.trim(), lang: $('mail-test-lang').value}).then(function (d) {
+    var host = $('mail-steps');
+    clear(host);
+    host.appendChild(el('p', 'note ' + (d.sent ? 'good' : 'bad'), (d.sent ? 'Sent: ' : 'Not sent: ') + d.said
+      + (d.took_ms !== undefined ? ' · ' + num(d.took_ms) + ' ms' : '')));
+    if ((d.steps || []).length) host.appendChild(stepsList(d.steps));
+    host.appendChild(hideBar(function () { clear(host); }));
+  }).catch(oops).then(function () { busy(b, false); });
+};
+$('mca-pem').addEventListener('input', function () {
+  var pem = $('mca-pem').value.trim();
+  if (!pem) { delete PENDING.mca; markDirtyCount(); return; }
+  pendingSet('mca', {save: function () {
+    return api('mail', {action: 'ca', mode: 'add', ca: $('mca-pem').value.trim()}).then(function (r) {
+      toast(r.message, 'good'); $('mca-pem').value = ''; loadMail(); return true;
+    });
+  }, reset: function () { $('mca-pem').value = ''; }});
+});
+$('mca-file').onclick = function () { $('mca-input').click(); };
+$('mca-input').onchange = function () {
+  var file = this.files && this.files[0];
+  if (file) readCertFile(file, $('mca-pem'));
+  this.value = '';
+};
+$('mca-drop').onclick = function () {
+  confirmThen('Take every certificate of the mail server away',
+    'The mail server’s certificate will then have to be signed by an authority this machine already trusts, or the check has to be switched off.',
+    'Take them all away', function () {
+      api('mail', {action: 'ca', mode: 'clear'}).then(function (r) { toast(r.message, 'good'); loadMail(); }).catch(oops);
+    });
+};
+
+/* ---- PHP and php2shell, said to an administrator (as otp's) ---------------------- */
+function phpSafety() {
+  var box = $('phpsafety'), s = typeof PHP_SAFETY !== 'undefined' ? PHP_SAFETY : null;
+  if (!box || !s || s.patched) return;
+  /* A distribution that backported the fix keeps the old number; the daemon
+     reads the packages' changelog, and when it says the fix is in, so be it. */
+  if (STATUS && STATUS.php && STATUS.php.fixed) return;
+  box.hidden = false;
+  box.classList.toggle('warnish', !!s.guarded);
+  box.textContent = 'PHP ' + s.version + ' running this page may have php2shell '
+    + '(CVE-2026-109618, CVE-2026-109619): remote code execution by anybody who can reach the '
+    + 'web server. Update it - ' + (s.needs ? s.needs + ' or later, ' : '') + 'or the package '
+    + 'your distribution fixed (dnf upgrade \'php*\') - and restart php-fpm; ./install.sh '
+    + '--upgrade does it. A distribution that backported the fix keeps the old number: check '
+    + 'rpm -q --changelog php-fpm | grep CVE-2026-109618.';
+}

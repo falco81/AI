@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import fcntl
 import getpass
 import grp
@@ -52,6 +53,7 @@ import select
 import shlex
 import shutil
 import signal
+import smtplib
 import socket
 import sqlite3
 import ssl
@@ -124,7 +126,37 @@ DEFAULTS = {
     'ended_keep_days': 14,
     'revert_s': 120,
     'debug': False,
+    # the second step of signing in (otp's admin_2fa)
+    'admin_2fa': False,
+    'admin_2fa_app': True,
+    'admin_2fa_mail': True,
+    'totp_window': 1,
+    'code_digits': 6,
+    'code_ttl_s': 300,
+    # mail (otp's Settings -> Mail)
+    'mail_mode': 'off',
+    'smtp_host': '',
+    'smtp_port': 0,
+    'smtp_security': 'starttls',
+    'smtp_auth': 'auto',
+    'smtp_user': '',
+    'smtp_password': '',
+    'smtp_verify': True,
+    'smtp_timeout_s': 20,
+    'mail_from': '',
+    'mail_from_name': '',
+    'mail_reply_to': '',
+    'mail_helo': '',
+    'mail_direct_port': 25,
+    'mail_direct_tls': 'if-offered',
+    'mail_dns': '',
+    'mail_lang': 'cs',
+    'notify_to': '',
+    'notify_level': 'warn',
+    'notify_gap_min': 15,
 }
+# Kept sealed in the database (secrets.key), never shown back to the pages.
+SEALED_KEYS = ('smtp_password',)
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
 # set in /etc/ai/config.json or by its own page (the firewall, the network...).
@@ -186,6 +218,83 @@ SCHEMA = [
     ('upgrade_auto_hour', 'upgrade', 'int', 'At what hour', 'Local time of this server, 0-23.',
      {'min': 0, 'max': 23}),
     ('debug', 'general', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
+    ('admin_2fa', 'access', 'bool', 'The second step of signing in, for everybody',
+     'After a right password these pages ask for a code too: from an authenticator app, or sent '
+     'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
+     'second step, or ai --reset-2fa NAME as root, takes it away again. Switched on, every other '
+     'sign-in ends, so each gives its second step.', {}),
+    ('admin_2fa_app', 'access', 'bool', 'Offered: an authenticator app',
+     'Google or Microsoft Authenticator, FreeOTP, 1Password... - a QR code scanned once.',
+     {'when': ['admin_2fa', [True]]}),
+    ('admin_2fa_mail', 'access', 'bool', 'Offered: a code by e-mail',
+     'Only where sending mail is set up (Settings → Mail).', {'when': ['admin_2fa', [True]]}),
+    ('totp_window', 'access', 'int', 'Codes of the app taken this many periods early or late',
+     'A period is 30 s. 1 forgives a phone half a minute out; 0 takes only the code of now.',
+     {'min': 0, 'max': 4, 'when': ['admin_2fa', [True]]}),
+    ('code_digits', 'access', 'int', 'Digits of a code sent by mail', '',
+     {'min': 6, 'max': 8, 'when': ['admin_2fa', [True]]}),
+    ('code_ttl_s', 'access', 'int', 'A code sent is good for (s)', '',
+     {'min': 60, 'max': 1800, 'when': ['admin_2fa', [True]]}),
+    ('mail_mode', 'mail', 'choice', 'Sending mail',
+     'How a mail of these pages leaves this machine: through your mail server, or straight to '
+     'the recipient\'s (its MX record, looked up here) - which many networks block on port 25.',
+     {'choices': [['off', 'off - no mail is sent'], ['smtp', 'through a mail server (SMTP)'],
+                  ['direct', 'straight to the recipients\' servers (MX)']]}),
+    ('smtp_host', 'mail', 'str', 'Mail server',
+     'The mail server\'s name or address: smtp.example.cz, or a relay in your network.',
+     {'when': ['mail_mode', ['smtp']]}),
+    ('smtp_port', 'mail', 'int', 'Port',
+     '0 picks the usual one for the encryption: 587 for STARTTLS, 465 for TLS, 25 without.',
+     {'min': 0, 'max': 65535, 'when': ['mail_mode', ['smtp']]}),
+    ('smtp_security', 'mail', 'choice', 'Encryption',
+     'STARTTLS on 587 is what most servers want; SMTPS on 465 is TLS from the first byte.',
+     {'choices': [['starttls', 'STARTTLS - plain, then encrypted (587)'], ['tls', 'TLS from the start (465)'],
+                  ['starttls-if', 'STARTTLS where the server offers it'], ['none', 'none - plain text (25)']],
+      'when': ['mail_mode', ['smtp']]}),
+    ('smtp_auth', 'mail', 'choice', 'Signing in',
+     'How this machine signs in to the server. None where the relay lets this machine send as it is.',
+     {'choices': [['auto', 'what the server offers'], ['none', 'none - the server lets this machine send'],
+                  ['plain', 'PLAIN'], ['login', 'LOGIN'], ['cram-md5', 'CRAM-MD5'],
+                  ['xoauth2', 'XOAUTH2 (the password is the access token)']],
+      'when': ['mail_mode', ['smtp']]}),
+    ('smtp_user', 'mail', 'str', 'Account', '', {'when': ['mail_mode', ['smtp']]}),
+    ('smtp_password', 'mail', 'password', 'Password',
+     'Kept sealed in the database; never shown again. Empty keeps the one saved.',
+     {'secret': True, 'when': ['mail_mode', ['smtp']]}),
+    ('smtp_verify', 'mail', 'bool', 'Check the server\'s certificate',
+     'Off only for a server with a certificate nobody signed - its password then goes to whoever '
+     'answers in its place.', {'when': ['mail_mode', ['smtp']]}),
+    ('smtp_timeout_s', 'mail', 'int', 'Wait for the server (s)', '',
+     {'min': 3, 'max': 300, 'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_from', 'mail', 'str', 'From (address)',
+     'The address the mails come from - one your mail server lets this machine send as.',
+     {'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_from_name', 'mail', 'str', 'From (name)', '', {'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_reply_to', 'mail', 'str', 'Replies to', 'Empty: to the From address.',
+     {'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_helo', 'mail', 'str', 'This machine calls itself (EHLO)', 'Empty: its host name.',
+     {'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_direct_port', 'mail', 'int', 'Port of the recipients\' servers', '',
+     {'min': 1, 'max': 65535, 'when': ['mail_mode', ['direct']]}),
+    ('mail_direct_tls', 'mail', 'choice', 'Encryption to the recipients\' servers', '',
+     {'choices': [['if-offered', 'encrypted where the server offers it'],
+                  ['required', 'always encrypted, the certificate checked']],
+      'when': ['mail_mode', ['direct']]}),
+    ('mail_dns', 'mail', 'str', 'DNS servers for the recipients\' domains',
+     'Addresses, separated by commas. Empty: the ones this machine uses (/etc/resolv.conf).',
+     {'when': ['mail_mode', ['direct']]}),
+    ('mail_lang', 'mail', 'choice', 'Language of the mail', '',
+     {'choices': [['cs', 'Čeština'], ['en', 'English']], 'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('notify_to', 'mail', 'str', 'Notices go to',
+     'Addresses, separated by commas, that are told by mail what Events marks as a warning or a '
+     'failure - a backup that did not go, a newer version, an account locked out. Empty: nobody.',
+     {'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('notify_level', 'mail', 'choice', 'What they are told', '',
+     {'choices': [['warn', 'warnings and failures'], ['error', 'failures only']],
+      'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('notify_gap_min', 'mail', 'int', 'At most one notice mail every (minutes)',
+     'What happens in between goes in the next one, together.',
+     {'min': 1, 'max': 1440, 'when': ['mail_mode', ['smtp', 'direct']]}),
 ]
 SCHEMA_KEYS = {s[0]: s for s in SCHEMA}
 
@@ -387,6 +496,1416 @@ LINUX_NAME_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}\Z')
 
 
 # ---------------------------------------------------------------------------
+# From otp: secrets sealed, one-time codes, QR codes, sending mail
+# ---------------------------------------------------------------------------
+# Taken over from otp as they are there (otp.py 1.0.161), so that the second
+# step of signing in, the mails of these pages and the secrets kept in the
+# database work the same way and are checked the same way.
+def debugging(what):
+    return bool(CONFIG.get('debug')) and bool(CONFIG.get('debug_' + what, 1))
+
+
+# Secrets kept in the database (the mail server's password, the accounts'
+# authenticator keys, the remote backups' passwords) are sealed with a key in
+# a file of its own, /var/lib/ai/secrets.key - as otp seals them: a copy of
+# the database alone opens none of them. Built from HMAC-SHA256 alone - a
+# keystream and a tag - because the standard library has no cipher.
+SEALED = 'sealed:1:'
+
+
+def scrub_secret(text):
+    """Words that may carry a database password (a conninfo in an error, say)
+    with the password taken out, before they are logged or shown."""
+    # A quoted value whole, up to the quote a space or the end follows (so
+    # one with spaces, \' or SQL's '' inside goes too); otherwise up to the
+    # next space - taking a quote with it rather than leaving a letter of
+    # the password behind.
+    return re.sub(r"(password\s*=\s*)('.*?'(?=\s|$)|\S+)", r'\1***', str(text or ''),
+                  flags=re.I | re.S)
+
+
+def sealing_key_path():
+    return Path(STATE_DIR) / 'secrets.key'
+
+
+_KEY_CACHE = {}
+_KEY_LOCK = threading.Lock()
+
+
+def sealing_key(make=False):
+    """The key every secret in the database is sealed with. Read once and
+    kept while the file is unchanged (1.0.33) - it was read from disk for
+    every secret opened, every token in a list of thousands. Made only where
+    there is none, and then with O_EXCL, so two processes starting at once
+    cannot each make one of their own."""
+    path = sealing_key_path()
+    try:
+        st = os.stat(str(path))
+        stamp = (st.st_mtime_ns, st.st_size, st.st_ino)
+    except FileNotFoundError:
+        stamp = None
+    except OSError:
+        stamp = 'unreadable'
+    if stamp is not None and stamp != 'unreadable':
+        got = _KEY_CACHE.get(str(path))
+        if got and got[0] == stamp:
+            return got[1]
+    try:
+        key = bytes.fromhex(path.read_text(encoding='ascii').strip())
+    except FileNotFoundError:
+        key = None
+    except (OSError, ValueError):
+        key = b''
+    if key and len(key) == 32:
+        if stamp and stamp != 'unreadable':
+            _KEY_CACHE[str(path)] = (stamp, key)
+        return key
+    if not make:
+        return b''
+    if key is not None:
+        raise OSError('%s is there but cannot be read as a key - it is never replaced, '
+                      'because every token sealed with it would be lost' % path)
+    with _KEY_LOCK:
+        key = secrets.token_bytes(32)
+        # Written whole beside it, then linked into place (1.0.94): created
+        # empty first, another process starting just then read an empty
+        # key and stopped.
+        tmp = '%s.new-%d-%s' % (path, os.getpid(), secrets.token_hex(4))
+        # A name nobody made before, never through a link (1.0.101), and
+        # given to the folder's owner while it is still open.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            if os.geteuid() == 0:
+                st = os.stat(str(path.parent))
+                os.fchown(fd, st.st_uid, st.st_gid)
+        except OSError:
+            pass
+        with os.fdopen(fd, 'w', encoding='ascii') as f:
+            f.write(key.hex() + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, str(path))
+        except FileExistsError:
+            # Made by somebody else a moment ago: theirs is the key.
+            os.unlink(tmp)
+            return sealing_key(make=False) or b''
+        os.unlink(tmp)
+        log('a new key to seal secrets with was made: %s - keep a copy of it beside every '
+            'copy of the database' % path, 'warn')
+    return key
+
+
+def _seal_stream(key, nonce, size):
+    out = bytearray()
+    block = 0
+    while len(out) < size:
+        out += hmac.new(key, b'stream' + nonce + block.to_bytes(8, 'big'),
+                        hashlib.sha256).digest()
+        block += 1
+    return bytes(out[:size])
+
+
+SEALED2 = 'sealed:2:'
+# Set once every token's secrets carry the name they belong to (1.0.33): from
+# then on a secret of a token sealed the old way, without it, is not opened.
+BIND_STRICT = {'tokens': False}
+
+
+def token_bind(name):
+    """What a token's sealed secrets are tied to: its name. Copied into
+    another token's row, they no longer open (1.0.33)."""
+    return 'token:' + str(name or '').strip().lower()
+
+
+def seal_secret(text, bind=None):
+    """Sealed with the key of this installation: a keystream from HMAC-SHA256,
+    then a tag over it. With `bind`, the tag covers that too (sealed:2:), so
+    the value opens only where it was sealed for."""
+    key = sealing_key(make=True)
+    if not key:
+        raise OSError('no key to seal with')
+    data = str(text).encode('utf-8')
+    nonce = secrets.token_bytes(16)
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    sign = hmac.new(key, b'sign', hashlib.sha256).digest()
+    body = bytes(a ^ b for a, b in zip(data, _seal_stream(hide, nonce, len(data))))
+    if bind is not None:
+        tag = hmac.new(sign, b'2|' + str(bind).encode('utf-8') + b'|' + nonce + body,
+                       hashlib.sha256).digest()[:16]
+        return SEALED2 + base64.urlsafe_b64encode(nonce + body + tag).decode('ascii')
+    tag = hmac.new(sign, nonce + body, hashlib.sha256).digest()[:16]
+    return SEALED + base64.urlsafe_b64encode(nonce + body + tag).decode('ascii')
+
+
+def unseal_secret(value, bind=None):
+    """The secret back, or None where this machine's key is not the one it was
+    sealed with - or, for one bound to a place, where it is not that place. A
+    value never sealed is given back as it is."""
+    if not isinstance(value, str):
+        return value
+    if value.startswith(SEALED2):
+        v2, prefix = True, SEALED2
+    elif value.startswith(SEALED):
+        v2, prefix = False, SEALED
+    else:
+        if value and bind is not None and str(bind).startswith('token:') and \
+                BIND_STRICT.get('tokens'):
+            # A token's key that was never sealed (1.0.101): every one was
+            # sealed at start, so this one was written by somebody without
+            # the key - taken for nothing.
+            return None
+        return value
+    if not v2 and bind is not None and str(bind).startswith('token:') and \
+            BIND_STRICT.get('tokens'):
+        return None
+    if v2 and bind is None:
+        return None
+    key = sealing_key()
+    try:
+        raw = base64.urlsafe_b64decode(value[len(prefix):].encode('ascii'))
+    except (ValueError, TypeError):
+        return None
+    if not key or len(raw) < 32:
+        return None
+    nonce, body, tag = raw[:16], raw[16:-16], raw[-16:]
+    sign = hmac.new(key, b'sign', hashlib.sha256).digest()
+    signed = (b'2|' + str(bind).encode('utf-8') + b'|' if v2 else b'') + nonce + body
+    if not hmac.compare_digest(tag, hmac.new(sign, signed, hashlib.sha256).digest()[:16]):
+        return None
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    try:
+        return bytes(a ^ b for a, b in zip(body, _seal_stream(hide, nonce, len(body)))
+                     ).decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+
+# ---------------------------------------------------------------------------
+# One-time passwords: RFC 4226 (HOTP) and RFC 6238 (TOTP)
+# ---------------------------------------------------------------------------
+# What the phone does, done again here: the key and the number of thirty-
+# second periods since 1970 go through HMAC, and six digits are cut out of the
+# answer. Nothing in this needs anything but hashlib and hmac.
+HASHES = {'SHA1': hashlib.sha1, 'SHA256': hashlib.sha256, 'SHA512': hashlib.sha512}
+
+
+def b32_clean(text):
+    """A base32 key as somebody may have written it - small letters, spaces,
+    dashes, no padding - as the bytes it stands for. ValueError if it is not
+    base32 at all."""
+    said = re.sub(r'[\s\-]', '', str(text or '')).upper().rstrip('=')
+    if not said or not re.match(r'^[A-Z2-7]+\Z', said):
+        raise ValueError('that is not a base32 key (A-Z and 2-7)')
+    pad = '=' * ((8 - len(said) % 8) % 8)
+    return base64.b32decode(said + pad)
+
+
+def b32_new(size=20):
+    """A fresh key: 160 bits, the size RFC 4226 recommends, as base32."""
+    return base64.b32encode(secrets.token_bytes(size)).decode('ascii').rstrip('=')
+
+
+def hotp(key, counter, digits=6, algorithm='SHA1'):
+    """The code for one counter value, as a string of `digits` digits."""
+    if isinstance(key, str):
+        key = b32_clean(key)
+    mac = hmac.new(key, struct.pack('>Q', int(counter)),
+                   HASHES.get(str(algorithm).upper(), hashlib.sha1)).digest()
+    at = mac[-1] & 0x0F
+    code = struct.unpack('>I', mac[at:at + 4])[0] & 0x7FFFFFFF
+    return str(code % (10 ** int(digits))).zfill(int(digits))
+
+
+def totp_step(when=None, period=30):
+    return int((time.time() if when is None else float(when)) // int(period))
+
+
+def totp(key, when=None, digits=6, period=30, algorithm='SHA1'):
+    return hotp(key, totp_step(when, period), digits, algorithm)
+
+
+def totp_match(key, code, when=None, digits=6, period=30, algorithm='SHA1', window=1):
+    """Which period the code belongs to - its step number - or None.
+
+    Looked for in this period first and then outwards, one step either side
+    at a time, so that when two would do the nearest one is the answer.
+    Compared in constant time, every one of them.
+    """
+    code = re.sub(r'\s', '', str(code or ''))
+    if not re.fullmatch(r'[0-9]+', code, re.ASCII) or len(code) != int(digits):
+        return None
+    if isinstance(key, str):
+        key = b32_clean(key)
+    here = totp_step(when, period)
+    found = None
+    for off in [0] + [d for i in range(1, int(window) + 1) for d in (-i, i)]:
+        if hmac.compare_digest(hotp(key, here + off, digits, algorithm), code) and found is None:
+            found = here + off
+    return found
+
+
+def otpauth_uri(secret, label, issuer, digits=6, period=30, algorithm='SHA1'):
+    """What the QR code holds: the Key URI Format every phone application
+    reads (otpauth://totp/Issuer:label?secret=...&issuer=...)."""
+    from urllib.parse import quote
+    issuer = str(issuer or '').strip()
+    who = (quote(issuer, safe='') + ':' if issuer else '') + quote(str(label), safe='@.')
+    args = ['secret=' + str(secret).upper().replace('=', '')]
+    if issuer:
+        args.append('issuer=' + quote(issuer, safe=''))
+    if str(algorithm).upper() != 'SHA1':
+        args.append('algorithm=' + str(algorithm).upper())
+    if int(digits) != 6:
+        args.append('digits=%d' % int(digits))
+    if int(period) != 30:
+        args.append('period=%d' % int(period))
+    return 'otpauth://totp/%s?%s' % (who, '&'.join(args))
+
+
+def scratch_new(count, digits=8):
+    """Recovery codes: `count` of them, `digits` long, none twice."""
+# ---------------------------------------------------------------------------
+# QR codes
+# ---------------------------------------------------------------------------
+# The picture the phone scans, made here rather than by a package: the
+# standard (ISO/IEC 18004) in byte mode, every version, every level of error
+# correction, the mask chosen the way the standard says. It comes out as SVG
+# for the pages and as half-block characters for a terminal.
+_QR_ECC_PER_BLOCK = {
+    'L': (-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28,
+          28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30),
+    'M': (-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26,
+          26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28),
+    'Q': (-1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30,
+          28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30),
+    'H': (-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28,
+          30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30),
+}
+_QR_BLOCKS = {
+    'L': (-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12,
+          12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25),
+    'M': (-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20,
+          21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49),
+    'Q': (-1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25,
+          27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68),
+    'H': (-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30,
+          32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81),
+}
+_QR_FORMAT = {'L': 1, 'M': 0, 'Q': 3, 'H': 2}
+
+
+def _gf_mul(x, y):
+    z = 0
+    for i in reversed(range(8)):
+        z = (z << 1) ^ ((z >> 7) * 0x11D)
+        z ^= ((y >> i) & 1) * x
+    return z & 0xFF
+
+
+def _rs_divisor(degree):
+    result = [0] * (degree - 1) + [1]
+    root = 1
+    for _ in range(degree):
+        for j in range(len(result)):
+            result[j] = _gf_mul(result[j], root)
+            if j + 1 < len(result):
+                result[j] ^= result[j + 1]
+        root = _gf_mul(root, 0x02)
+    return result
+
+
+def _rs_remainder(data, divisor):
+    result = [0] * len(divisor)
+    for b in data:
+        factor = b ^ result.pop(0)
+        result.append(0)
+        for i, coef in enumerate(divisor):
+            result[i] ^= _gf_mul(coef, factor)
+    return result
+
+
+def _qr_raw_modules(ver):
+    result = (16 * ver + 128) * ver + 64
+    if ver >= 2:
+        align = ver // 7 + 2
+        result -= (25 * align - 10) * align - 55
+        if ver >= 7:
+            result -= 36
+    return result
+
+
+def _qr_data_codewords(ver, ecl):
+    return (_qr_raw_modules(ver) // 8
+            - _QR_ECC_PER_BLOCK[ecl][ver] * _QR_BLOCKS[ecl][ver])
+
+
+class QrCode(object):
+    """One QR code: `modules[y][x]` is True where the square is dark."""
+
+    def __init__(self, text, ecl='M'):
+        data = text.encode('utf-8') if isinstance(text, str) else bytes(text)
+        self.ecl = ecl
+        for ver in range(1, 41):
+            count_bits = 8 if ver <= 9 else 16
+            need = 4 + count_bits + 8 * len(data)
+            if need <= _qr_data_codewords(ver, ecl) * 8:
+                break
+        else:
+            raise ValueError('that is too long for a QR code')
+        self.version = ver
+        self.size = ver * 4 + 17
+        bits = []
+
+        def put(value, n):
+            for i in reversed(range(n)):
+                bits.append((value >> i) & 1)
+        put(0x4, 4)
+        put(len(data), count_bits)
+        for b in data:
+            put(b, 8)
+        capacity = _qr_data_codewords(ver, ecl) * 8
+        put(0, min(4, capacity - len(bits)))
+        put(0, (8 - len(bits) % 8) % 8)
+        pad = 0xEC
+        while len(bits) < capacity:
+            put(pad, 8)
+            pad ^= 0xEC ^ 0x11
+        words = [int(''.join(str(b) for b in bits[i:i + 8]), 2) for i in range(0, len(bits), 8)]
+        all_words = self._with_ecc(words)
+        size = self.size
+        self.modules = [[False] * size for _ in range(size)]
+        self.function = [[False] * size for _ in range(size)]
+        self._function_patterns()
+        self._codewords(all_words)
+        best, best_penalty = 0, None
+        for mask in range(8):
+            self._mask(mask)
+            self._format(mask)
+            penalty = self._penalty()
+            if best_penalty is None or penalty < best_penalty:
+                best, best_penalty = mask, penalty
+            self._mask(mask)
+        self._mask(best)
+        self._format(best)
+        self.mask = best
+
+    # ---- the pieces ------------------------------------------------------
+    def _set(self, x, y, dark):
+        self.modules[y][x] = bool(dark)
+        self.function[y][x] = True
+
+    def _function_patterns(self):
+        size = self.size
+        for i in range(size):
+            self._set(6, i, i % 2 == 0)
+            self._set(i, 6, i % 2 == 0)
+        for x, y in ((3, 3), (size - 4, 3), (3, size - 4)):
+            for dy in range(-4, 5):
+                for dx in range(-4, 5):
+                    xx, yy = x + dx, y + dy
+                    if 0 <= xx < size and 0 <= yy < size:
+                        self._set(xx, yy, max(abs(dx), abs(dy)) not in (2, 4))
+        places = self._alignment_places()
+        last = len(places) - 1
+        for i, a in enumerate(places):
+            for j, b in enumerate(places):
+                if (i == 0 and j == 0) or (i == 0 and j == last) or (i == last and j == 0):
+                    continue
+                for dy in range(-2, 3):
+                    for dx in range(-2, 3):
+                        self._set(a + dx, b + dy, max(abs(dx), abs(dy)) != 1)
+        self._format(0)
+        if self.version >= 7:
+            rem = self.version
+            for _ in range(12):
+                rem = (rem << 1) ^ ((rem >> 11) * 0x1F25)
+            value = self.version << 12 | rem
+            for i in range(18):
+                bit = (value >> i) & 1
+                a, b = size - 11 + i % 3, i // 3
+                self._set(a, b, bit)
+                self._set(b, a, bit)
+
+    def _alignment_places(self):
+        ver = self.version
+        if ver == 1:
+            return []
+        count = ver // 7 + 2
+        step = (ver * 8 + count * 3 + 5) // (count * 4 - 4) * 2
+        result = [self.size - 7 - i * step for i in range(count - 1)] + [6]
+        return list(reversed(result))
+
+    def _format(self, mask):
+        data = _QR_FORMAT[self.ecl] << 3 | mask
+        rem = data
+        for _ in range(10):
+            rem = (rem << 1) ^ ((rem >> 9) * 0x537)
+        bits = (data << 10 | rem) ^ 0x5412
+        bit = lambda i: (bits >> i) & 1
+        size = self.size
+        for i in range(0, 6):
+            self._set(8, i, bit(i))
+        self._set(8, 7, bit(6))
+        self._set(8, 8, bit(7))
+        self._set(7, 8, bit(8))
+        for i in range(9, 15):
+            self._set(14 - i, 8, bit(i))
+        for i in range(0, 8):
+            self._set(size - 1 - i, 8, bit(i))
+        for i in range(8, 15):
+            self._set(8, size - 15 + i, bit(i))
+        self._set(8, size - 8, True)
+
+    def _with_ecc(self, data):
+        ver, ecl = self.version, self.ecl
+        blocks_n = _QR_BLOCKS[ecl][ver]
+        ecc_len = _QR_ECC_PER_BLOCK[ecl][ver]
+        raw = _qr_raw_modules(ver) // 8
+        short_n = blocks_n - raw % blocks_n
+        short_len = raw // blocks_n
+        divisor = _rs_divisor(ecc_len)
+        blocks = []
+        k = 0
+        for i in range(blocks_n):
+            take = short_len - ecc_len + (0 if i < short_n else 1)
+            dat = data[k:k + take]
+            k += take
+            ecc = _rs_remainder(dat, divisor)
+            if i < short_n:
+                dat = dat + [0]
+            blocks.append(dat + ecc)
+        out = []
+        for i in range(len(blocks[0])):
+            for j, blk in enumerate(blocks):
+                if i != short_len - ecc_len or j >= short_n:
+                    out.append(blk[i])
+        return out
+
+    def _codewords(self, data):
+        size = self.size
+        i = 0
+        right = size - 1
+        total = len(data) * 8
+        while right >= 1:
+            if right == 6:
+                right = 5
+            for vert in range(size):
+                for j in range(2):
+                    x = right - j
+                    upward = ((right + 1) & 2) == 0
+                    y = size - 1 - vert if upward else vert
+                    if not self.function[y][x] and i < total:
+                        self.modules[y][x] = bool((data[i >> 3] >> (7 - (i & 7))) & 1)
+                        i += 1
+            right -= 2
+
+    def _mask(self, mask):
+        test = (lambda x, y: (x + y) % 2 == 0,
+                lambda x, y: y % 2 == 0,
+                lambda x, y: x % 3 == 0,
+                lambda x, y: (x + y) % 3 == 0,
+                lambda x, y: (x // 3 + y // 2) % 2 == 0,
+                lambda x, y: x * y % 2 + x * y % 3 == 0,
+                lambda x, y: (x * y % 2 + x * y % 3) % 2 == 0,
+                lambda x, y: ((x + y) % 2 + x * y % 3) % 2 == 0)[mask]
+        for y in range(self.size):
+            row, fn = self.modules[y], self.function[y]
+            for x in range(self.size):
+                if not fn[x] and test(x, y):
+                    row[x] = not row[x]
+
+    def _penalty(self):
+        size, m = self.size, self.modules
+        score = 0
+        lines = [m[y] for y in range(size)] + [[m[y][x] for y in range(size)]
+                                                for x in range(size)]
+        finder = ([True, False, True, True, True, False, True, False, False, False, False],
+                  [False, False, False, False, True, False, True, True, True, False, True])
+        for line in lines:
+            run, last = 0, None
+            for v in line:
+                if v == last:
+                    run += 1
+                else:
+                    if run >= 5:
+                        score += 3 + run - 5
+                    run, last = 1, v
+            if run >= 5:
+                score += 3 + run - 5
+            for i in range(len(line) - 10):
+                seg = line[i:i + 11]
+                if seg == finder[0] or seg == finder[1]:
+                    score += 40
+        for y in range(size - 1):
+            for x in range(size - 1):
+                v = m[y][x]
+                if v == m[y][x + 1] == m[y + 1][x] == m[y + 1][x + 1]:
+                    score += 3
+        dark = sum(sum(1 for v in row if v) for row in m)
+        total = size * size
+        k = (abs(dark * 20 - total * 10) + total - 1) // total - 1
+        score += k * 10
+        return score
+
+    # ---- drawn -------------------------------------------------------------
+    def svg(self, scale=6, border=4, dark='#000', light='#fff'):
+        """The code as an SVG picture, light squares and all - a phone needs
+        the quiet zone round it, so it is part of the picture."""
+        size = self.size + border * 2
+        path = []
+        for y in range(self.size):
+            x = 0
+            while x < self.size:
+                if self.modules[y][x]:
+                    start = x
+                    while x < self.size and self.modules[y][x]:
+                        x += 1
+                    path.append('M%d %dh%dv1h-%dz' % (start + border, y + border,
+                                                      x - start, x - start))
+                else:
+                    x += 1
+        return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" '
+                'height="%d" shape-rendering="crispEdges"><rect width="100%%" height="100%%" '
+                'fill="%s"/><path d="%s" fill="%s"/></svg>'
+                % (size, size, size * scale, size * scale, light, ''.join(path), dark))
+
+    def terminal(self, border=2, invert=False):
+        """The code as half-block characters, two rows of squares a line.
+        Drawn for a dark terminal: a dark square is the terminal's own dark
+        and a light one is a full block. `invert` for a light terminal."""
+        size = self.size
+        out = []
+        def light(x, y):
+            if x < 0 or y < 0 or x >= size or y >= size:
+                return not invert
+            return (not self.modules[y][x]) != invert
+        for y in range(-border, size + border, 2):
+            row = []
+            for x in range(-border, size + border):
+                top, bottom = light(x, y), light(x, y + 1)
+                row.append('█' if top and bottom else
+                           '▀' if top else '▄' if bottom else ' ')
+            out.append(''.join(row))
+        return '\n'.join(out)
+
+
+def qr_svg(text, scale=6):
+    return QrCode(text, 'M').svg(scale=scale)
+
+
+def qr_data_uri(text, scale=6):
+    return 'data:image/svg+xml;base64,' + base64.b64encode(
+        qr_svg(text, scale).encode('ascii')).decode('ascii')
+
+def describe_certificate(pem):
+    """What a pasted certificate is, in words, or None if it is not one.
+
+    Somebody importing a certificate authority wants to see that the right
+    one landed - the name on it and when it runs out - and not a green tick
+    that means "the text was saved". Python can read a certificate without
+    any package being installed; what it cannot do without one is read it
+    from a string, so it goes through a file that exists for a moment.
+    """
+    text = str(pem or '').strip()
+    if '-----BEGIN CERTIFICATE-----' not in text:
+        return None
+    folder = None
+    try:
+        folder = tempfile.mkdtemp(prefix='ai-ca-')
+        where = os.path.join(folder, 'ca.pem')
+        with open(where, 'w', encoding='utf-8') as f:
+            f.write(text if text.endswith('\n') else text + '\n')
+        said = ssl._ssl._test_decode_cert(where)     # noqa: SLF001 - the only way in
+        def one(pairs):
+            out = {}
+            for row in pairs or ():
+                for key, value in row:
+                    out[key] = value
+            return out
+        subject, issuer = one(said.get('subject')), one(said.get('issuer'))
+        return {
+            'subject': subject.get('commonName') or subject.get('organizationName') or '',
+            'issuer': issuer.get('commonName') or issuer.get('organizationName') or '',
+            'from': said.get('notBefore') or '',
+            'until': said.get('notAfter') or '',
+            'self_signed': subject == issuer,
+            'count': text.count('-----BEGIN CERTIFICATE-----'),
+        }
+    except Exception:
+        return None
+    finally:
+        if folder:
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+PEM_BLOCK = re.compile(r'-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+?-----END CERTIFICATE-----')
+
+
+def split_certificates(pem):
+    """Each certificate of a bundle, as its own PEM block, in order."""
+    return [m.group(0).strip() for m in PEM_BLOCK.finditer(str(pem or ''))]
+
+
+def describe_certificates(pem):
+    """Every certificate of a bundle, one by one: who it is, who signed it,
+    when it runs out and its fingerprint - so that one of several chains can
+    be told apart from another and taken out by itself. (1.0.11)"""
+    out = []
+    for block in split_certificates(pem):
+        said = describe_certificate(block) or {}
+        try:
+            fp = hashlib.sha256(ssl.PEM_cert_to_DER_cert(block)).hexdigest()
+        except Exception:                               # noqa: BLE001
+            fp = hashlib.sha256(block.encode()).hexdigest()
+        said = dict(said, fingerprint=fp, readable=bool(said))
+        said.pop('count', None)
+        out.append(said)
+    return out
+def mail_checked(dest):
+    dest = str(dest or '').strip()
+    if not re.match(r'^[^@\s<>,;"]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,}\Z', dest):
+        raise ValueError('that is not a mail address')
+    return dest
+
+
+def phone_checked(dest):
+    """A number as +CCCNNN…: spaces, dashes and brackets taken out, the
+    country code of the settings put before a number written without one."""
+    raw = re.sub(r'[\s().\-/]', '', str(dest or ''))
+    if raw.startswith('00'):
+        raw = '+' + raw[2:]
+    if not raw.startswith('+'):
+        pre = str(CONFIG.get('sms_prefix') or '').strip()
+        if not pre:
+            raise ValueError('write the number with its country code: +420 603 123 456')
+        digits = raw.lstrip('0')
+        # 420603123456 written without its + (1.0.146): not +420420603123456.
+        # Not a number dialled at home with its 0 (1.0.147): 0491 12345678
+        # in Germany is 491..., and is not +49 1 12345678.
+        if not raw.startswith('0') and pre.lstrip('+') and digits.startswith(pre.lstrip('+')) and \
+                len(digits) - len(pre.lstrip('+')) >= 8:
+            raw = '+' + digits
+        else:
+            raw = pre + digits
+    if not re.match(r'^\+[1-9][0-9]{7,14}\Z', raw):
+        raise ValueError('that is not a phone number - write it as +420 603 123 456')
+    return raw
+
+
+def dest_checked(kind, dest):
+    if kind == 'mail':
+        return mail_checked(dest)
+    if kind == 'sms':
+        return phone_checked(dest)
+    return ''
+
+
+def dest_masked(kind, dest):
+    """What the VPN and the pages may say of where a code went."""
+    dest = str(dest or '')
+    if kind == 'mail' and '@' in dest:
+        who, _, where = dest.partition('@')
+        return '%s%s@%s' % (who[:1], '*' * max(2, min(len(who) - 1, 6)), where)
+    if kind == 'sms' and len(dest) > 4:
+        return '%s%s%s' % (dest[:4], '*' * (len(dest) - 7), dest[-3:])
+    return dest
+
+
+# ---------------------------------------------------------------------------
+# Sending mail (1.0.20)
+# ---------------------------------------------------------------------------
+# A token's QR code, and if wanted its recovery codes, sent to the person it
+# is for. Two ways out: through a mail server (SMTP relay, with STARTTLS,
+# SMTPS or nothing, signing in with PLAIN, LOGIN, CRAM-MD5, XOAUTH2 or not at
+# all), or straight to the server of the recipient's domain - its MX record,
+# looked up here - with no relay at all. A certificate signed by an authority
+# of your own is trusted once that authority is added, as for a directory.
+
+MAIL_CA_META = 'mail_ca'
+MAIL_DIRECT_DEADLINE_S = 60     # every MX of one domain together (1.0.59)
+
+
+def mail_ca_pem(store):
+    try:
+        return str(store.get_meta(MAIL_CA_META) or '')
+    except Exception:
+        return ''
+
+
+def mail_ca_set(store, pem, mode='add', fingerprint=''):
+    """The authorities trusted for the mail server, each added and taken out
+    by itself - the same as a directory's."""
+    pem = str(pem or '').strip()
+    have = split_certificates(mail_ca_pem(store))
+    if mode == 'add':
+        # Nothing sent is not "empty the list" (1.0.146): only 'clear' empties it.
+        new = split_certificates(pem)
+        if not new or not all(describe_certificate(b) for b in new):
+            raise ValueError('that is not a certificate this can read: a PEM certificate '
+                             'starts -----BEGIN CERTIFICATE-----')
+        seen = {c['fingerprint'] for c in describe_certificates('\n'.join(have))}
+        have += [b for b, c in zip(new, describe_certificates('\n'.join(new)))
+                 if c['fingerprint'] not in seen]
+    elif mode == 'drop':
+        keep = [b for b, c in zip(have, describe_certificates('\n'.join(have)))
+                if c['fingerprint'] != fingerprint]
+        if len(keep) == len(have):
+            raise ValueError('that certificate is not among the ones kept')
+        have = keep
+    elif mode == 'clear':
+        have = []
+    else:
+        raise ValueError('add, drop or clear?')
+    store.set_meta(MAIL_CA_META, '\n'.join(have))
+    return describe_certificates('\n'.join(have))
+
+
+def mail_tls(store, verify=None):
+    verify = bool(CONFIG.get('smtp_verify', 1)) if verify is None else verify
+    ctx = ssl.create_default_context()
+    pem = mail_ca_pem(store)
+    if pem.strip():
+        try:
+            ctx.load_verify_locations(cadata=pem)
+        except (ssl.SSLError, ValueError) as e:
+            raise MailError('the certificate authorities kept for mail cannot be read: %s' % e)
+    if not verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+class MailError(RuntimeError):
+    """`permanent` (1.0.95): the receiving side said no for good (a 5xx) -
+    not tried again. Anything else - a 4xx (greylisting), a server away -
+    is, from the outgoing mail."""
+    def __init__(self, said, steps=None, permanent=False):
+        super(MailError, self).__init__(said)
+        self.steps = steps or []
+        self.permanent = bool(permanent)
+        self.queued = None
+
+
+# ---- the recipients' servers, without a library to ask DNS with -----------------
+def own_dns():
+    """The DNS servers set for mail going direct (`mail_dns`), if any."""
+    good = []
+    for w in re.split(r'[\s,;]+', str(CONFIG.get('mail_dns') or '')):
+        try:
+            good.append(str(ipaddress.ip_address(w)))
+        except ValueError:
+            pass
+    return good
+
+
+def dns_servers():
+    if own_dns():
+        return own_dns()
+    out = []
+    try:
+        with open('/etc/resolv.conf') as f:
+            for line in f:
+                bits = line.split()
+                if len(bits) >= 2 and bits[0] == 'nameserver':
+                    out.append(bits[1])
+    except OSError:
+        pass
+    return out or ['127.0.0.1']
+
+
+def _dns_name(data, at):
+    labels, jumped, end = [], False, at
+    for _ in range(64):
+        n = data[at]
+        if n == 0:
+            at += 1
+            break
+        if n & 0xC0 == 0xC0:
+            if not jumped:
+                end = at + 2
+            at = ((n & 0x3F) << 8) | data[at + 1]
+            jumped = True
+            continue
+        labels.append(data[at + 1:at + 1 + n].decode('ascii', 'replace'))
+        at += 1 + n
+    return '.'.join(labels), (end if jumped else at)
+
+
+def _dns_ask(server, name, qtype, timeout):
+    """One question to one DNS server: the raw answer. EDNS0 asks for room
+    for a long answer; one that is cut short anyway is asked again over TCP
+    (1.0.22)."""
+    ident = secrets.randbits(16)
+    q = struct.pack('>HHHHHH', ident, 0x0100, 1, 0, 0, 1)
+    for label in name.split('.'):
+        if not label:
+            continue
+        raw = label.encode('idna') if any(ord(c) > 127 for c in label) else label.encode()
+        q += bytes([len(raw)]) + raw
+    q += b'\x00' + struct.pack('>HH', qtype, 1)
+    q += b'\x00' + struct.pack('>HHIH', 41, 4096, 0, 0)          # OPT: 4096 bytes
+    fam = socket.AF_INET6 if ':' in server else socket.AF_INET
+    s = socket.socket(fam, socket.SOCK_DGRAM)
+    deadline = time.time() + timeout
+    question = q[12:-11]                    # the name, the type and the class asked
+    try:
+        # connect(): only answers from the server asked are read at all.
+        s.connect((server, 53))
+        s.send(q)
+        while True:
+            left = deadline - time.time()
+            if left <= 0:
+                raise socket.timeout('no answer from %s' % server)
+            s.settimeout(left)
+            data = s.recv(65535)
+            # Its own answer: the same ID, and the same question (1.0.33) -
+            # and no waiting past the deadline however many others come.
+            if len(data) >= 12 + len(question) and struct.unpack('>H', data[:2])[0] == ident \
+                    and data[12:12 + len(question)].lower() == question.lower():
+                break
+    finally:
+        s.close()
+    if struct.unpack('>H', data[2:4])[0] & 0x0200:                # TC: cut short
+        t = socket.create_connection((server, 53), timeout=timeout)
+        try:
+            t.sendall(struct.pack('>H', len(q)) + q)
+            want, got = None, b''
+            while want is None or len(got) < want + 2:
+                chunk = t.recv(65535)
+                if not chunk:
+                    break
+                got += chunk
+                if want is None and len(got) >= 2:
+                    want = struct.unpack('>H', got[:2])[0]
+            data = got[2:]
+        finally:
+            t.close()
+    return data
+
+
+def _dns_records(data):
+    """(rcode, [(type, name, rdata-offset, size)]) of an answer."""
+    flags, qd, an = struct.unpack('>HHH', data[2:8])
+    at = 12
+    for _ in range(qd):
+        _, at = _dns_name(data, at)
+        at += 4
+    out = []
+    for _ in range(an):
+        rname, at = _dns_name(data, at)
+        rtype, _cls, _ttl, size = struct.unpack('>HHIH', data[at:at + 10])
+        at += 10
+        out.append((rtype, rname, at, size))
+        at += size
+    return flags & 0x0F, out
+
+
+DNS_RCODES = {1: 'could not read the question', 2: 'failed (SERVFAIL)', 4: 'does not do that',
+              5: 'refused to answer'}
+
+
+def dns_mx_full(domain, timeout=5.0):
+    """The mail servers of a domain, best first, and how they were found:
+    ([(preference, host)], words). A domain with no MX record is its own
+    mail server (RFC 5321) - but only when a DNS server said so, never
+    because one failed to answer (1.0.22: a failed answer was taken for
+    "no MX" and the mail went to the domain's own address)."""
+    domain = str(domain).strip().strip('.').lower()
+    try:                                       # dnspython, where it is installed
+        if own_dns():
+            # The DNS servers set for mail are the ones asked (1.0.59):
+            # dnspython reads the system's, and with a split horizon its
+            # NXDOMAIN was taken for the last word.
+            raise ImportError('mail_dns is set')
+        import dns.resolver                     # type: ignore
+        try:
+            ans = dns.resolver.resolve(domain, 'MX', lifetime=timeout * 2)
+            got = sorted((int(r.preference), str(r.exchange).rstrip('.')) for r in ans)
+            got = [g for g in got if g[1]]
+            if got:
+                return got, 'MX records (dnspython)'
+        except dns.resolver.NXDOMAIN:
+            raise MailError('the domain %s does not exist' % domain)
+        except dns.resolver.NoAnswer:
+            return [(0, domain)], 'no MX record: the domain itself (dnspython)'
+        except Exception:                       # noqa: BLE001 - our own below
+            pass
+    except ImportError:
+        pass
+    trouble = []
+    name = domain
+    for server in dns_servers():
+        name = domain
+        for _hop in range(6):                   # a CNAME, followed
+            try:
+                data = _dns_ask(server, name, 15, timeout)
+                rcode, recs = _dns_records(data)
+            except (OSError, struct.error, IndexError, ValueError) as e:
+                trouble.append('%s: %s' % (server, e))
+                break
+            if rcode == 3:
+                raise MailError('the domain %s does not exist (DNS %s)' % (name, server))
+            if rcode:
+                trouble.append('%s %s' % (server, DNS_RCODES.get(rcode, 'answered %d' % rcode)))
+                break
+            mx, cname, nullmx = [], None, False
+            try:
+                for rtype, _rname, at, _size in recs:
+                    if rtype == 15:
+                        pref = struct.unpack('>H', data[at:at + 2])[0]
+                        host, _ = _dns_name(data, at + 2)
+                        if host and host != '.':
+                            mx.append((pref, host.rstrip('.').lower()))
+                        else:
+                            nullmx = True
+                    elif rtype == 5:
+                        cname, _ = _dns_name(data, at)
+            except (struct.error, IndexError, ValueError) as e:
+                trouble.append('%s: an answer that does not read: %s' % (server, e))
+                break
+            if mx:
+                return sorted(mx), 'MX records from DNS %s' % server
+            if nullmx:
+                return [], 'a null MX (DNS %s): the domain takes no mail' % server
+            if cname and cname.lower() != name:
+                name = cname.rstrip('.').lower()
+                continue
+            # A null MX (RFC 7505) is "0 ." - the domain takes no mail.
+            return [(0, name)], 'no MX record (DNS %s): the domain itself' % server
+    raise MailError('no DNS server could say where mail for %s goes%s' % (
+        domain, (': ' + '; '.join(trouble)) if trouble else ''))
+
+
+def dns_mx(domain, timeout=5.0):
+    return dns_mx_full(domain, timeout)[0]
+
+
+def dns_addrs(host, timeout=5.0):
+    """The IPv4 and IPv6 addresses of a host (A and AAAA, a CNAME followed),
+    asked of the same DNS servers as the MX records (1.0.23) - not of the
+    system's resolver, which may be the very one that will not answer."""
+    host = str(host).strip().strip('.').lower()
+    try:
+        return [str(ipaddress.ip_address(host))]
+    except ValueError:
+        pass
+    out, trouble = [], []
+    for qtype in (1, 28):
+        for server in dns_servers():
+            name, done = host, False
+            for _hop in range(6):
+                try:
+                    data = _dns_ask(server, name, qtype, timeout)
+                    rcode, recs = _dns_records(data)
+                except (OSError, struct.error, IndexError, ValueError) as e:
+                    trouble.append('%s: %s' % (server, e))
+                    break
+                if rcode == 3:
+                    done = True
+                    break
+                if rcode:
+                    trouble.append('%s %s' % (server, DNS_RCODES.get(rcode, 'answered %d' % rcode)))
+                    break
+                cname, got = None, []
+                try:
+                    for rtype, _rname, at, size in recs:
+                        if rtype == 1 and size == 4:
+                            got.append(socket.inet_ntop(socket.AF_INET, data[at:at + 4]))
+                        elif rtype == 28 and size == 16:
+                            got.append(socket.inet_ntop(socket.AF_INET6, data[at:at + 16]))
+                        elif rtype == 5:
+                            cname, _ = _dns_name(data, at)
+                except (struct.error, IndexError, ValueError, OSError) as e:
+                    trouble.append('%s: an answer that does not read: %s' % (server, e))
+                    break
+                if got:
+                    out += [g for g in got if g not in out]
+                    done = True
+                    break
+                if cname and cname.rstrip('.').lower() != name:
+                    name = cname.rstrip('.').lower()
+                    continue
+                done = True                     # no record of this type
+                break
+            if done:
+                break
+    if not out:
+        raise MailError('no address found for %s%s' % (host, (': ' + '; '.join(trouble))
+                                                       if trouble else ''))
+    # IPv4 first: a machine with an IPv6 address and no IPv6 route waits out
+    # the whole timeout on every server otherwise.
+    return sorted(out, key=lambda a: ':' in a)
+
+
+class _Deadline(object):
+    """One conversation's whole time, not each read's (1.0.101): a server
+    sending a byte every 19 s of a 20 s timeout held the thread - and a page
+    waiting on it - for as long as it liked."""
+    deadline = 0.0
+
+    def _left(self):
+        if not self.deadline:
+            return None
+        left = self.deadline - time.time()
+        if left <= 0:
+            raise smtplib.SMTPServerDisconnected('the mail server took longer than allowed')
+        return left
+
+    def _watch(self):
+        """A watchman that ends the conversation at its deadline (1.0.103):
+        the time of each read alone was set again line by line, so a server
+        dripping its reply byte by byte held the thread past any deadline.
+        Shut down, the socket ends whatever read waits on it."""
+        if not self.deadline or getattr(self, '_watchman', None):
+            return
+        def expire():
+            sock = getattr(self, 'sock', None)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+        t = threading.Timer(max(0.5, self.deadline - time.time()), expire)
+        t.daemon = True
+        t.start()
+        self._watchman = t
+
+    # The conversation into the log, with "Debug log" and "...every code sent"
+    # on (1.0.113): what was said each way, never a password or the message.
+    _SAFE = ('EHLO', 'HELO', 'MAIL', 'RCPT', 'DATA', 'QUIT', 'STARTTLS', 'RSET', 'NOOP')
+
+    def _print_debug(self, *args):
+        words = ' '.join(str(a) for a in args)
+        m = re.match(r"^(send|reply):\s*(b?['\"])(.*)", words, re.S)
+        if m and m.group(1) == 'send':
+            body = m.group(3)
+            head = body.split(' ', 1)[0].split('\\r')[0].upper()
+            if head.startswith('AUTH'):
+                words = 'send: AUTH %s <the credentials, not written>' % (
+                    body.split(' ')[1] if ' ' in body else '')
+            elif head not in self._SAFE:
+                words = 'send: <%d characters - the message or the credentials, not written>' \
+                    % len(body)
+        log('mail %s: %s' % (getattr(self, '_host', '') or '?', words[:300]), 'debug')
+
+    def close(self):
+        t = getattr(self, '_watchman', None)
+        if t is not None:
+            t.cancel()
+        return smtplib.SMTP.close(self)
+
+    def getreply(self):
+        self._watch()
+        left = self._left()
+        if left is not None and self.sock is not None:
+            try:
+                self.sock.settimeout(min(left, self.timeout or left))
+            except OSError:
+                pass
+        return smtplib.SMTP.getreply(self)
+
+    def send(self, s):
+        left = self._left()
+        if left is not None and self.sock is not None:
+            try:
+                self.sock.settimeout(min(left, self.timeout or left))
+            except OSError:
+                pass
+        return smtplib.SMTP.send(self, s)
+
+
+class _AddrSMTP(_Deadline, smtplib.SMTP):
+    """smtplib, connecting to addresses already looked up; the host's name
+    is still what the certificate is checked against. It keeps what the
+    server answered to the message itself - "250 Ok: queued as 4Xy..." -
+    which is what its own log is searched by (1.0.27)."""
+    addrs = ()
+    last_reply = None
+
+    def data(self, msg):
+        got = smtplib.SMTP.data(self, msg)
+        self.last_reply = got
+        return got
+
+    def _get_socket(self, host, port, timeout):
+        last = None
+        for a in self.addrs or [host]:
+            try:
+                return socket.create_connection((a, port), timeout, self.source_address)
+            except OSError as e:
+                last = e
+        raise last or OSError('no address to reach')
+
+
+class _AddrSMTPS(_Deadline, smtplib.SMTP_SSL):
+    addrs = ()
+    last_reply = None
+
+    def data(self, msg):
+        got = smtplib.SMTP.data(self, msg)
+        self.last_reply = got
+        return got
+
+    def _get_socket(self, host, port, timeout):
+        sock = _AddrSMTP._get_socket(self, host, port, timeout)
+        try:
+            return self.context.wrap_socket(sock, server_hostname=self._host)
+        except BaseException:
+            sock.close()                # not left to the collector (1.0.59)
+            raise
+
+
+# ---- one conversation with one server ---------------------------------------------
+def _xoauth2(user, token):
+    return lambda challenge=None: 'user=%s\x01auth=Bearer %s\x01\x01' % (user, token)
+
+
+def smtp_talk(store, host, port, security, auth, msg, to, steps, helo='', verify=None,
+              timeout=None, direct=False):
+    """Send one message through one server, writing down every step."""
+    timeout = float(timeout or CONFIG.get('smtp_timeout_s') or 20)
+    helo = str(helo or CONFIG.get('mail_helo') or socket.getfqdn() or 'localhost')
+    ctx = mail_tls(store, verify)
+    if direct and security == 'starttls-if':
+        # TLS where offered, going straight to somebody's MX (1.0.59): their
+        # certificate is not checked, as no mail server checks another's -
+        # a self-signed one there failed every message to the domain, where
+        # plain text would have gone. "required" still checks it.
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    began = time.time()
+
+    def step(what, ok=True, said=''):
+        steps.append({'what': what, 'ok': ok, 'said': str(said or '')[:500]})
+        if debugging('codes'):
+            log('mail %s:%d: %s %s%s' % (host, port, 'ok' if ok else 'FAILED', what,
+                                         (' - %s' % str(said)[:200]) if said else ''), 'debug')
+
+    # Going direct, the recipients' servers are looked up by the same DNS
+    # servers that gave their MX records - A, AAAA and CNAME (1.0.23).
+    # Only here, and only for mail going straight to the recipients, are
+    # the DNS servers of `mail_dns` asked; with none set it is the system's
+    # own resolver (/etc/hosts, nsswitch), as for everything else. (1.0.23)
+    addrs = ()
+    if direct:
+        try:
+            if own_dns():
+                addrs = tuple(dns_addrs(host))
+                how = 'DNS ' + ', '.join(own_dns())
+            else:
+                addrs = tuple(sorted({a[4][0] for a in socket.getaddrinfo(
+                    host, port, 0, socket.SOCK_STREAM)}, key=lambda a: ':' in a))
+                how = 'the system resolver'
+            step('looked up %s' % host, True, ', '.join(addrs) + ' · ' + how)
+        except (MailError, OSError) as e:
+            step('look up %s' % host, False, e)
+            raise MailError('no address found for %s: %s' % (host, e), steps)
+    try:
+        if security == 'tls':
+            conn = _AddrSMTPS(local_hostname=helo, timeout=timeout, context=ctx)
+            if debugging('codes'):
+                conn.set_debuglevel(1)
+            conn.deadline = began + 4 * timeout
+            conn.addrs = addrs
+            conn._host = host           # the name its certificate is checked against
+            code, said = conn.connect(host, port)
+            if code != 220:
+                conn.close()
+                raise smtplib.SMTPConnectError(code, said)
+            step('reached %s:%d over TLS' % (host, port), True,
+                 '%d ms' % int((time.time() - began) * 1000))
+        else:
+            conn = _AddrSMTP(local_hostname=helo, timeout=timeout)
+            if debugging('codes'):
+                conn.set_debuglevel(1)
+            conn.deadline = began + 4 * timeout
+            conn.addrs = addrs
+            # The name STARTTLS checks the certificate against (1.0.96):
+            # smtplib keeps the one given when it is made - none here, the
+            # address is connected to - and every server that offered
+            # STARTTLS failed: "server_hostname cannot be an empty string".
+            conn._host = host
+            code, said = conn.connect(host, port)
+            if code != 220:
+                conn.close()
+                raise smtplib.SMTPConnectError(code, said)
+            step('reached %s:%d' % (host, port), True,
+                 '%d ms' % int((time.time() - began) * 1000))
+    except ssl.SSLCertVerificationError as e:
+        step('reach the server %s:%d over TLS' % (host, port), False,
+             'its certificate is not trusted: %s' % e.verify_message)
+        raise MailError('the certificate of %s is not trusted - add the authority that '
+                        'signed it, or switch the check off' % host, steps)
+    except (OSError, smtplib.SMTPException) as e:
+        step('reach the server %s:%d' % (host, port), False, e)
+        raise MailError('%s:%d could not be reached: %s' % (host, port, e), steps)
+    try:
+        code, said = conn.ehlo()
+        step('greeted it as %s' % helo, 200 <= code < 300, said.decode('utf-8', 'replace')
+             .split('\n')[0] if isinstance(said, bytes) else said)
+        if security in ('starttls', 'starttls-if'):
+            if conn.has_extn('starttls'):
+                try:
+                    conn.starttls(context=ctx)
+                except ssl.SSLCertVerificationError as e:
+                    step('started TLS', False, 'its certificate is not trusted: %s'
+                         % e.verify_message)
+                    raise MailError('the certificate of %s is not trusted - add the authority '
+                                    'that signed it, or switch the check off' % host, steps)
+                conn.ehlo()
+                cert = conn.sock.getpeercert() if hasattr(conn.sock, 'getpeercert') else None
+                who = ''
+                if cert:
+                    who = ', '.join('%s=%s' % kv for part in cert.get('subject', ())
+                                    for kv in part if kv[0] == 'commonName')
+                step('started TLS', True, (conn.sock.version() if hasattr(conn.sock, 'version')
+                                           else '') + ((' · ' + who) if who else ''))
+            elif security == 'starttls':
+                step('start TLS', False, 'the server does not offer STARTTLS')
+                raise MailError('%s does not offer STARTTLS - choose TLS from the start, or '
+                                'none' % host, steps)
+            else:
+                step('stayed in plain text', True, 'the server does not offer STARTTLS')
+                if auth and auth != 'none' and not direct:
+                    # Not the password in plain text (1.0.94): a STARTTLS taken
+                    # out on the way would have had it read off the wire.
+                    step('sign in', False, 'not without TLS: the password would go in plain text')
+                    raise MailError('%s offered no STARTTLS, and the password is not sent in '
+                                    'plain text - choose STARTTLS (required) or TLS from the '
+                                    'start, or Security none if a plain connection is meant'
+                                    % host, steps)
+        if auth and auth != 'none' and not direct:
+            user = str(CONFIG.get('smtp_user') or '')
+            pw = unseal_secret(CONFIG.get('smtp_password') or '', 'setting:smtp_password') or ''
+            offered = (conn.esmtp_features.get('auth') or '').upper().split()
+            try:
+                if auth == 'auto':
+                    conn.login(user, pw)
+                elif auth == 'xoauth2':
+                    conn.auth('XOAUTH2', _xoauth2(user, pw), initial_response_ok=True)
+                else:
+                    conn.user, conn.password = user, pw
+                    mech = {'plain': 'PLAIN', 'login': 'LOGIN', 'cram-md5': 'CRAM-MD5'}[auth]
+                    fn = {'PLAIN': conn.auth_plain, 'LOGIN': conn.auth_login,
+                          'CRAM-MD5': conn.auth_cram_md5}[mech]
+                    conn.auth(mech, fn, initial_response_ok=(mech != 'CRAM-MD5'))
+                step('signed in as %s (%s)' % (user, auth.upper()), True,
+                     'it offers: %s' % (' '.join(offered) or 'nothing'))
+            except smtplib.SMTPAuthenticationError as e:
+                step('sign in as %s (%s)' % (user, auth.upper()), False,
+                     '%s %s' % (e.smtp_code, (e.smtp_error or b'').decode('utf-8', 'replace')))
+                raise MailError('the mail server did not take the account or the password',
+                                steps)
+            except smtplib.SMTPException as e:
+                step('sign in as %s (%s)' % (user, auth.upper()), False,
+                     '%s · it offers: %s' % (e, ' '.join(offered) or 'nothing'))
+                raise MailError('signing in failed: %s' % e, steps)
+        if msg is not None:
+            refused = conn.send_message(msg, to_addrs=list(to))
+            if refused:
+                step('handed the message over', False, '; '.join(
+                    '%s: %s' % (k, v) for k, v in refused.items()))
+                raise MailError('the server refused %s' % ', '.join(refused), steps,
+                                permanent=all(int((v or (0,))[0] or 0) >= 500
+                                              for v in refused.values()))
+            reply = getattr(conn, 'last_reply', None)
+            said = ''
+            if reply:
+                said = ' · %s %s' % (reply[0], (reply[1] or b'').decode('utf-8', 'replace')
+                                     if isinstance(reply[1], bytes) else reply[1])
+            step('handed the message over', True, 'for %s%s' % (', '.join(to), said))
+    except smtplib.SMTPRecipientsRefused as e:
+        step('handed the message over', False, '; '.join(
+            '%s: %s %s' % (k, v[0], v[1].decode('utf-8', 'replace') if isinstance(v[1], bytes)
+                           else v[1]) for k, v in e.recipients.items()))
+        raise MailError('the server would not take mail for %s' % ', '.join(e.recipients), steps,
+                        permanent=all(int((v or (0,))[0] or 0) >= 500
+                                      for v in e.recipients.values()))
+    except smtplib.SMTPSenderRefused as e:
+        step('handed the message over', False, '%s %s' % (e.smtp_code, (
+            e.smtp_error or b'').decode('utf-8', 'replace')))
+        raise MailError('the server would not take mail from %s' % e.sender, steps,
+                        permanent=int(e.smtp_code or 0) >= 500)
+    except (smtplib.SMTPException, OSError) as e:
+        if not isinstance(e, MailError):
+            step('talking to it', False, e)
+            raise MailError('the conversation with %s broke off: %s' % (host, e), steps,
+                            permanent=int(getattr(e, 'smtp_code', 0) or 0) >= 500)
+        raise
+    finally:
+        try:
+            conn.quit()
+        except Exception:
+            pass
+        try:
+            conn.close()        # the watchman goes too (1.0.103)
+        except Exception:
+            pass
+    return steps
+
+
+def mail_send(store, msg, to, mode=None):
+    """Send `msg` to `to` ([addresses]) the way the settings say. Returns the
+    steps; raises MailError with them where it failed."""
+    mode = mode or CONFIG.get('mail_mode') or 'off'
+    steps = []
+    if mode == 'off':
+        raise MailError('sending mail is switched off - Settings → Mail', steps)
+    if mode == 'smtp':
+        host = str(CONFIG.get('smtp_host') or '').strip()
+        if not host:
+            raise MailError('no mail server is set - Settings → Mail', steps)
+        security = CONFIG.get('smtp_security') or 'starttls'
+        port = int(CONFIG.get('smtp_port') or 0) or {'tls': 465, 'none': 25}.get(security, 587)
+        return smtp_talk(store, host, port, security, CONFIG.get('smtp_auth') or 'auto', msg,
+                         to, steps)
+    # Straight to each domain's own server: one conversation per domain.
+    by_domain = collections.OrderedDict()
+    for one in to:
+        by_domain.setdefault(one.rsplit('@', 1)[-1].lower(), []).append(one)
+    port = int(CONFIG.get('mail_direct_port') or 25)
+    for domain, who in by_domain.items():
+        try:
+            mxs, how = dns_mx_full(domain)
+            mxs = [m for m in mxs if m[1] not in ('', '.')]
+            if not mxs:
+                raise MailError('%s takes no mail (its MX record is a null MX)' % domain,
+                                permanent=True)
+        except MailError as e:
+            steps.append({'what': 'look up the mail servers of %s' % domain, 'ok': False,
+                          'said': str(e)})
+            raise MailError(str(e), steps, permanent=e.permanent)
+        steps.append({'what': 'looked up the mail servers of %s' % domain, 'ok': True,
+                      'said': ', '.join('%s (%d)' % (h, p) for p, h in mxs) + ' · ' + how})
+        last = None
+        # One deadline over every MX of the domain (1.0.59): four servers of
+        # two addresses each at 20 s outlasted the page asking.
+        deadline = time.time() + MAIL_DIRECT_DEADLINE_S
+        for _pref, host in mxs[:4]:
+            left = deadline - time.time()
+            if left < 3:
+                last = last or MailError('no time left to try %s' % host, steps)
+                break
+            try:
+                smtp_talk(store, host, port,
+                          'starttls' if CONFIG.get('mail_direct_tls') == 'required'
+                          else 'starttls-if', 'none', msg, who, steps, direct=True,
+                          timeout=min(float(CONFIG.get('smtp_timeout_s') or 20), left / 2))
+                last = None
+                break
+            except MailError as e:
+                last = e
+        if last:
+            raise MailError('no mail server of %s took it: %s' % (domain, last), steps,
+                            permanent=getattr(last, 'permanent', False))
+    return steps
+
+
+# ---- the QR code as a picture every mail program shows ----------------------------
+
+
+# ---------------------------------------------------------------------------
 # The database
 # ---------------------------------------------------------------------------
 SCHEMA_SQL = '''
@@ -427,6 +1946,11 @@ class Store:
             self.db.execute('PRAGMA journal_mode=WAL')
             self.db.execute('PRAGMA synchronous=NORMAL')
             self.db.executescript(SCHEMA_SQL)
+            have = {r[1] for r in self.db.execute('PRAGMA table_info(sessions)').fetchall()}
+            if 'data' not in have:
+                # What a sign-in carries besides its name (1.0.4): its second
+                # step, still to be given, and the codes sent for it.
+                self.db.execute("ALTER TABLE sessions ADD COLUMN data TEXT NOT NULL DEFAULT '{}'")
         try:
             os.chmod(self.path, 0o600)
         except OSError:
@@ -484,6 +2008,37 @@ class Store:
         self.x('INSERT INTO events(at,kind,level,who,text) VALUES(?,?,?,?,?)',
                (time.time(), kind, level, who or '', str(text)[:2000]))
         log('%s: %s' % (kind, text), 'info' if level in ('info', 'good') else 'warn')
+
+    # -- sign-ins -----------------------------------------------------------
+    def session_data(self, sid):
+        r = self.one('SELECT data FROM sessions WHERE id=?', (sid,))
+        try:
+            got = json.loads((r or {}).get('data') or '{}')
+        except ValueError:
+            got = {}
+        return got if isinstance(got, dict) else {}
+
+    def session_merge(self, sid, change):
+        with self.lock:
+            data = self.session_data(sid)
+            for k, v in change.items():
+                if v is None:
+                    data.pop(k, None)
+                else:
+                    data[k] = v
+            self.x('UPDATE sessions SET data=? WHERE id=?', (json.dumps(data), sid))
+        return data
+
+    def session_take(self, sid, key):
+        """Takes `key` out of the sign-in's data: True for the one that took it,
+        so a code sent is good once, however many ask with it at once."""
+        with self.lock:
+            data = self.session_data(sid)
+            if key not in data:
+                return False
+            data.pop(key)
+            self.x('UPDATE sessions SET data=? WHERE id=?', (json.dumps(data), sid))
+            return True
 
     # -- accounts -----------------------------------------------------------
     def user(self, name):
@@ -746,11 +2301,20 @@ class Auth:
             raise Refused('wrong name or password', 401)
         for k in self._fail_keys(name, ip):
             self.store.x('DELETE FROM fails WHERE k=?', (k,))
-        token = secrets.token_urlsafe(32)
-        self.store.x('INSERT INTO sessions(id,name,created,seen,ip,agent) VALUES(?,?,?,?,?,?)',
-                     (self.sid(token), name, time.time(), time.time(), ip, clean_line(agent, 200)))
+        # With the second step on, the password opens a sign-in that can do
+        # nothing but give it (MFA_ALLOWED) - as otp's administration.
+        stage = mfa_stage(self.store, name) if CONFIG.get('admin_2fa') else ''
+        token = self.session_new(name, ip, agent, {'mfa': stage} if stage else {})
         self.store.x('UPDATE users SET last_login=?, last_ip=? WHERE name=?', (time.time(), ip, name))
-        self.store.add_event('sign-in', '%s signed in from %s' % (name, ip), 'info', who=name)
+        self.store.add_event('sign-in', '%s signed in from %s%s' % (
+            name, ip, ' - the second step still to give' if stage else ''), 'info', who=name)
+        return token
+
+    def session_new(self, name, ip, agent='', data=None, created=None):
+        token = secrets.token_urlsafe(32)
+        self.store.x('INSERT INTO sessions(id,name,created,seen,ip,agent,data) VALUES(?,?,?,?,?,?,?)',
+                     (self.sid(token), name, created or time.time(), time.time(), ip,
+                      clean_line(agent, 200), json.dumps(data or {})))
         return token
 
     @staticmethod
@@ -776,6 +2340,14 @@ class Auth:
             self.store.x('UPDATE sessions SET seen=? WHERE id=?', (now, s['id']))
         u = dict(u)
         u['_sid'] = s['id']
+        u['_created'] = s['created']
+        u['_agent'] = s.get('agent') or ''
+        try:
+            data = json.loads(s.get('data') or '{}')
+        except ValueError:
+            data = {}
+        u['_data'] = data if isinstance(data, dict) else {}
+        u['_mfa'] = str(u['_data'].get('mfa') or '') if CONFIG.get('admin_2fa') else ''
         return u
 
     def logout(self, token):
@@ -786,6 +2358,8 @@ class Auth:
         idle = float(CONFIG.get('session_idle_h') or 12) * 3600
         most = float(CONFIG.get('session_max_h') or 168) * 3600
         self.store.x('DELETE FROM sessions WHERE seen < ? OR created < ?', (now - idle, now - most))
+        # A password given and its second step not, for a quarter of an hour: gone.
+        self.store.x('DELETE FROM sessions WHERE data LIKE ? AND created < ?', ('%"mfa": "%', now - 900))
         self.store.x('DELETE FROM fails WHERE (until = 0 OR until < ?) AND first < ?',
                      (now, now - 86400))
 
@@ -2448,8 +4022,10 @@ def api_health(c):
 @route('POST', '/api/auth/login', anon=True)
 def api_login(c):
     token = c.daemon.auth.login(c.body.get('name'), c.body.get('password'), c.ip, c.body.get('agent') or '')
-    u = c.daemon.store.user(str(c.body.get('name') or '').strip())
-    return {'token': token, 'who': user_view(u)}
+    name = str(c.body.get('name') or '').strip()
+    u = c.daemon.store.user(name)
+    stage = mfa_stage(c.daemon.store, name) if CONFIG.get('admin_2fa') else ''
+    return {'token': token, 'who': None if stage else user_view(u), 'mfa': stage}
 
 
 @route('POST', '/api/auth/logout')
@@ -2460,6 +4036,9 @@ def api_logout(c):
 
 @route('GET', '/api/auth/whoami')
 def api_whoami(c):
+    if c.who.get('_mfa'):
+        # Signed in with the password only: the page asks for the second step.
+        return {'who': {'name': c.who['name'], 'mfa': c.who['_mfa']}, 'mfa': c.who['_mfa']}
     return {'who': user_view(c.who)}
 
 
@@ -2490,6 +4069,60 @@ def api_prefs(c):
     return {'prefs': prefs}
 
 
+# ---- PHP and php2shell (as otp's) ----------------------------------------------------------
+# Whether the PHP running the pages has the php2shell fix (CVE-2026-109618,
+# CVE-2026-109619): its version against the fixed releases, or the packages'
+# changelog where a distribution backported it and kept the old number.
+PHP_FIXED = {'8.2': (8, 2, 35), '8.3': (8, 3, 36), '8.4': (8, 4, 27), '8.5': (8, 5, 12)}
+_PHP_STATE = {'at': 0, 'state': None}
+
+
+def php_state():
+    if time.time() - _PHP_STATE['at'] < 3600 and _PHP_STATE['state'] is not None:
+        return _PHP_STATE['state']
+    out = {'version': '', 'fixed': None, 'how': ''}
+    php = shutil.which('php') or next((p for p in ('/usr/bin/php', '/usr/local/bin/php')
+                                       if os.path.exists(p)), None)
+    if php:
+        try:
+            out['version'] = subprocess.run([php, '-r', 'echo PHP_VERSION;'], capture_output=True,
+                                            text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    m = re.match(r'^(\d+)\.(\d+)\.(\d+)', out['version'])
+    if m:
+        v = tuple(int(x) for x in m.groups())
+        want = PHP_FIXED.get('%d.%d' % v[:2])
+        if want and v >= want or (not want and v[:2] > (8, 5)):
+            out.update(fixed=True, how='version')
+    if not out['fixed']:
+        said = ''
+        rpm = shutil.which('rpm')
+        if rpm:
+            for pkg in ('php-fpm', 'php-common'):
+                try:
+                    said += subprocess.run([rpm, '-q', '--changelog', pkg], capture_output=True,
+                                           text=True, timeout=20).stdout
+                except (OSError, subprocess.SubprocessError):
+                    pass
+        else:
+            import gzip
+            import glob
+            for f in glob.glob('/usr/share/doc/php*-fpm/changelog.Debian.gz') + glob.glob(
+                    '/usr/share/doc/php*-common/changelog.Debian.gz'):
+                try:
+                    with gzip.open(f, 'rt', errors='replace') as g:
+                        said += g.read(200000)
+                except OSError:
+                    pass
+        if 'CVE-2026-109618' in said:
+            out.update(fixed=True, how='changelog')
+        elif out['version']:
+            out['fixed'] = False
+    _PHP_STATE.update(at=time.time(), state=out)
+    return out
+
+
 def status_view(c):
     d = c.daemon
     problems = []
@@ -2508,6 +4141,7 @@ def status_view(c):
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
         'upgrade_state': st.get('state') if st else '', 'started': d.started, 'now': time.time(),
+        'php': php_state() if c.who['role'] == 'admin' else None,
     }
 
 
@@ -2665,6 +4299,453 @@ def api_claude_do(c):
     return {'id': tid}
 
 
+# ---- the second step of signing in (otp's, 1.0.125) ------------------------------------------
+# With admin_2fa on, a right password opens a sign-in that can do nothing yet
+# but its second step (MFA_ALLOWED): a code from an app, or one sent by mail.
+# The first time the account chooses how and proves it (enrol); after that it
+# gives the code each time (check). The way chosen is the account's own, kept
+# in meta 'adm2fa:<name>':
+#   {'kind': 'app'|'mail', 'secret': sealed (app), 'dest': (mail), 'at', 'step'}
+# Accounts → Reset the second step and ai --reset-2fa NAME take it away.
+MFA_ALLOWED = ('/api/auth/mfa', '/api/auth/logout', '/api/auth/whoami')
+MFA_SEND_GAP_S = 30
+MFA_SEND_MOST = 5
+MFA_LOCK = threading.Lock()
+MFA_KIND_WORDS = {'app': 'an authenticator app', 'mail': 'a code by e-mail'}
+
+
+def mfa_key(name):
+    return 'adm2fa:' + str(name or '').strip().lower()
+
+
+def mfa_get(store, name):
+    got = store.meta_json(mfa_key(name))
+    return got if isinstance(got, dict) else None
+
+
+def mfa_all(store):
+    out = {}
+    for r in store.q("SELECT k, v FROM meta WHERE k LIKE 'adm2fa:%'"):
+        try:
+            v = json.loads(r['v'] or '{}')
+        except ValueError:
+            continue
+        out[r['k'][len('adm2fa:'):]] = {'kind': v.get('kind'), 'at': v.get('at'),
+                                        'dest': dest_masked(v.get('kind'), v.get('dest'))}
+    return out
+
+
+def mfa_reset(store, name, by):
+    had = mfa_get(store, name)
+    store.x('DELETE FROM meta WHERE k=?', (mfa_key(name),))
+    store.add_event('accounts', '%s reset the second step of signing in of %s%s' % (
+        by, name, ' (it was %s)' % MFA_KIND_WORDS.get(had.get('kind'), had.get('kind'))
+        if had else ' (none was set up)'), 'warn', who=by)
+    return bool(had)
+
+
+def code_channels():
+    """Which ways of sending a code can be used at all - set up, not off."""
+    out = []
+    if (CONFIG.get('mail_mode') or 'off') != 'off' and CONFIG.get('mail_from'):
+        out.append('mail')
+    return out
+
+
+def mfa_methods():
+    out = []
+    if CONFIG.get('admin_2fa_app', True):
+        out.append('app')
+    if CONFIG.get('admin_2fa_mail', True) and 'mail' in code_channels():
+        out.append('mail')
+    return out or ['app']
+
+
+def mfa_stage(store, name):
+    rec = mfa_get(store, name)
+    if rec and rec.get('kind') in ('app', 'mail'):
+        return 'check'
+    return 'enrol'
+
+
+def code_new():
+    digits = int(CONFIG.get('code_digits') or 6)
+    return '%0*d' % (digits, secrets.randbelow(10 ** digits))
+
+
+def code_hash(salt, code):
+    key = sealing_key(make=True) or b''
+    return hmac.new(key + b'|code', ('%s|%s' % (salt, code)).encode('utf-8'),
+                    hashlib.sha256).hexdigest()
+
+
+MAIL_WORDS = {
+    'cs': {'code_subject': 'Kód pro přihlášení: {code}',
+           'code_body': 'Dobrý den,\n\nkód pro přihlášení na stránky {site} je\n\n    {code}\n\nPlatí {minutes} min. '
+                        'Pokud jste se nepřihlašovali, někdo zná vaše heslo: změňte ho.\n',
+           'verify_subject': 'Ověření adresy: {code}',
+           'verify_body': 'Dobrý den,\n\nkód, kterým potvrdíte tuto adresu pro druhý krok přihlášení na '
+                          'stránky {site}, je\n\n    {code}\n\nPlatí {minutes} min.\n',
+           'test_subject': 'Zkušební e-mail z {site}',
+           'test_body': 'Tento e-mail poslaly stránky {site} na zkoušku. Odesílání pošty funguje.\n',
+           'notice_subject': '{site}: {n} {what}',
+           'notice_body': 'Stránky {site} hlásí:\n\n{lines}\n\nVše je v Událostech: {url}\n'},
+    'en': {'code_subject': 'Your sign-in code: {code}',
+           'code_body': 'Hello,\n\nthe code to sign in to {site} is\n\n    {code}\n\nIt is good for {minutes} min. '
+                        'If you did not sign in, somebody knows your password: change it.\n',
+           'verify_subject': 'Checking the address: {code}',
+           'verify_body': 'Hello,\n\nthe code that proves this address for the second step of signing in to '
+                          '{site} is\n\n    {code}\n\nIt is good for {minutes} min.\n',
+           'test_subject': 'A test mail from {site}',
+           'test_body': 'This mail was sent by {site} as a test. Sending mail works.\n',
+           'notice_subject': '{site}: {n} {what}',
+           'notice_body': '{site} says:\n\n{lines}\n\nEverything is in Events: {url}\n'},
+}
+
+
+def mail_lang(lang=None):
+    lang = lang or CONFIG.get('mail_lang') or 'cs'
+    return lang if lang in MAIL_WORDS else 'en'
+
+
+def site_words():
+    return str(CONFIG.get('site_name') or host_name())
+
+
+def mail_message(to, subject, body):
+    from email.message import EmailMessage
+    from email.utils import formataddr, formatdate, make_msgid
+    msg = EmailMessage()
+    sender = str(CONFIG.get('mail_from') or '')
+    if not sender:
+        raise MailError('no From address is set - Settings → Mail')
+    msg['From'] = formataddr((str(CONFIG.get('mail_from_name') or 'ai'), sender))
+    msg['To'] = ', '.join(to)
+    if CONFIG.get('mail_reply_to'):
+        msg['Reply-To'] = str(CONFIG['mail_reply_to'])
+    msg['Subject'] = subject
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain=sender.rsplit('@', 1)[-1])
+    msg['Auto-Submitted'] = 'auto-generated'
+    msg.set_content(body)
+    return msg
+
+
+def mail_words(key, lang=None, **kw):
+    w = MAIL_WORDS[mail_lang(lang)]
+    kw.setdefault('site', site_words())
+    kw.setdefault('minutes', max(1, int(CONFIG.get('code_ttl_s') or 300) // 60))
+    return w[key + '_subject'].format(**kw), w[key + '_body'].format(**kw)
+
+
+def code_send(store, kind, dest, code, purpose='signin', lang=None):
+    if kind != 'mail':
+        raise ValueError('codes go by mail only here')
+    subject, body = mail_words('verify' if purpose == 'verify' else 'code', lang, code=code)
+    steps = mail_send(store, mail_message([dest], subject, body), [dest])
+    ok = [s for s in steps if s.get('ok')]
+    return (ok[-1]['said'] if ok else 'sent').replace(code, '******')
+
+
+def mfa_lang(c):
+    got = str(c.body.get('lang') or c.arg('lang') or '')
+    return got if got in MAIL_WORDS else None
+
+
+def _mfa_code_ok(saved, code):
+    if not saved or time.time() > float(saved.get('exp') or 0):
+        return False
+    return hmac.compare_digest(code_hash(saved.get('salt') or '', str(code or '').strip()),
+                               str(saved.get('hash') or ''))
+
+
+def _mfa_send(c, kind, dest, field):
+    data = c.who.get('_data') or {}
+    sid = c.who['_sid']
+    t = time.time()
+    if t - float(data.get('mfa_sent_at') or 0) < MFA_SEND_GAP_S:
+        raise Refused('a code went a moment ago - wait half a minute for another', 429)
+    n = int(data.get('mfa_sent') or 0)
+    if n >= MFA_SEND_MOST:
+        raise Refused('that is %d codes for this sign-in: sign in again for more' % MFA_SEND_MOST, 429)
+    code, salt = code_new(), secrets.token_hex(8)
+    saved = {'hash': code_hash(salt, code), 'salt': salt, 't': t,
+             'exp': t + int(CONFIG.get('code_ttl_s') or 300)}
+    try:
+        said = code_send(c.daemon.store, kind, dest, code, 'verify' if field == 'mfa_new' else 'signin',
+                         mfa_lang(c))
+    except (MailError, ValueError, OSError) as e:
+        c.daemon.store.add_event('sign-in', 'the code of the second step for %s could not be sent (%s): %s' % (
+            c.name, kind, e), 'warn', who=c.name)
+        raise Refused('the code could not be sent: %s' % e, 502)
+    new = dict(saved, kind=kind, dest=dest) if field == 'mfa_new' else saved
+    c.daemon.store.session_merge(sid, {field: new, 'mfa_sent_at': t, 'mfa_sent': n + 1})
+    log('the second step of %s: a code sent by %s to %s (%s)' % (c.name, kind, dest_masked(kind, dest), said))
+    return dest_masked(kind, dest)
+
+
+def _mfa_done(c, how):
+    """The second step given: a sign-in of its own from here on - the one the
+    password alone opened is ended, not made whole (otp 1.0.149)."""
+    d = c.daemon
+    data = {k: v for k, v in (c.who.get('_data') or {}).items()
+            if k not in ('mfa', 'mfa_new', 'mfa_code', 'mfa_sent_at', 'mfa_sent')}
+    token = d.auth.session_new(c.name, c.ip, c.who.get('_agent') or '', data, created=c.who.get('_created'))
+    d.store.x('DELETE FROM sessions WHERE id=?', (c.who['_sid'],))
+    d.store.add_event('sign-in', '%s gave the second step (%s) from %s' % (c.name, how, c.ip), who=c.name)
+    return token
+
+
+def _mfa_wrong(c):
+    c.daemon.auth.failed(c.name, c.ip)
+    wait = c.daemon.auth.locked(c.name, c.ip)
+    if wait:
+        c.daemon.store.add_event('sign-in', '%s is locked out after wrong codes of the second step, from %s' % (
+            c.name, c.ip), 'warn', who=c.name)
+        raise Refused('too many wrong codes - try again in %d min' % max(1, wait // 60 + 1), 429)
+
+
+@route('GET', '/api/auth/mfa')
+def api_mfa(c):
+    stage = c.who.get('_mfa')
+    rec = mfa_get(c.daemon.store, c.name) or {}
+    new = (c.who.get('_data') or {}).get('mfa_new') or {}
+    return {'name': c.name, 'display': '', 'stage': stage, 'methods': mfa_methods(),
+            'kind': rec.get('kind') if stage == 'check' else '',
+            'dest': dest_masked(rec.get('kind'), rec.get('dest')) if stage == 'check' else '',
+            'started': {'kind': new.get('kind'), 'dest': dest_masked(new.get('kind'), new.get('dest'))}
+            if new else None,
+            'digits': 6 if (stage == 'check' and rec.get('kind') == 'app') else int(CONFIG.get('code_digits') or 6)}
+
+
+@route('POST', '/api/auth/mfa')
+def api_mfa_do(c):
+    stage = c.who.get('_mfa')
+    if not stage:
+        raise Refused('this sign-in has no second step to give', 409)
+    st = c.daemon.store
+    name = c.name
+    act = str(c.body.get('action') or '')
+    data = c.who.get('_data') or {}
+    wait = c.daemon.auth.locked(name, c.ip)
+    if wait and act in ('enrol_confirm', 'check'):
+        raise Refused('too many wrong codes - try again in %d min' % max(1, wait // 60 + 1), 429)
+    if act in ('enrol_start', 'enrol_confirm') and (stage != 'enrol' or mfa_stage(st, name) != 'enrol'):
+        raise Refused('this account has its second step set up already - sign in again', 409)
+    if act == 'enrol_start':
+        kind = str(c.body.get('kind') or '')
+        if kind not in mfa_methods():
+            raise Refused('that way is not offered here')
+        if kind == 'app':
+            secret = b32_new(20)
+            st.session_merge(c.who['_sid'], {'mfa_new': {
+                'kind': 'app', 'secret': seal_secret(secret, 'adm2fa-new:' + name.lower())}})
+            uri = otpauth_uri(secret, name, '%s (ai)' % site_words())
+            return {'kind': 'app', 'qr': qr_data_uri(uri), 'uri': uri,
+                    'secret': ' '.join(secret[i:i + 4] for i in range(0, len(secret), 4))}
+        try:
+            dest = mail_checked(c.body.get('dest'))
+        except ValueError as e:
+            raise Refused(str(e))
+        return {'kind': kind, 'sent_to': _mfa_send(c, kind, dest, 'mfa_new')}
+    if act == 'enrol_confirm':
+        new = data.get('mfa_new') or {}
+        if not new.get('kind'):
+            raise Refused('choose a way first')
+        code = re.sub(r'\s', '', str(c.body.get('code') or ''))
+        rec = {'kind': new['kind'], 'at': time.time(), 'by': name}
+        if new['kind'] == 'app':
+            secret = unseal_secret(new.get('secret'), 'adm2fa-new:' + name.lower())
+            step = totp_match(secret, code, digits=6, window=int(CONFIG.get('totp_window') or 1)) \
+                if secret else None
+            if step is None:
+                _mfa_wrong(c)
+                raise Refused('that code is not right - the one the app shows now')
+            rec.update(secret=seal_secret(secret, mfa_key(name)), step=step)
+        else:
+            if not _mfa_code_ok(new, code):
+                _mfa_wrong(c)
+                raise Refused('that code is not right, or no longer good - send another')
+            rec['dest'] = new['dest']
+        with MFA_LOCK:
+            if mfa_stage(st, name) != 'enrol':
+                raise Refused('this account has its second step set up already - sign in again', 409)
+            st.set_meta_json(mfa_key(name), rec)
+        token = _mfa_done(c, 'set up now: %s' % MFA_KIND_WORDS.get(rec['kind']))
+        st.add_event('accounts', '%s set up the second step of signing in: %s%s' % (
+            name, MFA_KIND_WORDS.get(rec['kind']),
+            ' (%s)' % dest_masked(rec['kind'], rec.get('dest')) if rec.get('dest') else ''), who=name)
+        return {'message': 'the second step is set up', 'done': True, 'token': token}
+    if act == 'send':
+        if stage != 'check':
+            raise Refused('set the second step up first', 409)
+        rec = mfa_get(st, name) or {}
+        if rec.get('kind') != 'mail':
+            raise Refused('the code comes from the app - nothing is sent')
+        if 'mail' not in code_channels():
+            raise Refused('codes by mail cannot be sent from here now: another administrator resets your '
+                          'second step (Accounts), or root with  ai --reset-2fa %s' % name, 503)
+        return {'sent_to': _mfa_send(c, 'mail', rec.get('dest'), 'mfa_code')}
+    if act == 'check':
+        if stage != 'check':
+            raise Refused('set the second step up first', 409)
+        code = re.sub(r'\s', '', str(c.body.get('code') or ''))
+        rec = mfa_get(st, name) or {}
+        if rec.get('kind') == 'app':
+            with MFA_LOCK:
+                rec = mfa_get(st, name) or {}
+                secret = unseal_secret(rec.get('secret'), mfa_key(name))
+                step = totp_match(secret, code, digits=6, window=int(CONFIG.get('totp_window') or 1)) \
+                    if secret else None
+                # A code is good once.
+                if step is None or step <= int(rec.get('step') or 0):
+                    _mfa_wrong(c)
+                    raise Refused('that code is not right' if step is None else
+                                  'that code was used already - wait for the next one')
+                rec['step'] = step
+                st.set_meta_json(mfa_key(name), rec)
+        else:
+            if not _mfa_code_ok(data.get('mfa_code'), code) or not st.session_take(c.who['_sid'], 'mfa_code'):
+                _mfa_wrong(c)
+                raise Refused('that code is not right, or no longer good - send another')
+        for k in c.daemon.auth._fail_keys(name, c.ip):
+            st.x('DELETE FROM fails WHERE k=?', (k,))
+        token = _mfa_done(c, MFA_KIND_WORDS.get(rec.get('kind')))
+        return {'message': 'signed in', 'done': True, 'token': token}
+    raise Refused('no such thing to do')
+
+
+# ---- who is locked out (otp's, 1.0.112) -------------------------------------------------------
+def lockouts_view(store):
+    now = time.time()
+    pause = int(CONFIG.get('login_lock_min') or 15) * 60
+    limit = int(CONFIG.get('login_max_fails') or 8)
+    rows = []
+    for r in store.q('SELECT * FROM fails ORDER BY first DESC'):
+        by, _s, who = str(r['k']).partition(':')
+        locked = bool(r['until'] and r['until'] > now)
+        forgets = max(float(r['until'] or 0), float(r['first'] or 0) + pause)
+        if forgets <= now:
+            continue
+        rows.append({'kind': 'admin', 'who': who, 'key': r['k'], 'by': 'address' if by == 'ip' else 'name',
+                     'what': 'signing in to these pages', 'words': 'wrong passwords',
+                     'fails': int(r['n'] or 0), 'limit': limit, 'locked': locked,
+                     'until': float(r['until']) if locked else None, 'forgets': forgets,
+                     'first': float(r['first'] or 0), 'last': float(r['first'] or 0), 'others': []})
+    rows.sort(key=lambda x: (not x['locked'], -x['last']))
+    return rows
+
+
+def lockouts_clear(store, keys=None, by=''):
+    if keys is None:
+        n = store.x('DELETE FROM fails')
+    else:
+        n = sum(store.x('DELETE FROM fails WHERE k=?', (str(k),)) for k in keys)
+    if n:
+        store.add_event('sign-in', '%s cleared %d lockout(s) and count(s) of wrong passwords' % (
+            by or 'root', n), 'warn', who=by)
+    return n
+
+
+@route('GET', '/api/lockouts', admin=True)
+def api_lockouts(c):
+    return {'now': time.time(), 'cluster': False,
+            'nodes': [{'node': host_name(), 'fresh': True, 'rows': lockouts_view(c.daemon.store)}]}
+
+
+@route('POST', '/api/lockouts', admin=True)
+def api_lockouts_do(c):
+    act = c.body.get('action')
+    if act == 'clear_all':
+        n = lockouts_clear(c.daemon.store, None, c.name)
+        return {'message': 'cleared: %d' % n, 'told': []}
+    if act == 'clear':
+        kind = str(c.body.get('who') or '')
+        keys = [k for k in ('ip:' + kind, 'name:' + kind.lower())]
+        n = lockouts_clear(c.daemon.store, keys, c.name)
+        return {'message': 'cleared: %d' % n, 'told': []}
+    raise Refused('clear or clear_all')
+
+
+# ---- mail: test, the authorities trusted, notices -------------------------------------------
+@route('GET', '/api/mail', admin=True)
+def api_mail(c):
+    return {'mode': CONFIG.get('mail_mode'), 'channels': code_channels(),
+            'ca_list': describe_certificates(mail_ca_pem(c.daemon.store)),
+            'notices': c.daemon.store.meta_json('notify:last', {}) or {}}
+
+
+@route('POST', '/api/mail', admin=True)
+def api_mail_do(c):
+    act = c.body.get('action')
+    st = c.daemon.store
+    if act == 'test':
+        try:
+            to = mail_checked(c.body.get('to'))
+        except ValueError as e:
+            raise Refused(str(e))
+        subject, body = mail_words('test', c.body.get('lang'))
+        took = time.time()
+        try:
+            steps = mail_send(st, mail_message([to], subject, body), [to])
+            ok, said = True, 'sent to %s' % to
+        except MailError as e:
+            steps, ok, said = e.steps, False, str(e)
+        st.add_event('mail', '%s sent a test mail to %s: %s' % (c.name, to, 'went' if ok else said),
+                     'info' if ok else 'warn', who=c.name)
+        return {'sent': ok, 'said': said, 'steps': steps, 'took_ms': int((time.time() - took) * 1000)}
+    if act == 'ca':
+        try:
+            got = mail_ca_set(st, c.body.get('ca'), c.body.get('mode') or 'add', c.body.get('fingerprint') or '')
+        except ValueError as e:
+            raise Refused(str(e))
+        st.add_event('mail', '%s changed the authorities trusted for the mail server (%d now)' % (c.name, len(got)),
+                     'info', who=c.name)
+        return {'message': '%d certificate(s) kept' % len(got), 'ca_list': got}
+    raise Refused('test or ca')
+
+
+NOTICE_WORDS = {'cs': ('upozornění', 'upozornění', 'upozornění'), 'en': ('notice', 'notices', 'notices')}
+
+
+def notify_tick(store):
+    """What Events marked as a warning or a failure, mailed to notify_to - at
+    most once every notify_gap_min, the rest together in the next one."""
+    to = [x for x in re.split(r'[,;\s]+', str(CONFIG.get('notify_to') or '')) if x]
+    if not to or (CONFIG.get('mail_mode') or 'off') == 'off' or not CONFIG.get('mail_from'):
+        return
+    state = store.meta_json('notify:last', {}) or {}
+    last_id = int(state.get('id') or 0)
+    if not last_id:
+        top = store.one('SELECT MAX(id) AS n FROM events')
+        store.set_meta_json('notify:last', {'id': int((top or {}).get('n') or 0), 'at': time.time()})
+        return
+    if time.time() - float(state.get('at') or 0) < int(CONFIG.get('notify_gap_min') or 15) * 60:
+        return
+    levels = ('error',) if CONFIG.get('notify_level') == 'error' else ('warn', 'error', 'bad')
+    rows = store.q('SELECT * FROM events WHERE id > ? AND level IN (%s) ORDER BY id LIMIT 200' %
+                   ','.join('?' * len(levels)), [last_id] + list(levels))
+    if not rows:
+        return
+    lang = mail_lang()
+    w = NOTICE_WORDS[lang]
+    n = len(rows)
+    what = w[0] if n == 1 else (w[1] if lang != 'cs' or n < 5 else w[2])
+    lines = '\n'.join('%s  %s  %s' % (datetime.fromtimestamp(r['at']).strftime('%Y-%m-%d %H:%M:%S'),
+                                      r['kind'], r['text']) for r in rows)
+    subject, body = mail_words('notice', lang, n=n, what=what, lines=lines,
+                               url='https://%s/#events' % host_name())
+    new = {'id': rows[-1]['id'], 'at': time.time(), 'sent': n}
+    try:
+        mail_send(store, mail_message(to, subject, body), to)
+        new['said'] = 'sent %d to %s' % (n, ', '.join(to))
+    except MailError as e:
+        new['said'] = 'could not be sent: %s' % e
+        new['id'] = last_id                 # tried again after the gap
+        log_sparing('notify', 'the notices could not be mailed: %s' % e)
+    store.set_meta_json('notify:last', new)
+
+
 # ---- settings, accounts, events ---------------------------------------------------------------
 def setting_value(k, v):
     s = SCHEMA_KEYS[k]
@@ -2684,7 +4765,7 @@ def setting_value(k, v):
             raise Refused('%s: one of the choices' % s[3])
         return str(v)
     v = str(v if v is not None else '')
-    if kind == 'str':
+    if kind in ('str', 'password'):
         v = v.strip()
         if '\n' in v or len(v) > 2000:
             raise Refused('%s: one line' % s[3])
@@ -2694,6 +4775,16 @@ def setting_value(k, v):
         raise Refused('the address of new versions is https://')
     if k == 'default_run_as' and v:
         linux_user(v)
+    if k in ('mail_from', 'mail_reply_to') and v:
+        try:
+            mail_checked(v)
+        except ValueError as e:
+            raise Refused('%s: %s' % (s[3], e))
+    if k == 'notify_to' and v:
+        try:
+            v = ', '.join(mail_checked(x) for x in re.split(r'[,;\s]+', v) if x)
+        except ValueError as e:
+            raise Refused('%s: %s' % (s[3], e))
     return v
 
 
@@ -2704,10 +4795,13 @@ def api_settings(c):
     out = []
     for k, pane, kind, label, help_, extra in SCHEMA:
         v = CONFIG.get(k)
-        if extra.get('secret') and not admin:
+        is_set = bool(v)
+        if kind == 'password':
+            v = ''
+        elif extra.get('secret') and not admin:
             v = '' if not v else '(set)'
         out.append({'key': k, 'pane': pane, 'kind': kind, 'label': label, 'help': help_, 'extra': extra,
-                    'value': v, 'default': DEFAULTS.get(k), 'saved': k in saved})
+                    'value': v, 'default': DEFAULTS.get(k), 'saved': k in saved, 'set': is_set})
     return {'settings': out}
 
 
@@ -2725,10 +4819,19 @@ def api_settings_do(c):
             said.append('%s back to its default' % k)
             continue
         nv = setting_value(k, v)
+        if SCHEMA_KEYS[k][2] == 'password':
+            if not nv:
+                continue                # empty: the one saved is kept
+            nv = seal_secret(nv, 'setting:' + k)
         c.daemon.store.set_setting(k, nv, c.name)
         said.append('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(nv)[:80]))
+    was_2fa = bool(CONFIG.get('admin_2fa'))
     config_rebuild(c.daemon.store)
     CLAUDE_CACHE.clear()
+    if CONFIG.get('admin_2fa') and not was_2fa:
+        # Every other sign-in gives its second step now, not when it ends.
+        n = c.daemon.store.x('DELETE FROM sessions WHERE id<>?', (c.who.get('_sid') or '',))
+        said.append('%d other sign-in(s) ended, to give the second step' % n)
     if said:
         c.daemon.store.add_event('settings', '%s changed: %s' % (c.name, '; '.join(said)), 'info', who=c.name)
     return {}
@@ -2737,8 +4840,20 @@ def api_settings_do(c):
 @route('GET', '/api/users', admin=True)
 def api_users(c):
     d = c.daemon
-    return {'users': [user_view(u) for u in d.store.users()],
-            'sessions': d.store.q('SELECT id, name, created, seen, ip, agent FROM sessions ORDER BY seen DESC'),
+    mfa = mfa_all(d.store)
+    users = []
+    for u in d.store.users():
+        one = user_view(u)
+        one['mfa'] = mfa.get(u['name'].lower())
+        users.append(one)
+    sessions = d.store.q('SELECT id, name, created, seen, ip, agent, data FROM sessions ORDER BY seen DESC')
+    for s in sessions:
+        try:
+            s['mfa_pending'] = str(json.loads(s.pop('data') or '{}').get('mfa') or '')
+        except ValueError:
+            s['mfa_pending'] = ''
+    return {'users': users, 'mfa_on': bool(CONFIG.get('admin_2fa')), 'mfa_methods': mfa_methods(),
+            'sessions': sessions,
             'linux': linux_accounts(), 'me_sid': c.who.get('_sid'), 'default_run_as': CONFIG.get('default_run_as')}
 
 
@@ -2773,12 +4888,21 @@ def api_users_do(c):
     elif do == 'end':
         c.daemon.store.x('DELETE FROM sessions WHERE id=?', (str(b.get('sid') or ''),))
         c.daemon.store.add_event('sign-in', '%s ended a sign-in of %s' % (c.name, name or '?'), 'info', who=c.name)
+    elif do == 'mfa_reset':
+        if not c.daemon.store.user(name):
+            raise Refused('no such account', 404)
+        had = mfa_reset(c.daemon.store, name, c.name)
+        # Its sign-ins end: the next one sets a second step up again.
+        if name != c.name:
+            c.daemon.store.x('DELETE FROM sessions WHERE name=?', (name,))
+        return {'message': 'reset - %s sets the second step up again at the next sign-in' % name
+                if had else '%s had no second step set up' % name}
     elif do == 'linux':
         linux_add(str(b.get('run_as') or ''), bool(b.get('sudo')))
         c.daemon.store.add_event('accounts', '%s made the Linux account %s' % (c.name, b.get('run_as')), 'warn',
                                  who=c.name)
     else:
-        raise Refused('add, edit, drop, password, end or linux')
+        raise Refused('add, edit, drop, password, end, mfa_reset or linux')
     return {}
 
 
@@ -4021,6 +6145,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail(401, 'not signed in')
         body = self.body_json() if method == 'POST' else {}
         c = Ctx(d, who, body, urllib.parse.parse_qs(u.query), ip, token)
+        if who and who.get('_mfa') and u.path not in MFA_ALLOWED:
+            return self.fail(403, 'give the second step of signing in first')
         if who and who['must_change'] and u.path not in ('/api/auth/password', '/api/auth/whoami',
                                                          '/api/auth/logout', '/api/status', '/api/auth/prefs'):
             return self.fail(403, 'change your password first')
@@ -4046,6 +6172,8 @@ class Handler(BaseHTTPRequestHandler):
         who = self.daemon.auth.who(token)
         if not who:
             raise Refused('not signed in', 401)
+        if who.get('_mfa'):
+            raise Refused('give the second step of signing in first', 403)
         if who['must_change']:
             raise Refused('change your password first', 403)
         return who
@@ -4248,6 +6376,7 @@ class Daemon:
         self.started = time.time()
         self.osup_checking = False
         self.stop = threading.Event()
+        self.notifying = threading.Lock()
 
     def write_token(self):
         RUN_DIR.mkdir(parents=True, exist_ok=True)
@@ -4294,8 +6423,17 @@ class Daemon:
                             (STATE_DIR / 'first-login.txt').unlink()
                 if n % 20 == 2:
                     self.upgrades.tick()
+                if n % 4 == 3 and not self.notifying.locked():
+                    threading.Thread(target=self.notify_once, daemon=True).start()
             except Exception as e:                      # noqa: BLE001
                 log_sparing('house', 'housekeeping: %s\n%s' % (e, traceback.format_exc()))
+
+    def notify_once(self):
+        with self.notifying:
+            try:
+                notify_tick(self.store)
+            except Exception as e:                      # noqa: BLE001
+                log_sparing('notify', 'the notices: %s' % e)
 
     def run(self):
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -4717,7 +6855,6 @@ def help_text(parser, pal):
 # ! opens a shell and comes back when it is closed. Coloured with colorama
 # when present.
 import textwrap  # noqa: E402
-import collections  # noqa: E402
 
 
 class ConsoleBack(Exception):
@@ -7172,6 +9309,13 @@ def build_parser():
     g.add_argument('--set-run-as', nargs=2, metavar=('NAME', 'ACCOUNT'),
                    help='the Linux account its terminals run as (- for the default)')
     g.add_argument('--end-sign-ins', metavar='NAME', help='every sign-in of an account ended')
+    g.add_argument('--admin-2fa', choices=('status', 'on', 'off'), metavar='status|on|off',
+                   help='the second step of signing in, for everybody: how it stands, on or off')
+    g.add_argument('--reset-2fa', metavar='NAME', help='the second step of an account taken away (set up again)')
+    g.add_argument('--lockouts', action='store_true', help='who is locked out, or counted, after wrong passwords')
+    g.add_argument('--unlock', metavar='WHO|all', help='a lockout cleared: an address, a name, or all')
+    g = p.add_argument_group('MAIL')
+    g.add_argument('--mail-test', metavar='ADDRESS', help='a test mail sent, every step shown')
     g = p.add_argument_group('SETTINGS')
     g.add_argument('--settings', action='store_true', help='every setting and its value')
     g.add_argument('--set', action='append', metavar='KEY=VALUE', default=[],
@@ -7631,6 +9775,65 @@ def cli_main(argv):
             auth.edit_user(name, 'the command line', run_as='' if acct == '-' else acct)
             print(pal.ok_line('the terminals of %s run as %s' % (name, 'the default' if acct == '-' else acct)))
             return 0
+        if a.admin_2fa:
+            if a.admin_2fa != 'status':
+                on = a.admin_2fa == 'on'
+                st.set_setting('admin_2fa', on, 'the command line')
+                CONFIG['admin_2fa'] = on
+                if on:
+                    n = st.x('DELETE FROM sessions')
+                    print(pal.warn_line('%d sign-in(s) ended: each gives its second step now' % n))
+                st.add_event('settings', 'the command line switched the second step of signing in %s'
+                             % ('on' if on else 'off'), 'warn')
+            mfa = mfa_all(st)
+            have = [u['name'] for u in st.users() if u['name'].lower() in mfa]
+            if a.json:
+                say_json({'admin_2fa': bool(CONFIG.get('admin_2fa')), 'ways': mfa_methods(), 'set_up': have})
+                return 0
+            print(pal.ok_line('the second step of signing in is %s%s' % (
+                'ON' if CONFIG.get('admin_2fa') else 'off',
+                (' - offered: %s' % ', '.join(mfa_methods())) if CONFIG.get('admin_2fa') else '')))
+            print('set up: %s' % (', '.join('%s (%s)' % (n, mfa[n.lower()]['kind']) for n in have) or 'nobody'))
+            return 0
+        if a.reset_2fa:
+            if not st.user(a.reset_2fa):
+                raise Refused('there is no account %s' % a.reset_2fa)
+            had = mfa_reset(st, a.reset_2fa, 'the command line')
+            st.x('DELETE FROM sessions WHERE name=?', (a.reset_2fa,))
+            print(pal.ok_line('%s: %s' % (a.reset_2fa, 'reset - set up again at the next sign-in' if had
+                                          else 'no second step was set up')))
+            return 0
+        if a.lockouts:
+            rows = lockouts_view(st)
+            if a.json:
+                say_json({'lockouts': rows})
+                return 0
+            if not rows:
+                print(pal.ok_line('nobody is locked out, and no wrong attempt is being counted'))
+                return 0
+            now = time.time()
+            print(table([[r['who'], r['by'], 'LOCKED %d min' % max(1, int((r['until'] - now) // 60 + 1))
+                          if r['locked'] else 'counting', '%d/%d' % (r['fails'], r['limit']),
+                          when(r['first'])] for r in rows], ['who', 'by', 'state', 'wrong', 'since']))
+            return 0
+        if a.unlock:
+            keys = None if a.unlock == 'all' else ['ip:' + a.unlock, 'name:' + a.unlock.lower()]
+            n = lockouts_clear(st, keys, 'the command line')
+            print(pal.ok_line('cleared: %d' % n) if n else pal.warn_line('nothing was counted for %s' % a.unlock))
+            return 0
+        if a.mail_test:
+            to = mail_checked(a.mail_test)
+            subject, body = mail_words('test')
+            try:
+                steps = mail_send(st, mail_message([to], subject, body), [to])
+                ok = True
+            except MailError as e:
+                steps, ok = e.steps, False
+                err = str(e)
+            for s in steps:
+                print((pal.ok_line if s.get('ok') else pal.bad_line)('%s%s' % (s['what'], (' - ' + s['said']) if s.get('said') else '')))
+            print(pal.ok_line('sent to %s' % to) if ok else pal.bad_line('not sent: %s' % err))
+            return 0 if ok else 1
         if a.end_sign_ins:
             n = st.x('DELETE FROM sessions WHERE name=?', (a.end_sign_ins,))
             print(pal.ok_line('%d sign-in(s) of %s ended' % (n, a.end_sign_ins)))
@@ -7668,7 +9871,10 @@ def cli_main(argv):
                     v = os.environ.get('AI_VALUE_' + k.upper(), '')
                 if SCHEMA_KEYS[k][2] == 'bool':
                     v = v.lower() in ('1', 'true', 'on', 'yes', 'ano')
-                st.set_setting(k, setting_value(k, v), 'the command line')
+                nv = setting_value(k, v)
+                if SCHEMA_KEYS[k][2] == 'password' and nv:
+                    nv = seal_secret(nv, 'setting:' + k)
+                st.set_setting(k, nv, 'the command line')
                 print(pal.ok_line('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(v))))
             st.add_event('settings', 'the command line changed: %s' % ', '.join(s.split('=')[0] for s in sets), 'info')
             print(pal.dim('  the running daemon takes it within a minute'))
