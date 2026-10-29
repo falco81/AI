@@ -33,7 +33,7 @@ To see what it would do without doing it: `sudo ./install.sh --dry-run`.
 | its root parts | `/usr/local/lib/ai/ai_os.py` (clock, SSH keys, updates), `ai_upgrade.py` (new versions) |
 | the release keys it trusts | `/usr/local/lib/ai/release-keys/` |
 | what it is set up with | `/etc/ai/config.json` - what is saved on the pages lives in the database and wins |
-| everything it records | `/var/lib/ai/ai.db` (SQLite) |
+| everything it records | `/var/lib/ai/ai.db` (SQLite), or MariaDB or PostgreSQL (Settings → The database) |
 | the terminals' tmux sockets | `/var/lib/ai/tmux/<account>/sock` |
 | its own log | `/var/log/ai/ai.log` |
 | the API token the page uses | `/run/ai/api-token` (group `ai-web`) |
@@ -61,6 +61,8 @@ pages a strong password and keep them on your own networks (`--allow`).
 --port N               the daemon's API port on 127.0.0.1 (default 9871)
 --php-stream X.Y       the AppStream PHP stream for a machine with no PHP yet (8.3)
 --no-php-update        leave PHP as it is
+--with-db ENGINE       put in what MariaDB or PostgreSQL needs (mariadb, postgres) beforehand
+--no-db-restart        do not let the pages restart PostgreSQL after tuning it
 --upgrade              replace the program and the pages, restart; keep the rest
 --rewrite-nginx        write the nginx file afresh
 --uninstall            remove the service and the pages; keep the data (asks)

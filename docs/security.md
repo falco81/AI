@@ -55,14 +55,24 @@ most once every `notify_gap_min` minutes, the rest together in the next one.
 
 ## SMS
 
-*Settings → SMS*: an HTTP gateway (its URL, method, body, headers and key),
+*Settings → Codes by e-mail and SMS*: an HTTP gateway (its URL, method, body, headers and key),
 a GSM modem on this machine (a file into the spool of smstools3 or
 gammu-smsd), or a Teltonika gateway (TRB140, RUT…) through RutOS's API, its
 certificate read from it and trusted with a click.
 
-*Settings → Message texts* holds every word that goes out, in Czech and
-English; *Settings → Outgoing mail* lists every mail and SMS sent - where, what
-it was, what the other side said - never what it held.
+*Settings → Message texts* holds every word of the mails and the SMS of a
+code, in Czech and English, edited as otp's are: written into the mail as it
+arrives (bold, italic, a colour, a link), the parts filled in when it is sent
+as blue chips, previewed, sent as a sample, put back as it comes. A mail of a
+code is HTML with a plain-text part (or plain text only: `code_mail_fmt`).
+
+*Settings → Outgoing mail* is otp's: every mail goes through it - tried at
+once, and what the receiving side does not take yet (greylisting, a server
+away, a full mailbox) tried again by itself, for `mail_retry_hours` (a code
+only while it is good); refused for good it is shown as failed. Sent again or
+taken out by hand, searched by field (`to:*@example.cz state:waiting
+tries:>2`); the list is kept `mail_keep_days`. What a mail held is sealed while
+it waits and thrown away once it went. An SMS sent is written into the events.
 
 ## The certificate and TLS
 

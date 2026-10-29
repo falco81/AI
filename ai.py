@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -7190,7 +7190,7 @@ def online_list(url):
 # one that reads what the newer versions wrote into the database the same and
 # has every security fix that matters. Each version says how far back it may
 # go (DOWNGRADE_FLOOR); the highest of what ran on this database counts.
-DOWNGRADE_FLOOR = '1.0.4'
+DOWNGRADE_FLOOR = '1.0.6'
 
 
 def downgrade_floor(store):
@@ -17587,7 +17587,7 @@ def build_parser():
     g.add_argument('--db-copy', '--backup', action='store_true', dest='db_copy',
                    help='a copy of the database now (any engine takes it back), its key beside it')
     g.add_argument('--dump', action='store_true', help='with --db-copy: a dump by the engine\'s own program too')
-    g.add_argument('--db-copies', action='store_true', help='the copies kept in /var/lib/ai/copies')
+    g.add_argument('--db-copies', action='store_true', help='the copies and the dumps kept (/var/lib/ai/backups, /var/lib/ai/dumps)')
     g.add_argument('--db-restore', '--restore', metavar='FILE', dest='db_restore',
                    help='a copy put back (everything replaced; --yes)')
     g.add_argument('--tidy', action='store_true', help='delete what has been kept long enough (events, sign-ins, copies)')

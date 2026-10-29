@@ -1452,6 +1452,203 @@ STRINGS = {
         'Skončí všechna vaše přihlášení – zde i na všech ostatních počítačích. Terminály běží dál.',
     'signed out - the terminal goes on running':
         'odhlášeno – terminál běží dál',
+    # ---- 1.0.6: the database, the outgoing mail, the texts, the upgrades as otp's ----
+    'Put this one back, without downloading it and uploading it again: everything in the live database is replaced by what is in this file. You are shown what is in it and asked first, and a copy of what is being replaced is made before anything changes.':
+        'Vrátit tento soubor bez stahování a nového nahrávání: všechno v živé databázi se nahradí tím, co je v tomto souboru. Nejdřív se ukáže, co v něm je, a zeptá se vás, a než se cokoli změní, udělá se kopie toho, co se nahrazuje.',
+    'Codes of the second step of signing in sent by e-mail or SMS: how long they last, how many, and the SMS gateway.':
+        'Kódy druhého kroku přihlášení posílané e-mailem nebo SMS: jak dlouho platí, kolik jich smí přijít a SMS brána.',
+    'Every mail sent - a code to sign in with, a notice, a test - and what became of it: sent, waiting for another try (greylisting, a server away), failed. Sent again or taken away by hand.':
+        'Každý odeslaný e-mail – kód pro přihlášení, upozornění, zkouška – a co se s ním stalo: odesláno, čeká na další pokus (greylisting, nedostupný server), selhalo. Ručně odeslat znovu nebo odebrat.',
+    'a sample sign-in code':
+        'ukázkový kód pro přihlášení',
+    'a sample address check':
+        'ukázkové ověření adresy',
+    'What people get from this server - the mails and the SMS of a code, in Czech and English. Click into a text to write; the blue parts are filled in when it is sent.':
+        'Co lidé od tohoto serveru dostávají – e-maily a SMS s kódem, česky i anglicky. Klikněte do textu a pište; modré části se doplní při odeslání.',
+    'Every mail this server sends - a code to sign in with, a code to check an address, the notices, a test - goes through here. What the receiving side does not take at once (greylisting\'s "try again later", a server away, a full mailbox) waits and is tried again by itself; what it refuses for good is shown as failed. What a mail held is never kept once it went. The SMS are in the events.':
+        'Každý e-mail, který tento server posílá – kód pro přihlášení, kód pro ověření adresy, upozornění, zkouška – jde tudy. Co přijímající strana hned nevezme („zkuste to později“ u greylistingu, nedostupný server, plná schránka), čeká a zkouší se znovu samo; co odmítne natrvalo, je vidět jako selhané. Obsah e-mailu se po odeslání nikdy neuchovává. SMS jsou v událostech.',
+    'The second step of signing in may be a code sent after the password, instead of the app (Settings → Accounts → The second step of signing in). E-mail goes the way set under Mail; SMS through a gateway or a modem set up here.':
+        'Druhým krokem přihlášení může být kód poslaný po hesle místo aplikace (Nastavení → Účty → Druhý krok přihlášení). E-mail jde tak, jak je nastaveno v Poště; SMS přes bránu nebo modem nastavené zde.',
+    'One database holds everything: the accounts and their sign-ins, the settings, the events, the mails sent and the list of terminals. It is a file on this machine unless you say otherwise. The secrets in it are sealed with a key kept beside it, in the state folder - and every copy and every dump is kept with that key beside it.':
+        'Všechno drží jedna databáze: účty a jejich přihlášení, nastavení, události, odeslanou poštu a seznam terminálů. Je to soubor na tomto stroji, pokud neurčíte jinak. Tajné údaje v ní jsou zapečetěné klíčem uloženým vedle ní ve složce stavu – a každá kopie a každý dump se uchovává s tímto klíčem vedle sebe.',
+    'A dump from somewhere else — one downloaded from here, or a file copied off the dumps folder. It replaces everything: every account, every event, every setting and every terminal. Nothing happens until it has been read, checked and shown to you.':
+        'Dump odjinud – stažený odsud nebo soubor zkopírovaný ze složky dumpů. Nahradí všechno: každý účet, každou událost, každé nastavení a každý terminál. Nic se nestane, dokud nebude přečten, zkontrolován a ukázán vám.',
+    'Copy everything that is here into that database: every account, every event, every setting and every terminal. What is here is left exactly as it is.':
+        'Zkopírovat všechno, co je tady, do té databáze: každý účet, každou událost, každé nastavení a každý terminál. Co je tady, zůstane přesně tak, jak je.',
+    'Make a copy now and save it to the machine you are sitting at, with the key that opens the secrets inside it. Nothing is kept here.':
+        'Udělat kopii hned a uložit ji do počítače, u kterého sedíte, s klíčem, který otevírá tajné údaje v ní. Tady se nic neuchová.',
+    'Throws away exactly what the "keep for" numbers already say is too old — the events and the lines of the mails sent, each by its own number of days. It happens by itself every hour; this is the same thing, now. Lowering one of those numbers deletes nothing by itself: this is what does it.':
+        'Zahodí přesně to, co čísla „uchovávat“ už označují za příliš staré – události a řádky odeslané pošty, každé podle vlastního počtu dní. Děje se to samo každou hodinu; tohle je totéž hned. Snížení některého z čísel samo nic nesmaže: smaže to až tohle.',
+    'Forgets the events and the lines of the mails sent older than an age you choose here, whatever the "keep for" numbers say. Only those two kinds of record: the accounts, the terminals and the settings are not touched.':
+        'Zapomene události a řádky odeslané pošty starší, než zde zvolíte, bez ohledu na čísla „uchovávat“. Jen tyto dva druhy záznamů: účtů, terminálů a nastavení se to nedotkne.',
+    'A database from somewhere else — one downloaded from here, or a file copied off the backups folder. It replaces everything: every account, every event, every setting and every terminal. Nothing happens until it has been read, checked and shown to you.':
+        'Databáze odjinud – stažená odsud nebo soubor zkopírovaný ze složky záloh. Nahradí všechno: každý účet, každou událost, každé nastavení a každý terminál. Nic se nestane, dokud nebude přečtena, zkontrolována a ukázána vám.',
+    'The accounts, the terminals and every setting are never touched by this.':
+        'Účtů, terminálů a žádného nastavení se to nikdy nedotkne.',
+    'They are not options you could tick by mistake: they are not in the list at all.':
+        'Nejsou to volby, které byste mohli omylem zaškrtnout: v seznamu vůbec nejsou.',
+    'A new version put in from here: send the package, or take it from the web, and this server is upgraded - checked first, then its own install.sh --upgrade, as by hand. The terminals go on running; these pages come back after a few seconds. The command line (install.sh --upgrade) works as it always has.':
+        'Nová verze nasazená odsud: pošlete balík nebo ho vezměte z webu a tento server se upgraduje – nejdřív kontrola, pak jeho vlastní install.sh --upgrade, jako ručně. Terminály běží dál; tyto stránky se vrátí za pár sekund. Příkazová řádka (install.sh --upgrade) funguje jako vždy.',
+    "The version it runs and how it is. An upgrade does not stop the terminals: tmux is not the daemon's, and the daemon finds them again when it starts.":
+        'Verze, kterou běží, a jak na tom je. Upgrade terminály nezastaví: tmux nepatří démonovi a démon je po startu znovu najde.',
+    'Where new versions are published - the address below - is looked at once a day. A newer ai found there is offered here, and put in with one click: fetched, its signature checked like a package sent by hand, then this server upgraded. Nothing is put in by itself unless the setting below says so.':
+        'Místo, kde vycházejí nové verze – adresa níže – se prohlíží jednou denně. Novější ai, které se tam najde, se nabídne zde a nasadí jedním kliknutím: stáhne se, podpis se zkontroluje jako u balíku poslaného ručně a pak se tento server upgraduje. Samo se nic nenasadí, pokud to neříká nastavení níže.',
+    'The .tar.gz of a new ai, as it was released. It is checked before anything else: it must be signed by a release key this server trusts, every file in it must be the one signed, and it must not be older than what runs here (unless going back is allowed, and then only to a safe version). Root checks it all again before it is put in.':
+        '.tar.gz nového ai tak, jak vyšlo. Nejdřív se zkontroluje: musí být podepsané klíčem vydání, kterému tento server věří, každý soubor v něm musí být ten podepsaný a nesmí být starší než to, co tu běží (pokud není povolen návrat, a pak jen na bezpečnou verzi). Root to celé zkontroluje znovu, než se nasadí.',
+    "Only to a version that is safe: one that reads what the newer versions wrote into the database the same, and has every security fix that matters - each version says how far back it may go, and the highest of what ran on this database counts. The database is not put back nor changed: its tables stay as they are and the older version runs on them (a copy of it is made first). The package is checked like an upgrade's before anything is put in.":
+        'Jen na verzi, která je bezpečná: takovou, která čte, co novější verze zapsaly do databáze, stejně, a má každou opravu bezpečnosti, na které záleží – každá verze říká, jak daleko zpět smí, a platí nejvyšší z toho, co na této databázi běželo. Databáze se nevrací ani nemění: její tabulky zůstanou, jak jsou, a starší verze na nich běží (předtím se udělá její kopie). Balík se před nasazením zkontroluje jako při upgradu.',
+    'The output of install.sh, the last time this server was upgraded from these pages.':
+        'Výstup install.sh při posledním upgradu tohoto serveru z těchto stránek.',
+    'The same, by hand, as root:':
+        'Totéž ručně, jako root:',
+    'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL server. Kept in config.json, not in the database - changed only by the steps of the card below (try it, set it up, carry everything across, start using it).':
+        'V jaké databázi je všechno uloženo: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL. Uloženo v config.json, ne v databázi – mění se jen kroky karty níže (vyzkoušet, nastavit, přenést všechno, začít používat).',
+    'Its name or address. Empty: this machine.':
+        'Jeho jméno nebo adresa. Prázdné: tento stroj.',
+    "0: the engine's own (3306, 5432).":
+        '0: výchozí enginu (3306, 5432).',
+    'Letters, digits and _ only.':
+        'Jen písmena, číslice a _.',
+    'Kept in config.json (root only). Set it up makes one.':
+        'Uloženo v config.json (jen pro roota). Nastavit… ho vytvoří.',
+    'How long a connection is waited for.':
+        'Jak dlouho se čeká na spojení.',
+    'How the connection to the server is encrypted.':
+        'Jak je spojení se serverem šifrované.',
+    'A PEM file on this machine.':
+        'Soubor PEM na tomto stroji.',
+    "A copy of everything - every row of every table, in a shape any of the three engines takes back - with the key its secrets are sealed with beside it, into /var/lib/ai/backups; and a dump by the engine's own program into /var/lib/ai/dumps.":
+        'Kopie všeho – každý řádek každé tabulky ve tvaru, který vezme zpět kterýkoli ze tří enginů – s klíčem, kterým jsou zapečetěné její tajné údaje, vedle sebe do /var/lib/ai/backups; a dump vlastním programem enginu do /var/lib/ai/dumps.',
+    'Of each kind; older ones are taken away.':
+        'Od každého druhu; starší se odeberou.',
+    'Going back to an older version on these pages - only to one that is safe on this database. Off: the card is not shown, and ai --downgrade alone does it.':
+        'Návrat ke starší verzi na těchto stránkách – jen k té, která je na této databázi bezpečná. Vypnuto: karta se neukáže a dělá to jen ai --downgrade.',
+    'The language of a mail or SMS with a code, where the page it was asked from says none.':
+        'Jazyk e-mailu nebo SMS s kódem, pokud stránka, odkud se o něj žádalo, žádný neuvádí.',
+    'A mail the other side did not take yet (greylisting, a server away, a full mailbox) is tried again by itself, ever less often, for this long; then it is given up.':
+        'E-mail, který druhá strana zatím nevzala (greylisting, nedostupný server, plná schránka), se zkouší znovu sám, stále méně často, po tuto dobu; pak se vzdá.',
+    'Outgoing mail lists what went and what did not; what a mail held is never kept once it went.':
+        'Odchozí pošta ukazuje, co odešlo a co ne; obsah e-mailu se po odeslání nikdy neuchovává.',
+    'Wait for it (s)':
+        'Čekat na ni (s)',
+    'Encrypted':
+        'Šifrováno',
+    'as the driver decides':
+        'jak rozhodne ovladač',
+    'encrypted, the certificate not checked':
+        'šifrovaně, certifikát se nekontroluje',
+    'encrypted, signed by the authority below':
+        'šifrovaně, podepsáno autoritou níže',
+    'encrypted, the authority and the name checked':
+        'šifrovaně, kontroluje se autorita i jméno',
+    'The authority of its certificate (a file)':
+        'Autorita jeho certifikátu (soubor)',
+    'HTML - with the plain text beside it':
+        'HTML – s prostým textem vedle',
+    'Kept in the database: they go with every copy of it, and to another engine with it.':
+        'Uloženo v databázi: jdou s každou její kopií a s ní i do jiného enginu.',
+    'Sent when somebody signs in to these pages with the second step by mail.':
+        'Posílá se, když se někdo přihlašuje na tyto stránky s druhým krokem e-mailem.',
+    'Used instead of the texts above when there is no name or account to put in.':
+        'Použije se místo textů výše, když není jméno ani účet k doplnění.',
+    'What a mail program shows that does not show HTML, and what is sent alone when Settings → Codes by e-mail and SMS says a mail with a code is plain text.':
+        'Co ukáže poštovní program, který neumí HTML, a co se posílá samo, když Nastavení → Kódy e-mailem a SMS říká, že e-mail s kódem je prostý text.',
+    'Save this copy to the machine you are sitting at - with the key that opens its secrets, locked with a passphrase you give, or without it.':
+        'Uložit tuto kopii do počítače, u kterého sedíte – s klíčem, který otevírá její tajné údaje, zamčeným heslovou frází, kterou zadáte, nebo bez něj.',
+    'Save this dump to the machine you are sitting at - with the key that opens its secrets, locked with a passphrase you give, or without it.':
+        'Uložit tento dump do počítače, u kterého sedíte – s klíčem, který otevírá jeho tajné údaje, zamčeným heslovou frází, kterou zadáte, nebo bez něj.',
+    'This dump was taken off a different engine from the one this installation is on now, so it cannot be put back here. Put that engine back on, or use a copy — a copy goes into any of the three.':
+        'Tento dump pochází z jiného enginu, než na kterém je tato instalace teď, takže ho sem vrátit nejde. Vraťte ten engine, nebo použijte kopii – kopie jde do kteréhokoli ze tří.',
+    'MariaDB: the driver is installed':
+        'MariaDB: ovladač je nainstalovaný',
+    'PostgreSQL: the driver is installed':
+        'PostgreSQL: ovladač je nainstalovaný',
+    'terminals':
+        'terminály',
+    'wrong passwords counted':
+        'počítaná chybná hesla',
+    'mails waiting to go':
+        'pošta čekající na odeslání',
+    'The key that opens the secrets:':
+        'Klíč, který otevírá tajné údaje:',
+    'The key that opens the secrets is MISSING:':
+        'Klíč, který otevírá tajné údaje, CHYBÍ:',
+    'what this program noted about itself: sign-ins, terminals started and ended, changes, copies, starts and stops.':
+        'co si tento program zapsal o sobě: přihlášení, spuštěné a ukončené terminály, změny, kopie, starty a zastavení.',
+    'the outgoing mail':
+        'odchozí pošta',
+    'every mail sent or waiting, where it went and what the other side said. One still waiting is not sent any more.':
+        'každý odeslaný nebo čekající e-mail, kam šel a co řekla druhá strana. Čekající se už neodešle.',
+    'the ended terminals':
+        'ukončené terminály',
+    'the list of terminals that have ended, with their last screens. Running ones are not touched.':
+        'seznam ukončených terminálů s jejich poslední obrazovkou. Běžících se to nedotkne.',
+    'One file that is all of it: the copy and the key that opens its secrets, locked with the passphrase below. Put back here or on another machine (Put a copy back), the passphrase opens the key again. Lost, the key in the file is lost with it - it is not kept anywhere.':
+        'Jeden soubor, ve kterém je všechno: kopie a klíč k jejím tajným údajům, zamčený heslovou frází níže. Při vrácení tady nebo na jiném stroji (Obnovit kopii) fráze klíč zase otevře. Ztratí-li se, je ztracen i klíč v souboru – nikde jinde se neuchovává.',
+    'The copy alone opens no secret on another machine: the key is the .key file beside it in /var/lib/ai/backups (or /var/lib/ai/secrets.key). Keep the two together.':
+        'Kopie sama na jiném stroji žádný tajný údaj neotevře: klíčem je soubor .key vedle ní v /var/lib/ai/backups (nebo /var/lib/ai/secrets.key). Držte je pohromadě.',
+    'One file that is all of it: the dump and the key that opens its secrets, locked with the passphrase below. Put back here or on another machine (Put a dump back), the passphrase opens the key again. Lost, the key in the file is lost with it - it is not kept anywhere.':
+        'Jeden soubor, ve kterém je všechno: dump a klíč k jeho tajným údajům, zamčený heslovou frází níže. Při vrácení tady nebo na jiném stroji (Obnovit dump) fráze klíč zase otevře. Ztratí-li se, je ztracen i klíč v souboru – nikde jinde se neuchovává.',
+    'The dump alone opens no secret on another machine: the key is the .key file beside it in /var/lib/ai/dumps (or /var/lib/ai/secrets.key). Keep the two together.':
+        'Dump sám na jiném stroji žádný tajný údaj neotevře: klíčem je soubor .key vedle něj v /var/lib/ai/dumps (nebo /var/lib/ai/secrets.key). Držte je pohromadě.',
+    'The events and the lines of the mails sent older than this are deleted now, whatever the keep-for numbers say. The accounts, the settings and the terminals are not touched.':
+        'Události a řádky odeslané pošty starší než toto se smažou hned, bez ohledu na čísla „uchovávat“. Účtů, nastavení a terminálů se to nedotkne.',
+    'Each table is rebuilt and held shut while it is; sign-ins and the pages wait for it meanwhile - do it when few are signed in. It needs room for a second copy of the biggest table. Worth doing after throwing a lot away, and not otherwise.':
+        'Každá tabulka se přestaví a po tu dobu je zavřená; přihlašování a stránky na ni mezitím čekají – dělejte to, když je přihlášeno málo lidí. Potřebuje místo na druhou kopii největší tabulky. Vyplatí se po zahození většího množství dat, jinak ne.',
+    'Administrators':
+        'Administrátoři',
+    'You will probably be signed out: who is signed in came with the file like everything else. The key that opens the secrets is taken from beside the file, or from inside a downloaded copy; where there is none, the key in use stays.':
+        'Pravděpodobně budete odhlášeni: kdo je přihlášen, přišlo se souborem jako všechno ostatní. Klíč k tajným údajům se vezme zpoza souboru nebo ze stažené kopie; kde žádný není, zůstane klíč, který se používá.',
+    'The accounts, the terminals and every setting are not touched.':
+        'Účtů, terminálů ani nastavení se to nedotkne.',
+    'Sent when somebody sets up the second step by mail, to check the address.':
+        'Posílá se, když si někdo nastavuje druhý krok e-mailem, k ověření adresy.',
+    'The mail as it is written now - saved or not - with sample values (a code that opens nothing, a name), to one address.':
+        'E-mail tak, jak je teď napsaný – uložený nebo ne – s ukázkovými hodnotami (kód, který nic neotevře, jméno), na jednu adresu.',
+    'Sent when somebody signs in to these pages with the second step by SMS.':
+        'Posílá se, když se někdo přihlašuje na tyto stránky s druhým krokem přes SMS.',
+    'Sent when somebody sets up the second step by SMS, to check the number.':
+        'Posílá se, když si někdo nastavuje druhý krok přes SMS, k ověření čísla.',
+    'too old':
+        'příliš stará',
+    'The sign-in code by mail':
+        'Kód pro přihlášení e-mailem',
+    'The sign-in code by SMS':
+        'Kód pro přihlášení přes SMS',
+    'Upgrades and maintenance':
+        'Upgrady a údržba',
+    'Upgrade this server':
+        'Upgradovat tento server',
+    'Go back on this server':
+        'Vrátit tento server',
+    'Drop the ai-X.Y.Z.tar.gz here, or press to choose it':
+        'Sem přetáhněte ai-X.Y.Z.tar.gz, nebo klikněte a vyberte ho',
+    'What root said last':
+        'Co naposledy řekl root',
+    'Show the versions to go back to':
+        'Ukázat verze, ke kterým se lze vrátit',
+    'What changed':
+        'Co se změnilo',
+    'a code to sign in':
+        'kód pro přihlášení',
+    'a code to check an address':
+        'kód pro ověření adresy',
+    'notices':
+        'upozornění',
+    'a test':
+        'zkouška',
+    'a mail':
+        'e-mail',
+    'The daemon is starting again with the new version - asking again…':
+        'Démon startuje znovu s novou verzí – ptám se znovu…',
+    'Kept in the database:':
+        'Uloženo v databázi:',
+    'Send every waiting one now':
+        'Odeslat všechny čekající hned',
+    'waiting for another try':
+        'čeká na další pokus',
+    'given up':
+        'vzdáno',
 }
 
 PATTERNS = {
@@ -1611,6 +1808,19 @@ PATTERNS = {
         'to je mimo složku tohoto chatu ({0})',
     'What runs in it now is ended and started afresh in the same folder{0}':
         'Co v něm teď běží, se ukončí a spustí znovu ve stejné složce{0}',
+    # ---- 1.0.6: the database, the outgoing mail, the texts, the upgrades as otp's ----
+    'older than {0}, the oldest that is safe on this database: what the newer versions wrote into it would not be read the same, or a security fix would be lost':
+        'starší než {0}, nejstarší bezpečná na této databázi: to, co do ní zapsaly novější verze, by se nečetlo stejně, nebo by se ztratila oprava bezpečnosti',
+    '{0} older version(s) it may not go back to - below {1}':
+        '{0} {0:starší verze, ke které se vrátit nesmí|starší verze, ke kterým se vrátit nesmí|starších verzí, ke kterým se vrátit nesmí} – pod {1}',
+    '{0}: the outgoing mail has no such field - it has {1}':
+        '{0}: odchozí pošta takové pole nemá – má {1}',
+    'The file {0} and the key beside it are deleted from this machine. The live database is not touched, and the others stay where they are.':
+        'Soubor {0} a klíč vedle něj se z tohoto stroje smažou. Živé databáze se to nedotkne a ostatní zůstanou, kde jsou.',
+    'A mail to {0}':
+        'E-mail pro {0}',
+    'They are files on this machine, under {0}, each with the key that opens its secrets beside it. Copy them off it if they are to survive the machine.':
+        'Jsou to soubory na tomto stroji v {0}, každý s klíčem k jeho tajným údajům vedle sebe. Zkopírujte je jinam, pokud mají stroj přežít.',
 }
 
 RICH = {
@@ -1631,4 +1841,7 @@ RICH = {
         'Každou tabulku na těchto stránkách si můžete uspořádat podle sebe. Klikněte na své jméno vpravo nahoře a zapněte <b>Upravit sloupce</b>; pak tažením okraje záhlaví sloupec rozšíříte nebo zúžíte a tažením samotného záhlaví ho přesunete. Pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo. Dvojklik na okraj vrátí šířky té tabulky. Každá změna se uloží k vašemu účtu v okamžiku, kdy pustíte – ne v tomto prohlížeči – a vrátí se, ať se přihlásíte kdekoli; tabulky nikoho jiného se nezmění. Přepínač platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení ho vypne a sloupce zůstanou, jak jste je nechali.',
     '<b>Edit the columns</b><br>While this is on, the edge of any column’s heading can be dragged to size it and the heading itself to move it, and the right button on a heading hides a column, brings a hidden one back or adds an empty one for room; each change is kept the moment you let go. It is for this sign-in only: signing out or the sign-in running out turns it off again. Off, the tables are drawn as you left them and nothing can move them.':
         '<b>Upravit sloupce</b><br>Dokud je to zapnuté, okraj záhlaví kteréhokoli sloupce jde tažením zúžit či rozšířit a samotné záhlaví přesunout; pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo; každá změna se uloží, jakmile pustíte. Platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení to vypne. Vypnuté se tabulky kreslí, jak jste je nechali, a nic s nimi nepohne.',
+    # ---- 1.0.6: the database, the outgoing mail, the texts, the upgrades as otp's ----
+    'Put <b>this</b> one back, without downloading it and uploading it again: everything in the live database is replaced by what is in this file. You are shown what is in it and asked first, and a copy of what is being replaced is made before anything changes.':
+        'Vrátit <b>tento</b> soubor bez stahování a nového nahrávání: všechno v živé databázi se nahradí tím, co je v tomto souboru. Nejdřív se ukáže, co v něm je, a zeptá se vás, a než se cokoli změní, udělá se kopie toho, co se nahrazuje.',
 }

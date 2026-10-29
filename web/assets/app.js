@@ -6160,6 +6160,7 @@ if ($('mq-q')) {
    arrives - its texts written into where they stand; what is filled in when
    it is sent stands in blue chips. Saved in the database.
    ========================================================================== */
+var MODAL_GO = null;
 var TX = {data: null, id: null, lang: 'cs', dirty: {}, eds: {}, active: null, range: null, frame: null};
 var TX_KINDS = [['mail', 'E-mails', 'mail'], ['sms', 'SMS', 'phone']];
 var TX_COLORS = ['#111827', '#1d4ed8', '#b91c1c', '#15803d', '#b45309', '#7c3aed', '#6b7280'];

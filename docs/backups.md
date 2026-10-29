@@ -1,21 +1,70 @@
 # Copies, backups and putting them back
 
-## Copies of the database
+## The database
 
-One SQLite file, `/var/lib/ai/ai.db`, holds everything of this program: the
-accounts and their second step, the settings, the events, the list of
-terminals, the certificate and TLS of the pages, the firewall. Every night at
-`db_copy_hour` a copy is made with SQLite's own backup (consistent while in
-use), packed with the key its secrets are sealed with and `config.json`, into
-`/var/lib/ai/copies`; the newest `db_copy_keep` are kept.
+One database holds everything of this program: the accounts and their second
+step, the settings, the events, the outgoing mail, the list of terminals, the
+certificate and TLS of the pages, the firewall. It is a SQLite file on this
+machine (`/var/lib/ai/ai.db`) unless `/etc/ai/config.json` says otherwise -
+MariaDB or PostgreSQL, on this machine or another. The secrets in it are sealed
+with `/var/lib/ai/secrets.key`, kept beside it, and every copy and every dump is
+kept with that key beside it (`NAME.key`).
 
-*Settings → Database* lists them, makes one now, downloads one, and puts one
-back - a copy of what is there now is made first. On the command line:
+The address of the database (`db_engine`, `db_host`, `db_port`, `db_name`,
+`db_user`, `db_password`, `db_timeout_s`, `db_tls`, `db_tls_ca`) is the only
+setting kept in the config file alone: a database cannot hold the address of
+itself.
+
+### Moving it to another engine - and back
+
+*Settings → The database → Which one it is*, as otp does it:
+
+1. fill the address in above and **Try it** - nothing is written;
+2. **Set it up** - with an administrator of that server (used for that one
+   connection, stored nowhere) it makes the database and an account with rights
+   on that database alone, with a password made here and written into the
+   config file; pressed again later it only puts the tables right;
+3. **Carry everything across** - every row copied, what is here left as it is
+   (a copy of it is made first); **Empty it** throws away what is in the
+   *other* database, never the one in use, for a second try;
+4. **Start using it** - the address is written into the config file and the
+   daemon starts again on it. The terminals go on running.
+
+Going back is the same four steps with the file chosen. The installer puts in
+what the engine in use needs (`python3-psycopg2` or `python3-PyMySQL` and the
+client tools for the dumps); `install.sh --with-db postgres|mariadb` puts them
+in beforehand. `--no-db-restart` takes away the rule that lets the pages
+restart PostgreSQL after tuning it.
+
+### Copies and dumps
+
+- A **copy** is every row of every table as a portable file
+  (`ai-YYYYMMDD-HHMMSS.json.gz` in `/var/lib/ai/backups`): it goes back into
+  any of the three engines.
+- A **dump** is made every night at `backup_at` (when `backup_daily` is on) by
+  the engine's own program - SQLite's own backup, `pg_dump`, `mariadb-dump` -
+  into `/var/lib/ai/dumps`; it goes back into the engine it came off, and can
+  be put back by somebody who has never heard of this program. Where that
+  program is missing a copy is made instead.
+
+The newest `backup_keep` of each are kept. Either is downloaded with the key
+that opens its secrets, locked with a passphrase you give (one `.with-key.tar`
+file), or without it; and put back from a kept one or a file sent from the
+page - read, checked and shown first, a copy of what it replaces made before
+anything changes.
+
+The same pane shows the disk it is on and how fast it grows, what is in each
+table, checks the database, gives the disk back (VACUUM / OPTIMIZE / VACUUM
+FULL), forgets old records, erases the collected data (the events, the
+outgoing mail, the ended terminals - never the accounts or the settings), and
+tunes a MariaDB or PostgreSQL server for the machine it runs on.
+
+On the command line:
 
 ```
-ai --db-copies
-ai --db-copy
-ai --db-restore /var/lib/ai/copies/ai-copy-20261029-020000.tar.gz --yes
+ai --db-copies                       # the copies and the dumps kept
+ai --db-copy                         # a copy now (--dump: a dump)
+ai --db-restore /var/lib/ai/backups/ai-20261029-033000.json.gz --yes
 ```
 
 ## Backups to other machines

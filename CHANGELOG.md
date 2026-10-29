@@ -3,6 +3,34 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.6
+
+- **The database as otp's**: SQLite, **MariaDB or PostgreSQL**, on this machine or another. *Settings → The
+  database* is otp's pane: fill the address in, **try it**, **set it up** (the database and an account with
+  rights on it alone, its password made here; the server's administrator used once and kept nowhere),
+  **carry everything across**, **start using it** - and back the same way. What is here is never touched by
+  any of it. The address is the only setting kept in `/etc/ai/config.json` alone.
+- **Dumps by the engine's own program** every night (SQLite's backup, `pg_dump`, `mariadb-dump`) and
+  **portable copies** that go into any of the three; both downloaded with the key of their secrets locked with
+  a passphrase (or without it), and put back from the list or from a file sent - read and shown first, a copy
+  of what is replaced made before. The disk it is on and how fast it grows, every table, check it, give the
+  disk back, forget old records, erase the collected data, and the database server tuned for its machine.
+- **Otp's outgoing mail**: every mail is tried at once, and what the other side does not take yet
+  (greylisting, a server away) is tried again by itself - a code while it is good; refused for good it is
+  failed. Sent again or taken out by hand, searched by field, counted in a badge in the menu. A test mail
+  goes straight (every step shown) or through it.
+- **Otp's message texts designer**: the mail of a code is otp's HTML mail with its plain text part, edited as
+  it arrives - bold, italic, colours, links, the parts filled in as blue chips - in Czech and English; the
+  SMS beside a phone, counted in parts; previewed, sent as a sample, put back as it comes. The texts of 1.0.5
+  are carried over.
+- **Upgrades and Accounts as otp's**: this server, the web with the newer versions to choose from, a package
+  dropped in and held until Upgrade, going back to a safe version with what changed, the upgrade with how far
+  it is, what root said last; the accounts in otp's order.
+- The installer: `--with-db mariadb|postgres` puts in the driver and the client tools beforehand (the engine in
+  use gets them by itself on an upgrade), `--no-db-restart`.
+- A second daemon that cannot have the port no longer writes its own token over the running one's.
+- Going back is possible to 1.0.6 at the oldest: the tables changed.
+
 ## 1.0.5
 
 - **The files of a chat** beside its terminal: its own folder and what is under it, never above it (the
