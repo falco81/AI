@@ -1,0 +1,41 @@
+# /etc/systemd/system/ai.service
+#
+# Claude Code on this server, from the web pages: the API the page asks on
+# 127.0.0.1:9871, the terminals' WebSockets and the files. It runs as root -
+# it starts terminals as whichever Linux account an account of the pages is
+# given, and looks after the machine (network, firewall, updates).
+#
+# The terminals themselves are not in this unit: each Linux account's tmux
+# server runs in a systemd scope of its own (ai-tmux-*), so stopping,
+# restarting or upgrading ai ends no terminal.
+[Unit]
+Description=ai - Claude Code on this server, in the browser
+Documentation=file:/usr/local/lib/ai/INSTALL.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/ai/ai.py --daemon
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+UMask=0022
+RuntimeDirectory=ai
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+StateDirectory=ai
+StateDirectoryMode=0711
+LogsDirectory=ai
+LogsDirectoryMode=0750
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Only the daemon itself is stopped: the browsers' tmux clients end with
+# it, and a terminal started where systemd-run could make no scope of its
+# own is left running too.
+KillMode=process
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

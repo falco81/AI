@@ -1,0 +1,5 @@
+{
+  "_about": "The settings ai starts with. Everything saved on the pages goes into the database and wins over this file. Every setting is listed by: ai --settings",
+  "api_port": 9871,
+  "ui_lang": "cs"
+}
