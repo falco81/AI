@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import binascii
 import collections
 import fcntl
@@ -63,6 +64,7 @@ import stat
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import termios
 import threading
@@ -124,7 +126,7 @@ DEFAULTS = {
     'default_cwd': '',
     'chat_upload_dir': '.ai-uploads',
     'upload_most_mb': 4096,
-    'events_keep_days': 180,
+    'retain_events_days': 180,
     'ended_keep_days': 14,
     'revert_s': 120,
     'debug': False,
@@ -175,9 +177,14 @@ DEFAULTS = {
     'notify_level': 'warn',
     'notify_gap_min': 15,
     # copies of the database (otp's Database pane)
-    'db_copy_on': True,
-    'db_copy_hour': 2,
-    'db_copy_keep': 14,
+    'backup_daily': True,
+    'backup_at': '03:30',
+    'backup_keep': 14,
+    'upgrade_downgrade': True,
+    'mail_retry_hours': 24,
+    'mail_keep_days': 14,
+    'code_lang': 'cs',
+    'code_mail_fmt': 'html',
     # backups to other machines (otp's)
     'rbackup': False,
     'rbackup_at': '04:15',
@@ -194,9 +201,9 @@ SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_passwo
 # set in /etc/ai/config.json or by its own page (the firewall, the network...).
 SCHEMA = [
     # key, pane, kind, label, help, extra
-    ('site_name', 'general', 'str', 'Name of this installation',
+    ('site_name', 'about', 'str', 'Name of this installation',
      'What the pages call this server, beside its host name. Empty: the host name alone.', {}),
-    ('ui_lang', 'general', 'choice', 'Language of the pages',
+    ('ui_lang', 'about', 'choice', 'Language of the pages',
      'For whoever has not chosen one of their own (the account menu).',
      {'choices': [['cs', 'Čeština'], ['en', 'English']]}),
     ('claude_cmd', 'claude', 'str', 'The command that starts Claude Code',
@@ -224,24 +231,27 @@ SCHEMA = [
     ('ended_keep_days', 'claude', 'int', 'Ended terminals kept (days)',
      'How long a terminal that has ended stays in the list, to look at its last screen.',
      {'min': 0, 'max': 365}),
-    ('session_idle_h', 'access', 'int', 'Signed out after (hours without a click)',
+    ('session_idle_h', 'people', 'int', 'Signed out after (hours without a click)',
      'A sign-in nobody used for this long ends by itself. The terminals go on running.',
      {'min': 1, 'max': 720}),
-    ('session_max_h', 'access', 'int', 'Signed out after at most (hours)',
+    ('session_max_h', 'people', 'int', 'Signed out after at most (hours)',
      'However much it is used, a sign-in ends after this long.', {'min': 1, 'max': 8760}),
-    ('login_max_fails', 'access', 'int', 'Wrong passwords before a pause',
+    ('login_max_fails', 'people', 'int', 'Wrong passwords before a pause',
      'From one address or for one name; then nobody signs in from there for the pause below.',
      {'min': 3, 'max': 100}),
-    ('login_lock_min', 'access', 'int', 'The pause (minutes)', '', {'min': 1, 'max': 1440}),
-    ('password_min', 'access', 'int', 'Shortest password', '', {'min': 8, 'max': 128}),
-    ('revert_s', 'access', 'int', 'Changes that could cut you off go back after (seconds)',
+    ('login_lock_min', 'people', 'int', 'The pause (minutes)', '', {'min': 1, 'max': 1440}),
+    ('password_min', 'people', 'int', 'Shortest password', '', {'min': 8, 'max': 128}),
+    ('revert_s', 'fw', 'int', 'Changes that could cut you off go back after (seconds)',
      'A change of the network, the firewall or who may reach the pages is taken back by itself '
      'unless it is kept within this time - pressed Keep it, from the old address or the new.',
      {'min': 30, 'max': 3600}),
-    ('events_keep_days', 'access', 'int', 'Events kept (days)', '', {'min': 7, 'max': 3650}),
+    ('retain_events_days', 'db', 'int', 'Keep the events (days)', '', {'min': 7, 'max': 3650}),
     ('upgrade_url', 'upgrade', 'str', 'Where new versions are looked for',
      'A GitHub folder (https://github.com/OWNER/REPO/tree/BRANCH/FOLDER), a web page or a '
      'folder listing with ai-X.Y.Z.tar.gz links, or one package\'s address. HTTPS only.', {}),
+    ('upgrade_downgrade', 'upgrade', 'bool', 'Offer going back to an older version',
+     'Going back to an older version on these pages - only to one that is safe on this database. Off: the '
+     'card is not shown, and ai --downgrade alone does it.', {}),
     ('upgrade_check', 'upgrade', 'bool', 'Look once a day',
      'Whether there is a newer version - it is only said, unless the next switch is on too.', {}),
     ('upgrade_auto', 'upgrade', 'bool', 'Put a newer version in by itself',
@@ -249,14 +259,40 @@ SCHEMA = [
      'put in. The terminals go on running; the pages reconnect after a few seconds.', {}),
     ('upgrade_auto_hour', 'upgrade', 'int', 'At what hour', 'Local time of this server, 0-23.',
      {'min': 0, 'max': 23}),
-    ('debug', 'general', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
-    ('db_copy_on', 'db', 'bool', 'A copy every night',
-     'SQLite\'s own backup of the database in use, with the key its secrets are sealed with and '
-     'config.json beside it, into /var/lib/ai/copies.', {}),
-    ('db_copy_hour', 'db', 'int', 'At what hour', 'Local time of this server, 0-23.',
-     {'min': 0, 'max': 23, 'when': ['db_copy_on', [True]]}),
-    ('db_copy_keep', 'db', 'int', 'Copies kept', 'The newest ones; older ones are taken away.',
-     {'min': 1, 'max': 365}),
+    ('debug', 'about', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
+    ('db_engine', 'db', 'choice', 'The database',
+     'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL '
+     'server. Kept in config.json, not in the database - changed only by the steps of the card below '
+     '(try it, set it up, carry everything across, start using it).',
+     {'choices': [['sqlite', 'the file on this machine (SQLite)'], ['mariadb', 'MariaDB'],
+                  ['postgres', 'PostgreSQL']], 'file': True}),
+    ('db_host', 'db', 'str', 'Server', 'Its name or address. Empty: this machine.',
+     {'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_port', 'db', 'int', 'Port', '0: the engine\'s own (3306, 5432).',
+     {'min': 0, 'max': 65535, 'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_name', 'db', 'str', 'Database', 'Letters, digits and _ only.',
+     {'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_user', 'db', 'str', 'Account', 'The account this program signs in to it with.',
+     {'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_password', 'db', 'password', 'Password', 'Kept in config.json (root only). Set it up makes one.',
+     {'secret': True, 'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_timeout_s', 'db', 'int', 'Wait for it (s)', 'How long a connection is waited for.',
+     {'min': 1, 'max': 300, 'file': True, 'when': ['db_engine', 'sqlite-not']}),
+    ('db_tls', 'db', 'choice', 'Encrypted', 'How the connection to the server is encrypted.',
+     {'choices': [['', 'as the driver decides'], ['require', 'encrypted, the certificate not checked'],
+                  ['verify-ca', 'encrypted, signed by the authority below'],
+                  ['verify-full', 'encrypted, the authority and the name checked']], 'file': True,
+      'when': ['db_engine', 'sqlite-not']}),
+    ('db_tls_ca', 'db', 'str', 'The authority of its certificate (a file)', 'A PEM file on this machine.',
+     {'file': True, 'when': ['db_tls', ['verify-ca', 'verify-full']]}),
+    ('backup_daily', 'db', 'bool', 'A copy every night',
+     'A copy of everything - every row of every table, in a shape any of the three engines takes back - '
+     'with the key its secrets are sealed with beside it, into /var/lib/ai/backups; and a dump by the '
+     'engine\'s own program into /var/lib/ai/dumps.', {}),
+    ('backup_at', 'db', 'str', 'At', 'When, as HH:MM on this machine\'s clock.',
+     {'when': ['backup_daily', [True]]}),
+    ('backup_keep', 'db', 'int', 'Copies kept', 'Of each kind; older ones are taken away.',
+     {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
     ('rbackup', 'backup', 'bool', 'Backups to the destinations on a schedule',
      'A backup is made and sent to every destination switched on, at the time below. Back up now '
      'sends one whenever wanted.', {}),
@@ -274,75 +310,80 @@ SCHEMA = [
     ('rbackup_password', 'backup', 'password', 'The password of the backups',
      'Every backup is locked with it (AES-256, opened with ai or with openssl alone). Keep it apart '
      'from the backups: without it none of them can be opened. Without one nothing is sent.', {'secret': True}),
-    ('admin_2fa', 'access', 'bool', 'The second step of signing in, for everybody',
+    ('admin_2fa', 'people', 'bool', 'The second step of signing in, for everybody',
      'After a right password these pages ask for a code too: from an authenticator app, or sent '
      'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
      'second step, or ai --reset-2fa NAME as root, takes it away again. Switched on, every other '
      'sign-in ends, so each gives its second step.', {}),
-    ('admin_2fa_app', 'access', 'bool', 'Offered: an authenticator app',
+    ('admin_2fa_app', 'people', 'bool', 'Offered: an authenticator app',
      'Google or Microsoft Authenticator, FreeOTP, 1Password... - a QR code scanned once.',
      {'when': ['admin_2fa', [True]]}),
-    ('admin_2fa_mail', 'access', 'bool', 'Offered: a code by e-mail',
+    ('admin_2fa_mail', 'people', 'bool', 'Offered: a code by e-mail',
      'Only where sending mail is set up (Settings → Mail).', {'when': ['admin_2fa', [True]]}),
-    ('admin_2fa_sms', 'access', 'bool', 'Offered: a code by SMS',
+    ('admin_2fa_sms', 'people', 'bool', 'Offered: a code by SMS',
      'Only where sending SMS is set up (Settings → SMS).', {'when': ['admin_2fa', [True]]}),
-    ('sms_mode', 'sms', 'choice', 'How SMS is sent',
+    ('code_lang', 'codes', 'choice', 'Language of the codes',
+     'The language of a mail or SMS with a code, where the page it was asked from says none.',
+     {'choices': [['cs', 'Čeština'], ['en', 'English']]}),
+    ('code_mail_fmt', 'codes', 'choice', 'A mail with a code is', '',
+     {'choices': [['html', 'HTML - with the plain text beside it'], ['text', 'plain text only']]}),
+    ('sms_mode', 'codes', 'choice', 'How SMS is sent',
      'An SMS gateway with an HTTP API (most operators and services), a GSM modem on this machine run '
      'by smstools3 or gammu-smsd (a file into its spool folder), or a Teltonika gateway (TRB140, RUT…) '
      'on the network through its own API. Off: no code goes by SMS.',
      {'choices': [['off', 'off - no SMS is sent'], ['http', 'an SMS gateway with an HTTP API'],
                   ['spool', 'a modem on this machine - a file into the spool of smstools / gammu'],
                   ['teltonika', 'a Teltonika gateway (TRB140, RUT…) on the network']]}),
-    ('sms_prefix', 'sms', 'str', 'Country code for numbers written without one',
+    ('sms_prefix', 'codes', 'str', 'Country code for numbers written without one',
      'A number typed as 603 123 456 becomes +420603123456. Empty: a number has to be typed with its '
      'country code.', {'when': ['sms_mode', ['http', 'spool', 'teltonika']]}),
-    ('sms_plain', 'sms', 'bool', 'Without accents (one SMS, not two)',
+    ('sms_plain', 'codes', 'bool', 'Without accents (one SMS, not two)',
      'A letter with an accent makes the whole SMS the wide alphabet, 70 characters a part instead of 160.',
      {'when': ['sms_mode', ['http', 'spool', 'teltonika']]}),
-    ('sms_url', 'sms', 'str', 'The gateway\'s address (URL)',
+    ('sms_url', 'codes', 'str', 'The gateway\'s address (URL)',
      'Where the message is sent. {to} is the number (+420…), {to_digits} the number without +, {text} '
      'the message, {token} the key below. https://sms.example.cz/api/send?to={to}&text={text}',
      {'when': ['sms_mode', ['http']]}),
-    ('sms_method', 'sms', 'choice', 'HTTP method', 'POST sends the body below; GET only the address.',
+    ('sms_method', 'codes', 'choice', 'HTTP method', 'POST sends the body below; GET only the address.',
      {'choices': [['POST', 'POST'], ['GET', 'GET']], 'when': ['sms_mode', ['http']]}),
-    ('sms_token', 'sms', 'password', 'The gateway\'s key ({token})',
+    ('sms_token', 'codes', 'password', 'The gateway\'s key ({token})',
      'Its API key or password, kept sealed in the database and put where {token} is written.',
      {'secret': True, 'when': ['sms_mode', ['http']]}),
-    ('sms_ok_status', 'sms', 'str', 'The gateway said it was sent when the answer holds',
+    ('sms_ok_status', 'codes', 'str', 'The gateway said it was sent when the answer holds',
      'Some gateways answer 200 to everything: a word their answer holds only when it was sent. Empty: any 2xx.',
      {'when': ['sms_mode', ['http']]}),
-    ('sms_body', 'sms', 'text', 'What is sent (body)',
+    ('sms_body', 'codes', 'text', 'What is sent (body)',
      'For POST. Starting with { it is JSON: {"to": "{to}", "text": "{text}"}; otherwise a form: '
      'to={to}&text={text}. Empty: the address alone.', {'when': ['sms_mode', ['http']]}),
-    ('sms_headers', 'sms', 'text', 'Headers', 'One a line, Name: value - Authorization: Bearer {token}.',
+    ('sms_headers', 'codes', 'text', 'Headers', 'One a line, Name: value - Authorization: Bearer {token}.',
      {'when': ['sms_mode', ['http']]}),
-    ('sms_spool_dir', 'sms', 'str', 'The spool folder',
+    ('sms_spool_dir', 'codes', 'str', 'The spool folder',
      'smstools3: /var/spool/sms/outgoing. A file "To: 420…" and the text is written there and the '
      'modem\'s daemon sends it.', {'when': ['sms_mode', ['spool']]}),
-    ('sms_tel_host', 'sms', 'str', 'The Teltonika\'s address', 'The gateway on the network: 192.168.1.1, or host:port.',
+    ('sms_tel_host', 'codes', 'str', 'The Teltonika\'s address', 'The gateway on the network: 192.168.1.1, or host:port.',
      {'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_api', 'sms', 'choice', 'Its interface',
+    ('sms_tel_api', 'codes', 'choice', 'Its interface',
      'RutOS 7 offers its own API out of the box; the older Post/Get service has to be switched on by hand.',
      {'choices': [['rest', 'RutOS\'s own API (/api, RutOS 7 - the default)'],
                   ['cgi', 'the older Post/Get SMS service (/cgi-bin/sms_send)']], 'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_modem', 'sms', 'str', 'Its modem', 'Which modem sends - 1-1, 3-1… Empty: the one the gateway names first.',
+    ('sms_tel_modem', 'codes', 'str', 'Its modem', 'Which modem sends - 1-1, 3-1… Empty: the one the gateway names first.',
      {'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_https', 'sms', 'bool', 'Over HTTPS', 'HTTPS keeps its password and the codes off the wire.',
+    ('sms_tel_https', 'codes', 'bool', 'Over HTTPS', 'HTTPS keeps its password and the codes off the wire.',
      {'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_verify', 'sms', 'bool', 'Check its certificate',
+    ('sms_tel_verify', 'codes', 'bool', 'Check its certificate',
      'Checked against the certificates imported below - the gateway\'s own or the authority that signed it; '
      'with none imported, against the authorities this machine trusts. Off: any certificate is taken.',
      {'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_user', 'sms', 'str', 'Its user', 'An account of the gateway that may use its API.',
+    ('sms_tel_user', 'codes', 'str', 'Its user', 'An account of the gateway that may use its API.',
      {'when': ['sms_mode', ['teltonika']]}),
-    ('sms_tel_password', 'sms', 'password', 'Its password', 'Kept sealed in the database. Never shown again.',
+    ('sms_tel_password', 'codes', 'password', 'Its password', 'Kept sealed in the database. Never shown again.',
      {'secret': True, 'when': ['sms_mode', ['teltonika']]}),
-    ('totp_window', 'access', 'int', 'Codes of the app taken this many periods early or late',
+    ('totp_window', 'people', 'int', 'Codes of the app taken this many periods early or late',
      'A period is 30 s. 1 forgives a phone half a minute out; 0 takes only the code of now.',
      {'min': 0, 'max': 4, 'when': ['admin_2fa', [True]]}),
-    ('code_digits', 'access', 'int', 'Digits of a code sent by mail', '',
+    ('code_digits', 'codes', 'int', 'Digits of a code sent by mail', '',
      {'min': 6, 'max': 8, 'when': ['admin_2fa', [True]]}),
-    ('code_ttl_s', 'access', 'int', 'A code sent is good for (s)', '',
+    ('code_ttl_s', 'codes', 'int', 'A code sent is good for (s)', '',
      {'min': 60, 'max': 1800, 'when': ['admin_2fa', [True]]}),
     ('mail_mode', 'mail', 'choice', 'Sending mail',
      'How a mail of these pages leaves this machine: through your mail server, or straight to '
@@ -394,6 +435,13 @@ SCHEMA = [
      {'when': ['mail_mode', ['direct']]}),
     ('mail_lang', 'mail', 'choice', 'Language of the mail', '',
      {'choices': [['cs', 'Čeština'], ['en', 'English']], 'when': ['mail_mode', ['smtp', 'direct']]}),
+    ('mail_retry_hours', 'mail', 'int', 'Try a mail not delivered for (hours)',
+     'A mail the other side did not take yet (greylisting, a server away, a full mailbox) is tried again '
+     'by itself, ever less often, for this long; then it is given up.',
+     {'min': 1, 'max': 168, 'when': ['mail_mode', 'off-not']}),
+    ('mail_keep_days', 'mail', 'int', 'Keep the list of mails sent for (days)',
+     'Outgoing mail lists what went and what did not; what a mail held is never kept once it went.',
+     {'min': 1, 'max': 365, 'when': ['mail_mode', 'off-not']}),
     ('notify_to', 'mail', 'str', 'Notices go to',
      'Addresses, separated by commas, that are told by mail what Events marks as a warning or a '
      'failure - a backup that did not go, a newer version, an account locked out. Empty: nobody.',
@@ -407,7 +455,21 @@ SCHEMA = [
 ]
 SCHEMA_KEYS = {s[0]: s for s in SCHEMA}
 
+# The database this program opens: kept in config.json alone (otp's
+# FILE_ONLY_KEYS) - a database cannot hold its own address, and a machine
+# whose database will not open still has to be put right from its pages.
+DB_DEFAULTS = {'db_engine': 'sqlite', 'db_host': '', 'db_port': 0, 'db_name': 'ai', 'db_user': 'ai',
+               'db_password': '', 'db_timeout_s': 10, 'db_tls': '', 'db_tls_ca': ''}
+DEFAULTS.update(DB_DEFAULTS)
+FILE_ONLY_KEYS = tuple(DB_DEFAULTS)
+
 CONFIG = dict(DEFAULTS)
+
+
+def load_file_config_all():
+    c = dict(DEFAULTS)
+    c.update(load_file_config())
+    return c
 
 
 def load_file_config():
@@ -430,9 +492,9 @@ def config_rebuild(store=None):
     if store is not None:
         try:
             for k, v in store.settings_all().items():
-                if k in DEFAULTS:
+                if k in DEFAULTS and k not in FILE_ONLY_KEYS:
                     c[k] = v
-        except sqlite3.Error:
+        except Exception:                               # noqa: BLE001 - the file's values, then
             pass
     CONFIG.clear()
     CONFIG.update(c)
@@ -2714,73 +2776,681 @@ def sms_send(to, text):
 
 
 # ---------------------------------------------------------------------------
-# The database
+# The database (otp's, 1.0.6)
 # ---------------------------------------------------------------------------
-SCHEMA_SQL = '''
-CREATE TABLE IF NOT EXISTS users (
-    name TEXT PRIMARY KEY, pw TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
-    run_as TEXT NOT NULL DEFAULT '', roots TEXT NOT NULL DEFAULT '[]',
-    disabled INTEGER NOT NULL DEFAULT 0, must_change INTEGER NOT NULL DEFAULT 0,
-    prefs TEXT NOT NULL DEFAULT '{}', note TEXT NOT NULL DEFAULT '',
-    created REAL, last_login REAL, last_ip TEXT
-);
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL, seen REAL, ip TEXT, agent TEXT
-);
-CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, kind TEXT, level TEXT, who TEXT, text TEXT
-);
-CREATE INDEX IF NOT EXISTS events_at ON events(at);
-CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT, at REAL, by TEXT);
-CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
-CREATE TABLE IF NOT EXISTS terms (
-    id TEXT PRIMARY KEY, owner TEXT, run_as TEXT, title TEXT, kind TEXT, cwd TEXT,
-    opts TEXT NOT NULL DEFAULT '{}', created REAL, ended REAL, last_screen TEXT,
-    exit_status INTEGER
-);
-CREATE TABLE IF NOT EXISTS fails (k TEXT PRIMARY KEY, n INTEGER, first REAL, until REAL);
-CREATE TABLE IF NOT EXISTS outbox (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, kind TEXT, dest TEXT, what TEXT, subject TEXT,
-    state TEXT, said TEXT, who TEXT, secs REAL
-);
-CREATE INDEX IF NOT EXISTS outbox_at ON outbox(at);
-'''
+# One of three, as on otp and isemon: a SQLite file on this machine unless
+# somebody says otherwise, or a MariaDB or a PostgreSQL (config.json: db_engine,
+# db_host, db_port, db_name, db_user, db_password, db_tls, db_tls_ca). The SQL
+# is written once, with `?` for every value, and said in each engine's own
+# words where they differ - the types, the numbering of rows, the placeholders.
+# One connection, behind one lock (no cluster here, so no lanes).
+class DbError(Exception):
+    pass
+
+
+SCHEMA_VERSION = 2
+
+DB_SCHEMA = [
+    ('meta', '''CREATE TABLE IF NOT EXISTS meta (
+        k {K} PRIMARY KEY, v {B})'''),
+    ('settings', '''CREATE TABLE IF NOT EXISTS settings (
+        k {K} PRIMARY KEY, v {B}, at {N}, by_who {K})'''),
+    ('users', '''CREATE TABLE IF NOT EXISTS users (
+        name {K} PRIMARY KEY, pw {T}, role {K}, run_as {K}, roots {T}, disabled {I},
+        must_change {I}, prefs {B}, note {T}, created {N}, last_login {N}, last_ip {K})'''),
+    ('sessions', '''CREATE TABLE IF NOT EXISTS sessions (
+        id {K} PRIMARY KEY, name {K}, created {N}, seen {N}, ip {K}, agent {T}, data {B})'''),
+    ('events', '''CREATE TABLE IF NOT EXISTS events (
+        id {ID}, at {N}, kind {K}, level {K}, who {K}, text {T})'''),
+    ('terms', '''CREATE TABLE IF NOT EXISTS terms (
+        id {K} PRIMARY KEY, owner {K}, run_as {K}, title {T}, kind {K}, cwd {T}, opts {T},
+        created {N}, ended {N}, last_screen {B}, exit_status {I})'''),
+    ('fails', '''CREATE TABLE IF NOT EXISTS fails (
+        k {K} PRIMARY KEY, n {I}, first {N}, until_ts {N})'''),
+    ('outbox', '''CREATE TABLE IF NOT EXISTS outbox (
+        id {ID}, at {N}, kind {K}, dest {T}, what {T}, subject {T}, state {K}, said {T},
+        who {K}, secs {N})'''),
+    ('mailq', '''CREATE TABLE IF NOT EXISTS mailq (
+        id {ID}, qid {K} NOT NULL UNIQUE, at {N}, kind {K}, dest {T}, subject {T}, state {K},
+        tries {I}, next_at {N}, last_at {N}, said {T}, who {K}, purpose {K}, expires {N},
+        body {B})'''),
+]
+DB_INDEXES = [
+    'CREATE INDEX IF NOT EXISTS events_at ON events (at)',
+    'CREATE INDEX IF NOT EXISTS events_kind_at ON events (kind, at)',
+    'CREATE INDEX IF NOT EXISTS outbox_at ON outbox (at)',
+    'CREATE INDEX IF NOT EXISTS sessions_name ON sessions (name)',
+    'CREATE INDEX IF NOT EXISTS mailq_state ON mailq (state, next_at)',
+]
+DB_TYPES = {
+    'sqlite': {'ID': 'INTEGER PRIMARY KEY AUTOINCREMENT', 'K': 'TEXT', 'T': 'TEXT',
+               'B': 'TEXT', 'N': 'REAL', 'I': 'INTEGER'},
+    # Compared byte for byte, as SQLite and PostgreSQL compare (otp 1.0.44).
+    'mariadb': {'ID': 'BIGINT AUTO_INCREMENT PRIMARY KEY', 'K': 'VARCHAR(190) COLLATE utf8mb4_bin',
+                'T': 'TEXT', 'B': 'MEDIUMTEXT', 'N': 'DOUBLE', 'I': 'BIGINT'},
+    'postgres': {'ID': 'BIGSERIAL PRIMARY KEY', 'K': 'TEXT', 'T': 'TEXT', 'B': 'TEXT',
+                 'N': 'DOUBLE PRECISION', 'I': 'BIGINT'},
+}
+DB_TABLES = [name for name, _ in DB_SCHEMA]
+DB_ID_TABLES = ('events', 'outbox', 'mailq')
+
+
+class RawSql(str):
+    """A statement sent as it is, with no parameters."""
+
+
+def _qmarks(sql):
+    """`?` as `%s`, for the two engines whose drivers want that."""
+    return sql.replace('%', '%%').replace('?', '%s')
+
+
+def db_tls_args(engine, mode=None, ca=None):
+    mode = str((CONFIG.get('db_tls') if mode is None else mode) or '')
+    ca = str((CONFIG.get('db_tls_ca') if ca is None else ca) or '')
+    if not mode:
+        return {}
+    if engine == 'postgres':
+        out = {'sslmode': mode}
+        if ca:
+            out['sslrootcert'] = ca
+        return out
+    if mode == 'require':
+        return {'ssl': {'check_hostname': False, 'verify_mode': ssl.CERT_NONE}}
+    got = {'ssl': {'check_hostname': mode == 'verify-full', 'verify_mode': True}}
+    if ca:
+        got['ssl']['ca'] = ca
+    return got
+
+
+class Db(object):
+    """One database, of whichever engine."""
+    STATEMENT_S = 120
+    LOCK_S = 10
+    DOWN_RETRY_S = 2
+
+    def __init__(self, engine='sqlite', host='', port=0, name='ai', user='ai', password='',
+                 timeout=10, path=None, tls=None, tls_ca=None, statement_s=None):
+        self.engine = engine if engine in DB_TYPES else 'sqlite'
+        self.statement_s = self.STATEMENT_S if statement_s is None else int(statement_s)
+        host = str(host or '').strip()
+        if host.startswith('[') and host.endswith(']'):
+            host = host[1:-1]
+        self.host, self.port, self.name = host, int(port or 0), name
+        self.user, self.password, self.timeout = user, password, int(timeout or 10)
+        self.path = Path(path) if path else DB_FILE
+        self.tls, self.tls_ca = tls, tls_ca
+        self.lock = threading.RLock()
+        self.conn = None
+        self.in_tx = False
+        self.down_until = 0.0
+        self.down_said = ''
+        self.restoring = False
+        self.connect()
+
+    def where(self):
+        if self.engine == 'sqlite':
+            return str(self.path)
+        return '%s@%s:%s/%s' % (self.user, self.host or 'localhost',
+                                self.port or {'mariadb': 3306, 'postgres': 5432}[self.engine], self.name)
+
+    def connect(self):
+        with self.lock:
+            if self.conn is None and time.time() < self.down_until:
+                raise DbError(self.down_said or 'the database is not answering')
+            try:
+                self._connect()
+                self.down_until = 0.0
+            except DbError as e:
+                self.down_until = time.time() + self.DOWN_RETRY_S
+                self.down_said = str(e)
+                raise
+
+    def _connect(self):
+        if self.engine == 'sqlite':
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(self.path), check_same_thread=False, isolation_level=None, timeout=30)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute('PRAGMA journal_mode=WAL')
+                conn.execute('PRAGMA synchronous=NORMAL')
+                conn.execute('PRAGMA journal_size_limit=67108864')
+            except sqlite3.Error:
+                pass
+            self.conn = conn
+            try:
+                os.chmod(str(self.path), 0o600)
+            except OSError:
+                pass
+        elif self.engine == 'mariadb':
+            try:
+                import pymysql
+                import pymysql.cursors
+            except ImportError:
+                raise DbError('MariaDB is chosen and its Python driver is not installed: '
+                              'dnf install python3-PyMySQL (apt install python3-pymysql)')
+            try:
+                self.conn = pymysql.connect(
+                    host=self.host or 'localhost', port=self.port or 3306, user=self.user,
+                    password=self.password, database=self.name, charset='utf8mb4', autocommit=True,
+                    connect_timeout=self.timeout,
+                    read_timeout=max(30, self.statement_s + 10) if self.statement_s else 300,
+                    write_timeout=60, cursorclass=pymysql.cursors.DictCursor,
+                    **db_tls_args('mariadb', self.tls, self.tls_ca))
+            except Exception as e:
+                raise DbError('MariaDB at %s could not be reached: %s' % (self.where(), e))
+            for sql in ('SET SESSION innodb_lock_wait_timeout = %d' % self.LOCK_S,
+                        'SET SESSION max_statement_time = %d' % self.statement_s):
+                try:
+                    with self.conn.cursor() as cur:
+                        cur.execute(sql)
+                except Exception:                       # noqa: BLE001
+                    pass
+        else:
+            try:
+                import psycopg2
+                import psycopg2.extras
+            except ImportError:
+                raise DbError('PostgreSQL is chosen and its Python driver is not installed: '
+                              'dnf install python3-psycopg2 (apt install python3-psycopg2)')
+            try:
+                self.conn = psycopg2.connect(
+                    host=self.host or 'localhost', port=self.port or 5432, user=self.user,
+                    password=self.password, dbname=self.name, connect_timeout=self.timeout,
+                    keepalives=1, keepalives_idle=10, keepalives_interval=3, keepalives_count=3,
+                    options='-c lock_timeout=%d -c statement_timeout=%d' % (
+                        self.LOCK_S * 1000, self.statement_s * 1000),
+                    **db_tls_args('postgres', self.tls, self.tls_ca))
+                self.conn.autocommit = True
+                self.conn.set_client_encoding('UTF8')
+            except Exception as e:
+                raise DbError('PostgreSQL at %s could not be reached: %s' % (self.where(), e))
+
+    def close(self):
+        with self.lock:
+            try:
+                if self.conn:
+                    self.conn.close()
+            except Exception:
+                pass
+            self.conn = None
+
+    def _run(self, sql, args, fetch):
+        if self.engine == 'sqlite':
+            cur = self.conn.execute(sql, tuple(args or ()))
+            rows = [dict(r) for r in cur.fetchall()] if fetch else None
+            return rows, cur.rowcount, cur.lastrowid
+        if self.engine == 'mariadb':
+            cur = self.conn.cursor()
+            try:
+                if isinstance(sql, RawSql):
+                    cur.execute(str(sql))
+                else:
+                    cur.execute(_qmarks(sql), tuple(args or ()))
+                rows = [dict(r) for r in cur.fetchall()] if fetch else None
+                return rows, cur.rowcount, cur.lastrowid
+            finally:
+                cur.close()
+        import psycopg2.extras
+        cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            if isinstance(sql, RawSql):
+                cur.execute(str(sql))
+            else:
+                cur.execute(_qmarks(sql), tuple(a.replace('\x00', '�') if isinstance(a, str) and '\x00' in a
+                                                else a for a in (args or ())))
+            rows = [dict(r) for r in cur.fetchall()] if (fetch or cur.description) else None
+            return rows, cur.rowcount, rows[0].get('id') if (rows and not fetch) else None
+        finally:
+            cur.close()
+
+    @staticmethod
+    def _gone(e):
+        said = str(e).lower()
+        return any(w in said for w in ('gone away', 'lost connection', 'server closed', 'connection already closed',
+                                       'terminating connection', 'broken pipe', 'connection reset',
+                                       'not connected', 'interfaceerror', 'cursor already closed',
+                                       'connection has been closed', 'connection is closed',
+                                       'could not receive data', 'connection timed out'))
+
+    def query(self, sql, args=(), fetch=True):
+        with self.lock:
+            if self.conn is None:
+                self.connect()
+            try:
+                return self._run(sql, args, fetch)
+            except Exception as e:
+                if self.engine == 'sqlite' or not (self._gone(e) or type(e).__name__ == 'InterfaceError'):
+                    raise
+                if self.in_tx:
+                    self.close()
+                    raise
+                # Made again - and run once more only where that cannot do it twice.
+                self.close()
+                self.connect()
+                said = str(e).lower()
+                unsent = type(e).__name__ == 'InterfaceError' or any(
+                    w in said for w in ('connection already closed', 'not connected', 'cursor already closed'))
+                if sql.lstrip().upper().startswith(('SELECT', 'WITH', 'SHOW', 'EXPLAIN')) or unsent:
+                    return self._run(sql, args, fetch)
+                raise
+
+    def rows(self, sql, args=()):
+        return self.query(sql, args, True)[0]
+
+    def row(self, sql, args=()):
+        got = self.rows(sql, args)
+        return got[0] if got else None
+
+    def value(self, sql, args=(), default=None):
+        got = self.row(sql, args)
+        if not got:
+            return default
+        return list(got.values())[0]
+
+    def run(self, sql, args=()):
+        return self.query(sql, args, False)[1]
+
+    def upsert(self, table, key, row):
+        """One row by its primary key, made or changed in one statement."""
+        keys = list(row.keys())
+        cols = ', '.join(keys)
+        marks = ', '.join('?' for _ in keys)
+        rest = [k for k in keys if k != key]
+        if self.engine == 'mariadb':
+            sql = 'INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s' % (
+                table, cols, marks, ', '.join('%s = VALUES(%s)' % (k, k) for k in rest))
+        else:
+            sql = 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s' % (
+                table, cols, marks, key, ', '.join('%s = excluded.%s' % (k, k) for k in rest))
+        return self.run(sql, tuple(row[k] for k in keys))
+
+    def insert(self, table, row):
+        keys = list(row.keys())
+        sql = 'INSERT INTO %s (%s) VALUES (%s)' % (table, ', '.join(keys), ', '.join('?' for _ in keys))
+        if self.engine == 'postgres' and table in DB_ID_TABLES:
+            sql += ' RETURNING id'
+        return self.query(sql, [row[k] for k in keys], False)[2]
+
+    @contextlib.contextmanager
+    def unlimited(self):
+        if self.engine == 'sqlite' or not self.statement_s:
+            yield
+            return
+        off, on = (('SET statement_timeout = 0', 'SET statement_timeout = %d' % (self.statement_s * 1000))
+                   if self.engine == 'postgres' else
+                   ('SET SESSION max_statement_time = 0', 'SET SESSION max_statement_time = %d' % self.statement_s))
+        with self.lock:
+            try:
+                self.run(RawSql(off))
+            except Exception:                           # noqa: BLE001
+                pass
+            try:
+                yield
+            finally:
+                try:
+                    self.run(RawSql(on))
+                except Exception:                       # noqa: BLE001
+                    pass
+
+    def make_tables(self):
+        with self.unlimited():
+            types = DB_TYPES[self.engine]
+            if self.engine == 'sqlite':
+                self._sqlite_renames()
+            for _name, ddl in DB_SCHEMA:
+                sql = ddl.format(**types)
+                if self.engine == 'mariadb':
+                    sql += ' DEFAULT CHARSET=utf8mb4'
+                self.run(sql)
+            for sql in DB_INDEXES:
+                if self.engine == 'mariadb':
+                    try:
+                        self.run(sql)
+                    except Exception as e:
+                        if 'Duplicate key name' in str(e):
+                            continue
+                        if '1064' not in str(e) and 'syntax' not in str(e).lower():
+                            raise
+                        try:
+                            self.run(sql.replace(' IF NOT EXISTS', ''))
+                        except Exception as e2:
+                            if 'Duplicate key name' not in str(e2):
+                                raise
+                else:
+                    self.run(sql)
+            self._add_missing_columns()
+            if self.value('SELECT v FROM meta WHERE k = ?', ('schema',)) is None:
+                self.run('INSERT INTO meta (k, v) VALUES (?, ?)', ('schema', str(SCHEMA_VERSION)))
+            else:
+                self.run('UPDATE meta SET v = ? WHERE k = ?', (str(SCHEMA_VERSION), 'schema'))
+
+    def _sqlite_renames(self):
+        """The names of 1.0.0-1.0.5 that MariaDB keeps for itself (BY, UNTIL),
+        renamed once in a file made by them."""
+        for table, old, new in (('settings', 'by', 'by_who'), ('fails', 'until', 'until_ts')):
+            try:
+                cols = [r['name'] for r in self.rows('PRAGMA table_info(%s)' % table)]
+            except sqlite3.Error:
+                continue
+            if old in cols and new not in cols:
+                self.run('ALTER TABLE %s RENAME COLUMN "%s" TO %s' % (table, old, new))
+
+    def tables(self):
+        if self.engine == 'sqlite':
+            return [r['name'] for r in self.rows(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
+        if self.engine == 'mariadb':
+            return [list(r.values())[0] for r in self.rows(
+                'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()')]
+        return [r['tablename'] for r in self.rows(
+            "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")]
+
+    def insert_many(self, table, keys, rows):
+        if not rows:
+            return 0
+        sql = 'INSERT INTO %s (%s) VALUES (%s)' % (table, ', '.join(keys), ', '.join('?' for _ in keys))
+        with self.lock:
+            if self.conn is None:
+                self.connect()
+            if self.engine == 'sqlite' and self.in_tx:
+                self.conn.executemany(sql, rows)
+            elif self.engine == 'sqlite':
+                self.conn.execute('BEGIN')
+                try:
+                    self.conn.executemany(sql, rows)
+                    self.conn.execute('COMMIT')
+                except Exception:
+                    self.conn.execute('ROLLBACK')
+                    raise
+            elif self.engine == 'mariadb':
+                cur = self.conn.cursor()
+                try:
+                    cur.executemany(_qmarks(sql), rows)
+                finally:
+                    cur.close()
+            else:
+                import psycopg2.extras
+                cur = self.conn.cursor()
+                try:
+                    rows = [tuple(a.replace('\x00', '�') if isinstance(a, str) and '\x00' in a else a
+                                  for a in r) for r in rows]
+                    psycopg2.extras.execute_batch(cur, _qmarks(sql), rows, page_size=500)
+                finally:
+                    cur.close()
+        return len(rows)
+
+    def columns(self, table):
+        if self.engine == 'sqlite':
+            return [r['name'] for r in self.rows('PRAGMA table_info(%s)' % table)]
+        if self.engine == 'mariadb':
+            return [r.get('COLUMN_NAME') or r.get('column_name') for r in self.rows(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() '
+                'AND TABLE_NAME = ?', (table,))]
+        return [r['column_name'] for r in self.rows(
+            'SELECT column_name FROM information_schema.columns WHERE table_name = ? '
+            'AND table_schema = current_schema()', (table,))]
+
+    def _add_missing_columns(self):
+        types = DB_TYPES[self.engine]
+        for name, ddl in DB_SCHEMA:
+            have = set(c.lower() for c in self.columns(name))
+            body = ddl.format(**types).split('(', 1)[1].rsplit(')', 1)[0]
+            for piece in re.split(r',\s*(?=[a-z_]+ )', body):
+                piece = piece.strip()
+                col = piece.split(' ', 1)[0].lower()
+                if not col or col in have or col == 'id':
+                    continue
+                kind = re.sub(r'\s*(NOT NULL|UNIQUE|PRIMARY KEY).*$', '', piece.split(' ', 1)[1])
+                try:
+                    self.run('ALTER TABLE %s ADD COLUMN %s %s' % (name, col, kind))
+                except Exception as e:
+                    log('could not add the column %s.%s: %s' % (name, col, e), 'warn')
+
+    def size(self):
+        try:
+            if self.engine == 'sqlite':
+                return sum(os.path.getsize(str(self.path) + s) for s in ('', '-wal')
+                           if os.path.exists(str(self.path) + s))
+            if self.engine == 'mariadb':
+                return int(self.value('SELECT SUM(data_length + index_length) FROM information_schema.TABLES '
+                                      'WHERE table_schema = DATABASE()') or 0)
+            return int(self.value('SELECT pg_database_size(current_database())') or 0)
+        except Exception:
+            return 0
+
+    def version(self):
+        try:
+            if self.engine == 'sqlite':
+                return 'SQLite ' + sqlite3.sqlite_version
+            if self.engine == 'mariadb':
+                return 'MariaDB ' + str(self.value('SELECT VERSION()'))
+            return str(self.value('SELECT version()')).split(' on ')[0]
+        except Exception as e:
+            return '? (%s)' % e
+
+
+def open_db(conf=None, path=None):
+    """The database the settings name."""
+    c = conf or CONFIG
+    return Db(c.get('db_engine') or 'sqlite', c.get('db_host') or '', c.get('db_port') or 0,
+              c.get('db_name') or 'ai', c.get('db_user') or 'ai', c.get('db_password') or '',
+              c.get('db_timeout_s') or 10, path=path, tls=c.get('db_tls') or '', tls_ca=c.get('db_tls_ca') or '')
+
+
+# ---- a copy of everything, in a shape any of the three engines takes back ---------------------
+def machine_info():
+    try:
+        with open(str(CONFIG_FILE), encoding='utf-8') as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raw = {}
+    except (OSError, ValueError):
+        raw = {}
+    conf = {k: ('(set - not kept in the copy)' if 'password' in k and v else v) for k, v in sorted(raw.items())}
+    return {'config_file': str(CONFIG_FILE), 'config': conf, 'host': socket.getfqdn(),
+            'in_use': {k: CONFIG.get(k) for k in ('db_engine', 'db_host', 'db_port', 'db_name')}}
+
+
+def dump_tables(db, out, tables=None):
+    """Every row of every table, as JSON a line, gzipped. The first line says
+    what it is; each table starts with a line naming it."""
+    import gzip
+    with gzip.open(out if hasattr(out, 'write') else str(out), 'wt', encoding='utf-8') as f:
+        f.write(json.dumps({'ai': __version__, 'schema': SCHEMA_VERSION, 'made': time.time(),
+                            'engine': db.engine, 'machine': machine_info()}, default=str) + '\n')
+        for table in (tables or DB_TABLES):
+            f.write(json.dumps({'table': table}) + '\n')
+            if table not in DB_ID_TABLES:
+                for r in db.rows('SELECT * FROM %s' % table):
+                    f.write(json.dumps(r, default=str) + '\n')
+                continue
+            last = 0
+            while True:
+                rows = db.rows('SELECT * FROM %s WHERE id > ? ORDER BY id LIMIT 2000' % table, (last,))
+                for r in rows:
+                    f.write(json.dumps(r, default=str) + '\n')
+                if not rows:
+                    break
+                last = rows[-1]['id']
+    return out
+
+
+META_TRANSIENT = ('db_job:', 'upgrade:')
+
+
+def load_tables(db, src, say=None, keep_sessions=False):
+    """A copy made by `dump_tables` put back, over whatever is there - all of
+    it or none of it."""
+    import gzip
+    db.make_tables()
+    db.restoring = True
+    try:
+        with db.lock:
+            if db.conn is None:
+                db.connect()
+            db.run('START TRANSACTION' if db.engine == 'mariadb' else 'BEGIN')
+            db.in_tx = True
+            try:
+                counts = _load_tables(db, src, say, gzip, keep_sessions)
+                db.in_tx = False
+                db.run('COMMIT')
+            except BaseException:
+                db.in_tx = False
+                try:
+                    db.run('ROLLBACK')
+                except Exception:                       # noqa: BLE001
+                    pass
+                raise
+        if db.engine == 'postgres':
+            for table in DB_ID_TABLES:
+                try:
+                    db.run("SELECT setval(pg_get_serial_sequence('%s', 'id'), "
+                           "COALESCE((SELECT MAX(id) FROM %s), 0) + 1, false)" % (table, table))
+                except Exception:
+                    pass
+        return counts
+    finally:
+        db.restoring = False
+
+
+def _load_tables(db, src, say, gzip, keep_sessions):
+    counts = {}
+    batch, keys, table, have = [], None, None, set()
+
+    def flush():
+        if table and batch:
+            db.insert_many(table, keys, batch)
+            counts[table] += len(batch)
+            if say:
+                say(table, counts[table])
+        del batch[:]
+
+    with gzip.open(str(src), 'rt', encoding='utf-8') as f:
+        head = json.loads(f.readline() or '{}')
+        if 'ai' not in head:
+            raise DbError('%s is not a copy made by ai' % src)
+        for line in f:
+            got = json.loads(line)
+            if set(got.keys()) == {'table'}:
+                flush()
+                keys = None
+                table = got['table']
+                if table not in DB_TABLES or (keep_sessions and table == 'sessions'):
+                    table = None
+                    continue
+                if table == 'meta':
+                    db.run('DELETE FROM meta WHERE ' + ' AND '.join(
+                        "k NOT LIKE '%s%%'" % p.replace("'", "") for p in META_TRANSIENT))
+                else:
+                    db.run('DELETE FROM %s' % table)
+                have = set(c.lower() for c in db.columns(table))
+                counts[table] = 0
+                if say:
+                    say(table, 0)
+                continue
+            if not table:
+                continue
+            row = {}
+            for k, v in got.items():
+                k = {'by': 'by_who', 'until': 'until_ts'}.get(k, k) if table in ('settings', 'fails') else k
+                if k.lower() in have:
+                    row[k] = v
+            if table == 'meta':
+                if str(row.get('k') or '').startswith(META_TRANSIENT):
+                    continue
+                db.run('DELETE FROM meta WHERE k = ?', (row.get('k'),))
+            these = sorted(row.keys())
+            if keys is not None and these != keys:
+                flush()
+            keys = these
+            batch.append([row[k] for k in keys])
+            if len(batch) >= 1000:
+                flush()
+        flush()
+    return counts
+
+
+def sqlite_to_copy(path, out):
+    """A SQLite file of ai (a copy of 1.0.4-1.0.5, or one copied off a machine)
+    as a copy any engine takes."""
+    db = Db('sqlite', path=path)
+    try:
+        dump_tables(db, out, [t for t in DB_TABLES if t in db.tables()])
+    finally:
+        db.close()
+    return out
 
 
 class Store:
-    def __init__(self, path):
-        self.path = str(path)
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+    """What the rest of ai asks of the database, of whichever engine: `q` for
+    rows, `one` for a row, `x` to change and say how many."""
+
+    def __init__(self, path=None, db=None, conf=None):
+        self.path = str(path or DB_FILE)
         self.lock = threading.RLock()
-        self.db = sqlite3.connect(self.path, check_same_thread=False, timeout=30,
-                                  isolation_level=None)
-        self.db.row_factory = sqlite3.Row
-        with self.lock:
-            self.db.execute('PRAGMA journal_mode=WAL')
-            self.db.execute('PRAGMA synchronous=NORMAL')
-            self.db.executescript(SCHEMA_SQL)
-            have = {r[1] for r in self.db.execute('PRAGMA table_info(sessions)').fetchall()}
-            if 'data' not in have:
-                # What a sign-in carries besides its name (1.0.4): its second
-                # step, still to be given, and the codes sent for it.
-                self.db.execute("ALTER TABLE sessions ADD COLUMN data TEXT NOT NULL DEFAULT '{}'")
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:
-            pass
+        self.db = db or open_db(conf or load_file_config_all(), path=self.path)
+        self.db.make_tables()
+        self._renamed_settings()
+
+    def _renamed_settings(self):
+        """Settings of 1.0.4-1.0.5 under the names otp gives them (1.0.6)."""
+        for old, new in (('events_keep_days', 'retain_events_days'), ('db_copy_on', 'backup_daily'),
+                         ('db_copy_keep', 'backup_keep'), ('db_copy_hour', 'backup_at')):
+            r = self.one('SELECT v FROM settings WHERE k=?', (old,))
+            if not r:
+                continue
+            v = r['v']
+            if old == 'db_copy_hour':
+                try:
+                    v = json.dumps('%02d:30' % int(json.loads(v)))
+                except (ValueError, TypeError):
+                    v = json.dumps('03:30')
+            if not self.one('SELECT k FROM settings WHERE k=?', (new,)):
+                self.x('UPDATE settings SET k=?, v=? WHERE k=?', (new, v, old))
+            else:
+                self.x('DELETE FROM settings WHERE k=?', (old,))
 
     def q(self, sql, args=()):
-        with self.lock:
-            return [dict(r) for r in self.db.execute(sql, args).fetchall()]
+        return self.db.rows(sql, args)
 
     def one(self, sql, args=()):
-        rows = self.q(sql, args)
-        return rows[0] if rows else None
+        return self.db.row(sql, args)
 
     def x(self, sql, args=()):
-        with self.lock:
-            cur = self.db.execute(sql, args)
-            return cur.rowcount
+        return self.db.run(sql, args)
+
+    @property
+    def engine(self):
+        return self.db.engine
+
+    def counts(self):
+        return {t: int(self.db.value('SELECT COUNT(*) AS n FROM %s' % t, (), 0) or 0)
+                for t in DB_TABLES if t not in ('meta',)}
+
+    def delete_older(self, table, cut):
+        """Rows older than `cut`, deleted in batches (otp's)."""
+        gone, batch = 0, 1000
+        for _ in range(1000000):
+            if self.db.engine == 'mariadb':
+                n = self.db.run('DELETE FROM %s WHERE at < ? LIMIT %d' % (table, batch), (cut,))
+            else:
+                n = self.db.run('DELETE FROM %s WHERE id IN (SELECT id FROM %s WHERE at < ? LIMIT %d)'
+                                % (table, table, batch), (cut,))
+            gone += int(n or 0)
+            if not n or n < batch:
+                break
+            time.sleep(0.05)
+        return gone
+
+    def tidy(self):
+        """What has been kept long enough, deleted."""
+        said = {}
+        days = int(CONFIG.get('retain_events_days') or 0)
+        if days > 0:
+            said['events'] = self.delete_older('events', time.time() - days * 86400)
+        keep = int(CONFIG.get('mail_keep_days') or 14)
+        said['outbox'] = self.delete_older('outbox', time.time() - keep * 86400)
+        return said
 
     # -- meta and settings --------------------------------------------------
     def get_meta(self, k, default=None):
@@ -2788,7 +3458,7 @@ class Store:
         return r['v'] if r else default
 
     def set_meta(self, k, v):
-        self.x('INSERT INTO meta(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v', (k, v))
+        self.db.upsert('meta', 'k', {'k': k, 'v': v})
 
     def meta_json(self, k, default=None):
         try:
@@ -2810,8 +3480,7 @@ class Store:
         return out
 
     def set_setting(self, k, v, by=''):
-        self.x('INSERT INTO settings(k,v,at,by) VALUES(?,?,?,?) ON CONFLICT(k) DO UPDATE SET '
-               'v=excluded.v, at=excluded.at, by=excluded.by', (k, json.dumps(v), time.time(), by))
+        self.db.upsert('settings', 'k', {'k': k, 'v': json.dumps(v), 'at': time.time(), 'by_who': by})
 
     def drop_setting(self, k):
         self.x('DELETE FROM settings WHERE k=?', (k,))
@@ -3078,8 +3747,8 @@ class Auth:
         now = time.time()
         for k in self._fail_keys(name, ip):
             r = self.store.one('SELECT * FROM fails WHERE k=?', (k,))
-            if r and r['until'] and r['until'] > now:
-                return int(r['until'] - now)
+            if r and r['until_ts'] and r['until_ts'] > now:
+                return int(r['until_ts'] - now)
         return 0
 
     def failed(self, name, ip):
@@ -3093,9 +3762,7 @@ class Auth:
             else:
                 n, first = r['n'] + 1, r['first']
             until = now + pause if n >= most else 0
-            self.store.x('INSERT INTO fails(k,n,first,until) VALUES(?,?,?,?) ON CONFLICT(k) DO '
-                         'UPDATE SET n=excluded.n, first=excluded.first, until=excluded.until',
-                         (k, n, first, until))
+            self.store.db.upsert('fails', 'k', {'k': k, 'n': n, 'first': first, 'until_ts': until})
 
     def login(self, name, password, ip, agent=''):
         name = str(name or '').strip()
@@ -3173,7 +3840,7 @@ class Auth:
         self.store.x('DELETE FROM sessions WHERE seen < ? OR created < ?', (now - idle, now - most))
         # A password given and its second step not, for a quarter of an hour: gone.
         self.store.x('DELETE FROM sessions WHERE data LIKE ? AND created < ?', ('%"mfa": "%', now - 900))
-        self.store.x('DELETE FROM fails WHERE (until = 0 OR until < ?) AND first < ?',
+        self.store.x('DELETE FROM fails WHERE (until_ts = 0 OR until_ts < ?) AND first < ?',
                      (now, now - 86400))
 
 
@@ -3828,7 +4495,7 @@ def term_bridge(daemon, ws, u, r, cols, rows, readonly=False):
         checked[0] = time.time()
         try:
             return bool(daemon.store.one('SELECT id FROM sessions WHERE id=?', (sid,)))
-        except sqlite3.Error:
+        except Exception:                               # noqa: BLE001 - the database away: not a sign-out
             return True
 
     def pump():
@@ -5905,8 +6572,8 @@ def rb_restore_md(m):
     else:
         lines += ['## 1. It is not locked', '', '```bash', 'tar tzf %s' % tar, '```', '']
     lines += [
-        'Inside: `ai.db` (the SQLite database), `secrets.key`, `config.json`, `manifest.json`',
-        '(a checksum of each file) and this file.', '',
+        'Inside: `ai-copy.json.gz` (the database, in a shape SQLite, MariaDB and PostgreSQL all take),',
+        '`secrets.key`, `config.json`, `manifest.json` (a checksum of each file) and this file.', '',
         '## 2. A machine to put it on', '',
         'AlmaLinux / Rocky / RHEL 9 or Debian / Ubuntu. Install ai **%s or newer** the same way as' % ver,
         'the first time:', '', '```bash',
@@ -5922,8 +6589,8 @@ def rb_restore_md(m):
         '## By hand, without --restore-bundle', '', '```bash',
         'systemctl stop ai',
         'install -m 0600 secrets.key /var/lib/ai/secrets.key',
-        'install -m 0600 ai.db /var/lib/ai/ai.db && rm -f /var/lib/ai/ai.db-wal /var/lib/ai/ai.db-shm',
-        'systemctl start ai', '```', '',
+        'systemctl start ai',
+        'ai --db-restore ai-copy.json.gz --yes   # into whichever database this machine uses', '```', '',
         '## 4. Check it', '', '```bash', 'ai --status', 'ai --users', '```', '',
         'Then sign in to the pages with an account from the backup.', '',
         '---', 'Made by ai %s on %s. The whole subject: docs/backups.md in the package.' % (__version__, node), '']
@@ -5964,10 +6631,8 @@ def rb_build(store, work, progress=None):
     inner = os.path.join(work, 'in')
     os.makedirs(inner, mode=0o700)
     say(1, 'the database is copied')
-    dst = sqlite3.connect(os.path.join(inner, 'ai.db'))
-    with store.lock:
-        store.db.backup(dst)
-    dst.close()
+    # A copy any of the three engines takes back (otp's), not the engine's own file.
+    dump_tables(store.db, os.path.join(inner, 'ai-copy.json.gz'))
     key = sealing_key(make=True)
     with open(os.path.join(inner, 'secrets.key'), 'w') as f:
         f.write(key.hex() + '\n')
@@ -6275,7 +6940,7 @@ def rb_open(path, password, work):
             raise RbError('%s is missing from it' % rel)
         if h.hexdigest() != want.get('sha256'):
             raise RbError('%s is damaged (its checksum is not the one in the manifest)' % rel)
-    if not os.path.exists(os.path.join(top, 'ai.db')):
+    if not os.path.exists(os.path.join(top, 'ai-copy.json.gz')) and not os.path.exists(os.path.join(top, 'ai.db')):
         raise RbError('there is no database in it - is it a backup of ai?')
     return top, m
 
@@ -6283,17 +6948,17 @@ def rb_open(path, password, work):
 def rb_restore(daemon, path, password, by):
     """Everything in a backup put back on this machine: the database and the
     key of its secrets. A copy of what is here is made first."""
-    import tarfile
     work = tempfile.mkdtemp(prefix='ai-putback-', dir=str(STATE_DIR))
     os.chmod(work, 0o700)
     try:
         top, m = rb_open(path, password, work)
-        pack = os.path.join(work, 'back.tar.gz')
-        with tarfile.open(pack, 'w:gz') as tf:
-            for n in ('ai.db', 'secrets.key'):
-                if os.path.exists(os.path.join(top, n)):
-                    tf.add(os.path.join(top, n), arcname=n)
-        before = db_restore(daemon, pack, by)
+        inner = os.path.join(top, 'ai-copy.json.gz')
+        if not os.path.exists(inner):
+            inner = os.path.join(top, 'ai.db')          # a backup of 1.0.4-1.0.5: a SQLite file
+        keyf = os.path.join(top, 'secrets.key')
+        got = db_file_restore(daemon.store, inner, by, key_file=keyf if os.path.exists(keyf) else None,
+                              from_name=os.path.basename(str(path)), need_admin=False)
+        before = got['safety']
         daemon.store.add_event('backups', '%s put back the backup %s (made %s on %s, ai %s)' % (
             by, os.path.basename(str(path)), m.get('made_words'), m.get('node'), m.get('ai')), 'warn', who=by)
         return {'manifest': m, 'safety': before}
@@ -6663,7 +7328,7 @@ class Upgrades:
                 cmd += ['--floor', downgrade_floor(self.store)]
                 # A copy of the database first: what the newer one wrote, kept.
                 try:
-                    db_copy(self.store, 'before going back to %s' % info['version'], by)
+                    make_backup(self.store, 'before going back to %s, by %s' % (info['version'], by))
                 except Exception as e:                  # noqa: BLE001
                     log('a copy before going back could not be made: %s' % e, 'warn')
             self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)%s' % (
@@ -7370,7 +8035,7 @@ def outbox_add(store, kind, dest, what, subject, state, said, who='', secs=0.0):
         store.x('INSERT INTO outbox(at,kind,dest,what,subject,state,said,who,secs) VALUES(?,?,?,?,?,?,?,?,?)',
                 (time.time(), kind, str(dest)[:300], what, str(subject or '')[:300], state, str(said or '')[:600],
                  who or '', round(secs, 2)))
-    except sqlite3.Error:
+    except Exception:                                   # noqa: BLE001
         pass
 
 
@@ -7593,8 +8258,8 @@ def lockouts_view(store):
     rows = []
     for r in store.q('SELECT * FROM fails ORDER BY first DESC'):
         by, _s, who = str(r['k']).partition(':')
-        locked = bool(r['until'] and r['until'] > now)
-        forgets = max(float(r['until'] or 0), float(r['first'] or 0) + pause)
+        locked = bool(r['until_ts'] and r['until_ts'] > now)
+        forgets = max(float(r['until_ts'] or 0), float(r['first'] or 0) + pause)
         if forgets <= now:
             continue
         rows.append({'kind': 'admin', 'who': who, 'key': r['k'], 'by': 'address' if by == 'ip' else 'name',
@@ -7640,8 +8305,10 @@ def api_lockouts_do(c):
 # ---- mail: test, the authorities trusted, notices -------------------------------------------
 @route('GET', '/api/mail', admin=True)
 def api_mail(c):
+    STORE_NOW['store'] = c.daemon.store
     return {'mode': CONFIG.get('mail_mode'), 'channels': code_channels(),
             'ca_list': describe_certificates(mail_ca_pem(c.daemon.store)),
+            'sms_ca_list': describe_certificates(sms_ca_pem(c.daemon.store)),
             'notices': c.daemon.store.meta_json('notify:last', {}) or {}}
 
 
@@ -7672,46 +8339,46 @@ def api_mail_do(c):
         st.add_event('mail', '%s changed the authorities trusted for the mail server (%d now)' % (c.name, len(got)),
                      'info', who=c.name)
         return {'message': '%d certificate(s) kept' % len(got), 'ca_list': got}
-    raise Refused('test or ca')
-
-
-@route('GET', '/api/sms', admin=True)
-def api_sms(c):
-    STORE_NOW['store'] = c.daemon.store
-    return {'mode': CONFIG.get('sms_mode'), 'channels': code_channels(),
-            'ca_list': describe_certificates(sms_ca_pem(c.daemon.store))}
-
-
-@route('POST', '/api/sms', admin=True)
-def api_sms_do(c):
-    act = c.body.get('action')
-    st = c.daemon.store
     STORE_NOW['store'] = st
-    try:
-        if act == 'test':
+    if act == 'sms_test':
+        # An SMS the way a sign-in code goes, with a code that opens nothing (otp's).
+        try:
             to = phone_checked(c.body.get('to'))
-            took = time.time()
-            try:
-                said = send_sms(st, to, sms_words('test', c.body.get('lang')), 'a test SMS', c.name)
-                ok = True
-            except SmsError as e:
-                said, ok = str(e), False
-            st.add_event('sms', '%s sent a test SMS to %s: %s' % (c.name, dest_masked('sms', to), 'went' if ok else said),
-                         'info' if ok else 'warn', who=c.name)
-            return {'sent': ok, 'said': str(said or ''), 'took_ms': int((time.time() - took) * 1000)}
-        if act == 'tel_test':
-            return tel_test()
-        if act == 'ca':
-            got = sms_ca_set(st, c.body.get('ca'), c.body.get('mode') or 'add', c.body.get('fingerprint') or '')
-            st.add_event('sms', '%s changed the certificates the SMS gateway is checked against (%d now)' % (
-                c.name, len(got)), 'info', who=c.name)
-            return {'message': '%d certificate(s) kept' % len(got), 'ca_list': got}
-        if act == 'ca_fetch':
+        except ValueError as e:
+            raise Refused(str(e))
+        began = time.time()
+        try:
+            said = send_sms(st, to, sms_words('code', c.body.get('lang'), code=code_new()), 'a test SMS', c.name)
+        except SmsError as e:
+            st.add_event('settings', 'a test SMS to %s failed: %s' % (dest_masked('sms', to), e), 'warn', who=c.name)
+            return {'sent': False, 'said': str(e), 'took_ms': int((time.time() - began) * 1000)}
+        st.add_event('settings', '%s sent a test SMS to %s' % (c.name, dest_masked('sms', to)), who=c.name)
+        return {'sent': True, 'said': str(said or ''), 'to': to, 'took_ms': int((time.time() - began) * 1000)}
+    if act == 'tel_test':
+        began = time.time()
+        got = tel_test()
+        got['took_ms'] = int((time.time() - began) * 1000)
+        bad = [x for x in got['steps'] if not x['ok']]
+        st.add_event('settings', '%s tried the SMS gateway %s: %s' % (
+            c.name, got.get('host') or '?', 'it answers' if got['ok'] else (bad[0]['said'] if bad else 'it did not answer')),
+            'info' if got['ok'] else 'warn', who=c.name)
+        return got
+    if act == 'sms_ca_fetch':
+        try:
             pem = tel_peer_chain()
-            return {'pem': pem, 'certs': describe_certificates(pem)}
-    except (ValueError, SmsError) as e:
-        raise Refused(str(e))
-    raise Refused('test, tel_test, ca or ca_fetch')
+        except SmsError as e:
+            raise Refused(str(e), 502)
+        return {'pem': pem, 'certs': describe_certificates(pem)}
+    if act == 'sms_ca':
+        mode = str(c.body.get('mode') or 'add')
+        try:
+            got = sms_ca_set(st, c.body.get('ca'), mode, str(c.body.get('fingerprint') or ''))
+        except ValueError as e:
+            raise Refused(str(e))
+        st.add_event('settings', '%s %s the certificates of the SMS gateway' % (
+            c.name, {'add': 'added to', 'drop': 'took one out of'}.get(mode, 'emptied')), who=c.name)
+        return {'sms_ca_list': got, 'message': 'the SMS gateway is checked against %d certificate(s)' % len(got)}
+    raise Refused('no such thing to do')
 
 
 @route('GET', '/api/texts', admin=True)
@@ -7756,7 +8423,7 @@ def api_texts_do(c):
 @route('GET', '/api/outbox', admin=True)
 def api_outbox(c):
     st = c.daemon.store
-    keep = float(CONFIG.get('events_keep_days') or 180) * 86400
+    keep = float(CONFIG.get('retain_events_days') or 180) * 86400
     st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
     where, args = [], []
     if c.arg('state'):
@@ -8014,7 +8681,7 @@ def setting_value(k, v):
             mail_checked(v)
         except ValueError as e:
             raise Refused('%s: %s' % (s[3], e))
-    if k == 'rbackup_at' and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
+    if k in ('rbackup_at', 'backup_at') and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
         raise Refused('%s: HH:MM, as 04:15' % s[3])
     if k == 'notify_to' and v:
         try:
@@ -8024,42 +8691,114 @@ def setting_value(k, v):
     return v
 
 
-@route('GET', '/api/settings')
-def api_settings(c):
-    saved = c.daemon.store.settings_all()
-    admin = c.who['role'] == 'admin'
+def settings_panes():
+    """{pane: [keys]} in the order the schema has them (otp's PANES)."""
+    out = {}
+    for k, pane, _kind, _l, _h, _e in SCHEMA:
+        out.setdefault(pane, []).append(k)
+    return out
+
+
+def settings_only_when():
+    """otp's ONLY_WHEN: a setting that only means something while another one
+    says so - [master, '1' | value | 'value-not' | [values]]."""
+    out = {}
+    for k, _pane, _kind, _l, _h, extra in SCHEMA:
+        w = extra.get('when')
+        if not w:
+            continue
+        master, want = w
+        if isinstance(want, list):
+            if want == [True]:
+                want = '1'
+            elif len(want) == 1:
+                want = str(want[0])
+            else:
+                want = [str(x) for x in want]
+        out[k] = [master, want]
+    return out
+
+
+def settings_state(store, may_change=True):
+    """Every setting as otp's pages draw it: its value and default, its name
+    and words, whether it is secret, and where its value comes from."""
+    saved = store.settings_all()
+    try:
+        written = {r['k']: {'at': r['at'], 'by': r['by_who']} for r in store.q('SELECT k, at, by_who FROM settings')}
+    except Exception:                                   # noqa: BLE001
+        written = {}
+    in_file = load_file_config()
     out = []
     for k, pane, kind, label, help_, extra in SCHEMA:
         v = CONFIG.get(k)
-        is_set = bool(v)
-        if kind == 'password':
-            v = ''
-        elif extra.get('secret') and not admin:
-            v = '' if not v else '(set)'
-        out.append({'key': k, 'pane': pane, 'kind': kind, 'label': label, 'help': help_, 'extra': extra,
-                    'value': v, 'default': DEFAULTS.get(k), 'saved': k in saved, 'set': is_set})
-    return {'settings': out}
+        d = DEFAULTS.get(k)
+        source = 'saved' if k in saved and k not in FILE_ONLY_KEYS else ('file' if k in in_file else 'default')
+        one = {'key': k, 'pane': pane, 'name': label, 'says': help_, 'short': '', 'source': source,
+               'source_says': {'saved': 'saved on these pages', 'file': 'from config.json',
+                               'default': 'the built-in default'}[source],
+               'file_only': k in FILE_ONLY_KEYS, 'in_file': k in in_file, 'secret': bool(extra.get('secret')),
+               'tall': kind == 'text', 'node_key': False}
+        if kind == 'bool':
+            one['value'], one['default'] = (1 if v else 0), bool(d)
+        elif kind == 'int':
+            one['value'], one['default'] = v, d
+            one['min'], one['max'] = extra.get('min', 0), extra.get('max', 10 ** 9)
+        else:
+            one['value'], one['default'] = v if v is not None else '', d if d is not None else ''
+        if kind == 'choice':
+            one['choices'] = [x[0] for x in extra['choices']]
+            one['choice_words'] = {x[0]: x[1] for x in extra['choices']}
+        if kind == 'password' or extra.get('secret'):
+            plain = unseal_secret(v, 'setting:' + k) if kind == 'password' and k not in FILE_ONLY_KEYS else v
+            one['set'] = bool(v)
+            one['value'] = secret_shown(plain or '') if (may_change and kind == 'password') else \
+                (plain if may_change else '')
+        if k in written and k in saved:
+            one['saved_at'], one['saved_by'] = written[k]['at'], written[k]['by']
+        out.append(one)
+    return out
+
+
+@route('GET', '/api/settings')
+def api_settings(c):
+    admin = c.who['role'] == 'admin'
+    return {'settings': settings_state(c.daemon.store, admin), 'panes': settings_panes(),
+            'only_when': settings_only_when(), 'config_file': str(CONFIG_FILE), 'node': node_name(),
+            'cluster': False, 'may_change': admin}
 
 
 @route('POST', '/api/settings', admin=True)
 def api_settings_do(c):
-    values = c.body.get('values') or {}
+    values = c.body.get('settings') if isinstance(c.body.get('settings'), dict) else (c.body.get('values') or {})
     if not isinstance(values, dict):
         raise Refused('values is an object')
-    said = []
+    said, saved = [], []
     for k, v in values.items():
         if k not in SCHEMA_KEYS:
-            raise Refused('there is no setting %s' % k)
+            raise Refused('%s: there is no such setting' % k)
+        if k in FILE_ONLY_KEYS:
+            raise Refused('%s: kept in %s - changed by the steps of Settings - The database, not saved here'
+                          % (k, CONFIG_FILE))
         if v is None:
             c.daemon.store.drop_setting(k)
             said.append('%s back to its default' % k)
+            saved.append(k)
             continue
-        nv = setting_value(k, v)
+        if (SCHEMA_KEYS[k][2] == 'password' or SCHEMA_KEYS[k][5].get('secret')) and is_masked(v):
+            continue                    # its dots: the one saved is kept
+        try:
+            nv = setting_value(k, v)
+        except Refused as e:
+            raise Refused('%s: %s' % (k, e))
         if SCHEMA_KEYS[k][2] == 'password':
             if not nv:
                 continue                # empty: the one saved is kept
             nv = seal_secret(nv, 'setting:' + k)
-        c.daemon.store.set_setting(k, nv, c.name)
+        if nv == DEFAULTS.get(k) and SCHEMA_KEYS[k][2] != 'password':
+            c.daemon.store.drop_setting(k)
+        else:
+            c.daemon.store.set_setting(k, nv, c.name)
+        saved.append(k)
         said.append('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(nv)[:80]))
     was_2fa = bool(CONFIG.get('admin_2fa'))
     config_rebuild(c.daemon.store)
@@ -8070,7 +8809,7 @@ def api_settings_do(c):
         said.append('%d other sign-in(s) ended, to give the second step' % n)
     if said:
         c.daemon.store.add_event('settings', '%s changed: %s' % (c.name, '; '.join(said)), 'info', who=c.name)
-    return {}
+    return {'message': '%d setting(s) saved.' % len(saved), 'saved': sorted(saved)}
 
 
 @route('GET', '/api/users', admin=True)
@@ -8266,216 +9005,2418 @@ def api_web_do(c):
     raise Refused('no such thing to do')
 
 
-# ---- the database: copies kept, downloaded, put back (as otp's Database pane) -----------------
-# One SQLite file holds everything: the accounts, the sign-ins, the settings,
-# the events, the terminals' list. Every night at db_copy_hour a copy is made
-# with SQLite's own backup (consistent while it is in use), packed with the
-# key the secrets are sealed with (secrets.key) and config.json - a copy
-# without its key would open none of them - and the newest db_copy_keep are
-# kept in /var/lib/ai/copies.
-COPIES_DIR = STATE_DIR / 'copies'
-COPY_RE = re.compile(r'^ai-copy-(\d{8}-\d{6})(?:-[a-z0-9]+)?\.tar\.gz\Z')
-DB_LOCK = threading.Lock()
+# ---------------------------------------------------------------------------
+# What otp's database page stands on (1.0.6)
+# ---------------------------------------------------------------------------
+BACKUP_DIR = STATE_DIR / 'backups'
+DB_KEYS = ('db_engine', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password', 'db_timeout_s',
+           'db_tls', 'db_tls_ca')
 
 
-def db_copy(store, why='by hand', by=''):
-    """A copy of the database now, with its key and config.json beside it."""
-    COPIES_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(str(COPIES_DIR), 0o700)
-    stamp_ = datetime.now().strftime('%Y%m%d-%H%M%S')
-    name = 'ai-copy-%s.tar.gz' % stamp_
-    if (COPIES_DIR / name).exists():
-        name = 'ai-copy-%s-%s.tar.gz' % (stamp_, secrets.token_hex(2))
-    import tarfile
-    with tempfile.TemporaryDirectory(prefix='ai-copy-', dir=str(STATE_DIR)) as work:
-        dbp = os.path.join(work, 'ai.db')
-        dst = sqlite3.connect(dbp)
-        with store.lock:
-            store.db.backup(dst)
-        dst.close()
-        tmp = str(COPIES_DIR / ('.' + name + '.part'))
-        with tarfile.open(tmp, 'w:gz') as tar:
-            tar.add(dbp, arcname='ai.db')
-            for p, arc in ((sealing_key_path(), 'secrets.key'), (CONFIG_FILE, 'config.json')):
-                if Path(p).is_file():
-                    tar.add(str(p), arcname=arc)
-            info = json.dumps({'kind': 'ai-copy', 'version': __version__, 'host': host_name(), 'at': time.time(),
-                               'why': why}).encode()
-            ti = tarfile.TarInfo('about.json')
-            ti.size, ti.mtime = len(info), int(time.time())
-            tar.addfile(ti, io.BytesIO(info))
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, str(COPIES_DIR / name))
-    store.set_meta_json('db:last_copy', {'at': time.time(), 'name': name, 'why': why})
-    db_copies_trim()
-    store.add_event('database', 'a copy of the database was made (%s): %s' % (why, name), 'info', who=by)
-    return name
+class ApiError(Refused):
+    """otp's words for a refusal: the status first."""
+
+    def __init__(self, status, said):
+        Refused.__init__(self, said, status)
 
 
-def db_copies():
-    out = []
+def write_replacing(path, text, mode=0o640, owner=None):
+    """A file written beside itself and renamed over: never half of one."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='.' + path.name + '.', dir=str(path.parent))
     try:
-        names = os.listdir(str(COPIES_DIR))
+        os.fchmod(fd, mode)
+        if owner is not None and os.geteuid() == 0:
+            os.fchown(fd, owner[0], owner[1])
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(text)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return path
+
+
+def write_file_settings(changes, path=None):
+    """A few settings changed in config.json, the rest of it left alone."""
+    where = Path(path) if path else CONFIG_FILE
+    try:
+        with open(where, encoding='utf-8') as f:
+            had = json.load(f)
+        if not isinstance(had, dict):
+            raise ValueError('it is not an object')
+    except FileNotFoundError:
+        had = {}
+    except ValueError as e:
+        raise OSError('%s is there but cannot be read (%s); put it right first - nothing was written to it'
+                      % (where, str(e)[:120]))
+    for key, value in changes.items():
+        if key not in DEFAULTS:
+            continue
+        if value == DEFAULTS[key]:
+            had.pop(key, None)
+        else:
+            had[key] = value
+    try:
+        mode = (os.stat(where).st_mode & 0o770) or 0o640
     except OSError:
-        return out
-    for n in sorted(names, reverse=True):
-        if COPY_RE.match(n):
-            st = os.stat(str(COPIES_DIR / n))
-            out.append({'name': n, 'size': st.st_size, 'at': st.st_mtime, 'path': str(COPIES_DIR / n)})
+        mode = 0o640
+    write_replacing(where, json.dumps(had, indent=2, sort_keys=True, ensure_ascii=False) + '\n', mode)
+    return where
+
+
+def _bundle_key(passphrase, salt):
+    return hashlib.scrypt(str(passphrase).encode('utf-8'), salt=salt, n=2 ** 15, r=8, p=1,
+                          maxmem=64 * 1024 * 1024, dklen=32)
+
+
+def bundle_lock(data, passphrase, kind):
+    salt = secrets.token_bytes(16)
+    key = _bundle_key(passphrase, salt)
+    raw = json.dumps(data).encode('utf-8')
+    nonce = secrets.token_bytes(16)
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    sign = hmac.new(key, b'sign', hashlib.sha256).digest()
+    body = bytes(a ^ b for a, b in zip(raw, _seal_stream(hide, nonce, len(raw))))
+    tag = hmac.new(sign, kind.encode('utf-8') + b'\n' + salt + nonce + body, hashlib.sha256).digest()
+    return {'kind': kind, 'format': 2, 'made': time.time(), 'from': node_name(), 'version': __version__,
+            'locked': base64.b64encode(salt + nonce + body + tag).decode('ascii')}
+
+
+def bundle_open(bundle, passphrase, kinds):
+    if isinstance(bundle, str):
+        try:
+            bundle = json.loads(bundle)
+        except ValueError:
+            raise ValueError('that is not a locked file of ai: it is not JSON')
+    if not isinstance(bundle, dict) or bundle.get('kind') not in kinds:
+        raise ValueError('that is not a locked file of ai')
+    try:
+        raw = base64.b64decode(bundle.get('locked') or '')
+    except (ValueError, TypeError):
+        raise ValueError('the file is damaged')
+    if len(raw) < 16 + 16 + 32:
+        raise ValueError('the file is damaged')
+    salt, nonce, body, tag = raw[:16], raw[16:32], raw[32:-32], raw[-32:]
+    key = _bundle_key(passphrase, salt)
+    sign = hmac.new(key, b'sign', hashlib.sha256).digest()
+    signed = str(bundle.get('kind')).encode('utf-8') + b'\n' + salt + nonce + body
+    if not hmac.compare_digest(tag, hmac.new(sign, signed, hashlib.sha256).digest()):
+        raise ValueError('the passphrase is not the one the file was locked with')
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    return json.loads(bytes(a ^ b for a, b in zip(body, _seal_stream(hide, nonce, len(body)))).decode('utf-8'))
+
+
+def job_publish(job):
+    store = STORE_NOW.get('store')
+    if not store:
+        return
+    try:
+        store.set_meta('db_job:' + node_name(), json.dumps(dict(job, node=node_name(), at=time.time()),
+                                                           default=str))
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def job_read():
+    """The job going on, or the last one - as the daemon has it."""
+    if DB_JOB.get('running') or DB_JOB.get('ended'):
+        return dict(DB_JOB, node=node_name())
+    store = STORE_NOW.get('store')
+    if store:
+        try:
+            one = json.loads(store.get_meta('db_job:' + node_name()) or 'null')
+            if one and one.get('running'):
+                one = dict(one, running=False, ended=float(one.get('at') or 0),
+                           error=one.get('error') or 'it stopped with the service that ran it '
+                           '(restarted, or the database was changed)')
+            if one:
+                return one
+        except Exception:                               # noqa: BLE001
+            pass
+    return dict(DB_JOB)
+
+
+# ---------------------------------------------------------------------------
+# Copies of the database
+# ---------------------------------------------------------------------------
+BACKUP_ROOM_MIN = 128 << 20
+
+
+def backup_room_check(store, folder=None):
+    """Room left for a copy without filling the disk (1.0.149): a full disk
+    under a SQLite database refused every sign-in until space was freed.
+    What the copy may take - the database file itself at most - and 128 MB
+    more must stay free."""
+    try:
+        free = shutil.disk_usage(str(folder or BACKUP_DIR)).free
+    except OSError:
+        return
+    size = 0
+    if store.db.engine == 'sqlite':
+        try:
+            size = os.path.getsize(str(store.db.path))
+        except (OSError, TypeError):
+            size = 0
+    need = size + BACKUP_ROOM_MIN
+    if free < need:
+        raise ValueError('there is no room for a copy in %s: %d MB free, %d MB needed so that '
+                         'the disk is not filled under the database - take old copies away, '
+                         'or give the disk more room' % (folder or BACKUP_DIR, free >> 20,
+                                                         need >> 20))
+
+
+def make_backup(store, why='by hand'):
+    """A copy of everything into the backups folder - and the key its secrets
+    are sealed with beside it, because one without the other is nothing."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_room_check(store)
+    stamp_ = datetime.now().strftime('%Y%m%d-%H%M%S')
+    # A name of its own (two in one second overwrote each other) and written
+    # under another until it is whole (1.0.59): a half file counted as a
+    # kept copy and pushed a good one out.
+    # The name taken with O_EXCL (1.0.61): two processes - the daemon's
+    # nightly copy and a root --backup - in the same second both saw it free.
+    base = stamp_
+    for suffix in [''] + ['-' + c for c in 'bcdefghijklmnopqrstuvwxyz']:
+        stamp_ = base + suffix
+        out = BACKUP_DIR / ('ai-%s.json.gz' % stamp_)
+        try:
+            os.close(os.open(str(out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640))
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise ValueError('no free name for a copy in %s' % BACKUP_DIR)
+    # A name nobody can have put there first, opened without following a
+    # link, its mode and owner set on the open file (1.0.101): run by root
+    # (--ha-resync, --backup) in a folder the service's account can write,
+    # the name it wrote to was the service account's to point anywhere.
+    part = BACKUP_DIR / ('.ai-%s-%s.json.gz.part' % (stamp_, secrets.token_hex(6)))
+    owner = None
+    try:
+        fd = os.open(str(part), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+        os.fchmod(fd, 0o640)
+        if owner:
+            os.fchown(fd, owner[0], owner[1])
+        with os.fdopen(fd, 'wb') as raw_f:
+            dump_tables(store.db, raw_f)
+        os.replace(str(part), str(out))
+    except BaseException:
+        try:
+            out.unlink()            # the empty name taken, given back
+        except OSError:
+            pass
+        raise
+    finally:
+        try:
+            part.unlink()
+        except OSError:
+            pass
+    key = sealing_key()
+    if key:
+        # Made by root on the command line (1.0.59): the service's own, or
+        # the pages could neither list, download nor put it back.
+        write_replacing(BACKUP_DIR / ('ai-%s.key' % stamp_), key.hex() + '\n', 0o600,
+                        owner=owner)
+    keep = int(CONFIG.get('backup_keep') or 14)
+    copies = sorted(list(BACKUP_DIR.glob('ai-*.json.gz')) + [],
+                    key=lambda f: f.stat().st_mtime)
+    for old in copies[:-keep] if len(copies) > keep else []:
+        for f in (old, old.with_name(old.name.replace('.json.gz', '.key'))):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    store.add_event('backups', 'a copy of the database was made (%s): %s' % (why, out.name))
     return out
 
 
-def db_copies_trim():
-    keep = int(CONFIG.get('db_copy_keep') or 14)
-    for c in db_copies()[keep:]:
+def backups():
+    if not BACKUP_DIR.is_dir():
+        return []
+    out = []
+    for f in sorted(list(BACKUP_DIR.glob('ai-*.json.gz')) + [],
+                   key=lambda f: f.stat().st_mtime, reverse=True):
+        st = f.stat()
+        out.append({'name': f.name, 'size': st.st_size, 'at': st.st_mtime,
+                    'key': f.with_name(f.name.replace('.json.gz', '.key')).exists()})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Moving to another database, looking after the one in use, tuning its
+# server - the database page, as isemon has it
+# ---------------------------------------------------------------------------
+ENGINE_WORDS = {'sqlite': 'the file on this machine (SQLite)', 'mariadb': 'MariaDB',
+                'postgres': 'PostgreSQL'}
+# DB_KEYS is 00_head's (1.0.94): a second one here, without db_tls and
+# db_tls_ca, left the database's TLS out of the test before a save, of the
+# cluster's bundle and of the move to another database.
+DB_IDENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,62}\Z')
+
+
+def file_db_settings():
+    """The database settings as config.json has them now - Set it up writes
+    the address and the password made there while the old database is
+    still the one in use, and the steps after it must find them (1.0.37)."""
+    try:
+        with open(str(CONFIG_FILE), encoding='utf-8') as f:
+            got = json.load(f)
+        return {k: got[k] for k in DB_KEYS if k in got} if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def engine_asked(given):
+    """The database the page means: what it typed, over what is set."""
+    c = {k: CONFIG.get(k) for k in DB_KEYS}
+    on_file = file_db_settings()
+    for k, v in on_file.items():
+        if k != 'db_engine':
+            c[k] = v
+    for k, v in (given or {}).items():
+        if k not in DB_KEYS or v is None:
+            continue
+        if k == 'db_password' and is_masked(v):
+            continue
+        c[k] = v
+    if c.get('db_engine') not in ('sqlite', 'mariadb', 'postgres'):
+        raise ValueError('the engine is sqlite, mariadb or postgres')
+    for k in ('db_name', 'db_user'):
+        if c['db_engine'] != 'sqlite' and not DB_IDENT.match(str(c.get(k) or '')):
+            raise ValueError('%s is letters, digits and _ only, starting with a letter' % k)
+    return c
+
+
+def db_open(c, statement_s=None):
+    return Db(c.get('db_engine') or 'sqlite', c.get('db_host') or '', c.get('db_port') or 0,
+              c.get('db_name') or 'ai', c.get('db_user') or 'ai', c.get('db_password') or '',
+              c.get('db_timeout_s') or 10,
+              tls=c.get('db_tls') if 'db_tls' in c else CONFIG.get('db_tls'),
+              tls_ca=c.get('db_tls_ca') if 'db_tls_ca' in c else CONFIG.get('db_tls_ca'),
+              statement_s=statement_s)
+
+
+def db_own(store, statement_s=0):
+    """A connection of its own to the database in use, for a long job
+    (1.0.101): a VACUUM FULL, a check of every table - on the one every
+    sign-in shares, each held them all for as long as it took. SQLite has
+    one file and one connection: that one. Closed by the caller."""
+    if store.db.engine == 'sqlite':
+        return None
+    return db_open({k: CONFIG.get(k) for k in DB_KEYS}, statement_s=statement_s)
+
+
+def same_database(c, db):
+    """Whether the page's database is the one in use."""
+    if c.get('db_engine') != db.engine:
+        return False
+    if db.engine == 'sqlite':
+        return True
+    port = int(c.get('db_port') or {'mariadb': 3306, 'postgres': 5432}[db.engine])
+    here = {'', 'localhost', '127.0.0.1', '::1'}
+    a, b = str(c.get('db_host') or '').lower(), str(db.host or '').lower()
+    return ((a == b or (a in here and b in here)) and port == int(db.port or port)
+            and str(c.get('db_name')) == str(db.name))
+
+
+def db_try(c):
+    """Reach a database as this program would. Never raises."""
+    out = {'reached': False, 'engine': c.get('db_engine'),
+           'words': ENGINE_WORDS.get(c.get('db_engine'), c.get('db_engine'))}
+    try:
+        db = db_open(c)
+    except Exception as e:
+        out['trouble'] = str(e).split('\n')[0][:300]
+        return out
+    try:
+        out['reached'] = True
+        out['where'] = db.where()
+        out['version'] = db.version()
+        names = db.tables()
+        ours = [t for t in DB_TABLES if t in names]
+        out['tables'] = ours
+        out['rows'] = sum(int(db.value('SELECT COUNT(*) FROM %s' % t) or 0)
+                          for t in ours if t not in ('meta',))
         try:
-            os.unlink(c['path'])
+            db.run('CREATE TABLE ai_probe (x INTEGER)')
+            db.run('DROP TABLE ai_probe')
+            out['writable'] = True
+        except Exception as e:
+            out['writable'] = False
+            out['trouble'] = 'it answers, but this account may not make a table: %s' % (
+                str(e).split('\n')[0][:200])
+    except Exception as e:
+        out['trouble'] = str(e).split('\n')[0][:300]
+    finally:
+        db.close()
+    return out
+
+
+def db_password_made():
+    alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    return ''.join(secrets.choice(alphabet) for _ in range(24))
+
+
+def db_make(c, admin_user, admin_password):
+    """The database and its account, made by an administrator of that
+    server who is used for this one connection and kept nowhere."""
+    eng = c['db_engine']
+    host = str(c.get('db_host') or '127.0.0.1')
+    port = int(c.get('db_port') or {'mariadb': 3306, 'postgres': 5432}[eng])
+    name, user, pw = c['db_name'], c['db_user'], c['db_password']
+    done = []
+    if eng == 'mariadb':
+        import pymysql
+        conn = pymysql.connect(host=host, port=port, user=admin_user, password=admin_password,
+                               connect_timeout=int(c.get('db_timeout_s') or 10), autocommit=True)
+        try:
+            cur = conn.cursor()
+            cur.execute('CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 '
+                        'COLLATE utf8mb4_unicode_ci' % name)
+            done.append('the database %s' % name)
+            local = host in ('localhost', '127.0.0.1', '::1')
+            for at in (('localhost', '127.0.0.1') if local else ('%',)):
+                cur.execute("CREATE USER IF NOT EXISTS %s@%s IDENTIFIED BY %s", (user, at, pw))
+                cur.execute("ALTER USER %s@%s IDENTIFIED BY %s", (user, at, pw))
+                cur.execute('GRANT ALL PRIVILEGES ON `%s`.* TO %%s@%%s' % name, (user, at))
+                done.append("the account '%s'@'%s', with every right on %s and none elsewhere"
+                            % (user, at, name))
+            cur.execute('FLUSH PRIVILEGES')
+        finally:
+            conn.close()
+        return done
+    import psycopg2
+    conn = psycopg2.connect(host=host, port=port, user=admin_user, password=admin_password,
+                            dbname='postgres', connect_timeout=int(c.get('db_timeout_s') or 10))
+    conn.autocommit = True
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT 1 FROM pg_roles WHERE rolname = %s', (user,))
+        if cur.fetchone():
+            cur.execute('ALTER ROLE "%s" WITH LOGIN PASSWORD %%s' % user, (pw,))
+            done.append('the account %s was there; its password is new' % user)
+        else:
+            cur.execute('CREATE ROLE "%s" WITH LOGIN PASSWORD %%s' % user, (pw,))
+            done.append('the account %s' % user)
+        cur.execute('SELECT 1 FROM pg_database WHERE datname = %s', (name,))
+        if cur.fetchone():
+            cur.execute('ALTER DATABASE "%s" OWNER TO "%s"' % (name, user))
+            done.append('the database %s was there; %s owns it now' % (name, user))
+        else:
+            cur.execute("CREATE DATABASE \"%s\" OWNER \"%s\" ENCODING 'UTF8' TEMPLATE template0"
+                        % (name, user))
+            done.append('the database %s, owned by %s' % (name, user))
+    finally:
+        conn.close()
+    conn = psycopg2.connect(host=host, port=port, user=admin_user, password=admin_password,
+                            dbname=name, connect_timeout=int(c.get('db_timeout_s') or 10))
+    conn.autocommit = True
+    try:
+        conn.cursor().execute('GRANT ALL ON SCHEMA public TO "%s"' % user)
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return done
+
+
+def db_empty(c):
+    db = db_open(c)
+    try:
+        gone = []
+        for t in reversed(DB_TABLES):
+            if t in db.tables():
+                db.run('DROP TABLE %s' % t)
+                gone.append(t)
+        return gone
+    finally:
+        db.close()
+
+
+# ---- one long job at a time, which the page asks after ---------------------
+DB_JOB = {'id': 0, 'what': '', 'running': False, 'done': 0, 'whole': 0, 'says': '',
+          'error': '', 'result': None, 'began': 0, 'ended': 0}
+DB_JOB_LOCK = threading.Lock()
+
+
+def db_job(what, work):
+    with DB_JOB_LOCK:
+        if DB_JOB['running']:
+            raise ValueError('%s is going on already' % DB_JOB['what'])
+        DB_JOB.update({'id': DB_JOB['id'] + 1, 'what': what, 'running': True, 'done': 0,
+                       'whole': 0, 'says': '', 'error': '', 'result': None,
+                       'began': time.time(), 'ended': 0})
+
+    def progress(done, whole, says):
+        DB_JOB.update({'done': done, 'whole': whole, 'says': says})
+        if time.time() - DB_JOB.get('_pub', 0) > 1:
+            DB_JOB['_pub'] = time.time()
+            job_publish({k: v for k, v in DB_JOB.items() if not k.startswith('_')})
+
+    def run():
+        try:
+            DB_JOB['result'] = work(progress)
+        except Exception as e:
+            DB_JOB['error'] = scrub_secret(str(e).split('\n')[0][:400])
+            log('%s failed: %s' % (what, scrub_secret(e)), 'error')
+        finally:
+            DB_JOB.update({'running': False, 'ended': time.time()})
+            job_publish({k: v for k, v in DB_JOB.items() if not k.startswith('_')})
+
+    def beat():
+        # Said again every half minute, so the other node - or this one,
+        # after a restart - can tell a job going on from one that died.
+        while DB_JOB.get('running'):
+            time.sleep(30)
+            if DB_JOB.get('running'):
+                job_publish({k: v for k, v in DB_JOB.items() if not k.startswith('_')})
+
+    threading.Thread(target=run, name='db-job', daemon=True).start()
+    threading.Thread(target=beat, name='db-job-beat', daemon=True).start()
+    return dict(DB_JOB)
+
+
+def db_move(store, c, by):
+    """Everything here into the other database, through a copy."""
+    def work(progress):
+        progress(0, 0, 'making a copy of what is here')
+        before = store.counts()
+        copy = make_backup(store, 'before moving, by %s' % by)
+        whole = sum(before.values())
+        far = db_open(c)
+        tally = {}
+        try:
+            def along(table, done):
+                tally[table] = done
+                progress(sum(tally.values()), whole, '%s: %s' % (table, done))
+            load_tables(far, copy, say=along)
+            after = {t: int(far.value('SELECT COUNT(*) FROM %s' % t) or 0)
+                     for t in DB_TABLES if t != 'meta'}
+        finally:
+            far.close()
+        short = {t: (before.get(t, 0), after.get(t, 0)) for t in after
+                 if after.get(t, 0) < before.get(t, 0) and t not in ('sessions',)}
+        store.add_event('settings', 'everything was carried into %s (%s), by %s'
+                        % (ENGINE_WORDS.get(c['db_engine']), db_where(c), by), who=by)
+        progress(whole, whole, 'done')
+        return {'copy': copy.name, 'rows': sum(after.values()), 'short': short,
+                'where': db_where(c)}
+    return db_job('carrying everything across', work)
+
+
+def db_where(c):
+    if c.get('db_engine') == 'sqlite':
+        return str(DB_FILE)
+    return '%s@%s:%s/%s' % (c.get('db_user'), c.get('db_host') or 'localhost',
+                            c.get('db_port') or {'mariadb': 3306, 'postgres': 5432}
+                            [c['db_engine']], c.get('db_name'))
+
+
+# ---- looking after the one in use --------------------------------------------
+def db_table_sizes(db):
+    """Rows and bytes of every table, as far as the engine says."""
+    out = []
+    sizes = {}
+    try:
+        if db.engine == 'mariadb':
+            for r in db.rows('SELECT TABLE_NAME AS t, DATA_LENGTH + INDEX_LENGTH AS b, '
+                             'DATA_FREE AS f FROM information_schema.DB_TABLES '
+                             'WHERE TABLE_SCHEMA = DATABASE()'):
+                sizes[r['t']] = (int(r['b'] or 0), int(r['f'] or 0))
+        elif db.engine == 'postgres':
+            for t in DB_TABLES:
+                sizes[t] = (int(db.value('SELECT pg_total_relation_size(?)', (t,)) or 0), 0)
+        else:
+            try:
+                for r in db.rows('SELECT name AS t, SUM(pgsize) AS b FROM dbstat GROUP BY name'):
+                    sizes[r['t']] = (int(r['b'] or 0), 0)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for t in DB_TABLES:
+        try:
+            n = int(db.value('SELECT COUNT(*) FROM %s' % t) or 0)
+        except Exception:
+            n = 0
+        b, free = sizes.get(t, (None, 0))
+        out.append({'table': t, 'rows': n, 'bytes': b, 'free': free})
+    return out
+
+
+def db_free_inside(db):
+    """Room the engine holds that it would give back to the disk."""
+    try:
+        if db.engine == 'sqlite':
+            pages = int(db.value('PRAGMA freelist_count') or 0)
+            return pages * int(db.value('PRAGMA page_size') or 4096)
+        if db.engine == 'mariadb':
+            return int(db.value('SELECT SUM(DATA_FREE) FROM information_schema.DB_TABLES '
+                                'WHERE TABLE_SCHEMA = DATABASE()') or 0)
+        return int(db.value('SELECT COALESCE(SUM(n_dead_tup), 0) FROM pg_stat_user_tables') or 0)
+    except Exception:
+        return 0
+
+
+def db_check(db):
+    """Read the database through and say whether anything is broken."""
+    said = []
+    if db.engine == 'sqlite':
+        got = [r for r in db.rows('PRAGMA integrity_check')]
+        words = [list(r.values())[0] for r in got]
+        return {'ok': words == ['ok'], 'said': words[:20]}
+    if db.engine == 'mariadb':
+        ok = True
+        for t in DB_TABLES:
+            for r in db.rows('CHECK TABLE %s' % t):
+                v = {k.lower(): x for k, x in r.items()}
+                if str(v.get('msg_type')).lower() in ('error', 'warning') or \
+                        str(v.get('msg_text')).lower() not in ('ok', 'table is already up to date'):
+                    ok = False
+                    said.append('%s: %s' % (t, v.get('msg_text')))
+        return {'ok': ok, 'said': said or ['every table: OK']}
+    ok = True
+    for t in DB_TABLES:
+        try:
+            n = db.value('SELECT COUNT(*) FROM %s' % t)
+            said.append('%s: %s row(s) read' % (t, n))
+        except Exception as e:
+            ok = False
+            said.append('%s: %s' % (t, str(e).split('\n')[0]))
+    return {'ok': ok, 'said': said}
+
+
+def db_statistics(db):
+    """Fresh statistics for the planner - quick, nothing is locked."""
+    if db.engine == 'sqlite':
+        db.run('ANALYZE')
+        db.run('PRAGMA optimize')
+    elif db.engine == 'mariadb':
+        for t in DB_TABLES:
+            db.rows('ANALYZE TABLE %s' % t)
+    else:
+        db.run('ANALYZE')
+    return 'the statistics of every table are fresh'
+
+
+def db_give_back(store, progress):
+    """Give the room deleted rows left back to the disk: VACUUM, OPTIMIZE
+    TABLE, VACUUM FULL. Each holds a table shut while it works."""
+    own = db_own(store)
+    try:
+        return _db_give_back(own or store.db, progress)
+    finally:
+        if own:
+            own.close()
+
+
+def _db_give_back(db, progress):
+    before = db.size()
+    if db.engine == 'sqlite':
+        progress(0, 1, 'VACUUM')
+        db.run('PRAGMA wal_checkpoint(TRUNCATE)')
+        db.run('VACUUM')
+        db.run('PRAGMA wal_checkpoint(TRUNCATE)')
+    else:
+        for i, t in enumerate(DB_TABLES):
+            progress(i, len(DB_TABLES), t)
+            if db.engine == 'mariadb':
+                db.rows('OPTIMIZE TABLE %s' % t)
+            else:
+                db.run('VACUUM (FULL, ANALYZE) %s' % t)
+    after = db.size()
+    progress(1, 1, 'done')
+    return {'before': before, 'after': after}
+
+
+def db_prune(store, days):
+    """Forget the events and the list of mails sent older than `days`."""
+    edge = time.time() - int(days) * 86400 if int(days) > 0 else time.time() + 86400
+    return {t: store.delete_older(t, edge) for t in ('events', 'outbox')}
+
+
+# ---- the server's own settings, for its machine (isemon's DbTune, smaller) --
+def tune_machine(c, typed):
+    """What the database server's machine has: read here when it is this
+    machine, typed on the page when it is not."""
+    host = str(c.get('db_host') or '').lower()
+    local = host in ('', 'localhost', '127.0.0.1', '::1') or host == socket.gethostname().lower()
+    facts = {'local': local, 'ram_gb': None, 'cpus': None, 'disk': None, 'avail': None,
+             'ram': None, 'virtual': None, 'rotational': None,
+             'source': 'this machine' if local else ''}
+    if local:
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if line.startswith('MemTotal:'):
+                        facts['ram'] = int(line.split()[1]) * 1024
+                    elif line.startswith('MemAvailable:'):
+                        facts['avail'] = int(line.split()[1]) * 1024
+            if facts['ram']:
+                facts['ram_gb'] = round(facts['ram'] / 1073741824.0, 1)
+        except OSError:
+            pass
+        facts['cpus'] = os.cpu_count()
+        try:
+            with open('/proc/cpuinfo') as f:
+                facts['virtual'] = ' hypervisor' in f.read()
+        except OSError:
+            pass
+        try:
+            rot = [open(p).read().strip() for p in
+                   [str(x) for x in Path('/sys/block').glob('*/queue/rotational')]
+                   if not re.search(r'/(loop|ram|zram|sr|dm-)\d', p)]
+            if rot:
+                facts['rotational'] = all(r == '1' for r in rot)
+        except OSError:
+            pass
+    for k in ('ram_gb', 'cpus'):
+        if typed.get(k) not in (None, ''):
+            try:
+                v = float(str(typed[k]).replace(',', '.')) if k == 'ram_gb' else int(typed[k])
+            except ValueError:
+                raise ValueError('the memory is a number of GB, the processors a whole number')
+            if k == 'ram_gb' and facts['ram_gb'] and abs(v - facts['ram_gb']) > 0.05 * v:
+                facts['source'] = 'typed' if not local else facts['source']
+            if k == 'cpus' and v != facts['cpus'] and not local:
+                facts['source'] = 'typed'
+            facts[k] = v
+            if k == 'ram_gb':
+                facts['ram'] = int(v * 1073741824)
+    return facts
+
+
+def tune_commit_ms(db):
+    """How long the server takes to make one small write safe: the middle of
+    twenty, each its own transaction, less a round trip."""
+    if db.engine == 'sqlite':
+        return None
+    took, trip = [], []
+    # A row of this node's own (1.0.59): two nodes measuring at once wrote
+    # the same key, and replication stopped on the duplicate.
+    probe = 'tune_probe:' + node_name()
+    try:
+        # The row is there to be written (1.0.44): an UPDATE of nothing
+        # commits nothing and every disk looked fast.
+        db.run('DELETE FROM meta WHERE k = ?', (probe,))
+        db.run('INSERT INTO meta (k, v) VALUES (?, ?)', (probe, '0'))
+        for _ in range(5):
+            t = time.perf_counter()
+            db.value('SELECT 1')
+            trip.append(time.perf_counter() - t)
+        for i in range(20):
+            t = time.perf_counter()
+            db.run('UPDATE meta SET v = ? WHERE k = ?', (str(i), probe))
+            took.append(time.perf_counter() - t)
+        db.run('DELETE FROM meta WHERE k = ?', (probe,))
+    except Exception:                                   # noqa: BLE001
+        return None
+    took.sort()
+    trip.sort()
+    return max(0.0, (took[len(took) // 2] - trip[len(trip) // 2]) * 1000.0)
+
+
+def tune_disk_guess(facts, commit_ms):
+    """As isemon's: what the disk says of itself first - except in a virtual
+    machine, where a disk says it spins whatever it is on - then how long a
+    small write takes to be made safe."""
+    rot = facts.get('rotational')
+    if rot is False:
+        return 'ssd', 'the disk says it does not spin'
+    if rot is True and not facts.get('virtual'):
+        return 'hdd', 'the disk says it spins'
+    if commit_ms is not None:
+        if commit_ms < 2.5:
+            return 'ssd', 'a write is made safe in %.1f ms, which is an SSD' % commit_ms
+        if commit_ms > 6:
+            return 'hdd', 'a write is made safe in %.1f ms, which is a disk that spins' % commit_ms
+    return 'ssd', ('not known for certain - most servers are on SSDs now; choose the other if '
+                   'this one is not')
+
+
+def _mb(n):
+    n = int(n)
+    return '%dGB' % (n // 1024) if n >= 1024 and n % 1024 == 0 else '%dMB' % n
+
+
+def tune_plan(engine, m):
+    """name -> (value, why, needs_restart)"""
+    ram = int((m.get('ram_gb') or 4) * 1024)
+    cpus = max(1, int(m.get('cpus') or 2))
+    ssd = (m.get('disk') or 'ssd') == 'ssd'
+    # Shared with ai itself (and nginx, PHP, Claude Code) when it is this machine.
+    share = 0.8 if m.get('local') else 1.0
+    if engine == 'postgres':
+        sb = max(128, min(int(ram * share / 4), 16384))
+        return {
+            'shared_buffers': (_mb(sb), 'a quarter of the memory: the server’s own cache', True),
+            'effective_cache_size': (_mb(int(ram * share * 3 / 4)),
+                                     'how much the planner may assume is cached', False),
+            'maintenance_work_mem': (_mb(max(64, min(ram // 16, 2048))),
+                                     'for VACUUM and building indexes', False),
+            'work_mem': (_mb(max(4, min(ram // 256, 64))), 'for each sort and hash', False),
+            'wal_buffers': ('16MB', 'the write-ahead log’s buffer', True),
+            'max_wal_size': ('4GB' if ssd else '2GB', 'fewer checkpoints under load', False),
+            'min_wal_size': ('1GB', 'kept between checkpoints', False),
+            'checkpoint_completion_target': ('0.9', 'checkpoints spread out', False),
+            'random_page_cost': ('1.1' if ssd else '4', 'an SSD reads anywhere as fast', False),
+            'effective_io_concurrency': ('200' if ssd else '2', 'reads the disk takes at once', False),
+            'max_worker_processes': (str(max(8, cpus)), 'one per processor', True),
+            'max_parallel_workers': (str(cpus), 'parallel queries over every processor', False),
+            'max_parallel_workers_per_gather': (str(max(1, min(4, cpus // 2))),
+                                                'per query', False),
+        }
+    pool = max(128, int(ram * share * (0.5 if m.get('local') else 0.7)) // 128 * 128)
+    return {
+        'innodb_buffer_pool_size': (str(pool * 1048576), 'the server’s own cache: %s'
+                                    % _mb(pool), False),
+        'innodb_log_file_size': (str(min(pool // 4, 2048) * 1048576),
+                                 'a log large enough for a busy hour', True),
+        'innodb_flush_method': ('O_DIRECT', 'no second copy in the system’s cache', True),
+        'innodb_io_capacity': ('2000' if ssd else '200', 'what the disk takes per second', False),
+        'innodb_io_capacity_max': ('4000' if ssd else '400', '...at most', False),
+        'innodb_flush_neighbors': ('0' if ssd else '1', 'an SSD has no neighbours', False),
+        'tmp_table_size': (str(64 * 1048576), 'in-memory temporary tables', False),
+        'max_heap_table_size': (str(64 * 1048576), '...the same', False),
+        'table_open_cache': ('2000', 'tables kept open', False),
+    }
+
+
+def tune_current(db, names):
+    out = {}
+    for n in names:
+        try:
+            if db.engine == 'postgres':
+                out[n] = str(db.value('SHOW %s' % n))
+            else:
+                r = db.row("SHOW GLOBAL VARIABLES LIKE ?", (n,))
+                out[n] = str(list(r.values())[1]) if r else ''
+        except Exception:
+            out[n] = ''
+    return out
+
+
+def tune_same(engine, a, b):
+    def norm(v):
+        v = str(v).strip()
+        m = re.match(r'^(\d+(?:\.\d+)?)\s*(kB|MB|GB|TB)?\Z', v, re.I)
+        if not m:
+            return v.lower()
+        mult = {'kb': 1, 'mb': 1024, 'gb': 1048576, 'tb': 1073741824}.get(
+            (m.group(2) or '').lower(), None)
+        return float(m.group(1)) * mult if mult else float(m.group(1))
+    try:
+        x, y = norm(a), norm(b)
+        if isinstance(x, float) and isinstance(y, float) and max(x, y) >= 1024:
+            # Memory: within a tenth is the same - what is free moves from one
+            # look to the next, and a setting is not changed for that.
+            return abs(x - y) <= 0.1 * max(x, y)
+        return x == y
+    except Exception:
+        return str(a) == str(b)
+
+
+def tune_connect(store, admin_user, admin_password):
+    """The server, as an administrator when one is given, else as ourselves."""
+    c = {k: CONFIG.get(k) for k in DB_KEYS}
+    if admin_user:
+        c['db_user'], c['db_password'] = admin_user, admin_password
+        if c['db_engine'] == 'postgres':
+            pass
+    return db_open(c) if admin_user else store.db
+
+
+def tune_last(store):
+    try:
+        return json.loads(store.get_meta('tune_last:' + node_name()) or 'null')
+    except ValueError:
+        return None
+
+
+def tune_pending(db):
+    if db.engine != 'postgres':
+        return []
+    try:
+        return [r['name'] for r in db.rows('SELECT name FROM pg_settings WHERE pending_restart')]
+    except Exception:                                   # noqa: BLE001
+        return []
+
+
+def tune_plan_for(store, typed, probe=True):
+    db = store.db
+    if db.engine == 'sqlite':
+        raise ValueError('the file on this machine has no server to tune: this program sets '
+                         'it up itself')
+    c = {k: CONFIG.get(k) for k in DB_KEYS}
+    typed = typed or {}
+    m = tune_machine(c, typed)
+    commit_ms = tune_commit_ms(db) if probe else None
+    disk, why = tune_disk_guess(m, commit_ms)
+    if typed.get('disk') in ('ssd', 'hdd') and typed['disk'] != disk:
+        disk, why = typed['disk'], 'chosen'
+    m['disk'], m['why'], m['commit_ms'] = disk, why, commit_ms
+    out = {'engine': db.engine, 'words': ENGINE_WORDS.get(db.engine), 'where': db.where(),
+           'version': str(db.version() or '').split(' on ')[0].split(',')[0],
+           'size': int(db.size() or 0), 'machine': m, 'facts': m,
+           'restart': tune_restart_ready(store), 'last': tune_last(store), 'rows': [],
+           'items': []}
+    try:
+        if db.engine == 'postgres':
+            out['connections'] = int(db.value('SHOW max_connections') or 0)
+        else:
+            r = db.row("SHOW GLOBAL VARIABLES LIKE 'max_connections'")
+            out['connections'] = int(list(r.values())[1]) if r else 0
+    except Exception:                                   # noqa: BLE001
+        pass
+    if not m.get('ram_gb') or not m.get('cpus'):
+        out['need_facts'] = True
+        return out
+    plan = tune_plan(db.engine, m)
+    now = tune_current(db, plan.keys())
+    pending = set(tune_pending(db))
+    last = out['last'] or {}
+    mine = last.get('engine') == db.engine and not last.get('undone') \
+        and last.get('where') == db.where()
+    put = (last.get('set') or {}) if mine else {}
+    rows = []
+    for n, (v, why_, rs) in plan.items():
+        same = tune_same(db.engine, now.get(n, ''), v)
+        row = {'name': n, 'now': now.get(n, ''), 'want': v, 'why': why_, 'restart': rs,
+               'takes': 'at the next start' if rs else 'at once', 'same': same,
+               'change': not same, 'pending': n in pending}
+        if n in pending and n in put and tune_same(db.engine, put[n], v):
+            row.update(change=False, waiting=True)
+        rows.append(row)
+    out['rows'] = out['items'] = rows
+    if db.engine == 'mariadb':
+        out['snippet'] = out['cnf'] = (
+            '# Written by ai %s for this machine, as zz-ai-tuning.cnf in /etc/my.cnf.d/\n'
+            '# (or /etc/mysql/mariadb.conf.d/) so that the settings outlast a restart.\n'
+            '[mariadb]\n' % __version__) + ''.join('%s = %s\n' % (r['name'], r['want'])
+                                                    for r in rows)
+    return out
+
+
+def tune_apply(store, typed, admin_user, admin_password, by):
+    plan = tune_plan_for(store, typed, probe=False)
+    if plan.get('need_facts'):
+        raise ValueError('say what the machine has first: its memory and its processors')
+    db = tune_connect(store, admin_user, admin_password)
+    done, later, failed = [], [], []
+    before = json.loads(store.get_meta('tune_before:' + node_name()) or '{}')
+    try:
+        for r in plan['rows']:
+            if not r['change']:
+                continue
+            before.setdefault(r['name'], r['now'])
+            try:
+                if plan['engine'] == 'postgres':
+                    db.run("ALTER SYSTEM SET %s = '%s'" % (r['name'], r['want'].replace("'", '')))
+                    (later if r['restart'] else done).append(r['name'])
+                else:
+                    if r['restart']:
+                        later.append(r['name'])
+                        continue
+                    db.run('SET GLOBAL %s = %s' % (r['name'], r['want'] if r['want'].isdigit()
+                                                  else "'%s'" % r['want']))
+                    done.append(r['name'])
+            except Exception as e:
+                failed.append('%s: %s' % (r['name'], str(e).split('\n')[0][:160]))
+        if plan['engine'] == 'postgres' and (done or later):
+            db.run('SELECT pg_reload_conf()')
+    finally:
+        if db is not store.db:
+            db.close()
+    store.set_meta('tune_before:' + node_name(), json.dumps(before))
+    if done or later:
+        store.set_meta('tune_last:' + node_name(), json.dumps({
+            'engine': plan['engine'], 'where': store.db.where(), 'at': time.time(), 'by': by,
+            'set': {r['name']: r['want'] for r in plan['rows'] if r['name'] in done + later},
+            'undone': 0}))
+    store.add_event('settings', 'the database server was tuned for its machine by %s: %s'
+                    % (by, ', '.join(done + later) or 'nothing'), 'warn', who=by)
+    plan2 = tune_plan_for(store, typed, probe=False)
+    plan2.update({'done': done, 'later': later, 'failed': failed})
+    return plan2
+
+
+TUNE_RESTART_MARK = CONFIG_FILE.parent / 'may-restart-database'
+
+
+def tune_restart_unit():
+    """The postgresql service on this machine, as systemd knows it, or ''."""
+    try:
+        said = subprocess.run(['systemctl', 'list-units', '--type=service', '--all', '--plain',
+                               '--no-legend', '--no-pager', 'postgresql*'],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    found = []
+    for line in said.stdout.splitlines():
+        f = line.split()
+        if len(f) >= 3 and f[2] == 'active' and \
+                re.match(r'^postgresql(-\d+)?(@[\w.-]+)?\.service\Z', f[0]):
+            found.append(f[0])
+    return found[0] if len(found) == 1 else ''
+
+
+def tune_restart_ready(store):
+    db = store.db
+    if db.engine != 'postgres':
+        return {'may': False, 'unit': ''}
+    host = str(CONFIG.get('db_host') or '').lower()
+    if host not in ('', 'localhost', '127.0.0.1', '::1', socket.gethostname().lower()):
+        return {'may': False, 'unit': 'postgresql',
+                'why': 'PostgreSQL runs on another machine, which this program cannot restart'}
+    unit = tune_restart_unit()
+    if not unit:
+        return {'may': False, 'unit': 'postgresql',
+                'why': 'no single running postgresql service was found on this machine'}
+    if not TUNE_RESTART_MARK.exists():
+        return {'may': False, 'unit': unit,
+                'why': 'install.sh has not let this program restart it (run install.sh --upgrade '
+                       'without --no-db-restart)'}
+    return {'may': True, 'unit': unit, 'why': ''}
+
+
+def tune_restart(store, by):
+    """PostgreSQL on this machine started again, for the settings that take
+    only at a start - through systemd, where install.sh let this account do
+    that - and waited for."""
+    db = store.db
+    ready = tune_restart_ready(store)
+    if db.engine != 'postgres' or not ready['unit']:
+        raise ValueError('no database server is running as a service on this machine')
+    unit = ready['unit']
+    if not TUNE_RESTART_MARK.exists():
+        raise ValueError('this program may not restart %s: run  systemctl restart %s  as root'
+                         % (unit, unit))
+    waiting = tune_pending(db)
+    if not waiting:
+        raise ValueError('nothing waits for a restart')
+    try:
+        if str(db.value('SHOW huge_pages')).lower() == 'on':
+            raise ValueError('huge_pages is on, and a start needs enough of them for the new '
+                             'shared_buffers: check vm.nr_hugepages, then run  systemctl '
+                             'restart %s  as root' % unit)
+    except ValueError:
+        raise
+    except Exception:                                   # noqa: BLE001
+        pass
+    if 'shared_buffers' in waiting:
+        try:
+            want = int(db.value("SELECT pg_size_bytes(setting) FROM pg_file_settings WHERE "
+                                "name = 'shared_buffers' AND applied = false ORDER BY seqno "
+                                "DESC LIMIT 1") or 0)
+        except Exception:                               # noqa: BLE001
+            want = 0
+        try:
+            want = want or 0
+            running = int(db.value("SELECT setting::bigint * 8192 FROM pg_settings WHERE "
+                                   "name = 'shared_buffers'") or 0)
+            avail = tune_machine({}, {}).get('avail') or 0
+        except Exception:                               # noqa: BLE001
+            running = avail = 0
+        if want and avail and want - running > avail - 512 * 1048576:
+            raise ValueError('the machine has %d MB free now, too little for shared_buffers of '
+                             '%d MB - restarted now, PostgreSQL might not start. Free some '
+                             'memory, or put back as it was' % (avail // 1048576,
+                                                                 want // 1048576))
+    began = time.time()
+    try:
+        said = subprocess.run(['systemctl', '--no-ask-password', '--no-block', 'restart', unit],
+                              capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ValueError('systemctl: %s' % str(e)[:160])
+    if said.returncode != 0:
+        raise ValueError('%s was not restarted: %s - run  systemctl restart %s  as root'
+                         % (unit, (said.stderr or said.stdout).strip()[:160], unit))
+    store.add_event('settings', '%s restarted %s for the settings waiting for it: %s'
+                    % (by, unit, ', '.join(waiting)), 'warn', who=by)
+    time.sleep(2)
+    back = False
+    while time.time() < began + 62:
+        try:
+            state = subprocess.run(['systemctl', 'is-failed', unit], capture_output=True,
+                                   text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            state = ''
+        if state == 'failed':
+            raise ValueError('%s did not start again - see  journalctl -u %s ; if it does not '
+                             'start: as root, take the shared_buffers line out of '
+                             'postgresql.auto.conf and run  systemctl start %s'
+                             % (unit, unit, unit))
+        try:
+            started = float(db.value('SELECT extract(epoch from pg_postmaster_start_time())'))
+            if started >= began - 1:
+                back = True
+                break
+        except Exception:                               # noqa: BLE001
+            pass
+        time.sleep(1)
+    if not back:
+        raise ValueError('%s was asked to restart and has not answered yet - look again in a '
+                         'minute' % unit)
+    left = tune_pending(db)
+    return {'unit': unit, 'waiting': waiting, 'still': left,
+            'message': '%s started again%s' % (unit, '; still waiting: ' + ', '.join(left)
+                                                if left else ': every setting is in effect')}
+
+
+def tune_undo(store, admin_user, admin_password, by):
+    before = json.loads(store.get_meta('tune_before:' + node_name()) or '{}')
+    if not before:
+        raise ValueError('nothing was changed here, so there is nothing to put back')
+    db = tune_connect(store, admin_user, admin_password)
+    done, failed = [], []
+    try:
+        for n, v in before.items():
+            try:
+                if store.db.engine == 'postgres':
+                    db.run('ALTER SYSTEM RESET %s' % n)
+                else:
+                    db.run('SET GLOBAL %s = %s' % (n, v if str(v).isdigit() else "'%s'" % v))
+                done.append(n)
+            except Exception as e:
+                failed.append('%s: %s' % (n, str(e).split('\n')[0][:160]))
+        if store.db.engine == 'postgres':
+            db.run('SELECT pg_reload_conf()')
+    finally:
+        if db is not store.db:
+            db.close()
+    store.set_meta('tune_before:' + node_name(), '')
+    last = tune_last(store) or {}
+    if last:
+        last.update(undone=time.time(), undone_by=by)
+        store.set_meta('tune_last:' + node_name(), json.dumps(last))
+    store.add_event('settings', 'the database server’s settings were put back by %s: %s'
+                    % (by, ', '.join(done)), 'warn', who=by)
+    return {'done': done, 'failed': failed}
+
+# ---------------------------------------------------------------------------
+# The files kept beside the database, the disk under it, and putting one back
+# ---------------------------------------------------------------------------
+# As on isemon (1.10.160 on): two kinds of file are kept.
+#
+#   A *copy* is made by this program: every row of every table, written as a
+#   portable file, which goes back into any of the three engines. That is
+#   what carries an installation from the file to a server and back.
+#
+#   A *dump* is made by the engine's own program - pg_dump, mariadb-dump, or
+#   for the file SQLite's own backup, which is the file. It is a fraction of
+#   the size, the server's own tools read it, and it goes back into the
+#   engine it came off.
+#
+# Every one of either kind has the key that opens the tokens beside it, in a
+# file of its own, because one without the other is nothing.
+
+DUMP_DIR = STATE_DIR / 'dumps'
+DUMP_SUFFIX = {'sqlite': '.db', 'mariadb': '.sql.gz', 'postgres': '.pgc', 'copy': '.json.gz'}
+DUMP_WORDS = {'sqlite': 'a copy of the file', 'mariadb': 'a MariaDB dump',
+              'postgres': 'a PostgreSQL dump', 'copy': 'a portable copy'}
+DUMP_TOOLS = {'sqlite': (),
+              'mariadb': (('making one', ('mariadb-dump', 'mysqldump')),
+                          ('putting one back', ('mariadb', 'mysql'))),
+              'postgres': (('making one', ('pg_dump',)),
+                           ('putting one back', ('pg_restore',)))}
+# The names are the distribution's: Debian and Ubuntu call them otherwise.
+_APT = bool(shutil.which('apt-get')) and not shutil.which('dnf')
+DUMP_INSTALL = ({'mariadb': 'apt install mariadb-client (it is the client, not the server)',
+                 'postgres': 'apt install postgresql-client (it is the client, not the server)'} if _APT else
+                {'mariadb': 'dnf install mariadb (it is the client, not the server)',
+                 'postgres': 'dnf install postgresql (it is the client, not the server)'})
+DRIVERS = {'mariadb': ('pymysql', 'python3-pymysql' if _APT else 'python3-PyMySQL'),
+           'postgres': ('psycopg2', 'python3-psycopg2')}
+DUMP_NAME_RE = re.compile(r'^ai-(sqlite|mariadb|postgres|copy)?-?(\d{8}-\d{6})(?:-([a-z-]+))?'
+                     r'(\.db|\.sql\.gz|\.pgc|\.json\.gz)$')
+
+
+def drivers_state():
+    """Whether the driver for each server engine is installed - said before
+    somebody types an address rather than after they press a button."""
+    out = {}
+    for engine, (module, package) in DRIVERS.items():
+        try:
+            __import__(module)
+            out[engine] = {'ready': True, 'package': package}
+        except Exception as e:                          # noqa: BLE001
+            out[engine] = {'ready': False, 'package': package,
+                           'says': 'the driver %s is not installed (%s)' % (module, e)}
+    return out
+
+
+def dump_info(engine):
+    """Which program tonight's dump will be made with, and whether it is here."""
+    out = {'engine': engine, 'words': DUMP_WORDS.get(engine, engine),
+           'suffix': DUMP_SUFFIX.get(engine, ''), 'where': str(DUMP_DIR),
+           'install': DUMP_INSTALL.get(engine, ''), 'ready': True, 'why': ''}
+    for what, names in DUMP_TOOLS.get(engine, ()):
+        if not any(shutil.which(n) for n in names):
+            out.update(ready=False, why='%s is not on this machine, so a dump cannot be %s'
+                       % (names[0], 'made' if what == 'making one' else 'put back'))
+            break
+    return out
+
+
+def _tool(names):
+    for one in names:
+        got = shutil.which(one)
+        if got:
+            return got
+    raise ValueError('%s is not on this machine' % names[0])
+
+
+def _db_conf():
+    return {k: CONFIG.get(k) for k in DB_KEYS}
+
+
+def safe_db_name(c):
+    """The database's name, as it may stand on a command line: never one
+    that reads as an option (1.0.33)."""
+    name = str(c.get('db_name') or '')
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]{0,62}\Z', name):
+        raise DbError('the database name %r is not letters, digits and _' % name[:60])
+    return name
+
+
+def _my_cnf(c):
+    """A defaults file holding the password and nothing else, 0600, gone the
+    moment the program has finished with it: `--password=` on a command line
+    is readable by everybody on the machine while it runs."""
+    handle, name = tempfile.mkstemp(prefix='ai-my-', suffix='.cnf')
+    os.close(handle)
+    os.chmod(name, 0o600)
+    with open(name, 'w') as f:
+        said = str(c.get('db_password') or '')
+        if any(ord(ch) < 32 for ch in said):
+            raise DbError('the database password has a line break or another control '
+                          'character in it')
+        f.write('[client]\npassword="%s"\n' % said.replace('\\', '\\\\').replace('"', '\\"'))
+    return name
+
+
+def _my_args(c, cnf):
+    out = ['--defaults-extra-file=%s' % cnf,
+           '--host=%s' % (str(c.get('db_host') or '127.0.0.1').strip('[]')),
+           '--port=%d' % int(c.get('db_port') or 3306),
+           '--user=%s' % (c.get('db_user') or '')]
+    # The dump and restore tools encrypted as the daemon's own connection is
+    # (1.0.36).
+    mode = str((c.get('db_tls') if 'db_tls' in c else CONFIG.get('db_tls')) or '')
+    ca = str((c.get('db_tls_ca') if 'db_tls_ca' in c else CONFIG.get('db_tls_ca')) or '')
+    if mode:
+        out.append('--ssl')
+        if mode in ('verify-ca', 'verify-full'):
+            out.append('--ssl-verify-server-cert')
+        if ca:
+            out.append('--ssl-ca=%s' % ca)
+    return out
+
+
+def _pg_args(c):
+    return ['--host=%s' % (str(c.get('db_host') or '127.0.0.1').strip('[]')),
+            '--port=%d' % int(c.get('db_port') or 5432),
+            '--username=%s' % (c.get('db_user') or ''), '--no-password']
+
+
+def _pg_env(c):
+    env = dict(os.environ)
+    env['PGPASSWORD'] = str(c.get('db_password') or '')
+    env['PGCONNECT_TIMEOUT'] = str(int(c.get('db_timeout_s') or 10))
+    mode = str((c.get('db_tls') if 'db_tls' in c else CONFIG.get('db_tls')) or '')
+    ca = str((c.get('db_tls_ca') if 'db_tls_ca' in c else CONFIG.get('db_tls_ca')) or '')
+    if mode:
+        env['PGSSLMODE'] = mode
+        if ca:
+            env['PGSSLROOTCERT'] = ca
+    return env
+
+
+def _run(args, words, stdin=None, stdout=None, env=None, seconds=3600):
+    try:
+        got = subprocess.run(args, stdin=stdin, stdout=stdout if stdout is not None
+                             else subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                             timeout=seconds)
+    except subprocess.TimeoutExpired:
+        raise ValueError('%s took longer than %d s and was stopped' % (words, seconds))
+    if got.returncode != 0:
+        said = (got.stderr or b'').decode('utf-8', 'replace').strip().split('\n')
+        raise ValueError('%s failed: %s' % (words, (said[-1] if said else
+                                                     'exit %d' % got.returncode)[:300]))
+    return got.stdout
+
+
+def _stamp():
+    return datetime.now().strftime('%Y%m%d-%H%M%S')
+
+
+def _key_beside(path):
+    p = str(path)
+    for suf in ('.json.gz', '.sql.gz', '.pgc', '.db'):
+        if p.endswith(suf):
+            return Path(p[:-len(suf)] + '.key')
+    return Path(p + '.key')
+
+
+def _write_key_beside(path):
+    key = sealing_key()
+    if key:
+        write_replacing(_key_beside(path), key.hex() + '\n', 0o600)
+
+
+def _kind_of_name(name):
+    for kind, suf in (('copy', '.json.gz'), ('mariadb', '.sql.gz'), ('postgres', '.pgc'),
+                      ('sqlite', '.db')):
+        if name.endswith(suf):
+            return kind
+    return ''
+
+
+def _prune(folder, pattern, keep):
+    files = sorted((f for f in folder.glob(pattern) if DUMP_NAME_RE.match(f.name)),
+                   key=lambda f: f.stat().st_mtime)
+    for old in files[:-keep] if keep > 0 and len(files) > keep else []:
+        for f in (old, _key_beside(old)):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def copy_engine(path):
+    """Which engine a copy was taken off: its first line says."""
+    import gzip
+    try:
+        with gzip.open(str(path), 'rt', encoding='utf-8') as f:
+            return json.loads(f.readline() or '{}').get('engine') or ''
+    except Exception:                                   # noqa: BLE001
+        return ''
+
+
+def kept_copies():
+    """The copies this program made, newest first."""
+    if not BACKUP_DIR.is_dir():
+        return []
+    out = []
+    for f in sorted(list(BACKUP_DIR.glob('ai-*.json.gz')) + [],
+                   key=lambda x: x.stat().st_mtime,
+                    reverse=True):
+        st = f.stat()
+        out.append({'name': f.name, 'bytes': st.st_size, 'size': st.st_size, 'at': st.st_mtime,
+                    'from': copy_engine(f), 'key': _key_beside(f).exists(), 'kind': 'copy'})
+    return out
+
+
+def kept_dumps(engine):
+    """The dumps the engine made of itself, newest first."""
+    if not DUMP_DIR.is_dir():
+        return []
+    out = []
+    for f in sorted(DUMP_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+        m = DUMP_NAME_RE.match(f.name)
+        if not m:
+            continue
+        kind = _kind_of_name(f.name)
+        came = m.group(1) or ''
+        if kind == 'copy':
+            came = copy_engine(f) or came
+        st = f.stat()
+        out.append({'name': f.name, 'bytes': st.st_size, 'at': st.st_mtime, 'kind': kind,
+                    'from': came if kind != 'copy' else came,
+                    'mine': kind == 'copy' or kind == engine,
+                    'key': _key_beside(f).exists()})
+    return out
+
+
+def make_dump(store, label='daily', folder=None):
+    """A dump of the database in use by its own engine's program - or, where
+    that program is not on this machine, a portable copy in its place."""
+    engine = store.db.engine
+    folder = Path(folder) if folder else DUMP_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    backup_room_check(store, folder)            # never the disk filled (1.0.149)
+    info = dump_info(engine)
+    kind = engine if info['ready'] else 'copy'
+    name = 'ai-%s-%s-%s%s' % (engine if kind != 'copy' else 'copy', _stamp(),
+                              re.sub(r'[^a-z-]', '', label) or 'daily', DUMP_SUFFIX[kind])
+    target = folder / name
+    part = Path(str(target) + '.part')
+    c = _db_conf()
+    try:
+        if kind == 'copy':
+            dump_tables(store.db, part)
+        elif engine == 'sqlite':
+            # SQLite's own backup: a consistent copy of the file even while the
+            # daemon writes to it.
+            src = sqlite3.connect(str(store.db.path))
+            dst = sqlite3.connect(str(part))
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+        elif engine == 'mariadb':
+            import gzip
+            tool = _tool(('mariadb-dump', 'mysqldump'))
+            cnf = _my_cnf(c)
+            try:
+                raw = Path(str(part) + '.raw')
+                with open(str(raw), 'wb') as out:
+                    _run([tool] + _my_args(c, cnf) + [
+                        '--single-transaction', '--quick', '--skip-lock-tables',
+                        '--default-character-set=utf8mb4', '--no-tablespaces',
+                        '--add-drop-table', '--skip-comments', safe_db_name(c)],
+                        'mariadb-dump', stdout=out)
+                with open(str(raw), 'rb') as src, gzip.open(str(part), 'wb', 6) as dst:
+                    shutil.copyfileobj(src, dst, 1 << 20)
+                raw.unlink()
+            finally:
+                os.unlink(cnf)
+        else:
+            tool = _tool(('pg_dump',))
+            _run([tool] + _pg_args(c) + ['--format=custom', '--compress=6', '--no-owner',
+                                         '--no-privileges', '--file=%s' % part,
+                                         '--dbname=%s' % safe_db_name(c)],
+                 'pg_dump', env=_pg_env(c))
+        os.chmod(str(part), 0o640)
+        part.replace(target)
+    finally:
+        for left in (part, Path(str(part) + '.raw')):
+            if left.exists():
+                try:
+                    left.unlink()
+                except OSError:
+                    pass
+    _write_key_beside(target)
+    if folder == DUMP_DIR:
+        _prune(DUMP_DIR, 'ai-*', int(CONFIG.get('backup_keep') or 14))
+    store.add_event('backups', 'made %s (%s): %s' % (
+        DUMP_WORDS[kind], {'daily': 'every night', 'by-hand': 'by hand',
+                           'download': 'to be downloaded'}.get(label, label), target.name))
+    return target
+
+
+# ---- what is in a file, without putting any of it back ------------------------
+def _magic(path):
+    with open(str(path), 'rb') as f:
+        return f.read(16)
+
+
+def _peek_copy(path):
+    import gzip
+    counts, admins, tables, table = {}, 0, 0, None
+    with gzip.open(str(path), 'rt', encoding='utf-8') as f:
+        head = json.loads(f.readline() or '{}')
+        if 'ai' not in head:
+            return None, 'that is not a copy made by ai'
+        for line in f:
+            got = json.loads(line)
+            if set(got.keys()) == {'table'}:
+                table = got['table']
+                tables += 1
+                counts.setdefault(table, 0)
+                continue
+            if table:
+                counts[table] += 1
+                if table == 'users' and got.get('role') == 'admin' \
+                        and not got.get('disabled'):
+                    admins += 1
+    return {'kind': 'copy', 'from': head.get('engine') or '', 'version': head.get('ai'),
+            'made': head.get('made'), 'counts': counts, 'admins': admins, 'tables': tables,
+            'key': bool(head.get('key')), 'machine': head.get('machine')}, ''
+
+
+def _peek_sqlite(path):
+    try:
+        con = sqlite3.connect('file:%s?mode=ro' % path, uri=True)
+    except sqlite3.Error as e:
+        return None, 'that file could not be opened: %s' % e
+    try:
+        names = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")]
+        if 'users' not in names or 'settings' not in names:
+            return None, 'that is not a database of ai: it has no accounts and no settings'
+        counts = {t: con.execute('SELECT COUNT(*) FROM %s' % t).fetchone()[0]
+                  for t in DB_TABLES if t in names}
+        admins = con.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND "
+                             "COALESCE(disabled, 0) = 0").fetchone()[0]
+    except sqlite3.Error as e:
+        return None, 'that database could not be read: %s' % e
+    finally:
+        con.close()
+    return {'kind': 'sqlite', 'counts': counts, 'admins': admins,
+            'tables': len([t for t in DB_TABLES if t in names])}, ''
+
+
+def _peek_mariadb(path):
+    import gzip
+    tables, admins, users, in_users = set(), 0, 0, False
+    with gzip.open(str(path), 'rt', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if line.startswith('CREATE TABLE'):
+                got = re.search(r'CREATE TABLE `([^`]+)`', line)
+                if got:
+                    tables.add(got.group(1))
+                continue
+            first = line.startswith('INSERT INTO `users`')
+            if first:
+                in_users = True
+            elif in_users and not line.startswith('('):
+                in_users = False
+            if in_users:
+                admins += line.count(",'admin',")
+                rest = line.split('VALUES', 1)[-1] if first else line
+                users += rest.count('),(') + (1 if '(' in rest else 0)
+                if line.rstrip().endswith(';'):
+                    in_users = False
+    if 'users' not in tables or 'settings' not in tables:
+        return None, 'that dump is not one of ai - it has no accounts and no settings'
+    return {'kind': 'mariadb', 'counts': {'users': users}, 'admins': admins,
+            'tables': len(tables)}, ''
+
+
+def _peek_postgres(path):
+    tool = shutil.which('pg_restore')
+    if not tool:
+        return None, ('pg_restore is not on this machine, so what is in that dump cannot be '
+                      'read: %s' % DUMP_INSTALL['postgres'])
+    listed = _run([tool, '--list', str(path)], 'pg_restore --list', seconds=300)
+    tables = set(re.findall(r'TABLE DATA\s+\S+\s+(\S+)', listed.decode('utf-8', 'replace')))
+    if 'users' not in tables or 'settings' not in tables:
+        return None, 'that dump is not one of ai - it has no accounts and no settings'
+    rows = _run([tool, '--data-only', '--table=users', '--file=-', str(path)],
+                'pg_restore', seconds=300).decode('utf-8', 'replace')
+    users = admins = 0
+    inside = False
+    for line in rows.split('\n'):
+        if line.startswith('COPY '):
+            inside = True
+            continue
+        if inside:
+            if line == '\\.':
+                break
+            users += 1
+            if '\tadmin\t' in line:
+                admins += 1
+    return {'kind': 'postgres', 'counts': {'users': users}, 'admins': admins,
+            'tables': len(tables)}, ''
+
+
+def db_file_peek(path, engine, need_admin=True):
+    """What is in a copy or a dump, and whether it may be put back here."""
+    head = _magic(path)
+    try:
+        if head.startswith(b'SQLite format 3'):
+            said, why = _peek_sqlite(path)
+        elif head.startswith(b'PGDMP'):
+            said, why = _peek_postgres(path)
+        elif head[:2] == b'\x1f\x8b':
+            import gzip
+            with gzip.open(str(path), 'rb') as f:
+                first = f.read(64)
+            if first.startswith(b'{'):
+                said, why = _peek_copy(path)
+            else:
+                said, why = _peek_mariadb(path)
+        else:
+            return None, 'that is neither a copy nor a dump made by ai'
+    except Exception as e:                              # noqa: BLE001
+        return None, 'that file could not be read: %s' % str(e).split('\n')[0][:200]
+    if said is None:
+        return None, why
+    kind = said['kind']
+    if kind not in ('copy', 'sqlite') and kind != engine:
+        return None, ('that is %s, and this installation is on %s: a dump goes back only into '
+                      'the engine it came off. Use a copy - a copy goes into any of the three.'
+                      % (DUMP_WORDS[kind], ENGINE_WORDS.get(engine, engine)))
+    if not said.get('admins'):
+        # On the command line root makes one afterwards (1.0.62): a copy of
+        # a server set up there alone was refused for good.
+        if need_admin:
+            return None, ('there is no administrator who can sign in in that file: putting '
+                          'it back would lock everybody out of these pages (on the command line '
+                          'it can be put back, and an account made after it)')
+        said['no_admin'] = True
+    said['bytes'] = Path(path).stat().st_size
+    return said, ''
+
+
+def _sqlite_to_copy(path, out):
+    """A SQLite file of ours, as a copy: so that it goes back into whatever
+    engine is in use, by the same road as every copy."""
+    src = Db('sqlite', path=path)
+    try:
+        dump_tables(src, out, [t for t in DB_TABLES if t in src.tables()])
+    finally:
+        src.close()
+    return out
+
+
+def db_file_restore(store, path, by, key_file=None, from_name='', need_admin=True):
+    """Put a copy or a dump back over everything. A copy of what is replaced
+    is made first and kept with the others."""
+    engine = store.db.engine
+    said, why = db_file_peek(path, engine, need_admin)
+    if said is None:
+        raise ValueError(why)
+    kind = said['kind']
+    # A kept copy is read from a copy of its own (1.0.44): the safety copy
+    # below rotates the kept ones, and the oldest - the one being put back -
+    # would be the one it took away.
+    held = []
+    try:
+        if Path(path).resolve().parent == Path(BACKUP_DIR).resolve():
+            ext = ''.join(Path(path).suffixes[-2:]) if str(path).endswith('.gz') else Path(path).suffix
+            fd, tmpname = tempfile.mkstemp(prefix='ai-putback-', suffix=ext, dir=str(STATE_DIR))
+            os.close(fd)
+            shutil.copyfile(str(path), tmpname)
+            os.chmod(tmpname, 0o600)
+            held.append(Path(tmpname))
+            kf = Path(key_file) if key_file else None
+            if kf and kf.exists():
+                fd, kname = tempfile.mkstemp(prefix='ai-putback-', suffix='.key', dir=str(STATE_DIR))
+                os.close(fd)
+                shutil.copyfile(str(kf), kname)
+                os.chmod(kname, 0o600)
+                held.append(Path(kname))
+                key_file = kname
+            path = tmpname
+        return _db_file_restore(store, path, by, key_file, from_name, kind)
+    finally:
+        for x in held:
+            try:
+                x.unlink()
+            except OSError:
+                pass
+
+
+def _db_file_restore(store, path, by, key_file, from_name, kind):
+    # The key that opens its secrets: beside a kept file, or inside a copy
+    # that was downloaded with it.
+    key_hex = ''
+    if key_file and Path(key_file).exists():
+        key_hex = Path(key_file).read_text().strip()
+    elif kind == 'copy':
+        import gzip
+        with gzip.open(str(path), 'rt', encoding='utf-8') as f:
+            key_hex = str(json.loads(f.readline() or '{}').get('key') or '')
+    safety = make_backup(store, 'before putting %s back, by %s' % (from_name or 'a file', by))
+    # Who is signed in stays as it is now (1.0.147): the copy's sign-ins came
+    # back with it - one signed out since, or of a password changed since,
+    # opened the pages again until it ran out.
+    try:
+        live_sessions = store.db.rows('SELECT * FROM sessions')
+    except Exception:                                   # noqa: BLE001
+        live_sessions = None
+    c = _db_conf()
+    if kind == 'copy':
+        load_tables(store.db, path)
+    elif kind == 'sqlite':
+        fd, tmp = tempfile.mkstemp(prefix='ai-restore-', suffix='.json.gz', dir=str(STATE_DIR))
+        os.close(fd)                    # not left open, one each time (1.0.139)
+        tmp = Path(tmp)
+        try:
+            _sqlite_to_copy(path, tmp)
+            load_tables(store.db, tmp)
+        finally:
+            tmp.unlink()
+    elif kind == 'mariadb':
+        import gzip
+        tool = _tool(('mariadb', 'mysql'))
+        with gzip.open(str(path), 'rb') as sent:
+            for n, line in enumerate(sent):
+                if line[:1] == b'\\' or line[:7].lower() == b'system ':
+                    raise ValueError('line %d of the dump is a client command, not SQL. '
+                                     'A dump this program made has none.' % (n + 1))
+        cnf = _my_cnf(c)
+        # The client is given the SQL itself: a gzip reader has no file
+        # descriptor of its own to hand a program, so it is unpacked first.
+        fd, raw = tempfile.mkstemp(prefix='ai-sql-', dir=str(STATE_DIR))
+        os.close(fd)
+        raw = Path(raw)
+        try:
+            with gzip.open(str(path), 'rb') as src, open(str(raw), 'wb') as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+            with open(str(raw), 'rb') as sent:
+                _run([tool] + _my_args(c, cnf) + ['--default-character-set=utf8mb4',
+                                                  '--local-infile=0', '--binary-mode',
+                                                  safe_db_name(c)],
+                     'the MariaDB client', stdin=sent)
+        finally:
+            os.unlink(cnf)
+            try:
+                raw.unlink()
+            except OSError:
+                pass
+    else:
+        tool = _tool(('pg_restore',))
+        _run([tool] + _pg_args(c) + ['--single-transaction', '--clean', '--if-exists',
+                                     '--no-owner', '--no-privileges',
+                                     '--dbname=%s' % safe_db_name(c), str(path)],
+             'pg_restore', env=_pg_env(c))
+    store.db.make_tables()
+    if live_sessions is not None:
+        try:
+            store.db.run('DELETE FROM sessions')
+            have = set(c.lower() for c in store.db.columns('sessions'))
+            for r in live_sessions:
+                row = {k: v for k, v in dict(r).items() if k.lower() in have}
+                keys = sorted(row)
+                store.db.insert_many('sessions', keys, [[row[k] for k in keys]])
+        except Exception as e:                          # noqa: BLE001
+            log('the sign-ins could not be kept as they were: %s' % e, 'warn')
+    key_said = 'the key of its secrets stays as it was'
+    if re.match(r'^[0-9a-f]{64}\Z', key_hex):
+        now = sealing_key()
+        if not now or now.hex() != key_hex:
+            write_replacing(sealing_key_path(), key_hex + '\n', 0o600)
+            _KEY_CACHE.clear()
+            key_said = 'the key of its secrets came with it and is in use now'
+    else:
+        key_said = ('no key came with it: the secrets in it (the mail server\'s password, the apps of the '
+                    'second step, the key of the certificate) open only if it was made here')
+    config_rebuild(store)
+    store.add_event('backups', '%s put the database back from %s (%s); what it replaced is in %s'
+                    % (by, from_name or 'a file', DUMP_WORDS.get(kind, kind), safety.name),
+                    'warn', who=by)
+    return {'safety': safety.name, 'kind': kind, 'key': key_said}
+
+
+# ---- the disk under it ----------------------------------------------------------
+def note_size(store):
+    """The size of the database, once a day, for how fast it grows."""
+    try:
+        sizes = json.loads(store.get_meta('db_sizes:' + node_name()) or '{}')
+    except ValueError:
+        sizes = {}
+    today = datetime.now().strftime('%Y-%m-%d')
+    if sizes.get('engine') != store.db.engine:
+        sizes = {'engine': store.db.engine, 'days': {}}
+    if today not in sizes['days']:
+        sizes['days'][today] = int(store.db.size() or 0)
+        for old in sorted(sizes['days'])[:-60]:
+            del sizes['days'][old]
+        store.set_meta('db_sizes:' + node_name(), json.dumps(sizes))
+    return sizes
+
+
+def db_growth(store):
+    days = note_size(store).get('days', {})
+    edge = (datetime.now().timestamp() - 15 * 86400)
+    seen = sorted((d, b) for d, b in days.items()
+                  if datetime.strptime(d, '%Y-%m-%d').timestamp() >= edge)
+    if len(seen) < 2:
+        return {'a_day': 0, 'over_days': 0}
+    (d0, b0), (d1, b1) = seen[0], seen[-1]
+    span = max(1, (datetime.strptime(d1, '%Y-%m-%d') - datetime.strptime(d0, '%Y-%m-%d')).days)
+    return {'a_day': max(0, int((b1 - b0) / span)), 'over_days': span}
+
+
+def _folder_bytes(folder):
+    total = 0
+    if Path(folder).is_dir():
+        for f in Path(folder).iterdir():
+            try:
+                total += f.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def db_disk(store):
+    db = store.db
+    where = db.path.parent if db.engine == 'sqlite' else STATE_DIR
+    out = {'where': str(where), 'total': 0, 'free': 0, 'share': 0, 'days_left': None,
+           'holds': 'the database itself, its copies and its dumps' if db.engine == 'sqlite'
+           else 'the copies and the dumps - the database itself is on the server'}
+    try:
+        u = shutil.disk_usage(str(where))
+        out.update(total=u.total, free=u.free,
+                   share=round(100.0 * (u.total - u.free) / u.total) if u.total else 0)
+    except OSError:
+        pass
+    grew = db_growth(store)
+    if grew['a_day'] and out['free']:
+        out['days_left'] = int(out['free'] / grew['a_day'])
+    parts = []
+    if db.engine == 'sqlite':
+        for suffix, what in (('', 'the database'), ('-wal', 'what is written, not yet folded in'),
+                             ('-shm', 'the index of that')):
+            f = Path(str(db.path) + suffix)
+            if f.exists():
+                parts.append({'name': f.name, 'what': what, 'bytes': f.stat().st_size})
+    else:
+        parts.append({'name': db.where(), 'what': 'the database, on the server',
+                      'bytes': int(db.size() or 0)})
+    parts.append({'name': str(BACKUP_DIR), 'what': 'the copies', 'bytes':
+                  _folder_bytes(BACKUP_DIR)})
+    parts.append({'name': str(DUMP_DIR), 'what': 'the dumps', 'bytes': _folder_bytes(DUMP_DIR)})
+    return out, grew, parts
+
+
+def db_cache(store):
+    """The server's own cache, where it is left as installed and the database
+    has outgrown it."""
+    db = store.db
+    if db.engine == 'sqlite':
+        return None
+    try:
+        if db.engine == 'postgres':
+            setting = 'shared_buffers'
+            cache = int(db.value("SELECT setting::bigint * 8192 FROM pg_settings "
+                                 "WHERE name = 'shared_buffers'") or 0)
+        else:
+            setting = 'innodb_buffer_pool_size'
+            r = db.row("SHOW GLOBAL VARIABLES LIKE 'innodb_buffer_pool_size'")
+            cache = int(list(r.values())[1]) if r else 0
+    except Exception:                                   # noqa: BLE001
+        return None
+    size = int(db.size() or 0)
+    ram = 0
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('MemTotal:'):
+                    ram = int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return {'engine': ENGINE_WORDS.get(db.engine), 'setting': setting, 'cache': cache,
+            'size': size, 'ram': ram, 'low': bool(cache and size > cache)}
+
+
+# ---- erasing what was collected -----------------------------------------------
+ERASABLE = [
+    ('events', 'events', 'the event log',
+     'what this program noted about itself: sign-ins, terminals started and ended, changes, copies, '
+     'starts and stops.'),
+    ('outbox', 'outbox', 'the list of mails and SMS sent',
+     'where each went and what the other side said - never what it held.'),
+    ('ended', 'terms', 'the ended terminals',
+     'the list of terminals that have ended, with their last screens. Running ones are not touched.'),
+]
+
+
+def db_erasable(store):
+    groups = []
+    for key, table, name, says in ERASABLE:
+        groups.append({'key': key, 'name': name, 'says': says,
+                       'rows': int(store.db.value('SELECT COUNT(*) FROM %s%s' % (
+                           table, ' WHERE ended IS NOT NULL' if table == 'terms' else '')) or 0)})
+    return {'groups': groups, 'bytes': int(store.db.size() or 0)}
+
+
+def db_erase_job(store, groups, tidy, by):
+    tables = [(t, n) for k, t, n, _ in ERASABLE if k in groups]
+    if not tables:
+        raise ValueError('nothing was ticked')
+
+    def work(progress):
+        progress(0, len(tables) + 2, 'making a copy first')
+        copy = make_backup(store, 'before erasing, by %s' % by)
+        gone = {}
+        for i, (t, n) in enumerate(tables):
+            progress(i + 1, len(tables) + 2, 'emptying %s' % n)
+            gone[t] = store.db.run('DELETE FROM terms WHERE ended IS NOT NULL') if t == 'terms' \
+                else store.db.run('DELETE FROM %s' % t)
+        given = None
+        if tidy:
+            progress(len(tables) + 1, len(tables) + 2, 'giving the disk back')
+            given = db_give_back(store, lambda *a: None)
+        store.add_event('settings', '%s erased %s (a copy was made first: %s)'
+                        % (by, ', '.join(n for _, n in tables), copy.name), 'warn', who=by)
+        progress(len(tables) + 2, len(tables) + 2, 'done')
+        return {'erased': gone, 'copy': copy.name, 'given': given}
+    return db_job('erasing the collected data', work)
+
+
+# ---- the server's settings: what was done, what waits for a start ---------------
+def tune_state(store):
+    db = store.db
+    out = {'engine': db.engine, 'last': None, 'pending': [], 'lost': [],
+           'restart': {'may': False, 'unit': {'postgres': 'postgresql',
+                                              'mariadb': 'mariadb'}.get(db.engine, '')}}
+    try:
+        last = json.loads(store.get_meta('tune_last:' + node_name()) or 'null')
+    except ValueError:
+        last = None
+    out['last'] = last
+    if db.engine == 'postgres':
+        try:
+            out['pending'] = [r['name'] for r in db.rows(
+                'SELECT name FROM pg_settings WHERE pending_restart')]
+        except Exception:                               # noqa: BLE001
+            pass
+    elif db.engine == 'mariadb' and last and not last.get('undone') \
+            and last.get('engine') == 'mariadb':
+        now = tune_current(db, list((last.get('set') or {}).keys()))
+        out['lost'] = [n for n, v in (last.get('set') or {}).items()
+                       if not tune_same('mariadb', now.get(n, ''), v)]
+    return out
+# ---- a copy or a dump with the key its secrets are sealed with (otp's 1.0.123) ----------
+# A copy or a dump alone opens no secret anywhere else: the key that opens them
+# is a file of its own (the .key beside it, /var/lib/ai/secrets.key). Downloaded
+# from the page it can now go with the key in ONE file - a plain tar holding
+#   ai-db.json           what it is (the file's name, size, sha256, where made)
+#   <the file>           the copy or the dump, as it is
+#   secrets.key.locked   the key, locked with a passphrase given on the page
+#                        (scrypt, HMAC)
+# and the same file sent back to Put a copy back / Put a dump back is opened
+# with that passphrase and put back with its key. The passphrase is never
+# kept: lost, the key in the file is lost with it.
+DBKEY_KIND = 'ai-db-key'
+DBKEY_TAR_KIND = 'ai-db-with-key'
+DBKEY_SUFFIX = '.with-key.tar'
+DB_UPLOADS = STATE_DIR / 'db-uploads'
+DB_TICKETS_DIR = STATE_DIR / 'db-downloads'
+DB_TICKETS = {}
+DB_TICKETS_LOCK = threading.Lock()
+DBKEY_MIN_PASS = 10
+
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(str(path), 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def dbkey_passphrase_checked(passphrase):
+    p = str(passphrase or '')
+    if len(p) < DBKEY_MIN_PASS:
+        raise ValueError('a passphrase of %d characters at least - it is all that guards the '
+                         'key in the file' % DBKEY_MIN_PASS)
+    return p
+
+
+def dbkey_bundle(src, name, passphrase, work):
+    """`src` (a copy or a dump called `name`) and this machine's key, locked
+    with `passphrase`, in one tar in `work`. Its path."""
+    passphrase = dbkey_passphrase_checked(passphrase)
+    key = sealing_key()
+    if not key:
+        raise ValueError('this machine has no key its secrets are sealed with')
+    sha = _sha256_file(src)
+    locked = bundle_lock({'key': key.hex(), 'file': name, 'sha256': sha}, passphrase,
+                         kind=DBKEY_KIND)
+    head = {'kind': DBKEY_TAR_KIND, 'format': 1, 'file': name,
+            'bytes': Path(src).stat().st_size, 'sha256': sha, 'made': time.time(),
+            'node': node_name(), 'site': CONFIG.get('site_name') or '', 'version': __version__}
+    out = Path(work) / (name + DBKEY_SUFFIX)
+    with tarfile.open(str(out), 'w') as tf:
+        for arc, data in (('ai-db.json', json.dumps(head, indent=1).encode('utf-8')),
+                          ('secrets.key.locked', json.dumps(locked).encode('utf-8'))):
+            ti = tarfile.TarInfo(arc)
+            ti.size = len(data)
+            ti.mtime = int(time.time())
+            ti.mode = 0o600
+            tf.addfile(ti, io.BytesIO(data))
+        ti = tf.gettarinfo(str(src), arcname=name)
+        ti.uid = ti.gid = 0
+        ti.uname = ti.gname = ''
+        ti.mode = 0o600
+        with open(str(src), 'rb') as f:
+            tf.addfile(ti, f)
+    os.chmod(str(out), 0o600)
+    return out
+
+
+def dbkey_is_bundle(path):
+    """Whether `path` is a file made by dbkey_bundle (its head, not its name)."""
+    try:
+        if not tarfile.is_tarfile(str(path)):
+            return False
+        with tarfile.open(str(path), 'r:') as tf:
+            m = tf.getmember('ai-db.json')
+            f = tf.extractfile(m)
+            head = json.loads(f.read(1 << 16).decode('utf-8')) if f else {}
+        return isinstance(head, dict) and head.get('kind') == DBKEY_TAR_KIND
+    except (KeyError, OSError, ValueError, tarfile.TarError):
+        return False
+
+
+def dbkey_open(path, work, passphrase=None):
+    """The file inside it, taken out into `work`, and - with the passphrase -
+    the key next to it: (file, key file or None, head)."""
+    try:
+        tf = tarfile.open(str(path), 'r:')
+    except (OSError, tarfile.TarError) as e:
+        raise ValueError('that file does not open: %s' % e)
+    with tf:
+        members = {}
+        for m in tf.getmembers():
+            # Only plain files, by plain names: nothing it says goes anywhere
+            # but where it is put.
+            if not m.isreg() or '/' in m.name or m.name in ('', '.', '..') or '\\' in m.name:
+                raise ValueError('that file holds something ai does not put in one: %s' % m.name)
+            members[m.name] = m
+        try:
+            head = json.loads(tf.extractfile(members['ai-db.json']).read(1 << 16).decode('utf-8'))
+            locked = json.loads(tf.extractfile(members['secrets.key.locked']).read(1 << 20)
+                                .decode('utf-8'))
+        except (KeyError, ValueError, AttributeError):
+            raise ValueError('that is not a database with its key made by ai')
+        name = os.path.basename(str(head.get('file') or ''))
+        if head.get('kind') != DBKEY_TAR_KIND or not DUMP_NAME_RE.match(name) or name not in members:
+            raise ValueError('that is not a database with its key made by ai')
+        out = Path(work) / name
+        src = tf.extractfile(members[name])
+        fd = os.open(str(out), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as dst:
+            shutil.copyfileobj(src, dst, 1 << 20)
+    if _sha256_file(out) != head.get('sha256'):
+        raise ValueError('the file inside is not the one it was made with (damaged on the way?)')
+    keyf = None
+    if passphrase is not None:
+        try:
+            got = bundle_open(locked, str(passphrase), kinds=(DBKEY_KIND,))
+        except ValueError as e:
+            if 'passphrase' in str(e):
+                raise ValueError('that passphrase does not open the key in the file')
+            raise
+        if got.get('sha256') != head.get('sha256') or \
+                not re.match(r'^[0-9a-f]{64}\Z', str(got.get('key') or '')):
+            raise ValueError('the key in the file is not the one made with it')
+        keyf = Path(work) / 'secrets.key'
+        write_replacing(keyf, got['key'] + '\n', 0o600)
+    return out, keyf, head
+
+
+def dbkey_keep_upload(tmp):
+    """An upload kept for an hour to be put back with its passphrase: its id."""
+    DB_UPLOADS.mkdir(mode=0o700, exist_ok=True)
+    now = time.time()
+    for p in DB_UPLOADS.iterdir():
+        try:
+            if now - p.stat().st_mtime > 3600:
+                p.unlink()
+        except OSError:
+            pass
+    up = secrets.token_hex(8)
+    shutil.move(str(tmp), str(DB_UPLOADS / up))
+    os.chmod(str(DB_UPLOADS / up), 0o600)
+    return up
+
+
+def dbkey_upload(up):
+    if not re.match(r'^[0-9a-f]{16}\Z', str(up or '')):
+        raise ValueError('which file?')
+    p = DB_UPLOADS / up
+    if not p.is_file():
+        raise ValueError('the file sent is not here any more (an hour has gone by?): send it again')
+    return p
+
+
+def dbkey_ticket_put(path, name, who):
+    """A file made for a download, waiting ten minutes for the one browser
+    that asked for it: its ticket."""
+    now = time.time()
+    with DB_TICKETS_LOCK:
+        for t, v in list(DB_TICKETS.items()):
+            if now - v['at'] > 600:
+                shutil.rmtree(str(v['dir']), ignore_errors=True)
+                DB_TICKETS.pop(t, None)
+        t = secrets.token_hex(16)
+        DB_TICKETS[t] = {'path': Path(path), 'name': name, 'who': who, 'at': now,
+                         'dir': Path(path).parent}
+    return t
+
+
+def dbkey_ticket_take(t, who):
+    with DB_TICKETS_LOCK:
+        v = DB_TICKETS.pop(str(t or ''), None)
+    if not v or v['who'] != who or time.time() - v['at'] > 600:
+        if v:
+            shutil.rmtree(str(v['dir']), ignore_errors=True)
+        return None
+    return v
+
+
+# ---- Settings → The database (otp's routes, through the pages' relay) -------------------------
+# What otp sends as a file straight to the browser is put where /files/get
+# hands it to this administrator (DB_TICKETS_DIR, taken away within the hour);
+# what the browser sends goes by /files/put into DB_UPLOADS first.
+def db_nightly(store):
+    """At backup_at, once a day: the engine's own dump, or a portable copy
+    where its program is missing - and the size noted, for how fast it grows."""
+    if not CONFIG.get('backup_daily'):
+        return
+    today = datetime.now().strftime('%Y-%m-%d')
+    try:
+        hh, mm = (int(x) for x in str(CONFIG.get('backup_at') or '03:30').strip().split(':', 1))
+    except ValueError:
+        hh, mm = 3, 30
+    now = datetime.now()
+    if store.get_meta('backup_day') == today or (now.hour, now.minute) < (hh, mm):
+        return
+    store.set_meta('backup_day', today)
+    try:
+        make_dump(store, 'daily')
+    except Exception as e:                              # noqa: BLE001
+        store.add_event('backups', 'the daily dump failed: %s' % e, 'error')
+    try:
+        note_size(store)
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def db_tidy_files():
+    now = time.time()
+    for d in (DB_TICKETS_DIR, DB_UPLOADS):
+        try:
+            for p in d.iterdir():
+                if now - p.stat().st_mtime > 3600:
+                    shutil.rmtree(str(p), ignore_errors=True) if p.is_dir() else p.unlink()
         except OSError:
             pass
 
 
-def db_copy_tick(store):
-    """Once a night, at db_copy_hour."""
-    if not CONFIG.get('db_copy_on', True):
-        return
-    now = datetime.now()
-    if now.hour != int(CONFIG.get('db_copy_hour') or 0):
-        return
-    last = (store.meta_json('db:last_copy', {}) or {}).get('at') or 0
-    if time.time() - last < 20 * 3600:
-        return
-    try:
-        db_copy(store, 'every night')
-    except Exception as e:                              # noqa: BLE001
-        store.add_event('database', 'the nightly copy of the database could not be made: %s' % e, 'error')
-
-
-def db_inspect(path):
-    """What a copy holds, read without putting any of it back."""
-    import tarfile
-    path = str(path)
-    out = {'file': os.path.basename(path), 'size': os.path.getsize(path)}
-    with tempfile.TemporaryDirectory(prefix='ai-look-', dir=str(STATE_DIR)) as work:
-        dbp = os.path.join(work, 'ai.db')
-        if tarfile.is_tarfile(path):
-            with tarfile.open(path, 'r:*') as tar:
-                names = tar.getnames()
-                if 'ai.db' not in names:
-                    raise Refused('there is no ai.db in that file - is it a copy of ai?')
-                for m in tar.getmembers():
-                    if m.name in ('ai.db', 'secrets.key', 'about.json', 'config.json') and m.isfile():
-                        with tar.extractfile(m) as f, open(os.path.join(work, m.name), 'wb') as g:
-                            shutil.copyfileobj(f, g)
-            out['has_key'] = os.path.exists(os.path.join(work, 'secrets.key'))
-            out['has_config'] = os.path.exists(os.path.join(work, 'config.json'))
-            try:
-                out['about'] = json.loads(read_text(os.path.join(work, 'about.json')) or '{}')
-            except ValueError:
-                out['about'] = {}
-        else:
-            shutil.copyfile(path, dbp)
-            out['has_key'] = False
-        try:
-            con = sqlite3.connect('file:%s?mode=ro' % dbp, uri=True)
-            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if not {'users', 'settings', 'meta', 'events'} <= tables:
-                raise Refused('that database is not one of ai (its tables are not there)')
-            out['users'] = [r[0] for r in con.execute('SELECT name FROM users ORDER BY name')]
-            out['events'] = con.execute('SELECT COUNT(*) FROM events').fetchone()[0]
-            out['settings'] = con.execute('SELECT COUNT(*) FROM settings').fetchone()[0]
-            last = con.execute('SELECT MAX(at) FROM events').fetchone()[0]
-            out['last_event'] = last
-            con.close()
-        except sqlite3.DatabaseError as e:
-            raise Refused('that is not a database SQLite can read: %s' % e)
-        if out['has_key']:
-            key = read_text(os.path.join(work, 'secrets.key')).strip()
-            out['same_key'] = key == read_text(sealing_key_path()).strip()
-    return out
-
-
-def db_restore(daemon, path, by):
-    """A copy put back into the database in use, under its lock: everything is
-    replaced - the accounts, the settings, the events. A copy of now is made
-    first, so even this can be undone."""
-    import tarfile
-    with DB_LOCK:
-        db_inspect(path)
-        before = db_copy(daemon.store, 'before putting %s back' % os.path.basename(str(path)), by)
-        with tempfile.TemporaryDirectory(prefix='ai-back-', dir=str(STATE_DIR)) as work:
-            dbp = os.path.join(work, 'ai.db')
-            key = None
-            if tarfile.is_tarfile(str(path)):
-                with tarfile.open(str(path), 'r:*') as tar:
-                    for m in tar.getmembers():
-                        if m.name in ('ai.db', 'secrets.key') and m.isfile():
-                            with tar.extractfile(m) as f, open(os.path.join(work, m.name), 'wb') as g:
-                                shutil.copyfileobj(f, g)
-                if os.path.exists(os.path.join(work, 'secrets.key')):
-                    key = read_text(os.path.join(work, 'secrets.key')).strip()
-            else:
-                shutil.copyfile(str(path), dbp)
-            src = sqlite3.connect(dbp)
-            st = daemon.store
-            with st.lock:
-                src.backup(st.db)
-                st.db.executescript(SCHEMA_SQL)
-            src.close()
-            if key and re.match(r'^[0-9a-f]{64}\Z', key) and key != read_text(sealing_key_path()).strip():
-                write_atomic(sealing_key_path(), key + '\n', mode=0o600)
-                _KEY_CACHE.clear()
-        Store.__init__(daemon.store, daemon.store.path)     # the columns of this version put right
-        config_rebuild(daemon.store)
-        daemon.store.add_event('database', '%s put the copy %s back (what was there is in %s)' % (
-            by, os.path.basename(str(path)), before), 'warn', who=by)
-        return before
+def _db_files(store):
+    db = store.db
+    disk, grew, parts = db_disk(store)
+    return {'copies': kept_copies(), 'dumps': kept_dumps(db.engine), 'dump': dump_info(db.engine),
+            'keep': int(CONFIG.get('backup_keep') or 14), 'disk': disk, 'growth': grew,
+            'parts': parts, 'cache': db_cache(store), 'drivers': drivers_state(),
+            'erasable': db_erasable(store), 'tune': tune_state(store),
+            'backup_dir': str(BACKUP_DIR), 'dump_dir': str(DUMP_DIR), 'uploads': str(DB_UPLOADS)}
 
 
 @route('GET', '/api/db', admin=True)
 def api_db(c):
-    COPIES_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        size = os.path.getsize(str(DB_FILE))
-    except OSError:
-        size = 0
     st = c.daemon.store
-    return {'file': str(DB_FILE), 'size': size, 'folder': str(COPIES_DIR), 'copies': db_copies(),
-            'last': st.meta_json('db:last_copy', {}) or {}, 'key': str(sealing_key_path()),
-            'counts': {t: st.one('SELECT COUNT(*) AS n FROM %s' % t)['n'] for t in
-                       ('users', 'sessions', 'events', 'settings', 'terms')},
-            'sqlite': sqlite3.sqlite_version}
+    db = st.db
+    for d in (BACKUP_DIR, DUMP_DIR, DB_UPLOADS, DB_TICKETS_DIR):
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    db_tidy_files()
+    files = _db_files(st)
+    return dict(files, **{'engine': db.engine, 'words': ENGINE_WORDS.get(db.engine), 'where': db.where(),
+                          'version': db.version(), 'size': db.size(), 'free': db_free_inside(db),
+                          'counts': st.counts(), 'tables': db_table_sizes(db), 'backups': backups(),
+                          'key': str(sealing_key_path()), 'key_there': bool(sealing_key()),
+                          'config_file': str(CONFIG_FILE), 'job': job_read(), 'node': node_name(),
+                          'tuned': bool(json.loads(st.get_meta('tune_before:' + node_name()) or '{}')),
+                          'retain': {'retain_events_days': CONFIG.get('retain_events_days')}})
+
+
+def _kept_path(name, kind):
+    name = os.path.basename(str(name or ''))
+    if not DUMP_NAME_RE.match(name):
+        raise ApiError(404, 'there is no such file')
+    folder = DUMP_DIR if kind == 'dump' else BACKUP_DIR
+    path = folder / name
+    if not path.is_file():
+        raise ApiError(404, 'there is no such file: %s' % name)
+    return path
+
+
+def _db_made_now(store, kind, folder):
+    if kind == 'dump':
+        return make_dump(store, 'download', folder=folder)
+    path = Path(folder) / ('ai-copy-%s-download.json.gz' % _stamp())
+    dump_tables(store.db, path)
+    return path
+
+
+def _db_upload_path(up):
+    if not re.match(r'^[0-9a-f]{16}\Z', str(up or '')):
+        raise ApiError(400, 'which file?')
+    p = DB_UPLOADS / up
+    if not p.is_file():
+        raise ApiError(400, 'the file sent is not here any more (an hour has gone by?): send it again')
+    return p
 
 
 @route('POST', '/api/db', admin=True)
 def api_db_do(c):
-    act = str(c.body.get('action') or '')
-    st = c.daemon.store
+    st, b, by = c.daemon.store, c.body, c.name
+    STORE_NOW['store'] = st
+    act = b.get('action')
+    if act == 'backup':
+        try:
+            out = make_backup(st, 'by %s' % by)
+        except ValueError as e:
+            raise ApiError(400, str(e))
+        return {'message': 'a copy was made: %s' % out.name}
+    if act == 'tidy':
+        return {'message': 'tidied: %s' % st.tidy()}
+    if act == 'job':
+        return {'job': job_read()}
+    if act == 'dump':
+        try:
+            out = make_dump(st, 'by-hand')
+        except ValueError as e:
+            raise ApiError(400, str(e))
+        return {'name': out.name, 'bytes': out.stat().st_size, 'message': 'made: %s' % out.name}
+    if act == 'download':
+        # A kept one as it is, or one made now - without the key.
+        if b.get('name'):
+            path = _kept_path(b.get('name'), b.get('kind'))
+            st.add_event('backups', '%s downloaded %s, without the key of its secrets' % (by, path.name), who=by)
+            return {'path': str(path)}
+        work = DB_TICKETS_DIR / secrets.token_hex(8)
+        work.mkdir(mode=0o700, parents=True)
+        try:
+            path = _db_made_now(st, b.get('kind'), work)
+        except ValueError as e:
+            raise ApiError(400, str(e))
+        st.add_event('backups', '%s downloaded %s, made for it, without the key of its secrets' % (by, path.name),
+                     who=by)
+        return {'path': str(path)}
+    if act == 'download_ticket':
+        dbkey_passphrase_checked(b.get('passphrase'))
+        kind = 'dump' if b.get('kind') == 'dump' else ''
+        work = DB_TICKETS_DIR / secrets.token_hex(8)
+        work.mkdir(mode=0o700, parents=True)
+        try:
+            if b.get('name'):
+                src = _kept_path(b.get('name'), kind)
+                keyf = _key_beside(src)
+                if keyf.is_file() and sealing_key() and keyf.read_text().strip() != sealing_key().hex():
+                    raise ApiError(409, 'the key beside %s is not the one in use now: download it without the '
+                                        'key, and the .key beside it from the machine' % src.name)
+            else:
+                src = _db_made_now(st, kind, work)
+            out = dbkey_bundle(src, src.name, b.get('passphrase'), work)
+            if src.parent == work:
+                src.unlink()
+        except ApiError:
+            shutil.rmtree(str(work), ignore_errors=True)
+            raise
+        except ValueError as e:
+            shutil.rmtree(str(work), ignore_errors=True)
+            raise ApiError(400, str(e))
+        st.add_event('backups', '%s downloaded %s WITH the key of its secrets, locked with a passphrase'
+                     % (by, out.name), 'warn', who=by)
+        return {'path': str(out), 'name': out.name}
+    if act == 'upload_check':
+        # A file the page sent (to DB_UPLOADS): what is in it.
+        src = _db_upload_path(b.get('upload'))
+        if dbkey_is_bundle(src):
+            work = Path(tempfile.mkdtemp(prefix='ai-peek-', dir=str(STATE_DIR)))
+            try:
+                inner, _k, head = dbkey_open(src, work)
+                said, why = db_file_peek(inner, st.db.engine)
+            except ValueError as e:
+                raise ApiError(400, str(e))
+            finally:
+                shutil.rmtree(str(work), ignore_errors=True)
+            if said is None:
+                raise ApiError(400, why)
+            return {'says': said, 'upload': src.name, 'locked': True, 'file': head.get('file')}
+        said, why = db_file_peek(src, st.db.engine)
+        if said is None:
+            raise ApiError(400, why)
+        return {'says': said, 'upload': src.name, 'locked': False}
+    if act == 'upload_restore':
+        src = _db_upload_path(b.get('upload'))
+        passphrase = str(b.get('passphrase') or '')
+        locked = dbkey_is_bundle(src)
+        if b.get('check') and locked:
+            work = Path(tempfile.mkdtemp(prefix='ai-peek-', dir=str(STATE_DIR)))
+            os.chmod(str(work), 0o700)
+            try:
+                inner, _k, _head = dbkey_open(src, work, passphrase)
+                said, why = db_file_peek(inner, st.db.engine)
+            except ValueError as e:
+                raise ApiError(400, str(e))
+            finally:
+                shutil.rmtree(str(work), ignore_errors=True)
+            if said is None:
+                raise ApiError(400, why)
+            said['with_key'] = True
+            return {'says': said}
 
-    def one():
-        n = os.path.basename(str(c.body.get('name') or ''))
-        if not COPY_RE.match(n) and not n.startswith('upload-'):
-            raise Refused('no such copy')
-        p = COPIES_DIR / n
-        if not p.is_file():
-            raise Refused('no such copy', 404)
-        return p
-    if act == 'copy':
-        with DB_LOCK:
-            return {'message': 'made: %s' % db_copy(st, 'by hand', c.name), 'copies': db_copies()}
-    if act == 'inspect':
-        return {'what': db_inspect(one())}
-    if act == 'drop':
-        p = one()
-        p.unlink()
-        st.add_event('database', '%s took the copy %s away' % (c.name, p.name), 'info', who=c.name)
-        return {'message': 'taken away: %s' % p.name, 'copies': db_copies()}
-    if act == 'restore':
-        p = one()
-        before = db_restore(c.daemon, p, c.name)
-        if p.name.startswith('upload-'):
-            p.unlink()
-        return {'message': 'put back - what was there before is kept as %s' % before}
-    raise Refused('copy, inspect, drop or restore')
+        def work_(progress):
+            work = Path(tempfile.mkdtemp(prefix='ai-putback-', dir=str(STATE_DIR)))
+            os.chmod(str(work), 0o700)
+            try:
+                if locked:
+                    progress(1, 3, 'the file opened with its passphrase')
+                    inner, keyf, head = dbkey_open(src, work, passphrase)
+                    name = head.get('file') or 'a file with its key'
+                else:
+                    inner, keyf, name = src, None, 'a file sent from the page'
+                progress(2, 3, 'put back')
+                got = db_file_restore(st, inner, by, key_file=keyf, from_name=name)
+                progress(3, 3, 'done')
+                return got
+            finally:
+                shutil.rmtree(str(work), ignore_errors=True)
+                try:
+                    src.unlink()
+                except OSError:
+                    pass
+        try:
+            db_job('putting a database back', work_)
+        except ValueError as e:
+            raise ApiError(409, str(e))
+        return {'message': 'the database is being put back', 'job': job_read()}
+    if act in ('restore_kept', 'delete'):
+        path = _kept_path(b.get('name'), b.get('kind'))
+        if act == 'delete':
+            for f in (path, _key_beside(path)):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+            st.add_event('backups', '%s deleted %s' % (by, path.name), 'warn', who=by)
+            return {'message': '%s is deleted' % path.name}
+        if b.get('check'):
+            said, why = db_file_peek(path, st.db.engine)
+            if said is None:
+                raise ApiError(400, why)
+            return {'says': said}
+        try:
+            return db_file_restore(st, path, by, key_file=_key_beside(path), from_name=path.name)
+        except ValueError as e:
+            raise ApiError(400, str(e))
+    if act == 'erase':
+        try:
+            return {'job': db_erase_job(st, list(b.get('groups') or []), bool(b.get('tidy')), by)}
+        except ValueError as e:
+            raise ApiError(400, str(e))
+    if act == 'tune_restart':
+        try:
+            return tune_restart(st, by)
+        except ValueError as e:
+            raise ApiError(400, str(e))
+    try:
+        if act in ('try', 'setup', 'empty', 'move', 'use'):
+            cc = engine_asked(b.get('settings') or {})
+            words = ENGINE_WORDS.get(cc['db_engine'])
+            if act == 'try':
+                got = db_try(cc)
+                got['in_use'] = same_database(cc, st.db)
+                return got
+            if act == 'setup':
+                if cc['db_engine'] == 'sqlite':
+                    raise ApiError(400, 'the file on this machine needs no setting up')
+                first = db_try(cc) if cc.get('db_password') else {'reached': False}
+                fresh = ''
+                if first.get('reached') and first.get('writable'):
+                    made = ['the database and the account are there already, and it gets in']
+                else:
+                    who = str(b.get('admin_user') or '').strip()
+                    if not who:
+                        raise ApiError(400, 'an administrator of that server is needed to make a database and '
+                                            'an account on it')
+                    if not cc.get('db_password'):
+                        fresh = cc['db_password'] = db_password_made()
+                    made = db_make(cc, who, str(b.get('admin_password') or ''))
+                write_file_settings({k: cc[k] for k in DB_KEYS if k != 'db_engine'})
+                far = db_open(cc)
+                try:
+                    far.make_tables()
+                finally:
+                    far.close()
+                got = db_try(cc)
+                st.add_event('settings', '%s set up %s at %s' % (by, words, db_where(cc)), who=by)
+                return {'made': made, 'password': fresh, 'kept_in': str(CONFIG_FILE), 'try': got,
+                        'message': '%s at %s is ready' % (words, db_where(cc))}
+            if same_database(cc, st.db) and act in ('empty', 'move'):
+                raise ApiError(400, 'that is the database in use; this only ever touches the other one')
+            if act == 'empty':
+                got = db_try(cc)
+                if not got.get('reached'):
+                    raise ApiError(400, got.get('trouble') or 'it cannot be reached')
+                gone = db_empty(cc)
+                st.add_event('settings', '%s emptied %s at %s' % (by, words, db_where(cc)), 'warn', who=by)
+                return {'message': 'emptied: %d table(s) thrown away' % len(gone)}
+            if act == 'move':
+                got = db_try(cc)
+                if not got.get('reached'):
+                    raise ApiError(400, got.get('trouble') or 'it cannot be reached')
+                if not got.get('writable'):
+                    raise ApiError(400, 'that account may not write to it')
+                if got.get('rows'):
+                    raise ApiError(400, 'there are %d record(s) in it already. Moving into a database that is '
+                                        'not empty would mix two installations; empty it first if it really is '
+                                        'spare.' % got['rows'])
+                return {'job': db_move(st, cc, by)}
+            if act == 'use':
+                if same_database(cc, st.db):
+                    raise ApiError(400, 'that is the database in use already')
+                got = db_try(cc)
+                if not got.get('reached'):
+                    raise ApiError(400, got.get('trouble') or 'it cannot be reached')
+                if not got.get('rows') and not b.get('even_empty'):
+                    raise ApiError(400, 'it is empty: carry everything across first')
+                if not b.get('even_older'):
+                    try:
+                        far = db_open(cc)
+                        try:
+                            there = float(far.value('SELECT MAX(at) FROM events') or 0)
+                        finally:
+                            far.close()
+                        here = float(st.db.value('SELECT MAX(at) FROM events') or 0)
+                    except Exception:                   # noqa: BLE001
+                        there = here = 0
+                    if there and here and there < here - 60:
+                        raise ApiError(409, 'it holds an older copy: its newest event is from %s, this one\'s from '
+                                            '%s. Empty it and carry everything across first, so nothing written '
+                                            'since is left behind.' % (
+                                                datetime.fromtimestamp(there).strftime('%d-%m-%Y %H:%M'),
+                                                datetime.fromtimestamp(here).strftime('%d-%m-%Y %H:%M')))
+                write_file_settings({k: cc[k] for k in DB_KEYS})
+                st.add_event('settings', '%s switched the database to %s at %s; the daemon starts again on it'
+                             % (by, words, db_where(cc)), 'warn', who=by)
+                log('the database is now %s; starting again on it' % db_where(cc), 'warn')
+                # systemd starts it again (Restart=always), on the new one; the
+                # terminals go on (tmux is not the daemon's).
+                threading.Timer(1.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+                return {'message': 'the daemon starts again on %s in a moment' % words, 'restarting': True}
+        if act == 'check':
+            own = db_own(st)
+            try:
+                got = db_check(own or st.db)
+            finally:
+                if own:
+                    own.close()
+            st.add_event('settings', '%s checked the database: %s' % (by, 'nothing broken' if got['ok'] else 'TROUBLE'),
+                         'info' if got['ok'] else 'warn', who=by)
+            return got
+        if act == 'statistics':
+            own = db_own(st)
+            try:
+                return {'message': db_statistics(own or st.db)}
+            finally:
+                if own:
+                    own.close()
+        if act == 'give_back':
+            def work(progress):
+                got = db_give_back(st, progress)
+                st.add_event('settings', '%s gave the disk back: %s -> %s' % (by, got['before'], got['after']), who=by)
+                return got
+            return {'job': db_job('giving the disk back', work)}
+        if act == 'prune':
+            days = 0 if b.get('everything') else int(b.get('days') or 0)
+            if days < 1 and not b.get('everything'):
+                raise ApiError(400, 'older than how many days? 1 at least')
+            gone = db_prune(st, days)
+            st.add_event('settings', '%s forgot the events older than %d day(s): %s' % (by, days, gone), 'warn', who=by)
+            return {'message': 'forgotten: %d event(s), %d line(s) of the mails sent' % (gone['events'], gone['outbox'])}
+        if act == 'tune_plan':
+            return tune_plan_for(st, b.get('machine') or {})
+        if act == 'tune_apply':
+            return tune_apply(st, b.get('machine') or {}, str(b.get('admin_user') or ''),
+                              str(b.get('admin_password') or ''), by)
+        if act == 'tune_undo':
+            return tune_undo(st, str(b.get('admin_user') or ''), str(b.get('admin_password') or ''), by)
+    except ApiError:
+        raise
+    except Refused:
+        raise
+    except ValueError as e:
+        raise ApiError(400, str(e))
+    except Exception as e:                              # noqa: BLE001
+        raise ApiError(400, str(e).split('\n')[0][:300])
+    raise ApiError(400, 'no such thing to do to the database')
 
 
 # ---- the whole configuration as one file (as otp's Export and import) ---------------------
@@ -10353,7 +13294,16 @@ class Server(ThreadingHTTPServer):
 # ---------------------------------------------------------------------------
 class Daemon:
     def __init__(self):
-        self.store = Store(DB_FILE)
+        # A database server not answering yet (started after this, or away):
+        # waited for, said in the log, not a crash in a loop (otp's).
+        while True:
+            try:
+                self.store = Store(DB_FILE)
+                break
+            except DbError as e:
+                LOG_TO_STDERR[0] = True
+                log_sparing('db-start', 'the database does not open yet - trying again every 5 s: %s' % e, 'error', 300)
+                time.sleep(5)
         config_rebuild(self.store)
         self.auth = Auth(self.store)
         self.terms = Terms(self.store)
@@ -10401,7 +13351,7 @@ class Daemon:
                     self.auth.tidy()
                     self.terms.sync()
                 if n % 40 == 1:
-                    keep = float(CONFIG.get('events_keep_days') or 180) * 86400
+                    keep = float(CONFIG.get('retain_events_days') or 180) * 86400
                     self.store.x('DELETE FROM events WHERE at < ?', (time.time() - keep,))
                     pass
                     if (STATE_DIR / 'first-login.txt').exists():
@@ -10411,7 +13361,7 @@ class Daemon:
                 if n % 20 == 2:
                     self.upgrades.tick()
                 if n % 20 == 5:
-                    db_copy_tick(self.store)
+                    db_nightly(self.store)
                 if n % 4 == 1:
                     rb_tick(self)
                 if n % 4 == 3 and not self.notifying.locked():
@@ -10434,13 +13384,15 @@ class Daemon:
         STORE_NOW['store'] = self.store
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(str(STATE_DIR), 0o711)
+        port = int(CONFIG.get('api_port') or 9871)
+        Handler.daemon = self
+        # Bound first: a second daemon that cannot have the port must not
+        # write a token of its own over the running one's.
+        srv = Server(('127.0.0.1', port), Handler)
         self.write_token()
         versions_ran_note(self.store)
         self.first_account()
-        port = int(CONFIG.get('api_port') or 9871)
-        Handler.daemon = self
-        srv = Server(('127.0.0.1', port), Handler)
-        log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, DB_FILE))
+        log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, self.store.db.where()))
         self.store.add_event('starting and stopping', 'ai %s started on %s' % (__version__, host_name()), 'info')
         try:
             tls_reapply_if_needed(self.store)
@@ -13014,7 +15966,7 @@ class Console(object):
     # ---- 0 data: the database, backups, mail ------------------------------------
     def m_data(self):
         def restore():
-            f = self.ask_one('Put a copy back', 'file', str(COPIES_DIR) + '/',
+            f = self.ask_one('Put a copy back', 'file', str(BACKUP_DIR) + '/',
                              help_='A copy made here (ai --db-copies) or brought from elsewhere. Everything is replaced.')
             if f and self.confirm('Put the copy back', 'Every account, setting and event is replaced by what is in '
                                   '%s. A copy of now is made first.' % f, 'Put it back', danger=True):
@@ -13369,7 +16321,9 @@ def build_parser():
     g.add_argument('--lockouts', action='store_true', help='who is locked out, or counted, after wrong passwords')
     g.add_argument('--unlock', metavar='WHO|all', help='a lockout cleared: an address, a name, or all')
     g = p.add_argument_group('THE DATABASE AND THE CONFIGURATION')
-    g.add_argument('--db-copy', '--backup', action='store_true', dest='db_copy', help='a copy of the database now (with its key)')
+    g.add_argument('--db-copy', '--backup', action='store_true', dest='db_copy',
+                   help='a copy of the database now (any engine takes it back), its key beside it')
+    g.add_argument('--dump', action='store_true', help='with --db-copy: a dump by the engine\'s own program too')
     g.add_argument('--db-copies', action='store_true', help='the copies kept in /var/lib/ai/copies')
     g.add_argument('--db-restore', '--restore', metavar='FILE', dest='db_restore',
                    help='a copy put back (everything replaced; --yes)')
@@ -13458,8 +16412,12 @@ def rbWhere_cli(t):
 def cli_store():
     if os.geteuid() != 0 and not DB_FILE.exists():
         raise SystemExit('ai: %s is not there - run as root' % DB_FILE)
-    st = Store(DB_FILE)
+    try:
+        st = Store(DB_FILE)
+    except DbError as e:
+        raise SystemExit('ai: the database does not open: %s' % e)
     config_rebuild(st)
+    STORE_NOW['store'] = st
     return st
 
 
@@ -13914,24 +16872,38 @@ def cli_main(argv):
             print(pal.ok_line('cleared: %d' % n) if n else pal.warn_line('nothing was counted for %s' % a.unlock))
             return 0
         if a.db_copy:
-            print(pal.ok_line('made: %s' % (COPIES_DIR / db_copy(st, 'on the command line', 'the command line'))))
+            print(pal.ok_line('made: %s' % make_backup(st, 'on the command line')))
+            if a.dump:
+                print(pal.ok_line('made: %s' % make_dump(st, 'by-hand')))
             return 0
         if a.db_copies:
-            rows = db_copies()
+            rows = [dict(r, kind='copy', folder=str(BACKUP_DIR)) for r in kept_copies()] + \
+                [dict(r, folder=str(DUMP_DIR)) for r in kept_dumps(st.db.engine)]
             if a.json:
                 say_json({'copies': rows})
             else:
-                print(table([[c['name'], when(c['at']), human_bytes(c['size'])] for c in rows],
-                            ['copy', 'made', 'size']) if rows else pal.warn_line('no copy yet (ai --db-copy)'))
+                print(table([[r['name'], DUMP_WORDS.get(r['kind'], r['kind']), when(r['at']), human_bytes(r['bytes']),
+                              'yes' if r.get('key') else 'NO'] for r in rows],
+                            ['file', 'what', 'made', 'size', 'key beside']) if rows
+                      else pal.warn_line('no copy yet (ai --db-copy)'))
+                print(pal.dim('  in %s and %s' % (BACKUP_DIR, DUMP_DIR)))
             return 0
         if a.db_restore:
-            w = db_inspect(a.db_restore)
-            print('%s: accounts %s, %d events, made %s by ai %s' % (
-                w['file'], ', '.join(w.get('users') or []), w.get('events') or 0,
-                when((w.get('about') or {}).get('at')), (w.get('about') or {}).get('version') or '?'))
+            path = a.db_restore
+            if dbkey_is_bundle(path):
+                raise Refused('that file is locked with its key: put it back on the pages (Settings - The database)')
+            said, why = db_file_peek(path, st.db.engine, need_admin=False)
+            if said is None:
+                raise Refused(why)
+            print('%s: %s, %s' % (os.path.basename(path), DUMP_WORDS.get(said['kind'], said['kind']),
+                                  ', '.join('%s %d' % kv for kv in sorted((said.get('counts') or {}).items()))))
+            if said.get('no_admin'):
+                print(pal.warn_line('there is no administrator in it: make one afterwards (ai --add-user NAME --role admin)'))
             if not a.yes:
                 raise Refused('everything here is replaced by it: add --yes')
-            print(pal.ok_line('put back - what was here is in %s' % db_restore(d, a.db_restore, 'the command line')))
+            got = db_file_restore(st, path, 'the command line', key_file=_key_beside(path), from_name=path,
+                                  need_admin=False)
+            print(pal.ok_line('put back - what was here is in %s; %s' % (got['safety'], got['key'])))
             print(pal.dim('  the running daemon reads it at once; restart it to be sure: systemctl restart ai'))
             return 0
         if a.backups:
@@ -14244,12 +17216,10 @@ def cli_main(argv):
                 time.sleep(1.5)
         if a.tidy:
             auth.tidy()
-            keep = float(CONFIG.get('events_keep_days') or 180) * 86400
+            keep = float(CONFIG.get('retain_events_days') or 180) * 86400
             n = st.x('DELETE FROM events WHERE at < ?', (time.time() - keep,))
             n2 = st.x('DELETE FROM outbox WHERE at < ?', (time.time() - keep,))
-            db_copies_trim()
-            print(pal.ok_line('tidied: %d event(s), %d line(s) of outgoing mail; the copies kept to %d' % (
-                n, n2, int(CONFIG.get('db_copy_keep') or 14))))
+            print(pal.ok_line('tidied: %d event(s), %d line(s) of outgoing mail' % (n, n2)))
             return 0
         if a.upgrade_status:
             v = d.upgrades.view()
@@ -14292,7 +17262,7 @@ def cli_main(argv):
                     __version__, a.downgrade, floor)).strip().lower() not in ('y', 'yes', 'a', 'ano'):
                 return 1
             path, info = d.upgrades.fetch(a.downgrade, 'the command line', older=True)
-            db_copy(st, 'before going back to %s' % info['version'], 'the command line')
+            make_backup(st, 'before going back to %s, on the command line' % info['version'])
             print(pal.ok_line('ai %s, signed by %s - checked; going back to it' % (info['version'], info.get('signed_by'))))
             os.execvp(sys.executable, [sys.executable, '-I', upgrader(), '--run', str(path), '--floor', floor])
         # ---- looking ------------------------------------------------------------------------------

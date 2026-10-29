@@ -122,7 +122,7 @@ if (isset($_GET['api'])) {
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
         'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
-        'rbackup' => '/api/rbackup', 'software' => '/api/software', 'sms' => '/api/sms', 'texts' => '/api/texts', 'outbox' => '/api/outbox', 'my-settings' => '/api/auth/settings',
+        'rbackup' => '/api/rbackup', 'software' => '/api/software',  'texts' => '/api/texts', 'outbox' => '/api/outbox', 'my-settings' => '/api/auth/settings',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -132,7 +132,7 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
         'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
-        'import' => '/api/import', 'rbackup' => '/api/rbackup', 'sms' => '/api/sms', 'texts' => '/api/texts', 'outbox' => '/api/outbox', 'columns' => '/api/auth/columns',
+        'import' => '/api/import', 'rbackup' => '/api/rbackup',  'texts' => '/api/texts', 'outbox' => '/api/outbox', 'columns' => '/api/auth/columns',
         'my-settings' => '/api/auth/settings',
     ];
     if ($post) {
@@ -513,12 +513,11 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="claude" data-icon="terminal" title="Claude Code itself: installed for which accounts, signed in or not, updated; how every terminal starts it.">Claude Code</button>
     <div class="ctl-group">Access</div>
     <button type="button" data-pane="people" data-icon="person" title="Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
-    <button type="button" data-pane="access" data-icon="shield" title="How long a sign-in lasts, wrong passwords, and changes that go back by themselves unless kept.">Signing in</button>
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages: given, or made here.">Certificate and TLS</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages, and the server's firewall (iptables or firewalld).">Firewall and access</button>
     <div class="ctl-group">Messages</div>
     <button type="button" data-pane="mail" data-icon="mail" title="How the mails of these pages leave this machine: the codes of the second step, and notices of warnings and failures.">Mail</button>
-    <button type="button" data-pane="sms" data-icon="phone" title="How SMS leaves this machine, for the codes of the second step: an HTTP gateway, a modem's spool, or a Teltonika on the network.">SMS</button>
+    <button type="button" data-pane="codes" data-icon="phone" title="Codes of the second step of signing in sent by e-mail or SMS: how long they last, how many, and the SMS gateway.">Codes by e-mail and SMS</button>
     <button type="button" data-pane="texts" data-icon="edit" title="What people get from this server - the mails and the SMS, in Czech and English.">Message texts</button>
     <button type="button" data-pane="mailq" data-icon="list" title="Every mail and SMS this server sent, or tried to: where, what, how it went.">Outgoing mail</button>
     <div class="ctl-group">Server</div>
@@ -581,16 +580,12 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
                 title="Read a file saved by Export my settings - here or on another machine running ai.">Import settings…</button>
       </div>
     </div>
+    <div class="card full"><div id="sect-people"></div></div>
     <div class="card full" id="lo-card"><h2>Locked out <span class="right" id="lo-tools"></span></h2>
       <p class="note">Addresses and names with wrong passwords or wrong codes still counted - at the limit
         (Settings → Signing in) they are locked out until the time runs out. Clear one, or all of them,
         and they may try again at once.</p>
       <div id="lo-table"></div></div>
-  </div>
-
-  <div class="ctl-pane" id="pane-access" hidden>
-    <div class="ctl-head"><h2 class="ctl-title">Signing in</h2></div>
-    <div class="card full"><div id="sect-access"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-mail" hidden>
@@ -654,37 +649,21 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     </div>
   </div>
 
-  <div class="ctl-pane" id="pane-sms" hidden>
-    <div class="ctl-head"><h2 class="ctl-title">SMS</h2>
-      <p class="ctl-lede">The codes of the second step of signing in, sent by SMS: through an SMS gateway with an
-        HTTP API, a GSM modem on this machine (smstools3 or gammu-smsd), or a Teltonika gateway (TRB140, RUT…)
-        on the network.</p></div>
-    <div class="card full"><div id="sect-sms"></div></div>
+  <div class="ctl-pane" id="pane-codes" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Codes by e-mail and SMS</h2>
+      <p class="ctl-lede">The second step of signing in may be a code sent after the password, instead of the
+        app (Settings → Accounts → The second step of signing in). E-mail goes the way set under Mail; SMS
+        through a gateway or a modem set up here.</p></div>
+    <div class="card full"><div id="sect-codes"></div></div>
     <div class="card full">
-      <h2>Try it <span class="right muted small" id="sms-said"></span></h2>
-      <p class="note">A short SMS sent the way the codes go - save the changes first. For a Teltonika, Test the
-        connection signs in to it and asks how its modems are; nothing is sent.</p>
+      <h2>Try an SMS <span class="right muted small" id="sms-said"></span></h2>
+      <p class="note">Sends a short message with a code that opens nothing, the way a sign-in code
+        would go, and shows what the gateway answered. Save the changes first.</p>
       <div class="btnrow admin-only filters">
-        <input type="tel" id="sms-to" placeholder="+420 603 123 456" style="flex:1;min-width:200px">
-        <select id="sms-test-lang"><option value="cs">Čeština</option><option value="en">English</option></select>
-        <button class="btn cmd primary" id="sms-test" data-icon="phone">Send a test SMS</button>
-        <button class="btn cmd" id="sms-tel" data-icon="pulse">Test the connection</button>
+        <input type="tel" id="sms-to" placeholder="+420 603 123 456" style="flex:1;min-width:240px">
+        <button class="btn cmd" id="sms-try" data-icon="phone">Send a test SMS</button>
       </div>
       <div id="sms-steps"></div>
-    </div>
-    <div class="card full" id="smsca-card">
-      <h2>The certificates the gateway is checked against <span class="right muted small" id="smsca-when"></span></h2>
-      <p class="note">The gateway's own certificate (a TRB makes one itself), or the root and the chain of the authority
-        that signed it. With some here only these are trusted; with none, the authorities this machine trusts.</p>
-      <div id="smsca-state"></div>
-      <textarea id="smsca-pem" rows="4" class="mono admin-only" style="width:100%;margin-top:10px" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
-      <div class="btnrow admin-only" style="margin-top:10px">
-        <button class="btn cmd" id="smsca-fetch" data-icon="download">Read it from the gateway</button>
-        <button class="btn cmd" id="smsca-file" data-icon="upload">Read a file…</button>
-        <button class="btn cmd danger" id="smsca-drop" data-icon="trash">Take them all away</button>
-        <input type="file" id="smsca-input" accept=".pem,.crt,.cer,.txt" hidden>
-      </div>
-      <div id="smsca-seen"></div>
     </div>
   </div>
 
@@ -706,29 +685,170 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
   <div class="ctl-pane" id="pane-db" hidden>
     <div class="ctl-head"><h2 class="ctl-title">The database</h2>
       <p class="ctl-lede">One database holds everything: the accounts and their sign-ins, the settings,
-        the events and the list of terminals. It is a SQLite file on this machine. The secrets in it are
-        sealed with a key kept beside it, in the state folder - and every copy is kept with that key
-        beside it.</p></div>
+        the events, the mails sent and the list of terminals. It is a file on this machine unless you
+        say otherwise. The secrets in it are sealed with a key kept beside it, in the state
+        folder - and every copy and every dump is kept with that key beside it.</p></div>
     <div class="card full"><div id="sect-db"></div></div>
-    <div class="card full">
-      <h2>The copies it keeps <span class="right muted small" id="db-now"></span></h2>
-      <p class="note">Every night at the hour above, SQLite's own backup of the database in use, packed with
-        the key its secrets are sealed with and config.json. A copy is the database whole: put back, it
-        replaces every account, every setting and every event - and a copy of what is there now is made
-        first, so that can be undone too.</p>
-      <div id="db-says"></div>
+
+    <div class="card full" id="db-dump-card">
+      <h2>The dumps it keeps <span class="right" id="db-dump-now"></span></h2>
+      <p class="note">Every night at the time above, the database in use is dumped
+        <b>by its own engine's own program</b> — <code>pg_dump</code> on PostgreSQL,
+        <code>mariadb-dump</code> on MariaDB, and on the file SQLite's own backup, which is
+        the file. It is a fraction of the size of the database, and it is the format the
+        server's own tools read, so it can be put back by somebody who has never heard of
+        this program.</p>
+      <p class="note">A dump goes back into <b>the engine it came off</b>. What goes back
+        into any of the three is a copy, which the card below makes — that is what carries an
+        installation from the file to a server and back.</p>
+      <div id="db-dump-says"></div>
       <div class="btnrow admin-only" style="margin-top:12px">
-        <button class="btn cmd" id="db-make" data-icon="save" title="A copy now, rather than waiting for tonight. It is kept with the others and counts as one of them.">Make one now</button>
+        <button class="btn cmd" id="db-dump-make" data-icon="save"
+                title="Dump the database now, with the engine's own program, rather than waiting for tonight. It is kept with the others and counts as one of them.">Make one now</button>
+        <button class="btn cmd" id="db-dump-get" data-icon="down"
+                title="Dump the database now and save it to the machine you are sitting at. Nothing is kept here.">Download one</button>
       </div>
-      <div id="db-copies" style="margin-top:18px"></div>
-      <div class="admin-only" style="margin-top:18px">
-        <h4>Put a copy back</h4>
-        <p class="note">A copy from somewhere else - one downloaded from here, or from another server of ai.
-          Nothing happens until it has been read, checked and shown to you.</p>
-        <div class="drop" id="dbu-drop">
-          <input type="file" id="dbu-file" accept=".gz,.db,application/gzip,application/octet-stream" hidden>
-          <span id="dbu-says">Drop a copy here, or press to choose one</span>
+      <div id="db-dumps" style="margin-top:18px"></div>
+      <div class="admin-only" id="db-dump-upload" style="margin-top:18px">
+        <h4>Put a dump back</h4>
+        <p class="note">A dump from somewhere else — one downloaded from here, or a file
+          copied off the dumps folder. It replaces everything: every account, every event,
+          every setting and every terminal. Nothing happens until it has been read, checked and
+          shown to you.</p>
+        <div class="drop" id="dump-drop">
+          <input type="file" id="dump-file" accept=".pgc,.gz,.sql,.db,application/octet-stream" hidden>
+          <span id="dump-drop-says">Drop a dump here, or press to choose one</span>
         </div>
+        <div id="dump-upload-what" hidden></div>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn cmd danger" id="dump-restore" data-icon="undo" disabled>Restore from this file</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card full" id="db-engine-card">
+      <h2>Which one it is <span class="right" id="db-engine-now"></span></h2>
+      <p class="note">The settings above say which database to open and how to reach it, and
+        they are the only settings kept in <b id="db-engine-file">the config file</b> rather
+        than in the database — a database cannot hold the address of itself, and a machine
+        whose database will not open still has to be able to be put right from this page.</p>
+      <p class="note">Changing the setting moves nothing. The order is: fill the address in,
+        <b>try it</b>, <b>set it up</b> if the database and the account are not there yet,
+        <b>carry everything across</b>, and only then <b>start using it</b>. Until that last
+        step this installation carries on exactly as it is, and what is in it is never
+        touched by any of this.</p>
+      <div id="db-engine-says"></div>
+      <div class="btnrow admin-only" style="margin-top:12px">
+        <button class="btn cmd" id="db-engine-test" data-icon="check"
+                title="Reach that server with the address above, exactly as the daemon would, and say what answered. Nothing is saved and nothing is written.">Try it</button>
+        <button class="btn cmd" id="db-engine-setup" data-icon="key"
+                title="Make the database and the account on that server, and give that account rights on that one database and no other, with a password made here and shown once. The first time it asks for an administrator on the server, uses it for this one connection and stores it nowhere. Afterwards it needs none: it opens the database and puts its tables right, which is worth doing after every upgrade.">Set it up…</button>
+        <button class="btn cmd primary" id="db-engine-move" data-icon="save"
+                title="Copy everything that is here into that database: every account, every event, every setting and every terminal. What is here is left exactly as it is.">Carry everything across…</button>
+        <button class="btn cmd danger" id="db-engine-empty" data-icon="forget"
+                title="Throw away what is in the OTHER database, so that a move can be tried again. Never the one in use.">Empty it…</button>
+        <button class="btn cmd" id="db-engine-use" data-icon="power"
+                title="Start using it. This writes the address into the config file and restarts the daemon; nothing in either database is touched, and coming back is the same four steps the other way.">Start using it…</button>
+      </div>
+      <p class="btnhelp">Once everything is in the other database and it is the one in use,
+        the one it came from is just a spare copy: the file may be deleted, or the server
+        uninstalled. Going the other way is these same steps with the file chosen instead —
+        which is what makes it safe to try a server at all.</p>
+    </div>
+
+    <div class="card full">
+      <h2>The disk it is on</h2>
+      <p class="note">How much room there is where this database's files live, how fast it is
+        growing, and how long one will hold the other. Measured, not guessed: the size is
+        noted once a day and what is shown is the slope of the last fortnight. On a database
+        server the database is not on this machine at all — what is here then is the copies
+        and the dumps, and the line below says so.</p>
+      <div id="db-disk"></div>
+    </div>
+
+    <div class="card full" id="db-tune-card">
+      <h2>The database server’s own settings</h2>
+      <p class="note">A database server is installed with settings for a machine of any size,
+        which is to say for a small one: PostgreSQL keeps 128 MB of the database in memory, and
+        MariaDB likewise, on a machine of 32 GB. This reads what the machine the server runs on
+        has — its memory, its processors, its disk — works the settings out for it, shows them
+        beside what is there now, and puts them in when you say so.</p>
+      <p class="note">Changing them takes an account that may: this program’s own where it has
+        that right, otherwise an administrator on that server, asked for in the popup, used for
+        that one request and stored nowhere — not in the settings, not in the database, not in
+        any log.</p>
+      <div id="db-tune-says"></div>
+      <div class="btnrow admin-only" style="margin-top:12px">
+        <button class="btn cmd primary" id="db-tune" data-icon="gear"
+                title="Read what the machine the database server runs on has, work its settings out for it and show them beside what is there now. Nothing is changed until you say so.">Tune it for this machine…</button>
+        <button class="btn cmd" id="db-tune-restart" data-icon="power" hidden
+                title="Restart PostgreSQL for the settings that take effect only at its start.">Restart the server…</button>
+        <button class="btn cmd" id="db-tune-undo" data-icon="undo" hidden
+                title="Put every setting this page changed back to what it was before.">Put back as it was…</button>
+      </div>
+    </div>
+
+    <div class="card full">
+      <h2>What is in it <span class="right" id="db-size"></span></h2>
+      <p class="note">A copy is consistent even while the daemon is writing to it, and it is
+        written as a portable file whatever this is running on — so a copy made on MariaDB or
+        PostgreSQL goes back into either of those, or into the file on this machine.</p>
+      <p class="btnhelp">These are <b>every row in each table</b>, which is not the number on
+        the tabs above: those count what the page they belong to is showing.</p>
+      <div id="db-counts"></div>
+      <div class="going wide" id="db-going" hidden>
+        <div class="bar"><span id="db-going-fill"></span></div>
+        <div class="says" id="db-going-says"></div>
+      </div>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn cmd admin-only" id="db-backup" data-icon="save"
+                title="Copy the database as it is into the backups folder on this machine, now, rather than waiting for tonight.">Make a copy now</button>
+        <button class="btn cmd admin-only" id="db-download" data-icon="down"
+                title="Make a copy now and save it to the machine you are sitting at, with the key that opens the secrets inside it. Nothing is kept here.">Download it</button>
+        <button class="btn cmd admin-only" id="db-check" data-icon="check"
+                title="Ask the database to read itself through and say whether anything in it is broken - SQLite's integrity check, MariaDB's CHECK TABLE, and on PostgreSQL every table read through. It only reads; on a large one it takes a while.">Check it</button>
+        <button class="btn cmd admin-only" id="db-tidy" data-icon="broom"
+                title="Throws away exactly what the &quot;keep for&quot; numbers already say is too old — the events and the lines of the mails sent, each by its own number of days. It happens by itself every hour; this is the same thing, now. Lowering one of those numbers deletes nothing by itself: this is what does it.">Apply what is kept, now</button>
+        <button class="btn cmd danger admin-only" id="db-prune" data-icon="forget"
+                title="Forgets the events and the lines of the mails sent older than an age you choose here, whatever the &quot;keep for&quot; numbers say. Only those two kinds of record: the accounts, the terminals and the settings are not touched.">Forget records older than…</button>
+        <button class="btn cmd admin-only" id="db-optimize" data-icon="db"
+                title="Gives the space back to the DISK. Deleting rows frees room inside the database and the engine reuses it; nothing hands it back to the operating system until the whole thing is rebuilt. All three do that the same way — SQLite's VACUUM, MariaDB's OPTIMIZE TABLE, PostgreSQL's VACUUM FULL — and all three hold the table shut while they do it and need room for a second copy of the biggest one. Worth doing after throwing a lot away, and not otherwise.">Give the disk back</button>
+      </div>
+      <div id="db-backups" style="margin-top:18px"></div>
+      <div class="admin-only" id="db-upload" style="margin-top:18px">
+        <h4>Put a copy back</h4>
+        <p class="note">A database from somewhere else — one downloaded from here, or a file
+          copied off the backups folder. It replaces everything: every account, every event,
+          every setting and every terminal. Nothing happens until it has been read, checked
+          and shown to you.</p>
+        <div class="drop" id="db-drop">
+          <input type="file" id="db-file" accept=".gz,.db,.sqlite,.sqlite3,application/octet-stream" hidden>
+          <span id="db-drop-says">Drop a database file here, or press to choose one</span>
+        </div>
+        <div id="db-upload-what" hidden></div>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn cmd danger" id="db-restore" data-icon="undo" disabled>Restore from this file</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card full">
+      <h2>Erase the collected data <span class="right" id="erase-size"></span></h2>
+      <p class="note">What is recorded of what happened can be thrown away without anybody
+        losing anything they need: nobody has to enrol again and nothing stops working. Choose
+        what goes; nothing is erased that you have not ticked.</p>
+      <p class="note"><b>The accounts, the terminals and every setting are never touched by
+        this.</b> They are not options you could tick by
+        mistake: they are not in the list at all.</p>
+      <div id="erase-list" class="erase-list"></div>
+      <div class="btnrow admin-only" style="margin-top:14px;align-items:center">
+        <button class="btn cmd danger" id="erase-go" data-icon="forget"
+                title="Erase everything ticked above. It cannot be undone — but a copy of the database is made just before it, and it can be restored.">Erase what is ticked…</button>
+        <label class="check small" id="erase-tidy-wrap">
+          <input type="checkbox" id="erase-tidy" checked
+                 title="Rebuild the database afterwards so the space actually goes back to the disk. None of the three give room back by themselves when rows are deleted — it is reused inside instead.">
+          <span>rebuild it afterwards, to give the disk back</span>
+        </label>
       </div>
     </div>
   </div>
@@ -781,6 +901,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       <div id="fw-nodes" class="fw-nodes"></div>
       <div id="fw-body"></div>
     </div>
+    <div class="card full"><h2>Taken back unless kept</h2><div id="sect-fw"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-network" hidden>
@@ -861,10 +982,12 @@ tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z && ./install.sh --upgrade</pre></div>
       <p class="note">The ai console (<code>ai --console</code>) opens by itself when root signs in at the
         server's screen or over SSH; q leaves it for the ordinary shell. Never inside a terminal of these pages.</p>
       <div id="ab-console"></div></div>
-    <div class="card full"><div id="sect-general"></div></div>
+    <div class="card full"><div id="sect-about"></div></div>
     <div class="card full"><h2>Its own log <span class="right"><button class="btn small cmd" id="ab-log" data-icon="refresh">Read it</button></span></h2>
       <pre class="lines tall" id="ab-logtext">–</pre></div>
   </div>
+
+  <div class="card full" id="rest-card" hidden><div id="sect-rest"></div></div>
 
   <div class="save-bar" id="save-bar">
     <button class="btn cmd primary" id="set-save" data-icon="save"

@@ -44,6 +44,8 @@ REWRITE_NGINX=""
 PHP_UPDATE="yes"
 PHP_STREAM="8.3"
 WITH_CLAUDE=""
+WITH_DB=""
+NO_DB_RESTART=""
 SERVER_NAME=""
 ALLOW=""
 ADMIN_USER="admin"
@@ -143,6 +145,9 @@ ai $AI_VERSION - Claude Code on this server, in a web browser.
 --admin-user NAME      the first account (admin)
 --admin-password PASS  its password (otherwise one is made and printed)
 --cert FILE --key FILE the TLS certificate and key (otherwise a self-signed one)
+--with-db ENGINE       the Python driver for mariadb, postgres or both - to move to
+                       that database from the pages (Settings - The database)
+--no-db-restart        the pages may not restart PostgreSQL on this machine
 --claude               install Claude Code for root as well (Anthropic's installer)
 --no-claude            do not offer it
 --port N               the port of the daemon's API on 127.0.0.1 (default 9871)
@@ -164,6 +169,10 @@ while [[ $# -gt 0 ]]; do
         --admin-password) ADMIN_PASSWORD="${2:?}"; shift 2 ;;
         --cert) CERT_FILE="${2:?}"; shift 2 ;;
         --key) KEY_FILE="${2:?}"; shift 2 ;;
+        --with-db) WITH_DB="${2:?}"; shift 2
+                   case "$WITH_DB" in mariadb|mysql|postgres|postgresql|both) ;;
+                       *) fail "--with-db takes mariadb, postgres or both";; esac ;;
+        --no-db-restart) NO_DB_RESTART="yes"; shift ;;
         --claude) WITH_CLAUDE="yes"; shift ;;
         --no-claude) WITH_CLAUDE="no"; shift ;;
         --port) API_PORT="${2:?}"; shift 2 ;;
@@ -380,6 +389,56 @@ install_packages() {
 # ---------------------------------------------------------------------------
 # The program
 # ---------------------------------------------------------------------------
+# The database (as otp's install.sh): the Python driver of the engine in use
+# - and of --with-db, so that the pages can move to it - and the engine's own
+# client, for the nightly dumps and for putting one back. The clients only,
+# never a server.
+install_db_drivers() {
+    local inuse=""
+    inuse="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("db_engine") or "")' \
+             "$CONFIG_DIR/config.json" 2>/dev/null || true)"
+    local want=()
+    case "$inuse $WITH_DB" in *postgres*|*both*) want+=("psycopg2:python3-psycopg2:psycopg2-binary");; esac
+    case "$inuse $WITH_DB" in *mariadb*|*mysql*|*both*) want+=("pymysql:python3-PyMySQL:PyMySQL");; esac
+    if [[ ${#want[@]} -gt 0 ]]; then
+        step "Database drivers"
+        local one mod pkg pipname
+        for one in "${want[@]}"; do
+            IFS=: read -r mod pkg pipname <<< "$one"
+            if python3 -c "import $mod" 2>/dev/null; then good "$mod is already here"; continue; fi
+            if [[ "$PKG" == "dnf" ]]; then run dnf install -y "$pkg" || true
+            elif [[ "$PKG" == "apt" ]]; then run apt-get install -y "${pkg,,}" || true; fi
+            python3 -c "import $mod" 2>/dev/null || run pip3 install $(pip3 install --help 2>/dev/null | grep -q -- --break-system-packages && echo --break-system-packages) "$pipname" || true
+            python3 -c "import $mod" 2>/dev/null && good "$mod installed" || warn "$mod could not be installed"
+        done
+        local tools=()
+        case "$inuse" in
+            mariadb) tools=("mariadb-dump:mariadb:mariadb-client");;
+            postgres) tools=("pg_dump:postgresql:postgresql-client");;
+        esac
+        local bin rpm deb
+        for one in "${tools[@]}"; do
+            IFS=: read -r bin rpm deb <<< "$one"
+            if command -v "$bin" >/dev/null || { [[ "$bin" == mariadb-dump ]] && command -v mysqldump >/dev/null; }; then
+                good "$bin is already here"; continue
+            fi
+            if [[ "$PKG" == "dnf" ]]; then run dnf install -y "$rpm" || true
+            elif [[ "$PKG" == "apt" ]]; then run apt-get install -y "$deb" || true; fi
+            command -v "$bin" >/dev/null && good "$bin installed (for the dumps)" \
+                || warn "$bin could not be installed: the nightly dump is a portable copy instead"
+        done
+    fi
+    # The pages may restart PostgreSQL on this machine for the settings that
+    # take effect only at its start (Settings - The database - tuning).
+    if [[ -z "$DRY_RUN" ]]; then
+        mkdir -p "$CONFIG_DIR"
+        if [[ -n "$NO_DB_RESTART" ]]; then rm -f "$CONFIG_DIR/may-restart-database"
+        elif [[ ! -e "$CONFIG_DIR/.no-db-restart" ]]; then touch "$CONFIG_DIR/may-restart-database"; fi
+        [[ -n "$NO_DB_RESTART" ]] && touch "$CONFIG_DIR/.no-db-restart"
+    fi
+    return 0
+}
+
 install_program() {
     step "The program"
     getent group "$WEB_GROUP" >/dev/null || run groupadd --system "$WEB_GROUP"
@@ -730,6 +789,7 @@ fi
 FIRST_PW=""
 PW_GIVEN=""
 install_packages
+install_db_drivers
 install_colour
 install_program
 install_console

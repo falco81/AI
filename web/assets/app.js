@@ -7,9 +7,7 @@
 ADMIN = !!(ME && ME.role === 'admin');
 var PANE = 'claude';
 var RAIL = {pinned: false, open: null, shut: null};
-var SETTINGS = null;
-var DIRTY = {};
-var PENDING = {};
+var SETTINGS = null, DIRTY = {}, DRAWN_NODE = '';
 var LIVE = {on: true, timer: null};
 var TL = {terms: [], open: '', side: true, full: false};
 
@@ -412,7 +410,7 @@ function mePick() {
 
 function meImport(file) {
   if (file.size > 2 * 1024 * 1024) {
-    toast('that file is far bigger than any settings file (' + bytesWords(file.size) + ')', 'bad');
+    toast('that file is far bigger than any settings file (' + bytes(file.size) + ')', 'bad');
     return;
   }
   var reader = new FileReader();
@@ -1597,7 +1595,6 @@ function showPane(name) {
   if (name === 'claude') loadClaude();
   if (name === 'people') { loadUsers(); loadLockouts(); colsCardSay(); }
   if (name === 'mail') loadMail();
-  if (name === 'sms') loadSms();
   if (name === 'texts') loadTexts();
   if (name === 'mailq') loadOutbox();
   if (name === 'db') loadDb();
@@ -1645,140 +1642,629 @@ function pinRail(on) {
   try { was = localStorage.getItem('ai-rail-pinned') || '0'; } catch (e) { }
   pinRail(was === '1');
 }());
+
+/* ---- the settings: exactly otp's (admin.js 1.0.161) ----------------------------------- */
 $('ctl-find').addEventListener('input', function () {
   var want = $('ctl-find').value.trim().toLowerCase();
   var box = $('ctl-found');
   clear(box);
   if (!want || !SETTINGS) { box.hidden = true; return; }
-  var tr = function (x) { try { return (typeof i18nText === 'function' && x) ? (i18nText(x) || '') : ''; } catch (e) { return ''; } };
+  // In the page's language as well (1.0.61): a word seen on screen in Czech
+  // found nothing.
+  var tr = function (x) {
+    try { return (typeof i18nText === 'function' && x) ? (i18nText(x) || '') : ''; } catch (e) { return ''; }
+  };
   var hits = SETTINGS.settings.filter(function (s) {
-    return (s.label + ' ' + s.key + ' ' + s.help + ' ' + tr(s.label) + ' ' + tr(s.help)).toLowerCase().indexOf(want) >= 0;
+    return (s.name + ' ' + s.key + ' ' + s.says + ' ' + tr(s.name) + ' ' + tr(s.says))
+      .toLowerCase().indexOf(want) >= 0;
   }).slice(0, 12);
   if (!hits.length) box.appendChild(el('div', 'ctl-none', 'Nothing by that name'));
-  var paneOf = {claude: 'claude', access: 'access', upgrade: 'upgrade', general: 'about'};
   hits.forEach(function (s) {
     var b = el('button', 'ctl-hit');
     b.type = 'button';
-    b.appendChild(el('span', 'ctl-hit-t', s.label));
+    b.appendChild(el('span', 'ctl-hit-t', s.name));
+    var pane = Object.keys(SETTINGS.panes).filter(function (p) { return SETTINGS.panes[p].indexOf(s.key) >= 0; })[0];
+    var where = document.querySelector('.ctl-nav [data-pane="' + (pane || 'about') + '"]');
+    b.appendChild(el('span', 'ctl-hit-w', where ? where.textContent.trim() : (pane || '')));
     b.onclick = function () {
-      showPane(paneOf[s.pane] || 'about');
+      showPane(pane || 'about');
       $('ctl-find').value = '';
       box.hidden = true;
       var item = document.querySelector('.set-item[data-key="' + s.key + '"]');
-      if (item) { item.scrollIntoView({block: 'center'}); item.classList.add('found'); }
+      if (item) {
+        item.scrollIntoView({block: 'center'});
+        item.classList.remove('found');
+        void item.offsetWidth;
+        item.classList.add('found');
+        item.addEventListener('animationend', function () { item.classList.remove('found'); }, {once: true});
+      }
     };
     box.appendChild(b);
   });
   box.hidden = !hits.length;
 });
 
-/* ---- the settings that are only values ---------------------------------------- */
-var SECT = {claude: 'sect-claude', access: 'sect-access', upgrade: 'sect-upgrade', general: 'sect-general', mail: 'sect-mail', db: 'sect-db', backup: 'sect-backup', sms: 'sect-sms'};
-function loadSettings() {
-  return api('settings').then(function (d) {
+function loadSettings(redraw) {
+  api('settings').then(function (d) {
     SETTINGS = d;
-    DIRTY = {};
-    Object.keys(SECT).forEach(function (pane) {
-      var host = $(SECT[pane]);
-      clear(host);
-      var g = el('div', 'set-grid cols-2');
-      d.settings.filter(function (s) { return s.pane === pane; }).forEach(function (s) { g.appendChild(settingItem(s)); });
-      host.appendChild(g);
-    });
-    applyWhen();
-    if (typeof rbPassTools === 'function') rbPassTools();
-    markDirtyCount();
-    explainWhatWasDrawn(document.querySelector('#tab-settings'));
+    /* Another node answers than the one that drew the boxes (1.0.110): the
+       web address moved. Measured against that node, its own settings looked
+       changed - otp1 took the name otp2 from a page otp2 had drawn. Drawn
+       again from the node answering now; what was typed and not saved is put
+       aside, said so. */
+    if (DRAWN_NODE && d.node && d.node !== DRAWN_NODE) {
+      var aside = Object.keys(DIRTY).length;
+      toast('this page is answered by ' + d.node + ' now, not ' + DRAWN_NODE + ' (the web address moved): the settings are drawn again from ' + d.node
+        + (aside ? '; ' + aside + ' change(s) not saved were put aside' : ''), 'warn');
+      DIRTY = {};
+      drawSettings(); markDirtyCount();
+      var hh = (location.hash || '').split('/');
+      showPane(PANE || (hh[1] || 'claude'));
+      return;
+    }
+    /* Typed while this was on its way (1.0.94): kept, not wiped by a redraw;
+       the boxes are measured against what is saved now instead. */
+    if (redraw !== false && !Object.keys(DIRTY).length) { drawSettings(); markDirtyCount(); }
+    else {
+      document.querySelectorAll('.set-item[data-key]').forEach(function (item) {
+        var st = settingByKey(item.dataset.key);
+        if (st && $('set-' + st.key)) markDirty(item, st);
+      });
+    }
+    var h = (location.hash || '').split('/');
+    if (redraw !== false) { /* the pane drawn already */ }
   }).catch(oops);
 }
+function settingByKey(key) {
+  return ((SETTINGS && SETTINGS.settings) || []).filter(function (s) { return s.key === key; })[0];
+}
+function isBool(s) {
+  return typeof s.default === 'boolean' || (s.min === 0 && s.max === 1 && typeof s.default === 'number');
+}
+var TALL = {sms_body: 1, sms_headers: 1, claude_env: 1};
+
+/* A pane drawn in sections (1.0.88): what belongs together side by side,
+   and what only one choice uses in a panel of its own that is there only
+   while that choice is made - not a page of greyed-out boxes. */
+var PANE_LAYOUT = {
+  codes: [
+    {title: 'The codes', icon: 'token', cols: 5, keys: ['code_digits', 'code_ttl_s', 'code_tries', 'code_send_max', 'code_send_window_min']},
+    {title: 'What they say', icon: 'globe', keys: ['code_lang', 'code_mail_fmt'], wide: {code_lang: 2, code_mail_fmt: 2}},
+    {title: 'SMS', icon: 'phone', keys: ['sms_mode', 'sms_prefix', 'sms_plain'], wide: {sms_mode: 2},
+     master: 'sms_mode', subs: [
+       {when: 'teltonika', title: 'The Teltonika gateway', icon: 'router',
+        lede: 'TRB140, RUT… on the network: sent through its own API, the way zigmon sends its texts.',
+        keys: ['sms_tel_host', 'sms_tel_api', 'sms_tel_modem', 'sms_tel_https', 'sms_tel_user', 'sms_tel_password', 'sms_tel_verify'],
+        extra: smsTelExtra},
+       {when: 'http', title: 'An HTTP gateway', icon: 'net',
+        lede: 'An operator’s or a service’s HTTP API: where, how, with what key, and what it answers when a text went.',
+        keys: ['sms_url', 'sms_method', 'sms_token', 'sms_ok_status', 'sms_body', 'sms_headers'], wide: {sms_url: 3, sms_token: 2, sms_ok_status: 2}},
+       {when: 'spool', title: 'A modem on this machine', icon: 'terminal',
+        lede: 'smstools3 or gammu-smsd: every text a file in their spool folder, sent by their own daemon.',
+        keys: ['sms_spool_dir'], wide: {sms_spool_dir: 2}},
+       {when: 'off', note: 'SMS is off: codes by SMS cannot be chosen on the enrolment pages, and the realms do not offer them.'}]}
+  ]
+};
+function layoutGrid(keys, wide, shown, cols) {
+  var g = el('div', 'set-grid cols-' + (cols || 4));
+  keys.forEach(function (key) {
+    var s = settingByKey(key);
+    if (!s) return;
+    shown[key] = true;
+    var it = settingItem(s);
+    if (wide && wide[key] && !it.classList.contains('tall')) it.classList.add('span-' + wide[key]);
+    g.appendChild(it);
+  });
+  return g;
+}
+function drawLaidOut(host, pane, shown) {
+  var head = function (tag, sec) {
+    var h = el(tag, 'set-sec-head');
+    if (sec.icon) { var i = el('span', 'set-sec-icon'); i.innerHTML = iconMarkup(sec.icon, 15); h.appendChild(i); }
+    h.appendChild(el('span', '', sec.title));
+    return h;
+  };
+  PANE_LAYOUT[pane].forEach(function (sec) {
+    var box = el('section', 'set-sec');
+    box.appendChild(head('h3', sec));
+    box.appendChild(layoutGrid(sec.keys, sec.wide, shown, sec.cols));
+    (sec.subs || []).forEach(function (sub) {
+      var p = el('div', 'set-sub');
+      p.dataset.master = sec.master;
+      p.dataset.when = sub.when;
+      if (sub.note) {
+        p.classList.add('set-sub-note');
+        p.appendChild(el('div', 'says', sub.note));
+      } else {
+        p.appendChild(head('h4', sub));
+        if (sub.lede) p.appendChild(el('div', 'says set-sub-lede', sub.lede));
+        p.appendChild(layoutGrid(sub.keys, sub.wide, shown));
+        if (sub.extra) p.appendChild(sub.extra());
+      }
+      box.appendChild(p);
+    });
+    host.appendChild(box);
+  });
+  /* Anything of the pane the layout does not name still shows, at the end. */
+  var left = SETTINGS.panes[pane].filter(function (k) { return !shown[k] && settingByKey(k); });
+  if (left.length) {
+    var box = el('section', 'set-sec');
+    box.appendChild(layoutGrid(left, null, shown));
+    host.appendChild(box);
+  }
+}
+function applySubs() {
+  var val = function (key) {
+    var m = $('set-' + key);
+    return m ? String(m._get ? m._get() : m.value) : '';
+  };
+  document.querySelectorAll('.set-sub[data-master]').forEach(function (p) {
+    p.hidden = val(p.dataset.master) !== p.dataset.when;
+  });
+  /* The gateway's certificates: there while its certificate is checked. */
+  var ca = $('smsca');
+  if (ca) {
+    var on = function (k) { var v = val(k); return v === 'true' || v === '1'; };
+    ca.hidden = !(on('sms_tel_verify') && on('sms_tel_https'));
+    /* Said plainly when nothing checks who answers (1.0.101): the gateway's
+       password and every code sent go to whoever is in between. */
+    var warn = $('smsca-warn');
+    if (!warn && ca.parentNode) {
+      warn = el('div', 'note warn sms-warn');
+      warn.id = 'smsca-warn';
+      ca.parentNode.insertBefore(warn, ca);
+    }
+    if (warn) {
+      var mode = val('sms_mode');
+      var https = on('sms_tel_https'), verify = on('sms_tel_verify');
+      warn.hidden = mode !== 'teltonika' || (https && verify);
+      warn.textContent = !https
+        ? 'Without HTTPS the gateway’s password and every code sent cross the network as they are: anybody on the way reads them.'
+        : 'The gateway’s certificate is not checked: anybody between this server and the gateway can stand in for it and read its password and every code sent. Switch the check on and read its certificate from it below.';
+    }
+  }
+}
+
+/* Try the gateway (1.0.113): reached, signed in, its modems and what each
+   says about the network - nothing is sent. With what is saved: changes not
+   saved yet are asked to be saved first. */
+function smsTelExtra() {
+  var f = document.createDocumentFragment();
+  var box = el('div', 'set-ca tel-test');
+  var head = el('div', 'set-ca-head');
+  var hi = el('span', 'set-sec-icon'); hi.innerHTML = iconMarkup('pulse', 15);
+  head.appendChild(hi);
+  head.appendChild(el('b', '', 'Is it talking to us?'));
+  var go = cmdButton('Test the connection', 'play', 'small admin-only');
+  go.classList.add('right');
+  head.appendChild(go);
+  box.appendChild(head);
+  box.appendChild(el('div', 'says set-sub-lede', 'Signs in to the gateway with what is saved above and asks how its modems are - operator, signal, SIM. Nothing is sent; a test SMS goes from a token’s card.'));
+  var out = el('div', 'tel-out');
+  box.appendChild(out);
+  go.onclick = function () {
+    var unsaved = Object.keys(DIRTY).filter(function (k) { return /^sms_/.test(k); });
+    if (unsaved.length) { toast('save the changes first - the test uses what is saved', 'warn'); return; }
+    busy(go, true);
+    clear(out);
+    out.appendChild(el('p', 'note', 'Asking the gateway…'));
+    api('mail', {action: 'tel_test'}).then(function (d) {
+      busy(go, false);
+      clear(out);
+      var steps = el('div', 'tel-steps');
+      (d.steps || []).forEach(function (st) {
+        var r = el('div', 'tel-step ' + (st.ok ? 'good' : 'bad'));
+        r.appendChild(el('span', 'tel-mark', st.ok ? '✓' : '✗'));
+        r.appendChild(el('b', '', st.what));
+        if (st.secs) r.appendChild(noI18n(el('span', 'muted small', ' ' + String(st.secs).replace('.', numLang() === 'cs' ? ',' : '.') + ' s')));
+        if (st.said) {
+          r.appendChild(document.createTextNode(' – '));
+          r.appendChild(el('span', 'small' + (st.ok ? ' muted' : ' bad'), st.said));
+        }
+        steps.appendChild(r);
+      });
+      out.appendChild(steps);
+      (d.modems || []).forEach(function (m) {
+        var card = el('div', 'tel-modem' + (m.sends ? ' sends' : ''));
+        var t = el('div', 'tel-modem-head');
+        t.appendChild(noI18n(el('b', 'mono', m.id || '?')));
+        if (m.sends) t.appendChild(el('span', 'tag ok', 'sends the codes'));
+        card.appendChild(t);
+        var dl = el('dl', 'tel-facts');
+        (m.fields || []).forEach(function (kv) {
+          if (kv[0] === 'id') return;
+          var one = el('div', 'tel-fact');
+          one.appendChild(el('dt', '', kv[0]));
+          one.appendChild(noI18n(el('dd', 'mono', kv[1])));
+          dl.appendChild(one);
+        });
+        card.appendChild(dl);
+        out.appendChild(card);
+      });
+      out.appendChild(el('p', 'note small ' + (d.ok ? (d.checked ? 'good' : 'warn') : 'bad'), d.ok
+        ? 'The gateway answers' + (d.checked ? ', its certificate checked' : (d.https ? ' - its certificate NOT checked' : ' - over plain HTTP')) + ' (' + num(d.took_ms) + ' ms).'
+        : 'The gateway cannot send codes like this - see the step marked ✗.'));
+      out.appendChild(hideBar(function () { clear(out); }));
+    }).catch(function (e) { busy(go, false); clear(out); oops(e); });
+  };
+  f.appendChild(box);
+  f.appendChild(smsCaBlock());
+  return f;
+}
+
+/* The certificates the Teltonika gateway is checked against (1.0.89): its
+   own, read from it with a click, or the authority and chain that signed
+   it - pasted or read from a file, added with Save the changes. */
+function smsCaBlock() {
+  var box = el('div', 'set-ca');
+  box.id = 'smsca';
+  var head = el('div', 'set-ca-head');
+  var hi = el('span', 'set-sec-icon'); hi.innerHTML = iconMarkup('shield', 15);
+  head.appendChild(hi);
+  head.appendChild(el('b', '', 'The certificates it is checked against'));
+  var when = el('span', 'muted small right', '');
+  head.appendChild(when);
+  box.appendChild(head);
+  box.appendChild(el('div', 'says set-sub-lede', 'The gateway’s own certificate (a TRB makes one itself), or the root and the chain of the authority that signed it. With some here only these are trusted, and a gateway written as an address is not checked for a name. With none, the authorities this machine trusts - and the name.'));
+  var state = el('div', 'set-ca-list');
+  box.appendChild(state);
+  var pem = el('textarea', 'mono admin-only');
+  pem.rows = 4;
+  pem.placeholder = '-----BEGIN CERTIFICATE-----';
+  box.appendChild(pem);
+  var row = el('div', 'set-ca-tools admin-only');
+  var fetch = cmdButton('Read it from the gateway', 'download', '');
+  var file = cmdButton('Read a file…', 'upload', '');
+  var drop = cmdButton('Take them all away', 'trash', 'danger');
+  var input = el('input'); input.type = 'file'; input.accept = '.pem,.crt,.cer,.txt'; input.hidden = true;
+  [fetch, file, drop, input].forEach(function (b) { row.appendChild(b); });
+  var seen = el('div', 'set-ca-seen');
+  box.appendChild(row);
+  box.appendChild(seen);
+  var draw = function () {
+    api('mail').then(function (d) {
+      var list = d.sms_ca_list || [];
+      when.textContent = list.length ? num(list.length) + ' certificate(s) kept' : 'none imported';
+      drop.hidden = !list.length;
+      clear(state);
+      if (list.length) state.appendChild(certTable(list, function (c) {
+        confirmThen('Take this certificate out', '<b>' + htmlText(c.subject || 'this certificate')
+          + '</b> is no longer trusted for the SMS gateway. The others stay.', 'Take it out', function () {
+            api('mail', {action: 'sms_ca', mode: 'drop', fingerprint: c.fingerprint}).then(function (r) {
+              toast(r.message, 'good'); draw();
+            }).catch(oops);
+          });
+      }));
+      explainWhatWasDrawn(box);
+    }).catch(oops);
+  };
+  pem.addEventListener('input', function () {
+    clear(seen);
+    if (!pem.value.trim()) { delete PENDING.smsca; markDirtyCount(); return; }
+    pendingSet('smsca', {save: function () {
+      return api('mail', {action: 'sms_ca', mode: 'add', ca: pem.value.trim()}).then(function (r) {
+        toast(r.message, 'good'); pem.value = ''; clear(seen); draw(); return true;
+      });
+    }, reset: function () { pem.value = ''; clear(seen); }});
+  });
+  fetch.onclick = function () {
+    if (Object.keys(DIRTY || {}).some(function (k) { return /^sms_tel_(host|https)$/.test(k); })) {
+      toast('save the gateway’s address first', 'bad'); return;
+    }
+    busy(fetch, true);
+    api('mail', {action: 'sms_ca_fetch'}).then(function (r) {
+      pem.value = r.pem || '';
+      pem.dispatchEvent(new Event('input'));
+      if ((r.certs || []).length) {
+        seen.appendChild(el('div', 'says', 'What the gateway shows - check the fingerprint against the one on the gateway (System → Administration → Certificates) before Save the changes trusts it:'));
+        seen.appendChild(certTable(r.certs));
+        var top = r.certs[r.certs.length - 1];
+        if (top && !top.self_signed) seen.appendChild(el('div', 'says', 'The gateway does not send the certificate of whom signed it: its own is then trusted as it is - only exactly this certificate passes.'));
+        explainWhatWasDrawn(seen);
+      }
+    }).catch(oops).then(function () { busy(fetch, false); });
+  };
+  file.onclick = function () { input.click(); };
+  input.onchange = function () { var f = input.files && input.files[0]; if (f) readCertFile(f, pem); input.value = ''; };
+  drop.onclick = function () {
+    confirmThen('Take every certificate of the SMS gateway away',
+      'The gateway’s certificate will then have to be signed by an authority this machine already trusts, or the check has to be switched off.',
+      'Take them all away', function () {
+        api('mail', {action: 'sms_ca', mode: 'clear'}).then(function (r) { toast(r.message, 'good'); draw(); }).catch(oops);
+      }, true);
+  };
+  draw();
+  return box;
+}
+
+function drawSettings() {
+  DRAWN_NODE = SETTINGS.node || '';
+  var shown = {};
+  Object.keys(SETTINGS.panes).forEach(function (pane) {
+    var host = $('sect-' + pane);
+    if (!host) return;
+    clear(host);
+    if (PANE_LAYOUT[pane]) { drawLaidOut(host, pane, shown); return; }
+    var grid = el('div', 'set-grid');
+    SETTINGS.panes[pane].forEach(function (key) {
+      var s = settingByKey(key);
+      if (!s) return;
+      shown[key] = true;
+      grid.appendChild(settingItem(s));
+    });
+    host.appendChild(grid);
+  });
+  var rest = SETTINGS.settings.filter(function (s) { return !shown[s.key]; });
+  var host = $('sect-rest');
+  clear(host);
+  $('rest-card').hidden = !rest.length;
+  if (rest.length) {
+    var g = el('div', 'set-grid');
+    rest.forEach(function (s) { g.appendChild(settingItem(s)); });
+    host.appendChild(g);
+  }
+  applyOnlyWhen();
+  explainWhatWasDrawn($('tab-settings'));
+  if (typeof PANE !== 'undefined' && PANE === 'backup' && typeof rbPassTools === 'function') rbPassTools();
+}
+
+/* Name, control, then the words, each in its own row of the grid, so every
+   box on a row starts at the same height even where one name takes two
+   lines (1.0.20). */
+/* What a setting does, in three lines at most (1.0.156): a click opens the
+   rest in place; the whole is on the name and its (i) as well. */
+function saysClamped(words) {
+  var box = saysBlock(words);
+  box.classList.add('clamp');
+  box.addEventListener('click', function () { box.classList.toggle('open'); });
+  /* Marked once drawn, so only a text that is cut looks like one. */
+  setTimeout(function () { if (box.scrollHeight > box.clientHeight + 2) box.classList.add('cut'); }, 0);
+  return box;
+}
 function settingItem(s) {
-  var item = el('div', 'set-item' + (s.kind === 'bool' ? ' set-bool' : '') + (s.kind === 'text' ? ' tall span-2' : ''));
-  item.dataset.key = s.key;
-  var label = el('label', '', s.label);
-  item.appendChild(label);
-  var input;
-  if (s.kind === 'bool') {
-    input = switchBox(!!s.value);
-    input._input.onchange = function () { mark(); };
-  } else if (s.kind === 'choice') {
-    input = selectBox(s.extra.choices, s.value);
-    input.onchange = function () { mark(); };
-  } else if (s.kind === 'text') {
-    input = el('textarea', 'mono');
-    input.rows = 5;
-    input.value = s.value || '';
-    input.spellcheck = false;
-    input.oninput = function () { mark(); };
-  } else if (s.kind === 'password') {
-    input = secretBox('', s.set ? 'saved - empty keeps it' : 'not set');
-    input.oninput = function () { mark(); };
-  } else {
-    input = textBox(s.value === null || s.value === undefined ? '' : s.value, '', s.kind === 'int' ? '' : 'mono');
-    if (s.kind === 'int') { input.type = 'number'; if (s.extra.min !== undefined) input.min = s.extra.min; if (s.extra.max !== undefined) input.max = s.extra.max; }
-    input.oninput = function () { mark(); };
-  }
-  if (input.id === '') input.id = 'set-' + s.key;
-  item.appendChild(input);
-  /* Name, control, then the rest in a row of its own (otp's set-tail), so
-     what is added under a setting never lies over its words. */
+  var item = settingItemBare(s);
   var tail = el('div', 'set-tail');
-  if (s.help) tail.appendChild(el('div', 'says', s.help));
-  if (s.saved && s.kind !== 'password') {
-    var back = el('button', 'link small', 'back to the default');
-    back.type = 'button';
-    explain(back, 'The built-in value: ' + (s.default === '' ? '(empty)' : String(s.default)));
-    back.onclick = function () { DIRTY[s.key] = null; item.classList.add('dirty'); markDirtyCount(); };
-    tail.appendChild(back);
-  }
+  Array.prototype.slice.call(item.children, 2).forEach(function (c) { tail.appendChild(c); });
   item.appendChild(tail);
-  function value() {
-    if (s.kind === 'bool') return !!input._get();
-    if (s.kind === 'int') return parseInt(input.value, 10);
-    return input.value;
-  }
-  function mark() {
-    var v = value();
-    if (String(v) === String(s.value === null ? '' : s.value)) delete DIRTY[s.key]; else DIRTY[s.key] = v;
-    item.classList.toggle('dirty', s.key in DIRTY);
-    markDirtyCount();
-    applyWhen();
-  }
-  item._value = value;
-  if (s.extra && s.extra.when) item.dataset.when = JSON.stringify(s.extra.when);
   return item;
 }
-/* What only one choice uses is there only while that choice is made (otp's
-   ONLY_WHEN): not a page of boxes that do nothing. */
-function applyWhen() {
-  document.querySelectorAll('.set-item[data-when]').forEach(function (item) {
-    var w = JSON.parse(item.dataset.when);
-    var master = document.querySelector('.set-item[data-key="' + w[0] + '"]');
-    var v = master && master._value ? master._value() : null;
-    item.hidden = !!master && w[1].map(String).indexOf(String(v)) < 0;
-  });
+function settingItemBare(s) {
+  var item = el('div', 'set-item' + (isBool(s) ? ' set-bool' : ''));
+  item.dataset.key = s.key;
+  var label = el('label', '', s.name || s.key);
+  label.setAttribute('for', 'set-' + s.key);
+  var info = el('span', 'iinfo', 'i');
+  info.setAttribute('role', 'button');
+  info.tabIndex = 0;
+  var asText = function (v) { return richText(Array.isArray(v) ? v.join(', ') : String(v)); };
+  var where = s.source;
+  var story = '<span class="k">on the command line this one is <b>ai --set ' + richText(s.key)
+    + '=…</b> · running: ' + (s.secret ? (s.set ? 'set' : 'not set') : asText(s.value))
+    + '<br><span class="' + (where === 'default' ? 'same' : 'diff') + '">' + richText(s.source_says || '')
+    + (s.saved_by ? ' (by ' + richText(s.saved_by) + (s.saved_at ? ', ' + ago(s.saved_at) : '') + ')' : '')
+    + '</span>'
+    + (s.file_only ? '<br><span class="same">kept in ' + richText(SETTINGS.config_file)
+       + ' - a database cannot hold its own address</span>' : '')
+    + (where !== 'default' && !s.secret && String(s.value) !== String(s.default)
+       ? '<br><span class="same">the built-in default is ' + asText(s.default) + '</span>' : '') + '</span>';
+  var whole = s.says || 'No words have been written for this one yet.';
+  if (s.node_key && SETTINGS.cluster) {
+    story += '<br><span class="diff">' + richText('this node’s own - every node of the cluster has one of its own; the others’ are in Settings → High availability') + '</span>';
+  }
+  explain(info, whole, story);
+  explain(label, whole, story);
+  label.appendChild(info);
+  /* A node's own setting, in a cluster (1.0.37): said beside its name. */
+  if (s.node_key && SETTINGS.cluster) {
+    label.appendChild(document.createTextNode(' '));
+    var nt = el('span', 'tag info', 'this node');
+    nt.title = SETTINGS.node;
+    label.appendChild(nt);
+    label.appendChild(document.createTextNode(' '));
+    label.appendChild(noI18n(el('span', 'tag dim', SETTINGS.node)));
+  }
+  item.appendChild(label);
+  var input;
+  if (isBool(s)) {
+    input = switchBox(s.value === true || String(s.value) === '1');
+    input._input.disabled = !ADMIN;
+    input._input.addEventListener('change', function () { markDirty(item, s); });
+    input.id = 'set-' + s.key;
+    /* The name is a label for the checkbox itself, so a click on it flips
+       the switch (1.0.15); the wrapper keeps the id the readers look up. */
+    input._input.id = 'set-' + s.key + '-sw';
+    label.setAttribute('for', input._input.id);
+    item.appendChild(input);
+    if (s.says) item.appendChild(saysClamped(s.short || s.says));   /* the whole on the (i) (1.0.156) */
+    return item;
+  }
+  if (s.choices && s.choices.some(function (c) {
+    return String((s.choice_words && s.choice_words[c]) || c).length > 30;
+  })) item.classList.add('wide');
+  if (s.choices) {
+    input = selectBox(s.choices.map(function (c) { return [c, (s.choice_words && s.choice_words[c]) || c]; }), s.value);
+  } else if (typeof s.min === 'number') {
+    input = el('input');
+    input.type = 'number';
+    input.min = s.min;
+    input.max = s.max;
+    input.value = s.value;
+  } else if (TALL[s.key] || s.tall) {
+    item.classList.add('tall');
+    input = el('textarea');
+    input.className = 'mono';
+    input.spellcheck = false;
+    input.value = s.value === null || s.value === undefined ? '' : String(s.value);
+    input.rows = s.key === 'claude_env' || s.key === 'sms_body' ? 4 : 2;
+  } else {
+    input = s.secret ? maskBox(s.value, '', '') : textBox(s.value, '', '');
+    if (s.secret) {
+      input.placeholder = s.set ? 'set - leave as it is to keep it' : 'not set';
+      input.addEventListener('focus', function () { if (input.value.indexOf('•') === 0) input.select(); });
+    }
+  }
+  input.id = 'set-' + s.key;
+  input.disabled = !ADMIN;
+  input.addEventListener('input', function () { markDirty(item, s); });
+  input.addEventListener('change', function () { markDirty(item, s); });
+  item.appendChild(input);
+  if (s.says) item.appendChild(saysClamped(s.short || s.says));   /* the whole on the (i) (1.0.156) */
+  return item;
 }
-var SAVE_PANES = ['fw', 'time'];
+
+function readValue(s) {
+  var input = $('set-' + s.key);
+  if (!input) return undefined;
+  if (input._get) return input._get();
+  if (typeof s.min === 'number' && !s.choices) return String(input.value).trim() === '' ? '' : Number(input.value);
+  return input.value;
+}
+function markDirty(item, s) {
+  /* Against what is saved now (1.0.94), not what was when the box was
+     drawn: after a save the old value made a change back look like none. */
+  s = settingByKey(s.key) || s;
+  var now = readValue(s);
+  var was = isBool(s) ? ((s.value === true || String(s.value) === '1') ? '1' : '0')
+    : (s.value === null || s.value === undefined ? '' : String(s.value));   /* null is empty (1.0.57) */
+  var changed = was !== String(now);
+  item.classList.toggle('changed', changed);
+  /* The database's address is what the steps below it ask about, never
+     saved by the save bar (1.0.37): saved, the next restart opened a
+     database nothing had been carried into. */
+  if (/^db_(engine|host|port|name|user|password)$/.test(s.key)) { delete DIRTY[s.key]; markDirtyCount(); applyOnlyWhen(); return; }
+  if (changed) DIRTY[s.key] = now; else delete DIRTY[s.key];
+  markDirtyCount();
+  applyOnlyWhen();
+}
+/* Changes that are not settings (1.0.56) - the firewall, the web address,
+   a certificate authority pasted in - wait for the same save bar:
+   PENDING[key] = {save: function () -> Promise (false: not done), reset}. */
+var PENDING = {};
+var SAVE_BAR_HOME = null;
+function saveBarHome() {
+  var bar = $('save-bar');
+  if (!bar) return;
+  if (!SAVE_BAR_HOME) SAVE_BAR_HOME = {parent: bar.parentNode, next: bar.nextSibling};
+  if (bar.parentNode !== SAVE_BAR_HOME.parent) {
+    SAVE_BAR_HOME.parent.insertBefore(bar, SAVE_BAR_HOME.next && SAVE_BAR_HOME.next.parentNode === SAVE_BAR_HOME.parent ? SAVE_BAR_HOME.next : null);
+    bar.classList.remove('in-editor');
+  }
+}
+function saveBarPlace() {
+  var bar = $('save-bar');
+  if (!bar) return;
+  var ed = PANE === 'texts' && TAB === 'settings' ? document.querySelector('.tx-shell.split > .tx-ed') : null;
+  if (!ed) { saveBarHome(); return; }
+  if (!SAVE_BAR_HOME) SAVE_BAR_HOME = {parent: bar.parentNode, next: bar.nextSibling};
+  if (bar.parentNode !== ed || ed.lastChild !== bar) { ed.appendChild(bar); bar.classList.add('in-editor'); }
+}
 function pendingSet(key, p) { p.pane = p.pane || PANE; PENDING[key] = p; markDirtyCount(); }
+/* The one save bar, at the bottom (1.0.123): on every pane where something
+   is saved - settings, the firewall, the web address, the time servers, the
+   message texts, the pages' looks - and on no other. A pane that does
+   something at once (Network, Restart and power off, Backups…) has its own
+   buttons for it and no save bar. */
+var SAVE_PANES = ['fw', 'time', 'texts'];
+function saveBarHere() {
+  if (!ADMIN || TAB !== 'settings') return false;
+  var pane = $('pane-' + PANE);
+  if (!pane) return false;
+  /* A setting of the daemon's own (data-key) - not a field that only looks
+     like one, as on Network, where nothing is saved: it is done at once. */
+  if (SAVE_PANES.indexOf(PANE) >= 0 || pane.querySelector('.set-item[data-key]')) return true;
+  return Object.keys(PENDING).some(function (k) { return PENDING[k].pane === PANE; });
+}
 function markDirtyCount() {
   var n = Object.keys(DIRTY).length + Object.keys(PENDING).length;
-  var bar = $('save-bar');
-  var here = TAB === 'settings' && (SAVE_PANES.indexOf(PANE) >= 0 || !!SECT[PANE === 'about' ? 'general' : PANE]
-    || Object.keys(PENDING).some(function (k) { return PENDING[k].pane === PANE; }));
-  bar.style.display = here || n ? '' : 'none';
-  bar.classList.toggle('dirty', n > 0);
   $('set-said').textContent = n ? n + ' change(s) not saved yet' : '';
+  $('save-bar').classList.toggle('dirty', n > 0);
+  /* Message texts, where only the editor scrolls (1.0.130): the bar is out of
+     the way until something is changed, as it is below the end of any other
+     page - and then at the bottom. */
+  $('save-bar').style.display = saveBarHere() ? '' : 'none';
+  saveBarPlace();
+}
+/* A question as a promise: true for the button, false for anything else. */
+function askThen(title, words, buttonWords, danger) {
+  return new Promise(function (done) {
+    var said = false;
+    var end = function (v) { if (!said) { said = true; done(v); } };
+    confirmThen(title, words, buttonWords, function () { end(true); }, danger);
+    var gen = MODAL_GEN;
+    var watch = setInterval(function () {
+      if (said) { clearInterval(watch); return; }
+      if ($('modal').hidden || MODAL_GEN > gen + 1) { clearInterval(watch); setTimeout(function () { end(false); }, 50); }
+    }, 300);
+  });
+}
+function applyOnlyWhen() {
+  applySubs();
+  var rules = (SETTINGS && SETTINGS.only_when) || {};
+  Object.keys(rules).forEach(function (key) {
+    var item = document.querySelector('.set-item[data-key="' + key + '"]');
+    var master = $('set-' + rules[key][0]);
+    if (!item || !master) return;
+    var now = master._get ? String(master._get()) : String(master.value);
+    var want = rules[key][1];
+    var live = Array.isArray(want) ? want.indexOf(now) >= 0
+      : (want === '*' ? !!now.trim() : (want.slice(-4) === '-not' ? now !== want.slice(0, -4) : now === want));
+    item.classList.toggle('asleep', !live);
+    var says = item.querySelector('.asleep-why');
+    // Written again on every pass (1.0.61): it went on naming the choice it
+    // was first put in for.
+    if (says) says.remove();
+    if (!live) {
+      var other = settingByKey(rules[key][0]) || {};
+      (item.querySelector('.set-tail') || item).appendChild(el('div', 'says asleep-why', want === '*' ? 'Not in use until ' + other.name + ' is filled in.'
+        : (isBool(other) ? 'Not in use while ' + other.name + ' is off.'
+           : 'Not in use while ' + other.name + ' is “' + ((other.choice_words || {})[now] || now || '–') + '”.')));
+    }
+  });
 }
 $('set-save').onclick = function () {
+  var want = {};
+  Object.keys(DIRTY).forEach(function (k) {
+    var s = settingByKey(k);
+    // A secret's dots are not a change (1.0.61): forgotten, not left on the
+    // bar as "not saved" for ever.
+    if (s && s.secret && String(DIRTY[k]).indexOf('•') === 0) { delete DIRTY[k]; return; }
+    want[k] = DIRTY[k];
+  });
+  markDirtyCount();
   var keys = Object.keys(PENDING);
-  if (!Object.keys(DIRTY).length && !keys.length) { toast('nothing has changed'); return; }
+  if (!Object.keys(want).length && !keys.length) { toast('nothing has changed'); return; }
   busy($('set-save'), true);
+  document.querySelectorAll('.set-item.refused').forEach(function (n) { n.classList.remove('refused'); });
   var chain = Promise.resolve(true);
-  if (Object.keys(DIRTY).length) {
-    chain = api('settings', {values: DIRTY}).then(function () {
-      toast('saved', 'good');
-      return loadSettings().then(function () { return true; });
-    }).catch(function (e) { oops(e); return false; });
+  if (Object.keys(want).length) {
+    chain = api('settings', {settings: want, drawn_by: DRAWN_NODE}).then(function (d) {
+      toast(d.message, 'good');
+      /* What was changed while the save was on its way stays changed
+         (1.0.61): the redraw after it threw those away without a word. */
+      var left = {};
+      Object.keys(DIRTY).forEach(function (k) {
+        if (!(k in want) || DIRTY[k] !== want[k]) left[k] = DIRTY[k];
+      });
+      if (Object.keys(left).length) { DIRTY = left; markDirtyCount(); loadSettings(false); }
+      else loadSettings();
+      if (paneLive('upgrade')) loadUpgrade();      /* the card to go back shown or not */
+      return true;
+    }).catch(function (e) {
+      var said = String(e.message || e);
+      /* The longest key the message starts with (1.0.57): portal before portal_help was taken. */
+      var hit = SETTINGS.settings.filter(function (one) {
+        return said.indexOf(one.key) === 0 && !/[A-Za-z0-9_]/.test(said.charAt(one.key.length));
+      }).sort(function (a, b) { return b.key.length - a.key.length; })[0];
+      if (hit) {
+        var item = document.querySelector('.set-item[data-key="' + hit.key + '"]');
+        if (item) { item.classList.add('refused'); item.scrollIntoView({block: 'center'}); }
+        said = '“' + hit.name + '”' + said.slice(hit.key.length);
+      }
+      toast(said, 'bad');
+      return false;
+    });
   }
+  /* Then the rest, one after the other; the first that fails stops it. */
   keys.forEach(function (k) {
     chain = chain.then(function (ok) {
       if (!ok || !PENDING[k]) return ok;
@@ -1792,10 +2278,20 @@ $('set-save').onclick = function () {
   chain.then(function () { markDirtyCount(); busy($('set-save'), false); });
 };
 $('set-reset').onclick = function () {
-  Object.keys(PENDING).forEach(function (k) { try { PENDING[k].reset(); } catch (e) { /* drawn again anyway */ } });
+  var keys = Object.keys(PENDING);
+  keys.forEach(function (k) { try { PENDING[k].reset(); } catch (e) { /* drawn again anyway */ } });
   PENDING = {};
-  loadSettings();
+  /* The changed values forgotten too (1.0.104): loadSettings draws nothing
+     again while any is left, so Put them back did nothing at all. */
+  DIRTY = {};
+  document.querySelectorAll('.set-item.refused').forEach(function (n) { n.classList.remove('refused'); });
+  markDirtyCount();
+  loadSettings(); toast('put back as the daemon has them');
 };
+window.addEventListener('beforeunload', function (e) {
+  if (Object.keys(DIRTY).length || Object.keys(PENDING).length) { e.preventDefault(); e.returnValue = ''; }
+});
+
 
 /* ---- Claude Code --------------------------------------------------------------- */
 function loadClaude(fresh) {
@@ -2841,98 +3337,1019 @@ function phpSafety() {
     + 'rpm -q --changelog php-fpm | grep CVE-2026-109618.';
 }
 
-/* ---- the database: its copies (as otp's Database pane) ------------------------------ */
-function bytesWords(n) {
-  n = Number(n) || 0;
-  if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n / 1024).toFixed(1) + ' kB';
-  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
-  return (n / 1073741824).toFixed(2) + ' GB';
-}
+/* ---- the database (as otp's Settings → The database) ---------------------------- */
+var DBSTATE = null;
+var ENGINE_SAID = {sqlite: 'the file on this machine', mariadb: 'MariaDB', postgres: 'PostgreSQL'};
+var DUMP_SAID = {sqlite: 'a copy of the file', mariadb: 'a MariaDB dump',
+                 postgres: 'a PostgreSQL dump', copy: 'a portable copy'};
+var TABLE_SAID = {users: 'accounts', sessions: 'sign-ins', events: 'events', terms: 'terminals',
+                  fails: 'wrong passwords counted', outbox: 'mails and SMS sent', mailq: 'mails waiting to go',
+                  settings: 'settings', meta: 'notes of its own'};
+
 function loadDb() {
   api('db').then(function (d) {
-    $('db-now').textContent = bytesWords(d.size) + ' · SQLite ' + d.sqlite;
-    var says = $('db-says');
-    clear(says);
-    says.appendChild(kvTable([
-      ['The file', noI18n(el('span', 'mono', d.file))],
-      ['Its key', noI18n(el('span', 'mono', d.key))],
-      ['The copies', noI18n(el('span', 'mono', d.folder))],
-      ['The last copy', d.last && d.last.at ? ago(d.last.at) + ' (' + d.last.why + ')' : 'none yet'],
-      ['In it', num(d.counts.users) + ' account(s), ' + num(d.counts.events) + ' event(s), ' + num(d.counts.terms) + ' terminal(s), ' + num(d.counts.settings) + ' setting(s) saved']
-    ]));
-    var host = $('db-copies');
-    clear(host);
-    if (!d.copies.length) { host.appendChild(el('p', 'note', 'No copy has been made yet.')); return; }
-    host.appendChild(listTable(['The copy', 'Made', 'Size', ''], d.copies, function (c) {
-      var tr = el('tr');
-      tr.appendChild(noI18n(el('td', 'mono', c.name)));
-      tr.appendChild(stampCell(c.at));
-      tr.appendChild(el('td', 'num', bytesWords(c.size)));
-      var t = el('td', 'rowtools');
-      var dl = iconButton('download', 'Download it');
-      dl.onclick = function () { download(c.path); };
-      var back = iconButton('undo', 'Put it back');
-      back.onclick = function () { dbRestoreAsk(c.name); };
-      var x = iconButton('trash', 'Take it away');
-      x.onclick = function () {
-        confirmThen('Take the copy away?', '<b>' + htmlText(c.name) + '</b> is deleted from the server.', 'Take it away', function () {
-          api('db', {action: 'drop', name: c.name}).then(function (r) { toast(r.message, 'good'); loadDb(); }).catch(oops);
-        }, true);
-      };
-      [dl, back, x].forEach(function (b) { t.appendChild(b); });
-      tr.appendChild(t);
-      return tr;
-    }));
+    DBSTATE = d;
+    $('db-size').textContent = bytes(d.size) + ' · ' + d.where;
+    drawEngine(d);
+    drawDisk(d);
+    drawCounts(d);
+    keptTable($('db-backups'), d.copies || [], {
+      kind: 'copy', head: 'Copies kept (' + d.keep + ' at most)',
+      where: 'They are files on this machine, under ' + d.backup_dir + ', each with the key '
+        + 'that opens its secrets beside it. Copy them off it if they are to survive the machine.'
+    });
+    keptTable($('db-dumps'), d.dumps || [], {
+      kind: 'dump', head: 'Dumps kept (' + d.keep + ' at most)',
+      where: 'They are files on this machine, under ' + d.dump_dir + ', each with the key '
+        + 'that opens its secrets beside it. Copy them off it if they are to survive the machine.'
+    });
+    dumpCard(d);
+    drawTune(d);
+    drawErasable(d.erasable || {});
+    if (d.job && d.job.running && ADMIN) dbWatch();     /* its progress is a full administrator's (1.0.146) */
+    explainWhatWasDrawn($('pane-db'));
   }).catch(oops);
 }
-function dbRestoreAsk(name) {
-  api('db', {action: 'inspect', name: name}).then(function (r) {
-    var w = r.what;
-    modal('Put this copy back', function (body) {
-      body.appendChild(el('p', 'note warn', 'Everything is replaced by what is in it: every account, every setting, every event. Whoever is signed in may have to sign in again. A copy of what is here now is made first.'));
-      body.appendChild(kvTable([
-        ['The copy', noI18n(el('span', 'mono', name))],
-        ['Made by', w.about && w.about.version ? 'ai ' + w.about.version + ' on ' + w.about.host : '–'],
-        ['Made', w.about && w.about.at ? stamp(w.about.at) : '–'],
-        ['Accounts', noI18n(el('span', 'mono', (w.users || []).join(', ')))],
-        ['Events', num(w.events)],
-        ['The key of its secrets', w.has_key ? (w.same_key ? 'in it - the same as here' : 'in it - it replaces the one here') : 'not in it: secrets sealed elsewhere cannot be opened']
-      ]));
-    }, [{words: 'Close', close: true},
-        {words: 'Put it back', cls: 'danger', icon: 'undo', go: function (b) {
-          busy(b, true);
-          api('db', {action: 'restore', name: name}).then(function (x) {
-            closeModal(); toast(x.message, 'good'); setTimeout(function () { location.reload(); }, 1500);
-          }).catch(oops).then(function () { busy(b, false); });
-        }}], 'medium');
-  }).catch(oops);
+
+/* ---- which database everything is kept in -------------------------------- */
+function dbAsked() {
+  var out = {};
+  ['db_engine', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password', 'db_timeout_s'].forEach(function (k) {
+    var input = $('set-' + k);
+    if (!input) return;
+    var v = input._get ? input._get() : input.value;
+    if (k === 'db_password' && (v === '' || String(v).indexOf('•') === 0)) return;
+    out[k] = (k === 'db_port' || k === 'db_timeout_s') ? (String(v).trim() === '' ? 0 : Number(v)) : v;
+  });
+  return out;
 }
-$('db-make').onclick = function () {
-  busy($('db-make'), true);
-  api('db', {action: 'copy'}).then(function (r) { toast(r.message, 'good'); loadDb(); }).catch(oops).then(function () { busy($('db-make'), false); });
-};
-(function () {
-  var box = $('dbu-drop');
-  function send(f) {
-    if (!f) return;
-    var name = 'upload-' + Date.now() + '.tar.gz';
-    $('dbu-says').textContent = 'Sending ' + f.name + '…';
-    sendFile('/files/put?dir=' + encodeURIComponent('/var/lib/ai/copies') + '&name=' + encodeURIComponent(name), f, function () {}).then(function () {
-      $('dbu-says').textContent = 'Drop a copy here, or press to choose one';
-      dbRestoreAsk(name);
-    }).catch(function (e) { $('dbu-says').textContent = 'Drop a copy here, or press to choose one'; oops(e); });
+function engineChosen() { return String(dbAsked().db_engine || (DBSTATE && DBSTATE.engine) || 'sqlite'); }
+function engineWord(name) { return ENGINE_SAID[name] || name; }
+
+function drawEngine(d) {
+  $('db-engine-file').textContent = d.config_file || 'the config file';
+  $('db-engine-now').textContent = (ENGINE_SAID[d.engine] || d.engine) + ' · ' + d.where;
+  var host = $('db-engine-says');
+  clear(host);
+  var c = d.counts || {};
+  host.appendChild(peekFacts([
+    ['In use now', d.version],
+    ['Where', noI18n(el('span', 'mono', d.where))],
+    ['Holding', num(c.users || 0) + ' account(s), ' + num(c.events || 0) + ' event(s)'],
+    ['Room it takes', bytes(d.size || 0)]
+  ]));
+  Object.keys(d.drivers || {}).forEach(function (name) {
+    var one = d.drivers[name];
+    host.appendChild(el('p', 'btnhelp', engineWord(name) + ': '
+      + (one.ready ? 'the driver is installed'
+         : (one.says || 'no driver') + ' — install ' + one.package)));
+  });
+  engineButtons();
+}
+function engineButtons() {
+  var chosen = engineChosen();
+  var live = String((DBSTATE && DBSTATE.engine) || 'sqlite');
+  var same = chosen === live;
+  if ($('db-engine-setup')) $('db-engine-setup').disabled = chosen === 'sqlite';
+  if ($('db-engine-move')) $('db-engine-move').disabled = same;
+  if ($('db-engine-empty')) $('db-engine-empty').disabled = same;
+  if ($('db-engine-use')) $('db-engine-use').disabled = same;
+}
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'set-db_engine') engineButtons();
+});
+
+function engineFacts(d) {
+  var facts = [['Reached', d.reached ? 'yes' : 'no'], ['Where', d.where || '']];
+  if (d.version) facts.push(['It says it is', d.version]);
+  if (d.reached) {
+    facts.push(['Tables there', num((d.tables || []).length) + ' of ours']);
+    facts.push(['Records in it', num(d.rows || 0)]);
+    facts.push(['May this account write', d.writable ? 'yes' : 'NO']);
   }
-  box.onclick = function () { $('dbu-file').click(); };
-  $('dbu-file').onchange = function () { send(this.files && this.files[0]); this.value = ''; };
-  ['dragenter', 'dragover'].forEach(function (n) { box.addEventListener(n, function (e) { e.preventDefault(); box.classList.add('over'); }); });
-  ['dragleave', 'drop'].forEach(function (n) {
-    box.addEventListener(n, function (e) {
-      e.preventDefault(); box.classList.remove('over');
-      if (n === 'drop' && e.dataTransfer && e.dataTransfer.files) send(e.dataTransfer.files[0]);
+  return peekFacts(facts);
+}
+
+/* ---- the job going on, and the bar that says how far ---------------------- */
+var DB_WATCHING = null;
+function dbBusyButtons(on) {
+  ['db-backup', 'db-dump-make', 'db-optimize', 'db-check', 'db-prune', 'db-tidy',
+   'db-restore', 'dump-restore', 'db-engine-move', 'erase-go'].forEach(function (id) {
+    var b = $(id);
+    if (b) b.disabled = on || (id === 'erase-go' && !erasePicked().length)
+      || ((id === 'db-restore' || id === 'dump-restore') && !b._held);
+  });
+}
+/* A bar that has finished gets Hide this; one that starts again loses it. */
+function goingCloser(box) {
+  if (!box || box.querySelector('.hide-row')) return;
+  box.appendChild(hideBar(function () { box.hidden = true; }));
+}
+function goingOpen(box) {
+  if (!box) return;
+  box.hidden = false;
+  var r = box.querySelector('.hide-row');
+  if (r) r.remove();
+}
+function dbWatch(done) {
+  if (DB_WATCHING) return;
+  DB_WATCHING = true;     /* taken at once (1.0.57): two watchers ran when asked twice in one round trip */
+  var box = $('db-going');
+  goingOpen(box);
+  dbBusyButtons(true);
+  var step = function () {
+    api('db', {action: 'job'}).then(function (d) {
+      var j = d.job || {};
+      var pct = j.whole ? Math.min(100, Math.round(100 * j.done / j.whole)) : (j.running ? 5 : 100);
+      $('db-going-fill').style.width = pct + '%';
+      $('db-going-says').textContent = (j.what || '') + (j.says ? ' — ' + j.says : '')
+        + (j.whole ? ' (' + num(j.done) + ' of ' + num(j.whole) + ')' : '');
+      /* Every second while the pane is open; every five once it is left, so
+         the job's end is still told and the daemon is not asked for nothing. */
+      if (j.running) { DB_WATCHING = setTimeout(step, TAB === 'settings' && PANE === 'db' ? 1000 : 5000); return; }
+      DB_WATCHING = null;
+      dbBusyButtons(false);
+      goingCloser($('db-going'));
+      if (j.error) { toast(j.what + ' failed: ' + j.error, 'bad'); $('db-going-says').textContent = j.error; return; }
+      var r = j.result || {};
+      if (r.rows !== undefined) {
+        toast('everything is in ' + r.where + ': ' + num(r.rows) + ' row(s) — now Start using it', 'good');
+        $('db-going-says').textContent = 'done: ' + num(r.rows) + ' row(s) in ' + r.where
+          + ' · a copy made first: ' + r.copy;
+      } else if (r.erased) {
+        toast('erased; a copy was made first: ' + r.copy, 'good');
+        $('db-going-says').textContent = 'done · a copy made first: ' + r.copy;
+      } else if (r.before !== undefined) {
+        toast('the disk is given back: ' + bytes(r.before) + ' → ' + bytes(r.after), 'good');
+        $('db-going-says').textContent = 'done: ' + bytes(r.before) + ' → ' + bytes(r.after);
+      }
+      if (done) done(r);
+      loadDb();
+    }).catch(function (e) { DB_WATCHING = null; dbBusyButtons(false); oops(e); });
+  };
+  step();
+}
+
+/* ---- the disk under it ----------------------------------------------------- */
+function drawDisk(d) {
+  var host = $('db-disk');
+  clear(host);
+  var disk = d.disk || {};
+  var grew = d.growth || {};
+  var cache = d.cache;
+  if (cache && cache.low) {
+    var slow = el('p', 'note bad');
+    slow.appendChild(el('b', '', cache.engine));
+    slow.appendChild(document.createTextNode(' keeps '));
+    slow.appendChild(el('b', '', bytes(cache.cache)));
+    slow.appendChild(document.createTextNode(' of its own in memory ('));
+    slow.appendChild(noI18n(el('span', 'mono', cache.setting)));
+    slow.appendChild(document.createTextNode(') for a database of '));
+    slow.appendChild(el('b', '', bytes(cache.size)));
+    slow.appendChild(document.createTextNode('. Its indexes do not fit, so a busy minute waits for the disk. A quarter of the machine’s memory is the usual setting.'));
+    host.appendChild(slow);
+    if (ADMIN) {
+      var go = cmdButton('Tune it for this machine…', 'gear', '');
+      go.onclick = openTune;
+      host.appendChild(go);
+    }
+  }
+  if (!disk.total) {
+    host.appendChild(el('p', 'note', 'The disk this is on could not be measured.'));
+    return;
+  }
+  var share = Number(disk.share || 0);
+  var line = el('div', 'disk-bar ' + (share >= 92 ? 'crit' : (share >= 80 ? 'warn' : 'ok')));
+  var fill = el('span');
+  fill.style.width = Math.max(1, Math.min(100, share)) + '%';
+  line.appendChild(fill);
+  host.appendChild(line);
+  var says = el('p', 'note');
+  says.appendChild(el('b', '', bytes(disk.free)));
+  says.appendChild(document.createTextNode(' free of ' + bytes(disk.total) + ' on '));
+  says.appendChild(noI18n(el('span', 'mono', disk.where || '')));
+  says.appendChild(document.createTextNode(' — '));
+  says.appendChild(el('span', '', share + '% of it is used'));
+  if (grew.a_day) {
+    says.appendChild(document.createTextNode(', and this database has been growing '));
+    says.appendChild(el('b', '', bytes(grew.a_day)));
+    says.appendChild(document.createTextNode(' a day over the last ' + grew.over_days + ' day(s).'));
+  } else {
+    says.appendChild(document.createTextNode('. How fast it is growing is not known yet: the size is noted once a day, and two are needed.'));
+  }
+  host.appendChild(says);
+  host.appendChild(el('p', 'note', 'That disk holds ' + (disk.holds || '') + '.'));
+  if (disk.days_left !== null && disk.days_left !== undefined) {
+    host.appendChild(el('p', 'note ' + (disk.days_left < 45 ? 'bad' : ''), disk.days_left > 3650
+      ? 'At that rate the disk has years left.'
+      : 'At that rate the disk has about ' + num(disk.days_left) + ' day(s) left. Forgetting old records, under the keep-for numbers above, is what shortens it.'));
+  }
+  var parts = d.parts || [];
+  if (parts.length) {
+    var wrap = listTable([d.engine !== 'sqlite' ? 'Where' : 'File', 'What it is', {words: 'Size', cls: 'num'}],
+      parts, function (one) {
+        var tr = el('tr');
+        tr.appendChild(noI18n(el('td', 'mono', one.name)));
+        tr.appendChild(el('td', 'muted', one.what));
+        tr.appendChild(el('td', 'num', bytes(one.bytes)));
+        return tr;
+      });
+    wrap.style.marginTop = '10px';
+    host.appendChild(wrap);
+  }
+}
+
+/* ---- what is in it ----------------------------------------------------------- */
+function drawCounts(d) {
+  var host = $('db-counts');
+  clear(host);
+  var rows = (d.tables || []).slice().sort(function (a, b) {
+    return (b.bytes || 0) - (a.bytes || 0) || b.rows - a.rows;
+  });
+  var known = rows.some(function (t) { return t.bytes !== null && t.bytes !== undefined; });
+  host.appendChild(listTable(['What', 'Table', {words: 'Rows', cls: 'num'}]
+      .concat(known ? [{words: 'Size', cls: 'num'}] : []), rows, function (t) {
+    var tr = el('tr');
+    tr.appendChild(el('td', '', TABLE_SAID[t.table] || t.table));
+    tr.appendChild(noI18n(el('td', 'mono muted small', t.table)));
+    tr.appendChild(el('td', 'num', num(t.rows)));
+    if (known) tr.appendChild(el('td', 'num', t.bytes === null || t.bytes === undefined ? '–' : bytes(t.bytes)));
+    return tr;
+  }));
+  var key = el('p', 'note ' + (d.key_there ? '' : 'bad'));
+  key.appendChild(document.createTextNode(d.key_there ? 'The key that opens the secrets: ' : 'The key that opens the secrets is MISSING: '));
+  key.appendChild(noI18n(el('span', 'mono', d.key)));
+  host.appendChild(key);
+  if (d.free) {
+    host.appendChild(el('p', 'btnhelp', d.engine === 'postgres'
+      ? num(d.free) + ' row(s) deleted and not yet given back to the disk.'
+      : bytes(d.free) + ' free inside it, which the engine uses again; Give the disk back hands it to the operating system.'));
+  }
+}
+
+/* ---- the two lists of files kept beside it --------------------------------- */
+function keptTable(into, rows, opts) {
+  clear(into);
+  if (!into || !rows || !rows.length) return;
+  var dump = opts.kind === 'dump';
+  into.appendChild(el('h4', '', opts.head));
+  into.appendChild(listTable(['Name', dump ? 'What it is' : 'Taken off', {words: 'Size', cls: 'num'},
+                              'Made', 'Key beside it', {words: '', cls: 'act'}], rows, function (b) {
+    var line = el('tr');
+    line.appendChild(noI18n(el('td', 'mono', b.name)));
+    var came = (dump ? DUMP_SAID[b.kind] : ENGINE_SAID[b.from]) || '';
+    var mine = !dump || b.mine !== false;
+    var off = el('td', came ? (mine ? '' : 'muted') : 'muted', came || 'not said');
+    if (!mine) explain(off, 'This dump was taken off a different engine from the one this '
+      + 'installation is on now, so it cannot be put back here. Put that engine back on, or '
+      + 'use a copy — a copy goes into any of the three.');
+    else if (dump && b.kind === 'copy') explain(off, 'Made on a night when the program that '
+      + 'dumps this engine was not on the machine, so a portable copy was made instead. It is '
+      + 'a whole copy and goes back into any of the three.');
+    line.appendChild(off);
+    line.appendChild(el('td', 'num', bytes(b.bytes)));
+    line.appendChild(stampCell(b.at));
+    line.appendChild(el('td', b.key ? 'good' : 'bad', b.key ? 'yes' : 'no'));
+    var act = el('td', 'rowtools');
+    if (ADMIN) {
+      var take = cmdButton('Download', 'down', 'small');
+      explain(take, dump
+        ? 'Save this dump to the machine you are sitting at - with the key that opens its secrets, '
+          + 'locked with a passphrase you give, or without it.'
+        : 'Save this copy to the machine you are sitting at - with the key that opens its secrets, '
+          + 'locked with a passphrase you give, or without it.');
+      take.onclick = function () { dbDownloadAsk({name: b.name, kind: dump ? 'dump' : '', key: b.key}); };
+      act.appendChild(take);
+      var back = cmdButton('Restore', 'undo', 'small danger');
+      explain(back, 'Put <b>this</b> one back, without downloading it and uploading it again: '
+        + 'everything in the live database is replaced by what is in this file. You are shown '
+        + 'what is in it and asked first, and a copy of what is being replaced is made before '
+        + 'anything changes.');
+      back.disabled = !mine;
+      if (mine) back.onclick = function () { restoreKept(b, opts.kind); };
+      act.appendChild(back);
+      var gone = cmdButton('Delete', 'trash', 'small danger');
+      explain(gone, 'Delete this file, and the key beside it, from the server. The live database is not touched.');
+      gone.onclick = function () {
+        confirmThen(dump ? 'Delete this dump?' : 'Delete this copy?', 'The file ' + htmlText(b.name)
+          + ' and the key beside it are deleted from this machine. The live database is '
+          + 'not touched, and the others stay where they are.', 'Delete it', function () {
+            api('db', {action: 'delete', name: b.name, kind: opts.kind}).then(function (x) {
+              toast(x.message, 'good');
+              loadDb();
+            }).catch(oops);
+          });
+      };
+      act.appendChild(gone);
+    }
+    line.appendChild(act);
+    return line;
+  }));
+  into.appendChild(el('p', 'btnhelp', opts.where));
+}
+
+function dumpCard(d) {
+  var says = $('db-dump-says');
+  clear(says);
+  var info = d.dump || {};
+  $('db-dump-now').textContent = info.words || '';
+  $('db-dump-make').disabled = false;
+  $('db-dump-get').disabled = false;
+  if (info.ready) {
+    var line = el('p', 'note good');
+    line.appendChild(document.createTextNode('Tonight’s will be '));
+    line.appendChild(el('b', '', info.words || 'a dump'));
+    if (info.suffix) {
+      line.appendChild(document.createTextNode(', written as '));
+      line.appendChild(noI18n(el('code', '', info.suffix)));
+    }
+    line.appendChild(document.createTextNode('.'));
+    says.appendChild(line);
+  } else {
+    says.appendChild(el('p', 'note bad', info.why || 'A dump cannot be made on this machine.'));
+    var fix = el('p', 'note');
+    fix.appendChild(document.createTextNode('Until it is there, the nightly one is made as a portable copy instead — a whole copy, which goes back into any engine, but several times the size of a dump. To have dumps: '));
+    fix.appendChild(noI18n(el('code', '', info.install || '')));
+    says.appendChild(fix);
+  }
+}
+
+/* ---- putting one back ------------------------------------------------------- */
+function restoreKept(b, kind) {
+  api('db', {action: 'restore_kept', name: b.name, kind: kind, check: true}).then(function (d) {
+    askBeforeRestoring(d.says, b.name, function () {
+      return api('db', {action: 'restore_kept', name: b.name, kind: kind});
+    });
+  }).catch(oops);
+}
+
+function askBeforeRestoring(says, what, go) {
+  var n = (says && says.counts) || {};
+  var kind = (says && says.kind) || '';
+  modal('Put this database back?', function (body) {
+    var facts = [['File', noI18n(el('span', 'mono', String(what)))],
+                 ['What it is', DUMP_SAID[kind] || kind], ['Size', bytes(says.bytes || 0)],
+                 ['Tables', num(says.tables || 0)], ['Accounts', num(n.users || 0)],
+                 ['Administrators', num(says.admins || 0)]];
+    if (n.events !== undefined) facts.push(['Events', num(n.events)]);
+    if (n.terms !== undefined) facts.push(['Terminals', num(n.terms)]);
+    if (says.version) facts.push(['Made by ai', says.version]);
+    /* Where it was made (1.0.63): the machine's config.json came with it, to
+       be read - it is never put back. */
+    var m = says.machine || null;
+    if (m) {
+      var use = m.in_use || {};
+      facts.push(['Made on', noI18n(el('span', 'mono', String(m.node || '?') + (m.host ? ' (' + m.host + ')' : '')))]);
+      facts.push(['Its database', noI18n(el('span', 'mono', String(use.db_engine || '?')
+        + (use.db_engine && use.db_engine !== 'sqlite' ? ' ' + (use.db_host || '') + ':' + (use.db_port || '') + '/' + (use.db_name || '') : '')))]);
+    }
+    body.appendChild(peekFacts(facts));
+    if (m && m.config) {
+      var det = el('details', 'note');
+      det.appendChild(el('summary', '', 'Its ' + (m.config_file || 'config.json') + ' (only to read: it is not put back)'));
+      det.appendChild(noI18n(el('pre', 'mono', JSON.stringify(m.config, null, 1))));
+      body.appendChild(det);
+    }
+    if (kind === 'mariadb' || kind === 'postgres') {
+      body.appendChild(el('p', 'note', 'How many records are in a dump is not read from it — that is what putting it back is for.'));
+    }
+    var warn = el('p', 'note bad');
+    warn.textContent = 'Putting it back replaces everything in the live database with what is in that file. A copy of what is being replaced is made first and kept with the others, so this can be undone — but everything recorded since that file was made will only be in that copy.';
+    body.appendChild(warn);
+    body.appendChild(el('p', 'btnhelp', 'You will probably be signed out: who is signed in came with the file like everything else. The key that opens the secrets is taken from beside the file, or from inside a downloaded copy; where there is none, the key in use stays.'));
+  }, [
+    {words: 'No, leave it', close: true},
+    {words: 'Restore it', cls: 'danger', icon: 'undo', close: true, go: function () {
+      go().then(function (done) {
+        if (done && done.job) { setTimeout(function () { dbWatch(function () { setTimeout(function () { window.location.reload(); }, 2500); }); }, 50); return; }
+        toast('the database was restored; what it replaced is in ' + done.safety + ' — ' + done.key, 'good');
+        setTimeout(function () { window.location.reload(); }, 2500);
+      }).catch(oops);
+    }}], true);
+}
+
+/* A file to put back goes to the daemon's own folder for them, by the
+   files' way in, under a name made here; then it is read there. */
+function dbSend(file) {
+  var up = '';
+  var a = new Uint8Array(8);
+  crypto.getRandomValues(a);
+  for (var i = 0; i < a.length; i++) up += ('0' + a[i].toString(16)).slice(-2);
+  return sendFile('/files/put?dir=' + encodeURIComponent((DBSTATE && DBSTATE.uploads) || '/var/lib/ai/db-uploads')
+                  + '&name=' + up, file, function () {}).then(function () {
+    return api('db', {action: 'upload_check', upload: up});
+  });
+}
+
+/* ---- a copy or a dump with its key (1.0.123) ------------------------------
+   Downloaded with the key that opens its secrets, locked with a passphrase -
+   one file that is all of it - or without it; and the same file put back
+   with the passphrase. */
+function dbDownloadAsk(o) {
+  var what = o.kind === 'dump' ? 'dump' : 'copy';
+  modal(o.name ? 'Download ' + o.name : (what === 'dump' ? 'Download a dump made now' : 'Download a copy made now'), function (body) {
+    var seg = el('div', 'seg');
+    var withB = el('button', 'on', 'With the key'), noB = el('button', '', 'Without the key');
+    withB.type = noB.type = 'button';
+    seg.appendChild(withB); seg.appendChild(noB);
+    body.appendChild(seg);
+    var withBox = el('div');
+    withBox.appendChild(el('p', 'note', what === 'dump'
+      ? 'One file that is all of it: the dump and the key that opens its secrets, locked with the passphrase below. Put back here or on another machine (Put a dump back), the passphrase opens the key again. Lost, the key in the file is lost with it - it is not kept anywhere.'
+      : 'One file that is all of it: the copy and the key that opens its secrets, locked with the passphrase below. Put back here or on another machine (Put a copy back), the passphrase opens the key again. Lost, the key in the file is lost with it - it is not kept anywhere.'));
+    var p1 = secretBox('', '10 characters at least', 'mono');
+    var p2 = secretBox('', 'the same again', 'mono');
+    p1.id = 'dbk-p1'; p2.id = 'dbk-p2';
+    var g = el('div', 'formgrid');
+    g.appendChild(formField('Passphrase', p1));
+    g.appendChild(formField('The passphrase again', p2));
+    withBox.appendChild(g);
+    body.appendChild(withBox);
+    var noBox = el('div');
+    noBox.hidden = true;
+    noBox.appendChild(el('p', 'note warn', what === 'dump'
+      ? 'The dump alone opens no secret on another machine: the key is the .key file beside it in /var/lib/ai/dumps (or /var/lib/ai/secrets.key). Keep the two together.'
+      : 'The copy alone opens no secret on another machine: the key is the .key file beside it in /var/lib/ai/backups (or /var/lib/ai/secrets.key). Keep the two together.'));
+    body.appendChild(noBox);
+    body._with = true;
+    withB.onclick = function () { body._with = true; withB.classList.add('on'); noB.classList.remove('on'); withBox.hidden = false; noBox.hidden = true; };
+    noB.onclick = function () { body._with = false; noB.classList.add('on'); withB.classList.remove('on'); withBox.hidden = true; noBox.hidden = false; };
+    MODAL_BODY_DBK = body;
+  }, [
+    {words: 'Cancel', close: true},
+    {words: 'Download', cls: 'primary', icon: 'down', go: function (button) {
+      var body = MODAL_BODY_DBK;
+      if (!body._with) {
+        closeModal();
+        if (o.now) toast('it is being made; the download starts when it is ready', 'good');
+        api('db', {action: 'download', name: o.name || '', kind: o.kind || ''}).then(function (t) {
+          download(t.path);
+        }).catch(oops);
+        return;
+      }
+      var a = $('dbk-p1').value, b2 = $('dbk-p2').value;
+      if (a.length < 10) { toast('a passphrase of 10 characters at least', 'bad'); return; }
+      if (a !== b2) { toast('the two passphrases are not the same', 'bad'); return; }
+      busy(button, true);
+      if (o.now) toast('it is being made; the download starts when it is ready', 'good');
+      api('db', {action: 'download_ticket', name: o.name || '', kind: o.kind || '', passphrase: a}).then(function (t) {
+        closeModal();
+        download(t.path);
+        toast(t.name + ' - keep the passphrase apart from the file', 'good');
+      }).catch(oops).then(function () { busy(button, false); });
+    }}]);
+}
+var MODAL_BODY_DBK = null;
+function dbAskPassphrase(d, fileName) {
+  modal('The key in ' + fileName, function (body) {
+    body.appendChild(el('p', 'note', 'This file holds the database and the key that opens its secrets, locked with a passphrase. Give it, and both are put back.'));
+    var p = secretBox('', '', 'mono');
+    p.id = 'dbk-open';
+    body.appendChild(formField('Passphrase', p));
+    setTimeout(function () { p.focus(); }, 50);
+  }, [
+    {words: 'Cancel', close: true},
+    {words: 'Open it', cls: 'primary', icon: 'key', go: function (button) {
+      var pass = $('dbk-open').value;
+      busy(button, true);
+      api('db', {action: 'upload_restore', upload: d.upload, passphrase: pass, check: true}).then(function (x) {
+        closeModal();
+        setTimeout(function () {
+          askBeforeRestoring(x.says, fileName + ' (with its key)', function () {
+            return api('db', {action: 'upload_restore', upload: d.upload, passphrase: pass});
+          });
+        }, 30);
+      }).catch(oops).then(function () { busy(button, false); });
+    }}]);
+}
+function dropBox(ids, empty) {
+  var box = $(ids.drop);
+  if (!box) return;
+  var go = $(ids.go);
+  function picked(file) {
+    go._held = file || null;
+    var says = $(ids.what);
+    clear(says);
+    says.hidden = !go._held;
+    go.disabled = !go._held;
+    $(ids.says).textContent = go._held ? go._held.name + ' · ' + bytes(go._held.size) : empty;
+    if (!go._held) return;
+    says.appendChild(el('p', 'btnhelp', 'Nothing has happened yet. Press Restore from this file and it will be read first — if it is not one of ours, if it is a dump of a different engine, or if it has no administrator in it, it is refused and nothing here changes.'));
+  }
+  box.onclick = function () { $(ids.file).click(); };
+  $(ids.file).onchange = function () { picked(this.files && this.files[0]); this.value = ''; };
+  ['dragenter', 'dragover'].forEach(function (name) {
+    box.addEventListener(name, function (e) { e.preventDefault(); box.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (name) {
+    box.addEventListener(name, function (e) {
+      e.preventDefault();
+      box.classList.remove('over');
+      if (name === 'drop' && e.dataTransfer && e.dataTransfer.files) picked(e.dataTransfer.files[0]);
     });
   });
-}());
+  go.onclick = function () {
+    var held = go._held;
+    if (!held) return;
+    busy(go, true);
+    dbSend(held).then(function (d) {
+      if (d.locked) { dbAskPassphrase(d, held.name); return; }
+      askBeforeRestoring(d.says, held.name, function () {
+        return api('db', {action: 'upload_restore', upload: d.upload});
+      });
+    }).catch(oops).then(function () { busy(go, false); });
+  };
+}
+
+/* ---- the database server's own settings ---------------------------------- */
+function drawTune(d) {
+  var host = $('db-tune-says');
+  clear(host);
+  var t = d.tune || {};
+  var file = d.engine === 'sqlite';
+  $('db-tune').hidden = file;
+  var last = t.last;
+  $('db-tune-undo').hidden = file || !last || !!last.undone || last.engine !== d.engine;
+  $('db-tune-restart').hidden = true;
+  if (file) {
+    host.appendChild(el('p', 'note', 'The file on this machine has no server to tune: this program sets it up itself.'));
+    return;
+  }
+  if (last && last.engine === d.engine) {
+    var p = el('p', 'note');
+    if (last.undone) {
+      p.appendChild(document.createTextNode('Put back as it was before'));
+      p.appendChild(document.createTextNode(' ' + stamp(last.undone) + (last.undone_by ? ' · ' + last.undone_by : '') + '.'));
+    } else {
+      p.appendChild(document.createTextNode('Tuned for its machine'));
+      p.appendChild(document.createTextNode(' ' + stamp(last.at) + (last.by ? ' · ' + last.by : '') + ':'));
+      var set = last.set || {};
+      Object.keys(set).sort().forEach(function (n, i) {
+        p.appendChild(document.createTextNode(i ? ', ' : ' '));
+        p.appendChild(noI18n(el('span', 'mono', n + ' = ' + set[n])));
+      });
+    }
+    host.appendChild(p);
+  } else {
+    host.appendChild(el('p', 'note', 'Not tuned from this page yet.'));
+  }
+  if ((t.pending || []).length) {
+    var w = el('p', 'note bad');
+    w.appendChild(document.createTextNode('Waiting for the server’s next start:'));
+    t.pending.forEach(function (n, i) {
+      w.appendChild(document.createTextNode(i ? ', ' : ' '));
+      w.appendChild(noI18n(el('span', 'mono', n)));
+    });
+    host.appendChild(w);
+    if (t.restart && t.restart.may) {
+      $('db-tune-restart').hidden = false;
+    } else {
+      if (t.restart && t.restart.why) host.appendChild(el('p', 'note', 'This program cannot restart it from here: ' + t.restart.why + '.'));
+      host.appendChild(el('p', 'note', 'On the server, as root:'));
+      host.appendChild(noI18n(el('pre', 'mono small', 'systemctl restart ' + ((t.restart && t.restart.unit) || 'postgresql'))));
+      host.appendChild(el('p', 'btnhelp', 'Or let these pages do it: install.sh --upgrade puts in the rule that lets ai restart PostgreSQL on this machine, and nothing else (--no-db-restart takes it away).'));
+    }
+  }
+  if ((t.lost || []).length) {
+    var l = el('p', 'note bad');
+    l.appendChild(document.createTextNode('MariaDB has been started again since, and these are back as they were:'));
+    t.lost.forEach(function (n, i) {
+      l.appendChild(document.createTextNode(i ? ', ' : ' '));
+      l.appendChild(noI18n(el('span', 'mono', n)));
+    });
+    host.appendChild(l);
+    host.appendChild(el('p', 'note', 'The file the popup gives keeps them over a restart.'));
+  }
+}
+
+var TUNE = null;
+function tuneAdminBoxes(body, engine) {
+  var g = el('div', 'formgrid');
+  var who = textBox(TUNE && TUNE.user || '', engine === 'postgres' ? 'postgres' : 'root', '');
+  who.autocomplete = 'off';
+  who.setAttribute('data-lpignore', 'true');
+  var word = maskBox('', '', '');
+  word.setAttribute('data-lpignore', 'true');
+  word.value = TUNE && TUNE.pass || '';
+  g.appendChild(formField('An administrator on that server', who, 'Only where ai’s own account may not change them. Used for this one request and stored nowhere: not in the settings, not in the database, not in any log.'));
+  g.appendChild(formField('Its password', word));
+  body.appendChild(g);
+  return {who: who, word: word};
+}
+function tuneForget() {
+  TUNE = null;
+  Array.prototype.forEach.call(document.querySelectorAll('#modal-body input'), function (i) { i.value = ''; });
+}
+function tuneAsked() {
+  var out = {machine: {}};
+  if (!TUNE) return out;
+  if (TUNE.boxes) { TUNE.user = TUNE.boxes.who.value.trim(); TUNE.pass = TUNE.boxes.word.value; }
+  if (TUNE.hw) {
+    TUNE.ram = TUNE.hw.ram.value.replace(',', '.').trim();
+    TUNE.cpus = TUNE.hw.cpus.value.trim();
+    TUNE.disk = TUNE.hw.disk.value;
+  }
+  if (TUNE.ram) out.machine.ram_gb = TUNE.ram;
+  if (TUNE.cpus) out.machine.cpus = TUNE.cpus;
+  if (TUNE.disk) out.machine.disk = TUNE.disk;
+  out.admin_user = TUNE.user || '';
+  out.admin_password = TUNE.pass || '';
+  return out;
+}
+function openTune() {
+  TUNE = {user: '', pass: '', ram: '', cpus: '', disk: '', plan: null};
+  modal('Tuning the database server for its machine', function (body) {
+    body.appendChild(el('p', 'note', 'Reading what the machine has and what the server is set to, and timing a few small writes…'));
+  }, [{words: 'Close', close: true}], 'tune');
+  MODAL_CLOSE = tuneForget;
+  tuneLook();
+}
+function tuneLook(button) {
+  var ask = tuneAsked();
+  var ticket = modalTicket();
+  if (button) busy(button, true);
+  api('db', {action: 'tune_plan', machine: ask.machine}).then(function (d) {
+    if (!modalStill(ticket)) return;
+    TUNE.plan = d;
+    tuneDraw(d);
+  }).catch(function (e) {
+    if (!modalStill(ticket)) return;
+    if (button) busy(button, false);
+    oops(e);
+  });
+}
+function tuneValue(v) { return v === null || v === undefined || v === '' ? '–' : String(v); }
+function tuneDraw(d, done) {
+  var changes = (d.items || []).filter(function (it) { return it.change; });
+  var buttons = [
+    {words: 'Read again', icon: 'refresh', left: true, go: function (b) { tuneLook(b); }},
+    {words: 'Close', close: true}
+  ];
+  if (changes.length) {
+    buttons.splice(1, 0, {words: 'Put it in', cls: 'primary', icon: 'gear', admin: true,
+                          go: function (b) { tuneApply(b); }});
+  }
+  /* What waits for the server's next start, started from here - as isemon
+     does - where install.sh let this program restart it. */
+  var waiting = (d.items || []).some(function (it) { return it.waiting || it.pending; });
+  if (waiting && d.restart && d.restart.may) {
+    buttons.splice(1, 0, {words: 'Restart the server…', cls: changes.length ? '' : 'primary',
+                          icon: 'power', admin: true, go: function () { tuneRestartAsk(); }});
+  }
+  modal('Tuning ' + d.words + ' for its machine', function (body) {
+    var f = d.facts || {};
+    body.appendChild(peekFacts([
+      ['Server', String(d.version || d.words).replace(/\s*\(.*\)\s*$/, '')],
+      ['Where', d.where],
+      ['Database', bytes(d.size)],
+      f.ram ? ['Memory', bytes(f.ram)] : null,
+      f.avail ? ['Free now', bytes(f.avail)] : null,
+      f.cpus ? ['Processors', num(f.cpus)] : null,
+      ['Disk', f.disk === 'hdd' ? 'a disk that spins' : 'SSD'],
+      f.commit_ms !== null && f.commit_ms !== undefined
+        ? ['A write made safe in', Number(f.commit_ms).toFixed(1).replace('.', numDecimal()) + ' ms'] : null,
+      d.connections ? ['Connections allowed', num(d.connections)] : null
+    ]));
+    var from = {'this machine': 'Read from this machine, which the server runs on.',
+                'typed': 'As typed below.'}[f.source || ''];
+    if (from) body.appendChild(el('p', 'note', from));
+    if (f.why && f.why !== 'chosen') body.appendChild(el('p', 'note', 'The disk: ' + f.why));
+    if (d.need_facts) {
+      body.appendChild(el('p', 'note bad', 'The server is on another machine and what it has could not be read from here. Type its memory and processors below and press Read again.'));
+    }
+    var row = el('div', 'tune-machine');
+    var hw = {};
+    [['ram', 'Memory, GB', f.ram ? String(Math.round(f.ram / 1073741824 * 10) / 10) : ''],
+     ['cpus', 'Processors', f.cpus ? String(f.cpus) : '']].forEach(function (one) {
+      var box = el('div', 'set-item');
+      box.appendChild(el('label', '', one[1]));
+      var input = el('input');
+      input.type = 'text';
+      input.inputMode = 'decimal';
+      input.value = TUNE[one[0]] || one[2];
+      box.appendChild(input);
+      row.appendChild(box);
+      hw[one[0]] = input;
+    });
+    var dbox = el('div', 'set-item');
+    dbox.appendChild(el('label', '', 'Disk'));
+    var sel = selectBox([['ssd', 'SSD'], ['hdd', 'a disk that spins']], TUNE.disk || f.disk || 'ssd');
+    dbox.appendChild(sel);
+    row.appendChild(dbox);
+    hw.disk = sel;
+    body.appendChild(row);
+    TUNE.hw = hw;
+    body.appendChild(el('p', 'btnhelp', 'Change any of these and press Read again: the settings are worked out afresh for what is typed.'));
+    if (done) {
+      if ((done.done || []).length || (done.later || []).length) {
+        body.appendChild(el('p', 'note good', 'Put in: ' + ((done.done || []).join(', ') || 'nothing at once')
+          + ((done.later || []).length ? ' · at the next start: ' + done.later.join(', ') : '')));
+      }
+      if ((done.failed || []).length) body.appendChild(el('p', 'note bad', 'Refused: ' + done.failed.join('; ')));
+    }
+    if ((d.items || []).length) {
+      body.appendChild(el('h4', '', changes.length
+        ? 'What would change' : 'Nothing to change: every setting is right for this machine'));
+      var wrap = listTable(['Setting', 'Now', 'For this machine', 'Takes', 'Why'], d.items, function (it) {
+        var tr = el('tr', it.change ? 'tune-change' : '');
+        tr.appendChild(noI18n(el('td', 'mono', it.name)));
+        tr.appendChild(noI18n(el('td', 'mono', tuneValue(it.now))));
+        var want = el('td', 'mono ' + (it.change ? 'good' : 'muted'));
+        want.appendChild(noI18n(el('span', '', tuneValue(it.want))));
+        if (it.waiting) { want.appendChild(document.createTextNode(' ')); want.appendChild(el('span', 'tag warn', 'waiting for a start')); }
+        tr.appendChild(want);
+        tr.appendChild(el('td', it.restart ? 'warn' : 'muted', it.takes));
+        tr.appendChild(el('td', 'muted small', it.why));
+        return tr;
+      }, 'plain tune-table');
+      body.appendChild(wrap);
+    }
+    if (d.engine === 'postgres' && waiting && d.restart && !d.restart.may && d.restart.why) {
+      body.appendChild(el('p', 'note bad', 'This program cannot restart it from here: ' + d.restart.why + '.'));
+    }
+    if (d.engine === 'postgres') {
+      body.appendChild(el('p', 'btnhelp', d.restart && d.restart.may
+        ? 'What takes effect only at the next start waits for it: Restart the server, under this popup, does that when you say so.'
+        : 'What takes effect only at the next start waits for it: on the server, as root, systemctl restart ' + ((d.restart && d.restart.unit) || 'postgresql') + '.'));
+    }
+    if (d.engine === 'mariadb' && d.cnf) {
+      body.appendChild(el('h4', '', 'To keep them over a restart'));
+      body.appendChild(el('p', 'note', 'SET GLOBAL lasts until MariaDB is next started, and ai may not write in /etc. Put this in /etc/my.cnf.d/zz-ai-tuning.cnf on the server; the ones marked at the next start take effect only from there.'));
+      body.appendChild(noI18n(el('pre', 'mono small', d.cnf)));
+    }
+    body.appendChild(el('h4', '', 'Who changes them'));
+    TUNE.boxes = tuneAdminBoxes(body, d.engine);
+  }, buttons, 'tune');
+  MODAL_CLOSE = tuneForget;
+}
+function tuneApply(button) {
+  var ask = tuneAsked();
+  busy(button, true);
+  api('db', {action: 'tune_apply', machine: ask.machine, admin_user: ask.admin_user,
+             admin_password: ask.admin_password}).then(function (d) {
+    TUNE.plan = d;
+    tuneDraw(d, d);
+    loadDb();
+  }).catch(function (e) { busy(button, false); oops(e); });
+}
+
+/* ---- erasing what was collected ----------------------------------------- */
+function drawErasable(d) {
+  var host = $('erase-list');
+  var was = {};
+  Array.prototype.forEach.call(host.querySelectorAll('input[type=checkbox]'),
+    function (b) { was[b.dataset.group] = b.checked; });
+  clear(host);
+  $('erase-size').textContent = bytes(d.bytes || 0) + ' in all';
+  (d.groups || []).forEach(function (g) {
+    var row = el('label', 'erase-one' + (g.rows ? '' : ' empty'));
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.dataset.group = g.key;
+    box.checked = !!was[g.key];
+    box.disabled = !ADMIN || !g.rows;
+    box.onchange = markErase;
+    row.appendChild(box);
+    var words = el('div', 'erase-words');
+    var top = el('div', 'erase-top');
+    top.appendChild(el('span', 'erase-name', g.name));
+    top.appendChild(el('span', 'tag ' + (g.rows ? 'info' : 'dim'), g.rows ? num(g.rows) + ' row(s)' : 'already empty'));
+    words.appendChild(top);
+    words.appendChild(el('div', 'erase-says', g.says));
+    row.appendChild(words);
+    host.appendChild(row);
+  });
+  markErase();
+}
+function erasePicked() {
+  return Array.prototype.filter.call(document.querySelectorAll('#erase-list input[type=checkbox]'),
+    function (b) { return b.checked; }).map(function (b) { return b.dataset.group; });
+}
+function markErase() {
+  var picked = erasePicked();
+  var go = $('erase-go');
+  go.disabled = !ADMIN || !picked.length || !!DB_WATCHING;
+  setButtonIcon(go, 'forget', picked.length ? 'Erase ' + picked.length + ' of these…' : 'Erase what is ticked…');
+}
+
+if ($('db-engine-test')) {
+  $('db-engine-test').onclick = function () {
+    busy($('db-engine-test'), true);
+    api('db', {action: 'try', settings: dbAsked()}).then(function (d) {
+      modal('Trying ' + d.words, function (body) {
+        body.appendChild(el('p', 'note', 'Nothing was saved and nothing was written: this opened it, asked what it is, counted what is in it and closed it again.'));
+        body.appendChild(engineFacts(d));
+        if (!d.reached) body.appendChild(el('p', 'note bad', String(d.trouble || '')));
+        else if (d.in_use) body.appendChild(el('p', 'note', 'This is the database in use.'));
+        else if (!d.writable) body.appendChild(el('p', 'note bad', 'It answers, but this account may not make anything in it. Set it up, or give the account rights on that database.'));
+        else if (!d.rows) body.appendChild(el('p', 'note good', 'It is reachable and empty of ours, which is exactly what something to carry everything into should look like.'));
+      }, [{words: 'Close', close: true}], true);
+    }).catch(oops).then(function () { busy($('db-engine-test'), false); });
+  };
+
+  $('db-engine-setup').onclick = function () {
+    var want = dbAsked();
+    var who, word;
+    modal('Setting up ' + engineWord(want.db_engine), function (body) {
+      body.appendChild(el('p', 'note', 'This makes the database and the account on that server, and gives the account rights on that one database and no other. The first time, it needs an administrator on the server to do it — root on MariaDB, postgres on PostgreSQL, or anyone who may create a database.'));
+      body.appendChild(el('p', 'note', 'That administrator is used for this one connection and is stored nowhere: not in the settings, not in the database, not in any log.'));
+      body.appendChild(el('p', 'note', 'The account this program will use is made with a password of its own, generated here — you do not have to invent one. It is written into the config file, and shown once when this is done so you can keep a copy.'));
+      body.appendChild(el('p', 'note', 'Press this again later and it does the other half of the job: if the account already gets in, nothing is made and no administrator is wanted — it opens the database and puts its tables right. Leave the two boxes empty for that.'));
+      var g = el('div', 'formgrid');
+      who = textBox('', want.db_engine === 'postgres' ? 'postgres' : 'root', '');
+      who.autocomplete = 'off';
+      word = maskBox('', '', '');
+      g.appendChild(formField('An administrator on that server', who, 'Only needed the first time, or if the account cannot get in.'));
+      g.appendChild(formField('Its password', word));
+      body.appendChild(g);
+    }, [{words: 'Close', close: true}, {words: 'Set it up', cls: 'primary', icon: 'key', go: function (b) {
+      var ticket = modalTicket();
+      busy(b, true);
+      api('db', {action: 'setup', settings: want, admin_user: who.value.trim(), admin_password: word.value}).then(function (d) {
+        if (!modalStill(ticket)) modal('The database, set up', function () {}, [{words: 'Close', close: true}]);
+        var body = $('modal-body');
+        clear(body);
+        (d.made || []).forEach(function (line) { body.appendChild(el('p', 'note good', line)); });
+        body.appendChild(engineFacts(d.try || {}));
+        if (d.password) {
+          body.appendChild(el('h4', '', 'The password made for ' + (want.db_user || 'it')));
+          var pw = el('input');
+          pw.type = 'text'; pw.readOnly = true; pw.className = 'mono'; pw.value = d.password;
+          pw.onclick = function () { pw.select(); };
+          noI18n(pw);
+          body.appendChild(pw);
+          var copy = cmdButton('Copy it', 'copy', 'small');
+          copy.style.marginTop = '8px';
+          copy.onclick = function () {
+            pw.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            toast(ok ? 'copied' : 'press Ctrl+C — it is selected', ok ? 'good' : 'warn');
+          };
+          body.appendChild(copy);
+          body.appendChild(el('p', 'note', 'It is saved in ' + (d.kept_in || 'the config file') + ' and nowhere else, so nothing has to be typed in above. This is the only time it is shown — keep a copy if you want one, though nothing here needs it again.'));
+        }
+        body.appendChild(el('p', 'note', 'The address is saved. Nothing has moved yet: carry everything across when you are ready.'));
+        clear($('modal-foot'));
+        var close = cmdButton('Close', 'close', '');
+        close.onclick = closeModal;
+        $('modal-foot').appendChild(close);
+        loadSettings();
+      }).catch(function (e) { busy(b, false); oops(e); });
+    }}], 'medium');
+  };
+
+  $('db-engine-move').onclick = function () {
+    var want = dbAsked();
+    var word = engineWord(want.db_engine);
+    modal('Carrying everything into ' + word, function (body) {
+      body.appendChild(el('p', 'note', 'Every account, every event, every setting and every terminal is copied into ' + word + '. On a large database this takes minutes; you can close this and it carries on.'));
+      body.appendChild(el('p', 'note', 'What is here is not touched, and a copy of it is made first in any case. Nothing starts using the other database until you say so afterwards.'));
+    }, [{words: 'Leave it', close: true}, {words: 'Carry it across', cls: 'primary', icon: 'save', close: true, go: function () {
+      api('db', {action: 'move', settings: want}).then(function () { dbWatch(); }).catch(oops);
+    }}], true);
+  };
+
+  $('db-engine-empty').onclick = function () {
+    var want = dbAsked();
+    var word = engineWord(want.db_engine);
+    modal('Emptying ' + word, function (body) {
+      body.appendChild(el('p', 'note bad', 'This throws away everything of ai in the OTHER database — the ' + word + ' above, not the one in use. It is for when a first attempt at moving left something in it and the move will not go on.'));
+      body.appendChild(el('p', 'note', 'Nothing in the database this installation is running on is touched, and this is refused outright if the two are the same.'));
+    }, [{words: 'Leave it', close: true}, {words: 'Empty it', cls: 'danger', icon: 'forget', close: true, go: function () {
+      api('db', {action: 'empty', settings: want}).then(function (d) { toast(d.message, 'good'); loadDb(); }).catch(oops);
+    }}], true);
+  };
+
+  $('db-engine-use').onclick = function () {
+    var want = dbAsked();
+    var word = engineWord(want.db_engine);
+    modal('Start using ' + word, function (body) {
+      body.appendChild(el('p', 'note', 'This writes the address into ' + ((DBSTATE && DBSTATE.config_file) || 'the config file') + ' and restarts the daemon, which takes a few seconds. Nothing in either database is touched.'));
+      body.appendChild(el('p', 'note', want.db_engine === 'sqlite'
+        ? 'Everything will be read out of the file on this machine from then on, and the server may be uninstalled once you are happy.'
+        : 'Everything will be read out of ' + word + ' from then on, and the file on this machine may be deleted once you are happy. Carry everything across first if you have not — this does not move anything.'));
+    }, [{words: 'Not yet', close: true}, {words: 'Start using it', cls: 'primary', icon: 'power', close: true, go: function () {
+      api('db', {action: 'use', settings: want}).then(function (d) {
+        toast(d.message, 'good');
+        setTimeout(function () { location.reload(); }, 9000);
+      }).catch(oops);
+    }}], true);
+  };
+
+  $('db-backup').onclick = function () {
+    busy($('db-backup'), true);
+    api('db', {action: 'backup'}).then(function (x) { toast(x.message, 'good'); loadDb(); })
+      .catch(oops).then(function () { busy($('db-backup'), false); });
+  };
+  $('db-download').onclick = function () { dbDownloadAsk({kind: '', now: true, key: true}); };
+  $('db-dump-make').onclick = function () {
+    busy($('db-dump-make'), true);
+    toast('dumping — this takes as long as the database is big');
+    api('db', {action: 'dump'}).then(function (d) {
+      toast('a dump was made: ' + d.name + ' (' + bytes(d.bytes) + ')', 'good');
+      loadDb();
+    }).catch(oops).then(function () { busy($('db-dump-make'), false); });
+  };
+  $('db-dump-get').onclick = function () { dbDownloadAsk({kind: 'dump', now: true, key: true}); };
+  $('db-tidy').onclick = function () {
+    busy($('db-tidy'), true);
+    api('db', {action: 'tidy'}).then(function (x) { toast(x.message, 'good'); loadDb(); })
+      .catch(oops).then(function () { busy($('db-tidy'), false); });
+  };
+  $('db-check').onclick = function () {
+    busy($('db-check'), true);
+    api('db', {action: 'check'}).then(function (d) {
+      modal(d.ok ? 'Nothing in it is broken' : 'Something in it is broken', function (body) {
+        var ul = el('ul', 'note');
+        (d.said || []).forEach(function (one) { ul.appendChild(noI18n(el('li', 'mono small', one))); });
+        body.appendChild(ul);
+      }, [{words: 'Close', close: true}], true);
+    }).catch(oops).then(function () { busy($('db-check'), false); });
+  };
+  $('db-optimize').onclick = function () {
+    confirmThen('Give the disk back', 'Each table is rebuilt and held shut while it is; sign-ins and the pages wait '
+      + 'for it meanwhile - do it when few are signed in. It needs room for a second copy of the biggest table. Worth '
+      + 'doing after throwing a lot away, and not otherwise.', 'Give it back',
+      function () { api('db', {action: 'give_back'}).then(function () { dbWatch(); }).catch(oops); }, false);
+  };
+  $('db-prune').onclick = function () {
+    var days, everything;
+    modal('Forget records older than…', function (body) {
+      body.appendChild(el('p', 'note', 'The events and the lines of the mails sent older than this are '
+        + 'deleted now, whatever the keep-for numbers say. The accounts, the settings and the terminals are not touched.'));
+      days = el('input'); days.type = 'number'; days.min = 1; days.value = 90;
+      body.appendChild(formField('Older than (days)', days));
+      everything = switchBox(false);
+      everything._input.addEventListener('change', function () { days.disabled = !!everything._get(); });
+      body.appendChild(formField('Every line, whatever its age — the whole log emptied', everything));
+    }, [{words: 'Close', close: true}, {words: 'Forget them', cls: 'danger', icon: 'forget', go: function (b) {
+      busy(b, true);
+      api('db', {action: 'prune', days: Number(days.value), everything: !!everything._get()}).then(function (d) {
+        toast(d.message, 'good'); closeModal(); loadDb();
+      }).catch(oops).then(function () { busy(b, false); });
+    }}], 'medium');
+  };
+  $('db-tune').onclick = openTune;
+  $('db-tune-restart').onclick = function () { tuneRestartAsk(); };
+}
+function tuneRestartAsk() {
+  {
+    var unit = ((DBSTATE && DBSTATE.tune && DBSTATE.tune.restart) || {}).unit || 'postgresql';
+    modal('Restart ' + unit, function (body) {
+      body.appendChild(el('p', 'note', 'PostgreSQL is stopped and started again so that the settings waiting for its next start take effect. It takes a few seconds; these pages wait for it meanwhile and carry on as soon as it is back.'));
+      body.appendChild(el('p', 'note', 'Not done when it might not come back: a shared_buffers larger than the memory free now, or huge pages.'));
+    }, [{words: 'Not now', close: true}, {words: 'Restart it', cls: 'primary', icon: 'power', go: function (b) {
+      busy(b, true);
+      api('db', {action: 'tune_restart'}).then(function (d) {
+        toast(d.message, 'good'); closeModal(); loadDb();
+      }).catch(function (e) { busy(b, false); oops(e); });
+    }}], true);
+  }
+}
+if ($('db-tune-undo')) {
+  $('db-tune-undo').onclick = function () {
+    var user, pass;
+    modal('Put back as it was', function (body) {
+      body.appendChild(el('p', 'note', 'Every setting this page changed goes back to what it was before. Empty: ai’s own account, where it has that right.'));
+      var g = el('div', 'formgrid');
+      user = textBox('', DBSTATE && DBSTATE.engine === 'postgres' ? 'postgres' : 'root', '');
+      pass = maskBox('', '', '');
+      g.appendChild(formField('An administrator on that server', user));
+      g.appendChild(formField('Its password', pass, 'Used for this one request; kept nowhere.'));
+      body.appendChild(g);
+    }, [{words: 'Close', close: true}, {words: 'Put it back', cls: 'primary', icon: 'undo', go: function (b) {
+      busy(b, true);
+      api('db', {action: 'tune_undo', admin_user: user.value.trim(), admin_password: pass.value}).then(function (d) {
+        toast('put back: ' + (d.done || []).join(', '), 'good'); closeModal(); loadDb();
+      }).catch(oops).then(function () { busy(b, false); });
+    }}], 'medium');
+  };
+  $('erase-go').onclick = function () {
+    var picked = erasePicked();
+    if (!picked.length) return;
+    var names = Array.prototype.filter.call(document.querySelectorAll('#erase-list input[type=checkbox]'),
+      function (b) { return b.checked; }).map(function (b) {
+        return b.closest('.erase-one').querySelector('.erase-name').textContent;
+      });
+    modal(picked.length === 1 ? 'Erase this?' : 'Erase these ' + picked.length + '?', function (body) {
+      body.appendChild(el('p', 'note', 'This erases, for good:'));
+      var ul = el('ul', 'ask-list');
+      names.forEach(function (n) { ul.appendChild(el('li', '', n)); });
+      body.appendChild(ul);
+      body.appendChild(el('p', 'note', 'The accounts, the terminals and every setting are not touched.'));
+      body.appendChild(el('p', 'muted', 'A copy of the database is made first, so this can be undone by restoring it.'));
+    }, [{words: 'No, leave it', close: true}, {words: 'Erase it', cls: 'danger', icon: 'forget', close: true, go: function () {
+      api('db', {action: 'erase', groups: picked, tidy: $('erase-tidy').checked}).then(function () {
+        dbWatch();
+      }).catch(oops);
+    }}], true);
+  };
+  dropBox({drop: 'db-drop', file: 'db-file', says: 'db-drop-says', what: 'db-upload-what', go: 'db-restore'},
+          'Drop a database file here, or press to choose one');
+  dropBox({drop: 'dump-drop', file: 'dump-file', says: 'dump-drop-says', what: 'dump-upload-what', go: 'dump-restore'},
+          'Drop a dump here, or press to choose one');
+}
 
 /* ---- export and import (as otp's) -------------------------------------------------------- */
 $('ex-plain').onclick = function () {
@@ -4088,115 +5505,19 @@ function loadSoftware() {
   drawSoftware(host);
 }
 
-/* ---- from otp: SMS (1.0.81-1.0.113) --------------------------------------------- */
-function loadSms() {
-  return api('sms').then(function (d) {
-    var list = d.ca_list || [];
-    $('smsca-when').textContent = list.length ? num(list.length) + ' certificate(s) kept' : 'none imported';
-    $('smsca-drop').hidden = !list.length;
-    $('smsca-card').hidden = d.mode !== 'teltonika';
-    $('sms-tel').hidden = d.mode !== 'teltonika';
-    var host = $('smsca-state');
-    clear(host);
-    if (list.length) host.appendChild(certTable(list, function (c) {
-      confirmThen('Take this certificate out', '<b>' + htmlText(c.subject || 'this certificate')
-        + '</b> is no longer trusted for the SMS gateway. The others stay.', 'Take it out', function () {
-          api('sms', {action: 'ca', mode: 'drop', fingerprint: c.fingerprint}).then(function (r) { toast(r.message, 'good'); loadSms(); }).catch(oops);
-        });
-    }));
-    $('sms-said').textContent = {off: 'switched off', http: 'an HTTP gateway', spool: 'a modem on this machine', teltonika: 'a Teltonika gateway'}[d.mode] || '';
-  }).catch(oops);
+/* ---- a test SMS (otp's, 1.0.76) ---------------------------------------------------- */
+if ($('sms-try')) {
+  $('sms-try').onclick = function () {
+    var b = $('sms-try');
+    var stop = busyCount(b);
+    $('sms-said').textContent = '';
+    api('mail', {action: 'sms_test', to: $('sms-to').value.trim()}).then(function (d) {
+      $('sms-said').textContent = (d.sent ? '✓ ' : '✗ ') + d.said + ' · ' + d.took_ms + ' ms';
+      $('sms-said').style.color = d.sent ? 'var(--ok)' : 'var(--crit)';
+      toast(d.sent ? 'sent to ' + d.to : 'not sent: ' + d.said, d.sent ? 'good' : 'bad');
+    }).catch(oops).then(stop);
+  };
 }
-function smsUnsaved() {
-  return Object.keys(DIRTY || {}).some(function (k) { return /^sms_/.test(k); });
-}
-$('sms-test').onclick = function () {
-  if (smsUnsaved()) { toast('save the SMS settings first', 'bad'); return; }
-  var b = $('sms-test');
-  busy(b, true);
-  api('sms', {action: 'test', to: $('sms-to').value.trim(), lang: $('sms-test-lang').value}).then(function (d) {
-    var host = $('sms-steps');
-    clear(host);
-    host.appendChild(el('p', 'note ' + (d.sent ? 'good' : 'bad'), (d.sent ? 'Sent: ' : 'Not sent: ') + (d.said || '') + ' · ' + num(d.took_ms) + ' ms'));
-    host.appendChild(hideBar(function () { clear(host); }));
-  }).catch(oops).then(function () { busy(b, false); });
-};
-$('sms-tel').onclick = function () {
-  if (smsUnsaved()) { toast('save the changes first - the test uses what is saved', 'warn'); return; }
-  var go = $('sms-tel'), out = $('sms-steps');
-  busy(go, true);
-  clear(out);
-  out.appendChild(el('p', 'note', 'Asking the gateway…'));
-  api('sms', {action: 'tel_test'}).then(function (d) {
-    clear(out);
-    var steps = el('div', 'tel-steps');
-    (d.steps || []).forEach(function (st) {
-      var r = el('div', 'tel-step ' + (st.ok ? 'good' : 'bad'));
-      r.appendChild(el('span', 'tel-mark', st.ok ? '✓' : '✗'));
-      r.appendChild(el('b', '', st.what));
-      if (st.secs) r.appendChild(noI18n(el('span', 'muted small', ' ' + String(st.secs).replace('.', numLang() === 'cs' ? ',' : '.') + ' s')));
-      if (st.said) {
-        r.appendChild(document.createTextNode(' – '));
-        r.appendChild(el('span', 'small' + (st.ok ? ' muted' : ' bad'), st.said));
-      }
-      steps.appendChild(r);
-    });
-    out.appendChild(steps);
-    (d.modems || []).forEach(function (m) {
-      var card = el('div', 'tel-modem' + (m.sends ? ' sends' : ''));
-      var t = el('div', 'tel-modem-head');
-      t.appendChild(noI18n(el('b', 'mono', m.id || '?')));
-      if (m.sends) t.appendChild(el('span', 'tag ok', 'sends the codes'));
-      card.appendChild(t);
-      var dl = el('dl', 'tel-facts');
-      (m.fields || []).forEach(function (kv) {
-        if (kv[0] === 'id') return;
-        var one = el('div', 'tel-fact');
-        one.appendChild(el('dt', '', kv[0]));
-        one.appendChild(noI18n(el('dd', 'mono', kv[1])));
-        dl.appendChild(one);
-      });
-      card.appendChild(dl);
-      out.appendChild(card);
-    });
-    out.appendChild(el('p', 'note small ' + (d.ok ? (d.checked ? 'good' : 'warn') : 'bad'), d.ok
-      ? 'The gateway answers' + (d.checked ? ', its certificate checked' : (d.https ? ' - its certificate NOT checked' : ' - over plain HTTP')) + ' (' + num(d.took_ms) + ' ms).'
-      : 'The gateway cannot send codes like this - see the step marked ✗.'));
-    out.appendChild(hideBar(function () { clear(out); }));
-  }).catch(function (e) { clear(out); oops(e); }).then(function () { busy(go, false); });
-};
-$('smsca-pem').addEventListener('input', function () {
-  clear($('smsca-seen'));
-  if (!$('smsca-pem').value.trim()) { delete PENDING.smsca; markDirtyCount(); return; }
-  pendingSet('smsca', {save: function () {
-    return api('sms', {action: 'ca', mode: 'add', ca: $('smsca-pem').value.trim()}).then(function (r) {
-      toast(r.message, 'good'); $('smsca-pem').value = ''; clear($('smsca-seen')); loadSms(); return true;
-    });
-  }, reset: function () { $('smsca-pem').value = ''; clear($('smsca-seen')); }});
-});
-$('smsca-fetch').onclick = function () {
-  if (Object.keys(DIRTY || {}).some(function (k) { return /^sms_tel_(host|https)$/.test(k); })) { toast('save the gateway’s address first', 'bad'); return; }
-  var b = $('smsca-fetch');
-  busy(b, true);
-  api('sms', {action: 'ca_fetch'}).then(function (r) {
-    $('smsca-pem').value = r.pem || '';
-    $('smsca-pem').dispatchEvent(new Event('input'));
-    var seen = $('smsca-seen');
-    if ((r.certs || []).length) {
-      seen.appendChild(el('div', 'says', 'What the gateway shows - check the fingerprint against the one on the gateway (System → Administration → Certificates) before Save the changes trusts it:'));
-      seen.appendChild(certTable(r.certs));
-    }
-  }).catch(oops).then(function () { busy(b, false); });
-};
-$('smsca-file').onclick = function () { $('smsca-input').click(); };
-$('smsca-input').onchange = function () { var f = this.files && this.files[0]; if (f) readCertFile(f, $('smsca-pem')); this.value = ''; };
-$('smsca-drop').onclick = function () {
-  confirmThen('Take every certificate of the SMS gateway away',
-    'The gateway’s certificate will then have to be signed by an authority this machine already trusts, or the check has to be switched off.',
-    'Take them all away', function () {
-      api('sms', {action: 'ca', mode: 'clear'}).then(function (r) { toast(r.message, 'good'); loadSms(); }).catch(oops);
-    }, true);
-};
 
 /* ---- the texts of the messages (as otp's, 1.0.103) ------------------------------------- */
 var TX = {d: null, lang: 'cs', dirty: {}};
