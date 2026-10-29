@@ -751,6 +751,10 @@ STRINGS = {
     'Change it': 'Změnit',
     'Disk': 'Disk',
     'All keys': 'Všechny klávesy',
+    'The console at login': 'Konzole při přihlášení',
+    'It opens when root signs in': 'Otevře se při přihlášení roota',
+    "the ai console opens when root signs in at the console or over SSH (q leaves it for the shell)": 'konzole ai se otevře, když se root přihlásí na konzoli nebo přes SSH (q ji opustí do shellu)',
+    "root signs in to the ordinary shell; `ai --console` opens the console": 'root se přihlásí do běžného shellu; `ai --console` otevře konzoli',
     'every key goes to the terminal now - hold Esc to come back': 'všechny klávesy teď jdou do terminálu – zpět podržením Esc',
     'the browser has its keys back': 'prohlížeč má své klávesy zpět',
     'A function key, F1 to F12.': 'Funkční klávesa F1 až F12.',
@@ -845,6 +849,8 @@ PATTERNS = {
 }
 
 RICH = {
+    'The ai console (<code>ai --console</code>) opens by itself when root signs in at the server\'s screen or over SSH; q leaves it for the ordinary shell. Never inside a terminal of these pages.':
+        'Konzole ai (<code>ai --console</code>) se otevře sama, když se root přihlásí na obrazovce serveru nebo přes SSH; q ji opustí do běžného shellu. Nikdy uvnitř terminálu těchto stránek.',
     'Its <b>public</b> half goes into <code>/root/.ssh/authorized_keys</code> of this server. The <b>private</b> half is never kept here: it is shown to you once, to download or copy. The key is then in the list below - exported or taken away there; a key of your own is added there too.':
         'Jeho <b>veřejná</b> část se zapíše do <code>/root/.ssh/authorized_keys</code> tohoto serveru. <b>Soukromá</b> část se zde nikdy nedrží: ukáže se vám jednou, ke stažení nebo zkopírování. Klíč je pak v seznamu níže – tam se exportuje nebo odebírá; tam se přidává i vlastní klíč.',
     'Who may sign in to these pages. An <b>administrator</b> may do everything, start terminals as any Linux account and change the server; a <b>user</b> has terminals of their own only, running as the Linux account given here, and files only in its folders. Whoever signs in here is, on the server, the Linux account their terminals run as.':

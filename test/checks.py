@@ -63,5 +63,10 @@ except ai.Refused:
 check('the newest of the packages', [x['version'] for x in sorted(
     [{'version': v} for v in ('1.0.9', '1.0.10', '1.0.2')], key=lambda x: ai.ver_tuple(x['version']),
     reverse=True)] == ['1.0.10', '1.0.9', '1.0.2'])
+pal = ai.Palette(False)
+check('plain output says ok and fail in words', pal.ok_line('x') == '[ ok ] x' and pal.bad_line('y') == '[fail] y')
+p2 = ai.build_parser()
+a2 = p2.parse_args(['--fw-open', '8080/udp', '--from', '10.0.0.0/8'])
+check('the command line takes the firewall\'s words', a2.fw_open == '8080/udp' and a2.source == '10.0.0.0/8')
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

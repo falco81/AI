@@ -3,8 +3,8 @@
 ## The short version
 
 ```bash
-tar xzf ai-1.0.2.tar.gz
-cd ai-1.0.2
+tar xzf ai-1.0.3.tar.gz
+cd ai-1.0.3
 sudo ./install.sh --server-name ai.example.local
 ```
 
@@ -29,6 +29,7 @@ To see what it would do without doing it: `sudo ./install.sh --dry-run`.
 | What | Where |
 |---|---|
 | the daemon | `/usr/local/lib/ai/ai.py`, linked as `/usr/local/bin/ai` |
+| the console at root's login | `/etc/profile.d/zz-ai-console.sh`, switched by `/etc/ai-console-login` (`ai --console-at-login on|off`) |
 | its root parts | `/usr/local/lib/ai/ai_os.py` (clock, SSH keys, updates), `ai_upgrade.py` (new versions) |
 | the release keys it trusts | `/usr/local/lib/ai/release-keys/` |
 | what it is set up with | `/etc/ai/config.json` - what is saved on the pages lives in the database and wins |

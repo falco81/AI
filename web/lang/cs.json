@@ -19,4958 +19,5054 @@
    "text": "(prázdné)"
   },
   "s0004": {
+   "source": "(none)",
+   "text": "(žádné)"
+  },
+  "s0005": {
    "source": "(nothing - or not known yet)",
    "text": "(nic – nebo zatím neznámé)"
   },
-  "s0005": {
+  "s0006": {
    "source": "(nothing was kept of its screen)",
    "text": "(z jeho obrazovky se nic neuchovalo)"
   },
-  "s0006": {
+  "s0007": {
    "source": ", and",
    "text": ", a"
   },
-  "s0007": {
+  "s0008": {
    "source": ", and the conversation goes on where it stopped.",
    "text": "a konverzace pokračuje tam, kde skončila."
   },
-  "s0008": {
+  "s0009": {
    "source": ", which is what this page runs as.",
    "text": ", pod kterým tato stránka běží."
   },
-  "s0009": {
+  "s0010": {
    "source": ", which is what this page runs as. On the server:",
    "text": ", pod kterým tato stránka běží. Na serveru:"
   },
-  "s0010": {
+  "s0011": {
    "source": ", with",
    "text": ", s"
   },
-  "s0011": {
+  "s0012": {
    "source": "- as each machine has it -",
    "text": "- jak to má každý stroj -"
   },
-  "s0012": {
+  "s0013": {
    "source": ". Sign in to go on.",
    "text": ". Pro pokračování se přihlaste."
   },
-  "s0013": {
+  "s0014": {
    "source": "1 step",
    "text": "1 krok"
   },
-  "s0014": {
+  "s0015": {
    "source": "192.0.2.0/24 · 2001:db8::/32 · empty = anywhere",
    "text": "192.0.2.0/24 · 2001:db8::/32 · prázdné = odkudkoli"
   },
-  "s0015": {
+  "s0016": {
    "source": "3 days",
    "text": "3 dny"
   },
-  "s0016": {
+  "s0017": {
    "source": "443 or 8000-8100",
    "text": "443 nebo 8000-8100"
   },
-  "s0017": {
+  "s0018": {
    "source": "6 hours",
    "text": "6 hodin"
   },
-  "s0018": {
+  "s0019": {
    "source": "A box to write longer text in, sent to the terminal at once - handy on a phone, or for many lines.",
    "text": "Pole pro delší text, odeslaný do terminálu najednou – hodí se na telefonu nebo pro víc řádků."
   },
-  "s0019": {
+  "s0020": {
    "source": "A change of the network, the firewall or who may reach the pages is taken back by itself unless it is kept within this time - pressed Keep it, from the old address or the new.",
    "text": "Změna sítě, firewallu nebo toho, kdo smí na stránky, se sama vrátí, pokud se v této době nepotvrdí – stiskem Ponechat, ze staré adresy nebo z nové."
   },
-  "s0020": {
+  "s0021": {
    "source": "a CLAUDE.md written for this project",
    "text": "CLAUDE.md napsaný pro tento projekt"
   },
-  "s0021": {
+  "s0022": {
    "source": "A file dropped or pasted into a terminal is written here - a folder inside the working directory, or a full path - and its path typed into the terminal. It gets a .gitignore of its own, so git leaves it alone.",
    "text": "Soubor přetažený nebo vložený do terminálu se uloží sem – složka uvnitř pracovního adresáře, nebo celá cesta – a jeho cesta se napíše do terminálu. Dostane vlastní .gitignore, takže ho git nechá být."
   },
-  "s0022": {
+  "s0023": {
    "source": "a file needs a name",
    "text": "soubor potřebuje název"
   },
-  "s0023": {
+  "s0024": {
    "source": "A file sent from the browser, to the working directory or to Claude.",
    "text": "Soubor nahraný z prohlížeče, do pracovního adresáře nebo pro Claude."
   },
-  "s0024": {
+  "s0025": {
    "source": "a folder",
    "text": "složka"
   },
-  "s0025": {
+  "s0026": {
    "source": "a full path, please",
    "text": "zadejte celou cestu"
   },
-  "s0026": {
+  "s0027": {
    "source": "A function key, F1 to F12.",
    "text": "Funkční klávesa F1 až F12."
   },
-  "s0027": {
+  "s0028": {
    "source": "A GitHub folder (https://github.com/OWNER/REPO/tree/BRANCH/FOLDER), a web page or a folder listing with ai-X.Y.Z.tar.gz links, or one package's address. HTTPS only.",
    "text": "Složka na GitHubu (https://github.com/OWNER/REPO/tree/BRANCH/FOLDER), webová stránka či výpis složky s odkazy na ai-X.Y.Z.tar.gz, nebo adresa jednoho balíčku. Jen HTTPS."
   },
-  "s0028": {
+  "s0029": {
    "source": "A key for root",
    "text": "Klíč pro roota"
   },
-  "s0029": {
+  "s0030": {
    "source": "A key you have already - its public line or .pub file, or the private key, of which only the public half is used - put onto the nodes you choose.",
    "text": "Klíč, který už máte – jeho veřejný řádek nebo soubor .pub, nebo soukromý klíč, ze kterého se použije jen veřejná část – nahraný na uzly, které zvolíte."
   },
-  "s0030": {
+  "s0031": {
    "source": "a name",
    "text": "jméno"
   },
-  "s0031": {
+  "s0032": {
    "source": "a name of letters, digits and . _ @ - (up to 64)",
    "text": "jméno z písmen, číslic a . _ @ - (až 64 znaků)"
   },
-  "s0032": {
+  "s0033": {
    "source": "a name, an address, a word…",
    "text": "jméno, adresa, slovo…"
   },
-  "s0033": {
+  "s0034": {
    "source": "a name, please",
    "text": "zadejte název"
   },
-  "s0034": {
+  "s0035": {
    "source": "A new account",
    "text": "Nový účet"
   },
-  "s0035": {
+  "s0036": {
    "source": "a new certificate is in",
    "text": "nový certifikát je nasazen"
   },
-  "s0036": {
+  "s0037": {
    "source": "A new Claude Code terminal in this folder.",
    "text": "Nový terminál Claude Code v této složce."
   },
-  "s0037": {
+  "s0038": {
    "source": "a new conversation",
    "text": "novou konverzací"
   },
-  "s0038": {
+  "s0039": {
    "source": "a new conversation, the old one kept",
    "text": "nová konverzace, stará zůstane"
   },
-  "s0039": {
+  "s0040": {
    "source": "A new key pair",
    "text": "Nový pár klíčů"
   },
-  "s0040": {
+  "s0041": {
    "source": "A new key pair made here: the public half is added, the private half shown once, to keep.",
    "text": "Nový pár klíčů vytvořený zde: veřejná část se přidá, privátní se jednou ukáže k uschování."
   },
-  "s0041": {
+  "s0042": {
    "source": "A new line in what you are writing, without sending it (\\ and Enter).",
    "text": "Nový řádek v psaném textu, bez odeslání (\\ a Enter)."
   },
-  "s0042": {
+  "s0043": {
    "source": "A new line in what you are writing, without sending it - Shift+Enter, Alt+Enter and Ctrl+Enter on the keyboard do the same.",
    "text": "Nový řádek v psaném textu, bez odeslání – totéž dělá Shift+Enter, Alt+Enter a Ctrl+Enter na klávesnici."
   },
-  "s0043": {
+  "s0044": {
    "source": "A new one (at least 10 characters)",
    "text": "Nové (alespoň 10 znaků)"
   },
-  "s0044": {
+  "s0045": {
    "source": "A new password",
    "text": "Nové heslo"
   },
-  "s0045": {
+  "s0046": {
    "source": "A new self-signed certificate?",
    "text": "Nový certifikát podepsaný sám sebou?"
   },
-  "s0046": {
+  "s0047": {
    "source": "A new self-signed one",
    "text": "Nový podepsaný sám sebou"
   },
-  "s0047": {
+  "s0048": {
    "source": "A new terminal",
    "text": "Nový terminál"
   },
-  "s0048": {
+  "s0049": {
    "source": "A new terminal: Claude Code or a shell, in the folder you choose.",
    "text": "Nový terminál: Claude Code nebo shell, ve složce, kterou zvolíte."
   },
-  "s0049": {
+  "s0050": {
    "source": "A new version",
    "text": "Nová verze"
   },
-  "s0050": {
+  "s0051": {
    "source": "A new version of ai is checked before anything is put in: signed by a release key this server trusts, every file the one signed. Then its own install.sh --upgrade runs, as by hand. The terminals go on running; the pages come back after a few seconds.",
    "text": "Nová verze ai se před nasazením zkontroluje: podepsaná release klíčem, kterému tento server důvěřuje, každý soubor ten podepsaný. Pak se spustí její vlastní install.sh --upgrade, jako ručně. Terminály běží dál; stránky se vrátí po pár sekundách."
   },
-  "s0051": {
+  "s0052": {
    "source": "A note",
    "text": "Poznámka"
   },
-  "s0052": {
+  "s0053": {
    "source": "A package sent from here",
    "text": "Balíček nahraný odsud"
   },
-  "s0053": {
+  "s0054": {
    "source": "a password",
    "text": "heslo"
   },
-  "s0054": {
+  "s0055": {
    "source": "a pool (several addresses)",
    "text": "pool (víc adres)"
   },
-  "s0055": {
+  "s0056": {
    "source": "A restart",
    "text": "Restart"
   },
-  "s0056": {
+  "s0057": {
    "source": "a review of a pull request",
    "text": "revize pull requestu"
   },
-  "s0057": {
+  "s0058": {
    "source": "A rule of your own",
    "text": "Vlastní pravidlo"
   },
-  "s0058": {
+  "s0059": {
    "source": "a security review of the changes",
    "text": "bezpečnostní revize změn"
   },
-  "s0059": {
+  "s0060": {
    "source": "A shell",
    "text": "Shell"
   },
-  "s0060": {
+  "s0061": {
    "source": "A sign-in nobody used for this long ends by itself. The terminals go on running.",
    "text": "Přihlášení, které nikdo takhle dlouho nepoužil, skončí samo. Terminály běží dál."
   },
-  "s0061": {
+  "s0062": {
    "source": "a test",
    "text": "zkouška"
   },
-  "s0062": {
+  "s0063": {
    "source": "a test machine",
    "text": "testovací stroj"
   },
-  "s0063": {
+  "s0064": {
    "source": "a test machine: nothing changed",
    "text": "testovací stroj: nic se nezměnilo"
   },
-  "s0064": {
+  "s0065": {
    "source": "a token",
    "text": "token"
   },
-  "s0065": {
+  "s0066": {
    "source": "About",
    "text": "O programu"
   },
-  "s0066": {
+  "s0067": {
    "source": "Accept",
    "text": "Povolit"
   },
-  "s0067": {
+  "s0068": {
    "source": "accept",
    "text": "vpuštěn"
   },
-  "s0068": {
+  "s0069": {
    "source": "accept edits by itself",
    "text": "úpravy přijímat samo"
   },
-  "s0069": {
+  "s0070": {
    "source": "ACCEPT lets it in; DROP says nothing; REJECT answers that it is closed.",
    "text": "ACCEPT povolí; DROP mlčky zahodí; REJECT odpoví, že je zavřeno."
   },
-  "s0070": {
+  "s0071": {
    "source": "Access",
    "text": "Přístup"
   },
-  "s0071": {
+  "s0072": {
    "source": "Account",
    "text": "Účet"
   },
-  "s0072": {
+  "s0073": {
    "source": "Accounts",
    "text": "Účty"
   },
-  "s0073": {
+  "s0074": {
    "source": "accounts",
    "text": "účty"
   },
-  "s0074": {
+  "s0075": {
    "source": "Action",
    "text": "Akce"
   },
-  "s0075": {
+  "s0076": {
    "source": "active",
    "text": "aktivní"
   },
-  "s0076": {
+  "s0077": {
    "source": "Add a key",
    "text": "Přidat klíč"
   },
-  "s0077": {
+  "s0078": {
    "source": "Add a key for root",
    "text": "Přidat klíč pro roota"
   },
-  "s0078": {
+  "s0079": {
    "source": "Add a public key",
    "text": "Přidat veřejný klíč"
   },
-  "s0079": {
+  "s0080": {
+   "source": "Add a public key for root",
+   "text": "Přidat veřejný klíč pro roota"
+  },
+  "s0081": {
    "source": "Add a rule",
    "text": "Přidat pravidlo"
   },
-  "s0080": {
+  "s0082": {
    "source": "Add a server",
    "text": "Přidat server"
   },
-  "s0081": {
+  "s0083": {
    "source": "Add it",
    "text": "Přidat"
   },
-  "s0082": {
+  "s0084": {
    "source": "add or drop",
    "text": "přidat nebo odebrat"
   },
-  "s0083": {
+  "s0085": {
    "source": "added",
    "text": "přidáno"
   },
-  "s0084": {
+  "s0086": {
    "source": "Address",
    "text": "Adresa"
   },
-  "s0085": {
+  "s0087": {
    "source": "Address with its prefix",
    "text": "Adresa s prefixem"
   },
-  "s0086": {
+  "s0088": {
    "source": "Addresses",
    "text": "Adresy"
   },
-  "s0087": {
+  "s0089": {
    "source": "Addresses with their prefix",
    "text": "Adresy s prefixem"
   },
-  "s0088": {
+  "s0090": {
    "source": "admin",
    "text": "admin"
   },
-  "s0089": {
+  "s0091": {
    "source": "administration",
    "text": "administrace"
   },
-  "s0090": {
+  "s0092": {
    "source": "administrator",
    "text": "administrátor"
   },
-  "s0091": {
+  "s0093": {
    "source": "administrator - everything",
    "text": "administrátor – vše"
   },
-  "s0092": {
+  "s0094": {
    "source": "after",
    "text": "potom"
   },
-  "s0093": {
+  "s0095": {
    "source": "After the password these pages ask for a code too - choose how (the account's own, not a VPN token).",
    "text": "Po hesle chtějí tyto stránky ještě kód – vyberte jak (patří účtu, není to VPN token)."
   },
-  "s0094": {
+  "s0096": {
    "source": "After the update",
    "text": "Po aktualizaci"
   },
-  "s0095": {
+  "s0097": {
    "source": "ai",
    "text": "ai"
   },
-  "s0096": {
+  "s0098": {
    "source": "ai leaves the firewall alone",
    "text": "ai firewall nechává být"
   },
-  "s0097": {
+  "s0099": {
    "source": "ai looks after its rules",
    "text": "ai spravuje svá pravidla"
   },
-  "s0098": {
+  "s0100": {
    "source": "ai puts a chain of its own, AI-IN, first in INPUT on every node, for IPv4 and IPv6, and keeps it in /etc/sysconfig/iptables and ip6tables. Your own rules stay as they are; AI-IN only lets in - what it does not let in goes on to them. SSH stays open (a rule of ai's, which you can turn off).",
    "text": "ai vloží na každém uzlu vlastní řetězec AI-IN na začátek INPUT, pro IPv4 i IPv6, a uloží ho do /etc/sysconfig/iptables a ip6tables. Vaše pravidla zůstanou, jak jsou; AI-IN jen povoluje – co nepovolí, jde dál na ně. SSH zůstane otevřené (pravidlo ai, které lze vypnout)."
   },
-  "s0099": {
+  "s0101": {
    "source": "ai sets the time servers",
    "text": "Časové servery nastavuje ai"
   },
-  "s0100": {
+  "s0102": {
    "source": "All",
    "text": "Všechny"
   },
-  "s0101": {
+  "s0103": {
    "source": "all",
    "text": "vše"
   },
-  "s0102": {
+  "s0104": {
    "source": "All keys",
    "text": "Všechny klávesy"
   },
-  "s0103": {
+  "s0105": {
    "source": "All nodes",
    "text": "Všechny uzly"
   },
-  "s0104": {
+  "s0106": {
    "source": "all nodes",
    "text": "všechny uzly"
   },
-  "s0105": {
+  "s0107": {
    "source": "all time",
    "text": "celá historie"
   },
-  "s0106": {
+  "s0108": {
    "source": "Alt held for the next key - pressed here or typed: Alt, then B is Alt+B (a word back).",
    "text": "Alt podržený pro další klávesu – stisknutou zde nebo napsanou: Alt, pak B je Alt+B (o slovo zpět)."
   },
-  "s0107": {
+  "s0109": {
    "source": "always",
    "text": "vždy"
   },
-  "s0108": {
+  "s0110": {
    "source": "Always let in:",
    "text": "Vždy povoleno:"
   },
-  "s0109": {
+  "s0111": {
    "source": "Always started with",
    "text": "Vždy spouštět s"
   },
-  "s0110": {
+  "s0112": {
    "source": "An",
    "text": "Balíček"
   },
-  "s0111": {
+  "s0113": {
    "source": "an address",
    "text": "adresa"
   },
-  "s0112": {
+  "s0114": {
    "source": "An address or a network.",
    "text": "Adresa nebo síť."
   },
-  "s0113": {
+  "s0115": {
    "source": "an app",
    "text": "aplikace"
   },
-  "s0114": {
+  "s0116": {
    "source": "An empty end means up to now.",
    "text": "Prázdné Do znamená až do teď."
   },
-  "s0115": {
+  "s0117": {
    "source": "An empty folder",
    "text": "Prázdná složka"
   },
-  "s0116": {
+  "s0118": {
    "source": "an update is going on already",
    "text": "aktualizace už probíhá"
   },
-  "s0117": {
+  "s0119": {
    "source": "an upgrade is running already",
    "text": "upgrade už probíhá"
   },
-  "s0118": {
+  "s0120": {
    "source": "and",
    "text": "a"
   },
-  "s0119": {
+  "s0121": {
    "source": "another folder it may work in",
    "text": "další složka, ve které smí pracovat"
   },
-  "s0120": {
+  "s0122": {
    "source": "answering",
    "text": "odpovídá"
   },
-  "s0121": {
+  "s0123": {
    "source": "answers of a DHCPv6 server, for an address given that way",
    "text": "odpovědi DHCPv6 serveru, pro adresu přidělenou tímto způsobem"
   },
-  "s0122": {
+  "s0124": {
    "source": "Any",
    "text": "Jakýkoli"
   },
-  "s0123": {
+  "s0125": {
    "source": "any",
    "text": "jakýkoli"
   },
-  "s0124": {
+  "s0126": {
    "source": "any of them",
    "text": "kterékoli z nich"
   },
-  "s0125": {
+  "s0127": {
    "source": "anything",
    "text": "cokoli"
   },
-  "s0126": {
+  "s0128": {
    "source": "anywhere",
    "text": "odkudkoli"
   },
-  "s0127": {
+  "s0129": {
    "source": "API key",
    "text": "API klíč"
   },
-  "s0128": {
+  "s0130": {
    "source": "App",
    "text": "Aplikace"
   },
-  "s0129": {
+  "s0131": {
    "source": "As",
    "text": "Jako"
   },
-  "s0130": {
+  "s0132": {
    "source": "as Claude Code chooses",
    "text": "jak zvolí Claude Code"
   },
-  "s0131": {
+  "s0133": {
    "source": "as install.sh wrote it - not set here yet",
    "text": "jak to zapsal install.sh – zde zatím nenastaveno"
   },
-  "s0132": {
+  "s0134": {
    "source": "as it comes",
    "text": "výchozí"
   },
-  "s0133": {
+  "s0135": {
    "source": "As it is now",
    "text": "Jak je to teď"
   },
-  "s0134": {
+  "s0136": {
    "source": "as released.",
    "text": "tak, jak byl vydán."
   },
-  "s0135": {
+  "s0137": {
+   "source": "as they come",
+   "text": "výchozí"
+  },
+  "s0138": {
    "source": "Ask",
    "text": "Zeptat se"
   },
-  "s0136": {
+  "s0139": {
    "source": "ask before changes (default)",
    "text": "ptát se před změnami (výchozí)"
   },
-  "s0137": {
+  "s0140": {
    "source": "Ask me when a restart is needed",
    "text": "Zeptat se, když je potřeba restart"
   },
-  "s0138": {
+  "s0141": {
    "source": "Asked",
    "text": "Dotázán"
   },
-  "s0139": {
+  "s0142": {
    "source": "asked",
    "text": "zadáno"
   },
-  "s0140": {
+  "s0143": {
    "source": "asked again",
    "text": "dotázáno znovu"
   },
-  "s0141": {
+  "s0144": {
    "source": "Asked every",
    "text": "Dotaz každých"
   },
-  "s0142": {
+  "s0145": {
    "source": "Asking…",
    "text": "Ptám se…"
   },
-  "s0143": {
+  "s0146": {
    "source": "asks by itself the first time, or",
    "text": "se poprvé zeptá sám, nebo"
   },
-  "s0144": {
+  "s0147": {
    "source": "At",
    "text": "V"
   },
-  "s0145": {
+  "s0148": {
    "source": "at once",
    "text": "hned"
   },
-  "s0146": {
+  "s0149": {
    "source": "At what hour",
    "text": "V kolik hodin"
   },
-  "s0147": {
+  "s0150": {
    "source": "Attribute",
    "text": "Atribut"
   },
-  "s0148": {
+  "s0151": {
    "source": "automatic",
    "text": "automaticky"
   },
-  "s0149": {
+  "s0152": {
    "source": "automatic (SLAAC / DHCPv6)",
    "text": "automaticky (SLAAC / DHCPv6)"
   },
-  "s0150": {
+  "s0153": {
    "source": "Back",
    "text": "Zpět"
   },
-  "s0151": {
+  "s0154": {
    "source": "back to an earlier point of the conversation",
    "text": "návrat k dřívějšímu bodu konverzace"
   },
-  "s0152": {
+  "s0155": {
    "source": "back to the default",
    "text": "zpět na výchozí"
   },
-  "s0153": {
+  "s0156": {
    "source": "Back to the list",
    "text": "Zpět na seznam"
   },
-  "s0154": {
+  "s0157": {
+   "source": "backups",
+   "text": "zálohy"
+  },
+  "s0158": {
    "source": "Base",
    "text": "Báze"
   },
-  "s0155": {
+  "s0159": {
    "source": "becomes",
    "text": "se stane"
   },
-  "s0156": {
+  "s0160": {
    "source": "being upgraded",
    "text": "probíhá upgrade"
   },
-  "s0157": {
+  "s0161": {
    "source": "Bigger letters",
    "text": "Větší písmo"
   },
-  "s0158": {
+  "s0162": {
    "source": "Both",
    "text": "Obě"
   },
-  "s0159": {
+  "s0163": {
    "source": "both",
    "text": "obě"
   },
-  "s0160": {
+  "s0164": {
    "source": "Both nodes",
    "text": "Oba nody"
   },
-  "s0161": {
+  "s0165": {
    "source": "Both nodes are switched off. Nothing answers - RADIUS, the pages - until somebody switches them on again at the machines.",
    "text": "Oba nody se vypnou. Nic nebude odpovídat – RADIUS ani stránky –, dokud je někdo znovu nezapne u strojů."
   },
-  "s0162": {
+  "s0166": {
    "source": "Both restart at the same moment: for a minute or two nothing answers - RADIUS, the pages, the web address.",
    "text": "Oba se restartují ve stejnou chvíli: minutu či dvě nic neodpovídá – RADIUS, stránky ani webová adresa."
   },
-  "s0163": {
+  "s0167": {
    "source": "Browser",
    "text": "Prohlížeč"
   },
-  "s0164": {
+  "s0168": {
    "source": "By",
    "text": "Vydal"
   },
-  "s0165": {
+  "s0169": {
    "source": "by hand",
    "text": "ručně"
   },
-  "s0166": {
+  "s0170": {
    "source": "By the calendar",
    "text": "Podle kalendáře"
   },
-  "s0167": {
+  "s0171": {
    "source": "Cancel",
    "text": "Zrušit"
   },
-  "s0168": {
+  "s0172": {
    "source": "Certificate",
    "text": "Certifikát"
   },
-  "s0169": {
+  "s0173": {
    "source": "certificate",
    "text": "certifikát"
   },
-  "s0170": {
+  "s0174": {
    "source": "Certificate and TLS",
    "text": "Certifikát a TLS"
   },
-  "s0171": {
+  "s0175": {
    "source": "Change it",
    "text": "Změnit"
   },
-  "s0172": {
+  "s0176": {
    "source": "Change it?",
    "text": "Změnit?"
   },
-  "s0173": {
+  "s0177": {
    "source": "Change the network?",
    "text": "Změnit síť?"
   },
-  "s0174": {
+  "s0178": {
    "source": "Change the password",
    "text": "Změnit heslo"
   },
-  "s0175": {
+  "s0179": {
    "source": "Change the rule",
    "text": "Změnit pravidlo"
   },
-  "s0176": {
+  "s0180": {
    "source": "change your password first",
    "text": "nejdřív si změňte heslo"
   },
-  "s0177": {
+  "s0181": {
    "source": "changed",
    "text": "změněno"
   },
-  "s0178": {
+  "s0182": {
    "source": "Changed",
    "text": "Změněno"
   },
-  "s0179": {
+  "s0183": {
    "source": "Changes that could cut you off go back after (seconds)",
    "text": "Změny, které by vás mohly odříznout, se vrátí po (sekundách)"
   },
-  "s0180": {
+  "s0184": {
    "source": "Check it",
    "text": "Zkontrolovat"
   },
-  "s0181": {
+  "s0185": {
    "source": "Checked",
    "text": "Ověření"
   },
-  "s0182": {
+  "s0186": {
    "source": "checked",
    "text": "zkontrolováno"
   },
-  "s0183": {
+  "s0187": {
    "source": "checking",
    "text": "kontroluje se"
   },
-  "s0184": {
+  "s0188": {
    "source": "Checking…",
    "text": "Ověřuje se…"
   },
-  "s0185": {
+  "s0189": {
    "source": "checks its installation",
    "text": "zkontroluje svou instalaci"
   },
-  "s0186": {
+  "s0190": {
    "source": "Choose a folder",
    "text": "Vyberte složku"
   },
-  "s0187": {
+  "s0191": {
    "source": "choose one of its conversations (--resume)",
    "text": "výběrem z jejích konverzací (--resume)"
   },
-  "s0188": {
+  "s0192": {
    "source": "choose the model",
    "text": "volba modelu"
   },
-  "s0189": {
+  "s0193": {
    "source": "Choose this one",
    "text": "Vybrat tuto"
   },
-  "s0190": {
+  "s0194": {
    "source": "Choose…",
    "text": "Vybrat…"
   },
-  "s0191": {
+  "s0195": {
    "source": "chrony is not installed",
    "text": "chrony není nainstalováno"
   },
-  "s0192": {
+  "s0196": {
    "source": "CLAUDE CODE",
    "text": "CLAUDE CODE"
   },
-  "s0193": {
+  "s0197": {
    "source": "Claude Code",
    "text": "Claude Code"
   },
-  "s0194": {
+  "s0198": {
    "source": "Claude Code and shells running on this server: open one, start a new one. Each goes on running when the browser is closed.",
    "text": "Claude Code a shelly běžící na tomto serveru: otevřete některý, nebo spusťte nový. Každý běží dál i po zavření prohlížeče."
   },
-  "s0195": {
+  "s0199": {
    "source": "Claude Code in a folder used lately",
    "text": "Claude Code v nedávno použité složce"
   },
-  "s0196": {
+  "s0200": {
    "source": "Claude Code in a terminal of its own: it asks how to sign in the first time; or type /login.",
    "text": "Claude Code ve vlastním terminálu: poprvé se sám zeptá, jak se přihlásit; nebo napište /login."
   },
-  "s0197": {
+  "s0201": {
    "source": "Claude Code is installed for each Linux account the terminals run as - root's is root's, another account's its own. Signing in to Claude (a Claude account or an API key) is done once per account, in a terminal:",
    "text": "Claude Code se instaluje pro každý účet Linuxu, pod kterým terminály běží – rootův patří rootovi, jiný účet má svůj. Přihlášení ke Claude (účet Claude nebo API klíč) se dělá jednou pro každý účet, v terminálu:"
   },
-  "s0198": {
+  "s0202": {
    "source": "Claude Code itself: installed for which accounts, signed in or not, updated; how every terminal starts it.",
    "text": "Claude Code samotný: pro které účty je nainstalovaný, zda je přihlášený, aktualizace; jak ho každý terminál spouští."
   },
-  "s0199": {
+  "s0203": {
    "source": "Claude Code on",
    "text": "Claude Code na"
   },
-  "s0200": {
+  "s0204": {
    "source": "Claude Code on this server",
    "text": "Claude Code na tomto serveru"
   },
-  "s0201": {
+  "s0205": {
    "source": "Claude Code's commands",
    "text": "Příkazy Claude Code"
   },
-  "s0202": {
+  "s0206": {
    "source": "Claude Code's commands - /model, /compact, /resume... - put into the terminal, ready to be sent.",
    "text": "Příkazy Claude Code – /model, /compact, /resume… – vložené do terminálu, připravené k odeslání."
   },
-  "s0203": {
+  "s0207": {
    "source": "Claude Code's settings",
    "text": "nastavení Claude Code"
   },
-  "s0204": {
+  "s0208": {
    "source": "Claude Code, the accounts, the certificate, the firewall, the network, the time, the system's updates, SSH keys and new versions of this program.",
    "text": "Claude Code, účty, certifikát, firewall, síť, čas, aktualizace systému, SSH klíče a nové verze tohoto programu."
   },
-  "s0205": {
+  "s0209": {
    "source": "claude doctor: what is wrong with the installation, if anything.",
    "text": "claude doctor: co je s instalací v nepořádku, pokud vůbec něco."
   },
-  "s0206": {
+  "s0210": {
    "source": "Claude here",
    "text": "Claude zde"
   },
-  "s0207": {
+  "s0211": {
    "source": "claude update, in a terminal you watch.",
    "text": "claude update, v terminálu, který sledujete."
   },
-  "s0208": {
+  "s0212": {
    "source": "CLAUDE.md, its memory files",
    "text": "CLAUDE.md, soubory jeho paměti"
   },
-  "s0209": {
+  "s0213": {
    "source": "Clear",
    "text": "Zrušit"
   },
-  "s0210": {
+  "s0214": {
    "source": "Clear the window",
    "text": "Vyčistit výpis"
   },
-  "s0211": {
+  "s0215": {
    "source": "cleared",
    "text": "zrušeno"
   },
-  "s0212": {
+  "s0216": {
    "source": "Click to copy",
    "text": "Kliknutím zkopírujete"
   },
-  "s0213": {
+  "s0217": {
    "source": "Click to copy.",
    "text": "Kliknutím zkopírujete."
   },
-  "s0214": {
+  "s0218": {
    "source": "Click to pause or resume the live updates",
    "text": "Kliknutím pozastavíte nebo obnovíte živé aktualizace"
   },
-  "s0215": {
+  "s0219": {
    "source": "Client",
    "text": "Klient"
   },
-  "s0216": {
+  "s0220": {
    "source": "clients",
    "text": "klienti"
   },
-  "s0217": {
+  "s0221": {
    "source": "Close",
    "text": "Zavřít"
   },
-  "s0218": {
+  "s0222": {
    "source": "Close it",
    "text": "Zavřít ho"
   },
-  "s0219": {
+  "s0223": {
    "source": "CODE",
    "text": "KÓD"
   },
-  "s0220": {
+  "s0224": {
    "source": "code",
    "text": "kód"
   },
-  "s0221": {
+  "s0225": {
    "source": "code by SMS",
    "text": "kód přes SMS"
   },
-  "s0222": {
+  "s0226": {
    "source": "Codes",
    "text": "Kódy"
   },
-  "s0223": {
+  "s0227": {
+   "source": "Columns",
+   "text": "Sloupce"
+  },
+  "s0228": {
    "source": "combined",
    "text": "kombinovaný"
   },
-  "s0224": {
+  "s0229": {
    "source": "Command",
    "text": "Příkaz"
   },
-  "s0225": {
+  "s0230": {
    "source": "command",
    "text": "příkaz"
   },
-  "s0226": {
+  "s0231": {
    "source": "command line",
    "text": "příkazová řádka"
   },
-  "s0227": {
+  "s0232": {
    "source": "Commands",
    "text": "Příkazy"
   },
-  "s0228": {
+  "s0233": {
    "source": "Comment",
    "text": "Komentář"
   },
-  "s0229": {
+  "s0234": {
    "source": "config.json",
    "text": "config.json"
   },
-  "s0230": {
+  "s0235": {
    "source": "connecting…",
    "text": "připojuji…"
   },
-  "s0231": {
+  "s0236": {
    "source": "Connection",
    "text": "Připojení"
   },
-  "s0232": {
+  "s0237": {
    "source": "contains",
    "text": "obsahuje"
   },
-  "s0233": {
+  "s0238": {
    "source": "Conversations",
    "text": "Konverzace"
   },
-  "s0234": {
+  "s0239": {
    "source": "Copied",
    "text": "Zkopírováno"
   },
-  "s0235": {
+  "s0240": {
    "source": "copied",
    "text": "zkopírováno"
   },
-  "s0236": {
+  "s0241": {
    "source": "Copy",
    "text": "Kopírovat"
   },
-  "s0237": {
+  "s0242": {
    "source": "Copy it",
    "text": "Zkopírovat"
   },
-  "s0238": {
+  "s0243": {
    "source": "counting",
    "text": "počítá se"
   },
-  "s0239": {
+  "s0244": {
    "source": "Counting…",
    "text": "Počítám…"
   },
-  "s0240": {
+  "s0245": {
    "source": "Ctrl held for the next key - pressed here or typed: Ctrl, then C is Ctrl+C. For a phone, which has no Ctrl.",
    "text": "Ctrl podržený pro další klávesu – stisknutou zde nebo napsanou: Ctrl, pak C je Ctrl+C. Pro telefon, který Ctrl nemá."
   },
-  "s0241": {
+  "s0246": {
    "source": "Ctrl+C: stops what runs; twice, Claude Code ends.",
    "text": "Ctrl+C: zastaví, co běží; dvakrát ukončí Claude Code."
   },
-  "s0242": {
+  "s0247": {
    "source": "Ctrl+D: the end of input; ends a shell.",
    "text": "Ctrl+D: konec vstupu; ukončí shell."
   },
-  "s0243": {
+  "s0248": {
    "source": "Ctrl+L: clears the screen.",
    "text": "Ctrl+L: vymaže obrazovku."
   },
-  "s0244": {
+  "s0249": {
    "source": "Ctrl+O: Claude Code shows everything it did, in detail.",
    "text": "Ctrl+O: Claude Code ukáže podrobně vše, co udělal."
   },
-  "s0245": {
+  "s0250": {
    "source": "Ctrl+R: searches back through what was typed.",
    "text": "Ctrl+R: hledá zpětně v napsaném."
   },
-  "s0246": {
+  "s0251": {
    "source": "Ctrl+T: Claude Code's list of tasks.",
    "text": "Ctrl+T: seznam úkolů Claude Code."
   },
-  "s0247": {
+  "s0252": {
    "source": "Ctrl+Z: puts what runs in the background (fg brings it back).",
    "text": "Ctrl+Z: pošle běžící program na pozadí (fg ho vrátí)."
   },
-  "s0248": {
+  "s0253": {
    "source": "Custom",
    "text": "Vlastní"
   },
-  "s0249": {
+  "s0254": {
    "source": "Czech",
    "text": "čeština"
   },
-  "s0250": {
+  "s0255": {
    "source": "Data",
    "text": "Data"
   },
-  "s0251": {
+  "s0256": {
    "source": "days",
    "text": "dní"
   },
-  "s0252": {
+  "s0257": {
    "source": "debug",
    "text": "ladění"
   },
-  "s0253": {
+  "s0258": {
    "source": "Debug log",
    "text": "Ladicí log"
   },
-  "s0254": {
+  "s0259": {
    "source": "Delete",
    "text": "Delete"
   },
-  "s0255": {
+  "s0260": {
    "source": "Delete it",
    "text": "Smazat"
   },
-  "s0256": {
+  "s0261": {
    "source": "deleted",
    "text": "smazáno"
   },
-  "s0257": {
+  "s0262": {
    "source": "details",
    "text": "podrobnosti"
   },
-  "s0258": {
+  "s0263": {
    "source": "DHCPv6 client",
    "text": "DHCPv6 klient"
   },
-  "s0259": {
+  "s0264": {
    "source": "directories",
    "text": "adresáře"
   },
-  "s0260": {
+  "s0265": {
    "source": "Directory",
    "text": "Adresář"
   },
-  "s0261": {
+  "s0266": {
    "source": "disabled",
    "text": "vypnuto"
   },
-  "s0262": {
+  "s0267": {
    "source": "Disk",
    "text": "Disk"
   },
-  "s0263": {
+  "s0268": {
    "source": "Disks",
    "text": "Disky"
   },
-  "s0264": {
+  "s0269": {
    "source": "dnf (or apt) updates every package. The terminals go on running meanwhile; a restart it needs is offered at the end.",
    "text": "dnf (nebo apt) aktualizuje všechny balíčky. Terminály mezitím běží dál; restart, který bude potřeba, se nabídne na konci."
   },
-  "s0265": {
+  "s0270": {
    "source": "DNS",
    "text": "DNS"
   },
-  "s0266": {
+  "s0271": {
    "source": "DNS servers",
    "text": "DNS servery"
   },
-  "s0267": {
+  "s0272": {
    "source": "Done",
    "text": "Hotovo"
   },
-  "s0268": {
+  "s0273": {
    "source": "done",
    "text": "hotovo"
   },
-  "s0269": {
+  "s0274": {
    "source": "down",
    "text": "nefunguje"
   },
-  "s0270": {
+  "s0275": {
    "source": "Down",
    "text": "Dolů"
   },
-  "s0271": {
+  "s0276": {
    "source": "Download",
    "text": "Stáhnout"
   },
-  "s0272": {
+  "s0277": {
    "source": "Download it",
    "text": "Stáhnout"
   },
-  "s0273": {
+  "s0278": {
    "source": "Download it as a .zip",
    "text": "Stáhnout jako .zip"
   },
-  "s0274": {
+  "s0279": {
    "source": "Download the key",
    "text": "Stáhnout klíč"
   },
-  "s0275": {
+  "s0280": {
    "source": "Drop",
    "text": "Zahodit"
   },
-  "s0276": {
+  "s0281": {
    "source": "drop",
    "text": "zahodit"
   },
-  "s0277": {
+  "s0282": {
    "source": "Drop the file to give it to Claude",
    "text": "Pusťte soubor a Claude ho dostane"
   },
-  "s0278": {
+  "s0283": {
    "source": "Drop the files to send them into this folder",
    "text": "Pusťte soubory a nahrají se do této složky"
   },
-  "s0279": {
+  "s0284": {
    "source": "dropped",
    "text": "zahodí"
   },
-  "s0280": {
+  "s0285": {
    "source": "Dropped: only what the rules let in comes in.",
    "text": "Zahodí: dovnitř projde jen to, co pravidla pustí."
   },
-  "s0281": {
+  "s0286": {
    "source": "E-mail",
    "text": "E-mail"
   },
-  "s0282": {
+  "s0287": {
    "source": "e-mail",
    "text": "e-mail"
   },
-  "s0283": {
+  "s0288": {
    "source": "e.g. ",
    "text": "např. "
   },
-  "s0284": {
+  "s0289": {
    "source": "e.g. 192.0.2.10/24 - /24 is the mask 255.255.255.0.",
    "text": "např. 192.0.2.10/24 – /24 je maska 255.255.255.0."
   },
-  "s0285": {
+  "s0290": {
    "source": "e.g. 2001:db8::10/64",
    "text": "např. 2001:db8::10/64"
   },
-  "s0286": {
+  "s0291": {
    "source": "Each node is one more source for the other: if the servers above are out of reach, the two nodes at least keep one time - which is what codes need.",
    "text": "Každý node je dalším zdrojem pro druhý: když servery výše nejsou dostupné, oba nody si aspoň drží stejný čas – a to kódy potřebují."
   },
-  "s0287": {
+  "s0292": {
    "source": "Earlier",
    "text": "Dříve"
   },
-  "s0288": {
+  "s0293": {
    "source": "Ed25519 (the best choice)",
    "text": "Ed25519 (nejlepší volba)"
   },
-  "s0289": {
+  "s0294": {
    "source": "Ed25519 (the strongest, and short)",
    "text": "Ed25519 (nejsilnější a krátký)"
   },
-  "s0290": {
+  "s0295": {
    "source": "Edit",
    "text": "Upravit"
   },
-  "s0291": {
+  "s0296": {
    "source": "either",
    "text": "nebo"
   },
-  "s0292": {
+  "s0297": {
    "source": "Empty the window of every node - for every page, and after a reload too; what comes after is shown.",
    "text": "Vyprázdní výpis všech uzlů – pro každou stránku i po obnovení; zobrazí se jen to, co přijde potom."
   },
-  "s0293": {
+  "s0298": {
    "source": "End",
    "text": "End"
   },
-  "s0294": {
+  "s0299": {
    "source": "end Claude Code",
    "text": "ukončit Claude Code"
   },
-  "s0295": {
+  "s0300": {
    "source": "End it",
    "text": "Ukončit ho"
   },
-  "s0296": {
+  "s0301": {
    "source": "End this sign-in",
    "text": "Ukončit toto přihlášení"
   },
-  "s0297": {
+  "s0302": {
    "source": "ended",
    "text": "ukončený"
   },
-  "s0298": {
+  "s0303": {
    "source": "Ended",
    "text": "Ukončen"
   },
-  "s0299": {
+  "s0304": {
    "source": "Ended terminals kept (days)",
    "text": "Ukončené terminály držet (dní)"
   },
-  "s0300": {
+  "s0305": {
    "source": "Engine",
    "text": "Databáze"
   },
-  "s0301": {
+  "s0306": {
    "source": "English",
    "text": "angličtina"
   },
-  "s0302": {
+  "s0307": {
    "source": "Environment of every terminal",
    "text": "Prostředí každého terminálu"
   },
-  "s0303": {
+  "s0308": {
    "source": "Escape: stops Claude in the middle of what it is doing, closes a menu.",
    "text": "Escape: zastaví Claude uprostřed práce, zavře nabídku."
   },
-  "s0304": {
+  "s0309": {
    "source": "Events",
    "text": "Události"
   },
-  "s0305": {
+  "s0310": {
    "source": "events",
    "text": "události"
   },
-  "s0306": {
+  "s0311": {
    "source": "Events kept (days)",
    "text": "Události držet (dní)"
   },
-  "s0307": {
+  "s0312": {
    "source": "every address",
    "text": "všechny adresy"
   },
-  "s0308": {
+  "s0313": {
    "source": "Every conversation Claude Code has kept, folder by folder - picked up again where it was left.",
    "text": "Každá konverzace, kterou si Claude Code uložil, složku po složce – navázat lze tam, kde skončila."
   },
-  "s0309": {
+  "s0314": {
    "source": "every folder",
    "text": "všechny složky"
   },
-  "s0310": {
+  "s0315": {
    "source": "every key goes to the terminal now - hold Esc to come back",
    "text": "všechny klávesy teď jdou do terminálu – zpět podržením Esc"
   },
-  "s0311": {
+  "s0316": {
    "source": "every kind",
    "text": "všechny druhy"
   },
-  "s0312": {
+  "s0317": {
    "source": "every node",
    "text": "všechny uzly"
   },
-  "s0313": {
+  "s0318": {
    "source": "every node is up again",
    "text": "všechny nody znovu běží"
   },
-  "s0314": {
+  "s0319": {
    "source": "Every node, or only one.",
    "text": "Každý uzel, nebo jen jeden."
   },
-  "s0315": {
+  "s0320": {
    "source": "Every package with an update is updated now. The terminals go on running; a new kernel needs a restart of the server, said here when it does.",
    "text": "Teď se aktualizuje každý balíček, který má aktualizaci. Terminály běží dál; nové jádro vyžaduje restart serveru – zde se to řekne."
   },
-  "s0316": {
+  "s0321": {
    "source": "Every sign-in, every terminal started or ended, every change of a setting and of the machine.",
    "text": "Každé přihlášení, každý spuštěný či ukončený terminál, každá změna nastavení a stroje."
   },
-  "s0317": {
+  "s0322": {
    "source": "Every terminal ends with it.",
    "text": "Všechny terminály skončí s ním."
   },
-  "s0318": {
+  "s0323": {
    "source": "Every terminal ends, and the server stays off until somebody switches it on.",
    "text": "Všechny terminály skončí a server zůstane vypnutý, dokud ho někdo nezapne."
   },
-  "s0319": {
+  "s0324": {
    "source": "Everybody",
    "text": "Všichni"
   },
-  "s0320": {
+  "s0325": {
    "source": "Everybody may",
    "text": "Smí všichni"
   },
-  "s0321": {
+  "s0326": {
    "source": "Everything",
    "text": "Vše"
   },
-  "s0322": {
+  "s0327": {
    "source": "everything",
    "text": "vše"
   },
-  "s0323": {
+  "s0328": {
    "source": "Everything is up to date",
    "text": "Vše je aktuální"
   },
-  "s0324": {
+  "s0329": {
    "source": "everywhere",
    "text": "všude"
   },
-  "s0325": {
+  "s0330": {
    "source": "example.cz",
    "text": "example.cz"
   },
-  "s0326": {
+  "s0331": {
    "source": "exists and is not readable by",
    "text": "existuje a nemůže ho číst"
   },
-  "s0327": {
+  "s0332": {
+   "source": "expired",
+   "text": "vzdáno"
+  },
+  "s0333": {
    "source": "Export",
    "text": "Export"
   },
-  "s0328": {
+  "s0334": {
    "source": "Export this key - its public half, as a .pub file",
    "text": "Exportovat tento klíč – jeho veřejnou část jako soubor .pub"
   },
-  "s0329": {
+  "s0335": {
    "source": "failed",
    "text": "selhalo"
   },
-  "s0330": {
+  "s0336": {
    "source": "failed - see below",
    "text": "selhalo – viz níže"
   },
-  "s0331": {
+  "s0337": {
    "source": "false ticker",
    "text": "chybný"
   },
-  "s0332": {
+  "s0338": {
    "source": "Family",
    "text": "Rodina"
   },
-  "s0333": {
+  "s0339": {
    "source": "Fields",
    "text": "Pole"
   },
-  "s0334": {
+  "s0340": {
    "source": "Fields - or type a word to find it anywhere",
    "text": "Pole – nebo napište slovo a najde se kdekoli"
   },
-  "s0335": {
+  "s0341": {
    "source": "File",
    "text": "Soubor"
   },
-  "s0336": {
+  "s0342": {
    "source": "File for Claude",
    "text": "Soubor pro Claude"
   },
-  "s0337": {
+  "s0343": {
    "source": "Files",
    "text": "Soubory"
   },
-  "s0338": {
+  "s0344": {
    "source": "Files in",
    "text": "Soubory v"
   },
-  "s0339": {
+  "s0345": {
    "source": "Find a setting",
    "text": "Najít nastavení"
   },
-  "s0340": {
+  "s0346": {
    "source": "Find a setting…",
    "text": "Najít nastavení…"
   },
-  "s0341": {
+  "s0347": {
    "source": "find a terminal…",
    "text": "najít terminál…"
   },
-  "s0342": {
+  "s0348": {
    "source": "find…",
    "text": "hledat…"
   },
-  "s0343": {
+  "s0349": {
    "source": "Fingerprint",
    "text": "Otisk"
   },
-  "s0344": {
+  "s0350": {
    "source": "Firewall and access",
    "text": "Firewall a přístup"
   },
-  "s0345": {
+  "s0351": {
    "source": "firewalld looks after the firewall of",
    "text": "firewall stroje spravuje firewalld"
   },
-  "s0346": {
+  "s0352": {
    "source": "firewalld refuses it anyway.",
    "text": "firewalld to odmítne tak jako tak."
   },
-  "s0347": {
+  "s0353": {
    "source": "firewalld runs here: the rules below are put in as rich rules of its default zone; what the zone itself allows stays as it is.",
    "text": "Zde běží firewalld: pravidla níže se vloží jako rich rules jeho výchozí zóny; co povoluje zóna sama, zůstává, jak je."
   },
-  "s0348": {
+  "s0354": {
    "source": "First",
    "text": "První"
   },
-  "s0349": {
+  "s0355": {
    "source": "First choose a password of your own",
    "text": "Nejdřív si zvolte vlastní heslo"
   },
-  "s0350": {
+  "s0356": {
    "source": "Folder",
    "text": "Složka"
   },
-  "s0351": {
+  "s0357": {
    "source": "Folders for files (a user)",
    "text": "Složky pro soubory (uživatel)"
   },
-  "s0352": {
+  "s0358": {
    "source": "followed",
    "text": "sledovaný"
   },
-  "s0353": {
+  "s0359": {
    "source": "Followed before the others when it is good.",
    "text": "Má přednost před ostatními, když je v pořádku."
   },
-  "s0354": {
+  "s0360": {
    "source": "Follows",
    "text": "Sleduje"
   },
-  "s0355": {
+  "s0361": {
    "source": "For",
    "text": "Pro"
   },
-  "s0356": {
+  "s0362": {
    "source": "For a minute or two the pages do not answer, and every terminal ends with it.",
    "text": "Minutu či dvě stránky neodpovídají a všechny terminály skončí."
   },
-  "s0357": {
+  "s0363": {
    "source": "For the names (and addresses)",
    "text": "Pro jména (a adresy)"
   },
-  "s0358": {
+  "s0364": {
    "source": "For whoever has not chosen one of their own (the account menu).",
    "text": "Pro toho, kdo si nezvolil vlastní (nabídka účtu)."
   },
-  "s0359": {
+  "s0365": {
    "source": "Four quick questions at the start: synchronised in seconds, not minutes.",
    "text": "Čtyři rychlé dotazy na začátku: synchronizace za sekundy, ne minuty."
   },
-  "s0360": {
+  "s0366": {
    "source": "free",
    "text": "volný"
   },
-  "s0361": {
+  "s0367": {
    "source": "free of",
    "text": "volných z"
   },
-  "s0362": {
+  "s0368": {
    "source": "Frequency",
    "text": "Frekvence"
   },
-  "s0363": {
+  "s0369": {
    "source": "From",
    "text": "Odkud"
   },
-  "s0364": {
+  "s0370": {
    "source": "from",
    "text": "z"
   },
-  "s0365": {
+  "s0371": {
    "source": "From - to",
    "text": "Od – do"
   },
-  "s0366": {
+  "s0372": {
    "source": "from anywhere",
    "text": "odkudkoli"
   },
-  "s0367": {
+  "s0373": {
    "source": "from DHCP",
    "text": "z DHCP"
   },
-  "s0368": {
+  "s0374": {
    "source": "From one address or for one name; then nobody signs in from there for the pause below.",
    "text": "Z jedné adresy nebo pro jedno jméno; pak se odtamtud po dobu pauzy níže nikdo nepřihlásí."
   },
-  "s0369": {
+  "s0375": {
    "source": "from the directory",
    "text": "z adresáře"
   },
-  "s0370": {
+  "s0376": {
    "source": "from the folder",
    "text": "podle složky"
   },
-  "s0371": {
+  "s0377": {
    "source": "From the web",
    "text": "Z webu"
   },
-  "s0372": {
+  "s0378": {
    "source": "from:",
    "text": "z adres:"
   },
-  "s0373": {
+  "s0379": {
    "source": "Further off than this, the clock jumps to the right time instead of being slowed or sped up gently.",
    "text": "Při větší odchylce hodiny skočí na správný čas, místo aby se pozvolna zpomalovaly či zrychlovaly."
   },
-  "s0374": {
+  "s0380": {
    "source": "Gateway",
    "text": "Brána"
   },
-  "s0375": {
+  "s0381": {
    "source": "Give Claude a file: it is written into the working directory's upload folder and its path typed into the terminal. Dropping a file onto the terminal, or pasting one (Ctrl+V), does the same.",
    "text": "Předat Claude soubor: uloží se do složky pro nahrané soubory v pracovním adresáři a jeho cesta se napíše do terminálu. Totéž udělá přetažení souboru na terminál nebo jeho vložení (Ctrl+V)."
   },
-  "s0376": {
+  "s0382": {
    "source": "give the start",
    "text": "zadejte začátek"
   },
-  "s0377": {
+  "s0383": {
    "source": "go back to an earlier conversation of this folder",
    "text": "návrat k dřívější konverzaci této složky"
   },
-  "s0378": {
+  "s0384": {
    "source": "go to…",
    "text": "přejít na…"
   },
-  "s0379": {
+  "s0385": {
    "source": "going back now",
    "text": "právě se vrací"
   },
-  "s0380": {
+  "s0386": {
    "source": "going down",
    "text": "vypíná se"
   },
-  "s0381": {
+  "s0387": {
    "source": "going on",
    "text": "probíhá"
   },
-  "s0382": {
+  "s0388": {
    "source": "gone",
    "text": "nedostupný"
   },
-  "s0383": {
+  "s0389": {
    "source": "has a token",
    "text": "má token"
   },
-  "s0384": {
+  "s0390": {
    "source": "has one",
    "text": "už má"
   },
-  "s0385": {
+  "s0391": {
    "source": "Headers",
    "text": "Hlavičky"
   },
-  "s0386": {
+  "s0392": {
    "source": "Here",
    "text": "Zde"
   },
-  "s0387": {
+  "s0393": {
    "source": "Here now",
    "text": "Zde teď"
   },
-  "s0388": {
+  "s0394": {
    "source": "Hidden by itself 6 hours after it was done.",
    "text": "Samo se skryje 6 hodin po dokončení."
   },
-  "s0389": {
+  "s0395": {
    "source": "Hidden by itself after a day.",
    "text": "Samo se skryje po dni."
   },
-  "s0390": {
+  "s0396": {
    "source": "Hidden by itself half an hour after it began.",
    "text": "Samo se skryje půl hodiny po začátku."
   },
-  "s0391": {
+  "s0397": {
    "source": "hidden files",
    "text": "skryté soubory"
   },
-  "s0392": {
+  "s0398": {
    "source": "hide",
    "text": "skrýt"
   },
-  "s0393": {
+  "s0399": {
    "source": "Hide it",
    "text": "Skrýt"
   },
-  "s0394": {
+  "s0400": {
    "source": "Hide this",
    "text": "Skrýt"
   },
-  "s0395": {
+  "s0401": {
    "source": "High availability",
    "text": "Vysoká dostupnost"
   },
-  "s0396": {
+  "s0402": {
    "source": "History",
    "text": "Historie"
   },
-  "s0397": {
+  "s0403": {
    "source": "Holding",
    "text": "Obsahuje"
   },
-  "s0398": {
+  "s0404": {
    "source": "holds it",
    "text": "drží ji"
   },
-  "s0399": {
+  "s0405": {
    "source": "Home",
    "text": "Home"
   },
-  "s0400": {
+  "s0406": {
    "source": "Host",
    "text": "Stroj"
   },
-  "s0401": {
+  "s0407": {
    "source": "Host name",
    "text": "Název stroje"
   },
-  "s0402": {
+  "s0408": {
    "source": "Host name (FQDN)",
    "text": "Hostname (FQDN)"
   },
-  "s0403": {
+  "s0409": {
    "source": "hours",
    "text": "hodin"
   },
-  "s0404": {
+  "s0410": {
    "source": "How",
    "text": "Jak"
   },
-  "s0405": {
+  "s0411": {
    "source": "How far",
    "text": "Průběh"
   },
-  "s0406": {
+  "s0412": {
    "source": "how full the context is",
    "text": "jak plný je kontext"
   },
-  "s0407": {
+  "s0413": {
    "source": "how it writes",
    "text": "jak píše"
   },
-  "s0408": {
+  "s0414": {
    "source": "How long a sign-in lasts, wrong passwords, and changes that go back by themselves unless kept.",
    "text": "Jak dlouho přihlášení vydrží, chybná hesla a změny, které se samy vrátí, pokud se nepotvrdí."
   },
-  "s0409": {
+  "s0415": {
    "source": "How long a terminal that has ended stays in the list, to look at its last screen.",
    "text": "Jak dlouho zůstane ukončený terminál v seznamu, aby šla zobrazit jeho poslední obrazovka."
   },
-  "s0410": {
+  "s0416": {
    "source": "How many",
    "text": "Kolik"
   },
-  "s0411": {
+  "s0417": {
    "source": "How many updates after chronyd starts may step it: 3 is after a boot; -1 any time.",
    "text": "Kolik aktualizací po startu chronyd smí skokově srovnat: 3 je po bootu; -1 kdykoli."
   },
-  "s0412": {
+  "s0418": {
    "source": "how much of the plan is used",
    "text": "kolik z předplatného je vyčerpáno"
   },
-  "s0413": {
+  "s0419": {
    "source": "However much it is used, a sign-in ends after this long.",
    "text": "Ať se používá jakkoli, přihlášení po této době skončí."
   },
-  "s0414": {
+  "s0420": {
    "source": "HTTP / HTTPS",
    "text": "HTTP / HTTPS"
   },
-  "s0415": {
+  "s0421": {
    "source": "https://…/ - the terminals, the files and these settings",
    "text": "https://…/ – terminály, soubory a toto nastavení"
   },
-  "s0416": {
+  "s0422": {
    "source": "I have kept it",
    "text": "Mám ho uložený"
   },
-  "s0417": {
+  "s0423": {
    "source": "ICMP / ICMPv6",
    "text": "ICMP / ICMPv6"
   },
-  "s0418": {
+  "s0424": {
    "source": "import",
    "text": "import"
   },
-  "s0419": {
+  "s0425": {
    "source": "In a window of its own",
    "text": "Ve vlastním okně"
   },
-  "s0420": {
+  "s0426": {
    "source": "In force",
    "text": "Platí"
   },
-  "s0421": {
+  "s0427": {
    "source": "In INPUT first: the chain AI-IN - your own rules in their order, then what ai's functions need. What it does not let in goes on to the rules that were there before.",
    "text": "V INPUT jako první: řetězec AI-IN – vaše vlastní pravidla v jejich pořadí, pak to, co potřebují funkce ai. Co nepustí, jde dál k pravidlům, která tam byla předtím."
   },
-  "s0422": {
+  "s0428": {
    "source": "in maintenance",
    "text": "v údržbě"
   },
-  "s0423": {
+  "s0429": {
    "source": "in place",
    "text": "nasazeno"
   },
-  "s0424": {
+  "s0430": {
    "source": "in place (firewalld)",
    "text": "nasazeno (firewalld)"
   },
-  "s0425": {
+  "s0431": {
    "source": "in service",
    "text": "v provozu"
   },
-  "s0426": {
+  "s0432": {
    "source": "IN THE BROWSER · NOTHING ENDS WHEN IT CLOSES",
    "text": "V PROHLÍŽEČI · ZAVŘENÍM NIC NEKONČÍ"
   },
-  "s0427": {
+  "s0433": {
    "source": "In the directory",
    "text": "V adresáři"
   },
-  "s0428": {
+  "s0434": {
+   "source": "in use",
+   "text": "používá se"
+  },
+  "s0435": {
    "source": "INPUT",
    "text": "INPUT"
   },
-  "s0429": {
+  "s0436": {
    "source": "INPUT as iptables-save shows it, without AI-IN. These lines are yours: ai never changes them.",
    "text": "INPUT tak, jak ho ukazuje iptables-save, bez AI-IN. Tyto řádky jsou vaše: ai je nikdy nemění."
   },
-  "s0430": {
+  "s0437": {
    "source": "Insert",
    "text": "Insert"
   },
-  "s0431": {
+  "s0438": {
    "source": "Install it",
    "text": "Nainstalovat"
   },
-  "s0432": {
+  "s0439": {
    "source": "IP version",
    "text": "Verze IP"
   },
-  "s0433": {
+  "s0440": {
    "source": "IPv4",
    "text": "IPv4"
   },
-  "s0434": {
+  "s0441": {
    "source": "IPv4 (iptables)",
    "text": "IPv4 (iptables)"
   },
-  "s0435": {
+  "s0442": {
    "source": "IPv4 address",
    "text": "IPv4 adresa"
   },
-  "s0436": {
+  "s0443": {
    "source": "IPv6",
    "text": "IPv6"
   },
-  "s0437": {
+  "s0444": {
    "source": "IPv6 (dual stack)",
    "text": "IPv6 (dual stack)"
   },
-  "s0438": {
+  "s0445": {
    "source": "IPv6 (ip6tables)",
    "text": "IPv6 (ip6tables)"
   },
-  "s0439": {
+  "s0446": {
    "source": "IPv6 addresses",
    "text": "IPv6 adresy"
   },
-  "s0440": {
+  "s0447": {
    "source": "IPv6 gateway",
    "text": "IPv6 brána"
   },
-  "s0441": {
+  "s0448": {
    "source": "is running:",
    "text": ":"
   },
-  "s0442": {
+  "s0449": {
    "source": "isemon",
    "text": "isemon"
   },
-  "s0443": {
+  "s0450": {
    "source": "It comes back at its new address: ",
    "text": "Vrátí se na nové adrese: "
   },
-  "s0444": {
+  "s0451": {
    "source": "it could not be copied",
    "text": "nepodařilo se zkopírovat"
   },
-  "s0445": {
+  "s0452": {
    "source": "it has ended",
    "text": "skončil"
   },
-  "s0446": {
+  "s0453": {
    "source": "It is",
    "text": "Je to"
   },
-  "s0447": {
+  "s0454": {
    "source": "it is a folder",
    "text": "je to složka"
   },
-  "s0448": {
+  "s0455": {
    "source": "it is being looked at already",
    "text": "už se zjišťuje"
   },
-  "s0449": {
+  "s0456": {
    "source": "It is fetched, checked and put in. The terminals go on running; these pages are back after a few seconds.",
    "text": "Stáhne se, zkontroluje a nasadí. Terminály běží dál; tyto stránky se vrátí po pár sekundách."
   },
-  "s0450": {
+  "s0457": {
    "source": "it is not text; download it instead",
    "text": "není to text; stáhněte si ho"
   },
-  "s0451": {
+  "s0458": {
    "source": "it is still running - end it first",
    "text": "ještě běží – nejdřív ho ukončete"
   },
-  "s0452": {
+  "s0459": {
    "source": "It may use sudo (wheel / sudo group)",
    "text": "Smí používat sudo (skupina wheel / sudo)"
   },
-  "s0453": {
+  "s0460": {
+   "source": "It opens when root signs in",
+   "text": "Otevře se při přihlášení roota"
+  },
+  "s0461": {
    "source": "it was changed on the server since it was opened here - open it again",
    "text": "na serveru se mezitím změnil – otevřete ho znovu"
   },
-  "s0454": {
+  "s0462": {
    "source": "Its folders",
    "text": "Jeho složky"
   },
-  "s0455": {
+  "s0463": {
    "source": "its list of tasks",
    "text": "jeho seznam úkolů"
   },
-  "s0456": {
+  "s0464": {
    "source": "Its name",
    "text": "Jeho název"
   },
-  "s0457": {
+  "s0465": {
    "source": "Its name (small letters)",
    "text": "Jeho název (malá písmena)"
   },
-  "s0458": {
+  "s0466": {
    "source": "Its name (the comment)",
    "text": "Jeho název (komentář)"
   },
-  "s0459": {
+  "s0467": {
    "source": "its own",
    "text": "vlastní"
   },
-  "s0460": {
+  "s0468": {
    "source": "Its own /etc/chrony.conf: ",
    "text": "Jeho vlastní /etc/chrony.conf: "
   },
-  "s0461": {
+  "s0469": {
    "source": "Its own log",
    "text": "Jeho vlastní log"
   },
-  "s0462": {
+  "s0470": {
    "source": "Its passphrase",
    "text": "Jeho heslová fráze"
   },
-  "s0463": {
+  "s0471": {
    "source": "Its passphrase, if the private key has one",
    "text": "Heslo soukromého klíče, pokud nějaké má"
   },
-  "s0464": {
+  "s0472": {
    "source": "Its private key (PEM, not locked)",
    "text": "Jeho privátní klíč (PEM, nezamčený)"
   },
-  "s0465": {
+  "s0473": {
    "source": "Its public half, put onto the nodes - click it to copy:",
    "text": "Jeho veřejná část, nahraná na uzly – kliknutím zkopírujete:"
   },
-  "s0466": {
+  "s0474": {
    "source": "its status line",
    "text": "jeho stavový řádek"
   },
-  "s0467": {
+  "s0475": {
    "source": "its subagents",
    "text": "jeho subagenti"
   },
-  "s0468": {
+  "s0476": {
    "source": "Its time",
    "text": "Jeho čas"
   },
-  "s0469": {
+  "s0477": {
    "source": "Join",
    "text": "Připojit"
   },
-  "s0470": {
+  "s0478": {
    "source": "Keep it",
    "text": "Ponechat"
   },
-  "s0471": {
+  "s0479": {
    "source": "Keep it now: it is not kept on the server. Its public half was added to the account.",
    "text": "Uschovejte si ho hned: na serveru se nedrží. Jeho veřejná část byla přidána k účtu."
   },
-  "s0472": {
+  "s0480": {
    "source": "Keep the private key now",
    "text": "Uložte si soukromý klíč hned teď"
   },
-  "s0473": {
+  "s0481": {
    "source": "Keep this folder in the list beside, to come back to it at once.",
    "text": "Držet tuto složku v seznamu vedle, abyste se k ní hned vrátili."
   },
-  "s0474": {
+  "s0482": {
    "source": "Keep this menu open",
    "text": "Nechat toto menu otevřené"
   },
-  "s0475": {
+  "s0483": {
    "source": "kept",
    "text": "ponecháno"
   },
-  "s0476": {
+  "s0484": {
    "source": "kept in the list",
    "text": "drží se v seznamu"
   },
-  "s0477": {
+  "s0485": {
    "source": "Kept right by NTP",
    "text": "Seřizováno přes NTP"
   },
-  "s0478": {
+  "s0486": {
    "source": "kernel",
    "text": "jádro"
   },
-  "s0479": {
+  "s0487": {
    "source": "Key",
    "text": "Klíč"
   },
-  "s0480": {
+  "s0488": {
    "source": "Keys",
    "text": "Klíče"
   },
-  "s0481": {
+  "s0489": {
    "source": "Keys that may sign in as root",
    "text": "Klíče, které se smí přihlásit jako root"
   },
-  "s0482": {
+  "s0490": {
    "source": "Kind",
    "text": "Druh"
   },
-  "s0483": {
+  "s0491": {
    "source": "LANG of every terminal. A UTF-8 one is needed for Claude Code to draw itself.",
    "text": "LANG každého terminálu. Aby se Claude Code správně vykreslil, musí být UTF-8."
   },
-  "s0484": {
+  "s0492": {
    "source": "Language",
    "text": "Jazyk"
   },
-  "s0485": {
+  "s0493": {
    "source": "Language and characters of the terminals",
    "text": "Jazyk a znaky terminálů"
   },
-  "s0486": {
+  "s0494": {
    "source": "Language of the pages",
    "text": "Jazyk stránek"
   },
-  "s0487": {
+  "s0495": {
    "source": "laptop of jan",
    "text": "notebook Jana"
   },
-  "s0488": {
+  "s0496": {
    "source": "Largest file taken (MB)",
    "text": "Největší přijatý soubor (MB)"
   },
-  "s0489": {
+  "s0497": {
    "source": "Last",
    "text": "Naposledy"
   },
-  "s0490": {
+  "s0498": {
    "source": "last 15 minutes",
    "text": "posledních 15 minut"
   },
-  "s0491": {
+  "s0499": {
    "source": "last 24 hours",
    "text": "posledních 24 hodin"
   },
-  "s0492": {
+  "s0500": {
    "source": "last 3 days",
    "text": "poslední 3 dny"
   },
-  "s0493": {
+  "s0501": {
    "source": "last 3 months",
    "text": "poslední 3 měsíce"
   },
-  "s0494": {
+  "s0502": {
    "source": "last 6 hours",
    "text": "posledních 6 hodin"
   },
-  "s0495": {
+  "s0503": {
    "source": "Last correction",
    "text": "Poslední korekce"
   },
-  "s0496": {
+  "s0504": {
    "source": "Last heard",
    "text": "Naposledy slyšen"
   },
-  "s0497": {
+  "s0505": {
    "source": "last hour",
    "text": "poslední hodina"
   },
-  "s0498": {
+  "s0506": {
    "source": "Last look",
    "text": "Naposledy zjišťováno"
   },
-  "s0499": {
+  "s0507": {
    "source": "last month",
    "text": "poslední měsíc"
   },
-  "s0500": {
+  "s0508": {
    "source": "last month (calendar)",
    "text": "minulý měsíc (kalendářní)"
   },
-  "s0501": {
+  "s0509": {
    "source": "Last sign-in",
    "text": "Poslední přihlášení"
   },
-  "s0502": {
+  "s0510": {
    "source": "last week",
    "text": "poslední týden"
   },
-  "s0503": {
+  "s0511": {
    "source": "last week (Mon-Sun)",
    "text": "minulý týden (po–ne)"
   },
-  "s0504": {
+  "s0512": {
    "source": "last year",
    "text": "poslední rok"
   },
-  "s0505": {
+  "s0513": {
    "source": "Lately",
    "text": "Poslední dění"
   },
-  "s0506": {
+  "s0514": {
    "source": "Later",
    "text": "Později"
   },
-  "s0507": {
+  "s0515": {
    "source": "Leap status",
    "text": "Stav přestupné sekundy"
   },
-  "s0508": {
+  "s0516": {
    "source": "Left",
    "text": "Vlevo"
   },
-  "s0509": {
+  "s0517": {
    "source": "left out",
    "text": "vynechán"
   },
-  "s0510": {
+  "s0518": {
    "source": "Let ai look after the firewall",
    "text": "Nechat firewall spravovat ai"
   },
-  "s0511": {
+  "s0519": {
    "source": "let in",
    "text": "pustí"
   },
-  "s0512": {
+  "s0520": {
    "source": "Linux account",
    "text": "Účet Linuxu"
   },
-  "s0513": {
+  "s0521": {
    "source": "live",
    "text": "živě"
   },
-  "s0514": {
+  "s0522": {
    "source": "Load",
    "text": "Zátěž"
   },
-  "s0515": {
+  "s0523": {
    "source": "Local time of this server, 0-23.",
    "text": "Místní čas tohoto serveru, 0–23."
   },
-  "s0516": {
+  "s0524": {
    "source": "Locked",
    "text": "Zamčeno"
   },
-  "s0517": {
+  "s0525": {
+   "source": "locked out",
+   "text": "zablokováno"
+  },
+  "s0526": {
    "source": "Log",
    "text": "Log"
   },
-  "s0518": {
+  "s0527": {
    "source": "Look again",
    "text": "Zjistit znovu"
   },
-  "s0519": {
+  "s0528": {
    "source": "Look for updates",
    "text": "Zjistit aktualizace"
   },
-  "s0520": {
+  "s0529": {
    "source": "Look now",
    "text": "Zjistit teď"
   },
-  "s0521": {
+  "s0530": {
    "source": "Look on every node",
    "text": "Zjistit na všech uzlech"
   },
-  "s0522": {
+  "s0531": {
    "source": "Look once a day",
    "text": "Zjišťovat jednou denně"
   },
-  "s0523": {
+  "s0532": {
    "source": "Looked",
    "text": "Zjištěno"
   },
-  "s0524": {
+  "s0533": {
    "source": "Looked at",
    "text": "Kde se hledá"
   },
-  "s0525": {
+  "s0534": {
    "source": "Looked at in this order, first: a DROP or REJECT here wins over what ai lets in below.",
    "text": "Procházejí se v tomto pořadí jako první: DROP nebo REJECT zde má přednost před tím, co ai povoluje níže."
   },
-  "s0526": {
+  "s0535": {
    "source": "Looked up on the PATH of the account a terminal runs as (its login shell, so ~/.local/bin counts), or a full path.",
    "text": "Hledá se v PATH účtu, pod kterým terminál běží (jeho login shell, takže se počítá i ~/.local/bin), nebo celá cesta."
   },
-  "s0527": {
+  "s0536": {
    "source": "looking…",
    "text": "zjišťuji…"
   },
-  "s0528": {
+  "s0537": {
    "source": "lost",
    "text": "ztraceno"
   },
-  "s0529": {
+  "s0538": {
    "source": "Made",
    "text": "Vytvořena"
   },
-  "s0530": {
+  "s0539": {
    "source": "made - keep the private half now, it is not shown again",
    "text": "vytvořeno – soukromou část si uložte hned, znovu se nezobrazí"
   },
-  "s0531": {
+  "s0540": {
    "source": "made and shown, if empty",
    "text": "pokud prázdné, vytvoří se a ukáže"
   },
-  "s0532": {
+  "s0541": {
    "source": "made here",
    "text": "vytvořený zde"
   },
-  "s0533": {
+  "s0542": {
    "source": "made or given here",
    "text": "odsud"
   },
-  "s0534": {
+  "s0543": {
    "source": "maintenance",
    "text": "údržba"
   },
-  "s0535": {
+  "s0544": {
    "source": "Make a key",
    "text": "Vytvořit klíč"
   },
-  "s0536": {
+  "s0545": {
    "source": "Make a key pair",
    "text": "Vytvořit pár klíčů"
   },
-  "s0537": {
+  "s0546": {
    "source": "Make a new Linux account by this name",
    "text": "Založit nový účet Linuxu s tímto názvem"
   },
-  "s0538": {
+  "s0547": {
    "source": "Make an account",
    "text": "Založit účet"
   },
-  "s0539": {
+  "s0548": {
    "source": "Make it",
    "text": "Vytvořit"
   },
-  "s0540": {
+  "s0549": {
    "source": "Make it if it is not there",
    "text": "Vytvořit, pokud neexistuje"
   },
-  "s0541": {
+  "s0550": {
    "source": "Make one",
    "text": "Vytvořit"
   },
-  "s0542": {
+  "s0551": {
    "source": "Making it…",
    "text": "Vytváří se…"
   },
-  "s0543": {
+  "s0552": {
    "source": "Memory",
    "text": "Paměť"
   },
-  "s0544": {
+  "s0553": {
    "source": "Messages",
    "text": "Zpráv"
   },
-  "s0545": {
+  "s0554": {
    "source": "minutes",
    "text": "minut"
   },
-  "s0546": {
+  "s0555": {
    "source": "Mode",
    "text": "Režim"
   },
-  "s0547": {
+  "s0556": {
    "source": "Model",
    "text": "Model"
   },
-  "s0548": {
+  "s0557": {
    "source": "More",
    "text": "Další"
   },
-  "s0549": {
+  "s0558": {
    "source": "more",
    "text": "další"
   },
-  "s0550": {
+  "s0559": {
    "source": "more than the same few characters again and again",
    "text": "víc než pár stejných znaků pořád dokola"
   },
-  "s0551": {
+  "s0560": {
    "source": "More words for its command line",
    "text": "Další parametry příkazové řádky"
   },
-  "s0552": {
+  "s0561": {
    "source": "Move",
    "text": "Přesunout"
   },
-  "s0553": {
+  "s0562": {
    "source": "Move to",
    "text": "Přesunout na"
   },
-  "s0554": {
+  "s0563": {
    "source": "ms",
    "text": "ms"
   },
-  "s0555": {
+  "s0564": {
    "source": "NAME",
    "text": "JMÉNO"
   },
-  "s0556": {
+  "s0565": {
    "source": "Name",
    "text": "Název"
   },
-  "s0557": {
+  "s0566": {
    "source": "name",
    "text": "jméno"
   },
-  "s0558": {
+  "s0567": {
    "source": "Name of this installation",
    "text": "Název této instalace"
   },
-  "s0559": {
+  "s0568": {
    "source": "Names",
    "text": "Jména"
   },
-  "s0560": {
+  "s0569": {
    "source": "names:",
    "text": "jména:"
   },
-  "s0561": {
+  "s0570": {
    "source": "needed now, before any update",
    "text": "potřeba už teď, ještě před aktualizací"
   },
-  "s0562": {
+  "s0571": {
    "source": "neither dnf nor apt is on this server",
    "text": "na tomto serveru není dnf ani apt"
   },
-  "s0563": {
+  "s0572": {
    "source": "Network",
    "text": "Síť"
   },
-  "s0564": {
+  "s0573": {
    "source": "Network Time Security: the server proves who it is (time.cloudflare.com, ptbtime1.ptb.de, nts.netnod.se…). Needs TCP 4460 out.",
    "text": "Network Time Security: server prokáže, kdo je (time.cloudflare.com, ptbtime1.ptb.de, nts.netnod.se…). Potřebuje odchozí TCP 4460."
   },
-  "s0565": {
+  "s0574": {
    "source": "NetworkManager (nmcli) is not on this server, so its network is set by hand (netplan, /etc/network/interfaces) - not here.",
    "text": "Na tomto serveru není NetworkManager (nmcli), takže se jeho síť nastavuje ručně (netplan, /etc/network/interfaces) – ne zde."
   },
-  "s0566": {
+  "s0575": {
    "source": "NetworkManager has no connection here to change.",
    "text": "NetworkManager tu nemá žádné připojení ke změně."
   },
-  "s0567": {
+  "s0576": {
    "source": "Networks that may ask this server for the time (UDP 123). Empty: nobody. The firewall opens it by itself.",
    "text": "Sítě, které se smí tohoto serveru ptát na čas (UDP 123). Prázdné: nikdo. Firewall to otevře sám."
   },
-  "s0568": {
+  "s0577": {
    "source": "never",
    "text": "nikdy"
   },
-  "s0569": {
+  "s0578": {
    "source": "never ask (bypass permissions)",
    "text": "nikdy se neptat (bypass permissions)"
   },
-  "s0570": {
+  "s0579": {
    "source": "Never ask is refused by Claude Code when it runs as root.",
    "text": "Claude Code odmítne „nikdy se neptat“, když běží jako root."
   },
-  "s0571": {
+  "s0580": {
    "source": "new",
    "text": "nový"
   },
-  "s0572": {
+  "s0581": {
    "source": "New",
    "text": "Nový"
   },
-  "s0573": {
+  "s0582": {
    "source": "New Claude Code",
    "text": "Nový Claude Code"
   },
-  "s0574": {
+  "s0583": {
    "source": "New file",
    "text": "Nový soubor"
   },
-  "s0575": {
+  "s0584": {
    "source": "New folder",
    "text": "Nová složka"
   },
-  "s0576": {
+  "s0585": {
    "source": "New shell",
    "text": "Nový shell"
   },
-  "s0577": {
+  "s0586": {
    "source": "New versions of ai: from the web by themselves, or sent here.",
    "text": "Nové verze ai: z webu samy, nebo nahrané sem."
   },
-  "s0578": {
+  "s0587": {
    "source": "Newest",
    "text": "Nejnovější"
   },
-  "s0579": {
+  "s0588": {
    "source": "Newest there",
    "text": "Nejnovější tam"
   },
-  "s0580": {
+  "s0589": {
    "source": "Next",
    "text": "Další"
   },
-  "s0581": {
+  "s0590": {
    "source": "nginx's own list, before anything is asked: everybody, or only these networks (this machine always may).",
    "text": "Vlastní seznam nginx, ještě než se na cokoli zeptá: všichni, nebo jen tyto sítě (tento stroj smí vždy)."
   },
-  "s0582": {
+  "s0591": {
    "source": "NO",
    "text": "NE"
   },
-  "s0583": {
+  "s0592": {
    "source": "no",
    "text": "ne"
   },
-  "s0584": {
+  "s0593": {
    "source": "no certificate",
    "text": "bez certifikátu"
   },
-  "s0585": {
+  "s0594": {
    "source": "No conversation of Claude Code here yet",
    "text": "Zatím tu není žádná konverzace Claude Code"
   },
-  "s0586": {
+  "s0595": {
    "source": "No folders in it.",
    "text": "Nejsou v ní žádné složky."
   },
-  "s0587": {
+  "s0596": {
    "source": "No key",
    "text": "Žádný klíč"
   },
-  "s0588": {
+  "s0597": {
    "source": "no longer kept",
    "text": "už se nedrží"
   },
-  "s0589": {
+  "s0598": {
    "source": "no RADIUS client yet",
    "text": "zatím žádný RADIUS klient"
   },
-  "s0590": {
+  "s0599": {
    "source": "No rule of your own",
    "text": "Žádné vlastní pravidlo"
   },
-  "s0591": {
+  "s0600": {
    "source": "No source - chrony has none, or is not installed.",
    "text": "Žádný zdroj – chrony žádný nemá, nebo není nainstalované."
   },
-  "s0592": {
+  "s0601": {
    "source": "no such file",
    "text": "takový soubor není"
   },
-  "s0593": {
+  "s0602": {
    "source": "no such key there",
    "text": "takový klíč tam není"
   },
-  "s0594": {
+  "s0603": {
    "source": "no such terminal",
    "text": "takový terminál není"
   },
-  "s0595": {
+  "s0604": {
    "source": "no such thing to do",
    "text": "taková akce neexistuje"
   },
-  "s0596": {
+  "s0605": {
    "source": "No terminal yet. Press New.",
    "text": "Zatím žádný terminál. Stiskněte Nový."
   },
-  "s0597": {
+  "s0606": {
    "source": "No, leave it",
    "text": "Ne, nechat být"
   },
-  "s0598": {
+  "s0607": {
    "source": "nobody",
    "text": "nikdo"
   },
-  "s0599": {
+  "s0608": {
    "source": "Node",
    "text": "Uzel"
   },
-  "s0600": {
+  "s0609": {
    "source": "node",
    "text": "uzel"
   },
-  "s0601": {
+  "s0610": {
    "source": "Node.js",
    "text": "Node.js"
   },
-  "s0602": {
+  "s0611": {
    "source": "Nodes",
    "text": "Uzly"
   },
-  "s0603": {
+  "s0612": {
    "source": "None",
    "text": "Žádné"
   },
-  "s0604": {
+  "s0613": {
    "source": "none",
    "text": "žádný"
   },
-  "s0605": {
+  "s0614": {
    "source": "None yet - ai's own rules below are enough for what it does",
    "text": "Zatím žádná – na to, co ai dělá, stačí jeho vlastní pravidla níže"
   },
-  "s0606": {
+  "s0615": {
    "source": "None.",
    "text": "Žádné."
   },
-  "s0607": {
+  "s0616": {
    "source": "not",
    "text": "ne"
   },
-  "s0608": {
+  "s0617": {
    "source": "not a file",
    "text": "není soubor"
   },
-  "s0609": {
+  "s0618": {
    "source": "not a key",
    "text": "není klíč"
   },
-  "s0610": {
+  "s0619": {
    "source": "not answering",
    "text": "neodpovídá"
   },
-  "s0611": {
+  "s0620": {
    "source": "not combined",
    "text": "nekombinovaný"
   },
-  "s0612": {
+  "s0621": {
    "source": "not given",
    "text": "nezadán"
   },
-  "s0613": {
+  "s0622": {
    "source": "not installed",
    "text": "nenainstalován"
   },
-  "s0614": {
+  "s0623": {
    "source": "Not kept within the time set under Signing in, the old network comes back by itself: open the pages at the new address and press Keep it.",
    "text": "Pokud se nepotvrdí v čase nastaveném v Přihlašování, stará síť se vrátí sama: otevřete stránky na nové adrese a stiskněte Ponechat."
   },
-  "s0615": {
+  "s0624": {
    "source": "Not kept, the list as it was before comes back by itself. Keep it once the pages still answer from where you are.",
    "text": "Bez potvrzení se sám vrátí seznam, jak byl předtím. Potvrďte, jakmile stránky odpovídají i odtud, kde jste."
   },
-  "s0616": {
+  "s0625": {
    "source": "Not kept, the rules as they were before come back by themselves. Keep it once SSH and these pages still answer.",
    "text": "Bez potvrzení se samy vrátí pravidla, jak byla předtím. Potvrďte, jakmile SSH i tyto stránky stále odpovídají."
   },
-  "s0617": {
+  "s0626": {
    "source": "Not kept, the server goes back to its old network by itself. Keep it once the pages answer at the new address.",
    "text": "Bez potvrzení se server sám vrátí ke staré síti. Potvrďte, jakmile stránky odpovídají na nové adrese."
   },
-  "s0618": {
+  "s0627": {
    "source": "not locked",
    "text": "nezamčeno"
   },
-  "s0619": {
+  "s0628": {
    "source": "not looked at yet",
    "text": "zatím nezjišťováno"
   },
-  "s0620": {
+  "s0629": {
    "source": "Not looked at yet. Press Look now.",
    "text": "Zatím nezjišťováno. Stiskněte Zjistit teď."
   },
-  "s0621": {
+  "s0630": {
    "source": "not looked yet",
    "text": "zatím nezjištěno"
   },
-  "s0622": {
+  "s0631": {
    "source": "not needed by these updates",
    "text": "tyto aktualizace ho nepotřebují"
   },
-  "s0623": {
+  "s0632": {
+   "source": "Not now",
+   "text": "Teď ne"
+  },
+  "s0633": {
    "source": "not read yet",
    "text": "zatím nenačteno"
   },
-  "s0624": {
+  "s0634": {
    "source": "not said",
    "text": "neuvedeno"
   },
-  "s0625": {
+  "s0635": {
    "source": "not set",
    "text": "nenastaveno"
   },
-  "s0626": {
+  "s0636": {
+   "source": "not set up",
+   "text": "nenastaveno"
+  },
+  "s0637": {
    "source": "not signed in",
    "text": "nepřihlášen"
   },
-  "s0627": {
+  "s0638": {
    "source": "not synchronised",
    "text": "nesynchronizováno"
   },
-  "s0628": {
+  "s0639": {
    "source": "not taken",
    "text": "nepřijato"
   },
-  "s0629": {
+  "s0640": {
    "source": "not the name itself",
    "text": "ne samotné jméno"
   },
-  "s0630": {
+  "s0641": {
    "source": "not used",
    "text": "nepoužito"
   },
-  "s0631": {
+  "s0642": {
    "source": "not yet",
    "text": "zatím ne"
   },
-  "s0632": {
+  "s0643": {
    "source": "not your own account - sign in as another administrator for that",
    "text": "ne vlastní účet – na to se přihlaste jako jiný administrátor"
   },
-  "s0633": {
+  "s0644": {
    "source": "Note",
    "text": "Poznámka"
   },
-  "s0634": {
+  "s0645": {
    "source": "nothing",
    "text": "nic"
   },
-  "s0635": {
+  "s0646": {
    "source": "Nothing by that name",
    "text": "Nic takového"
   },
-  "s0636": {
+  "s0647": {
    "source": "Nothing can be set from here without NetworkManager.",
    "text": "Bez NetworkManageru se odsud nic nastavit nedá."
   },
-  "s0637": {
+  "s0648": {
    "source": "nothing has changed",
    "text": "nic se nezměnilo"
   },
-  "s0638": {
+  "s0649": {
    "source": "Nothing here",
    "text": "Nic tu není"
   },
-  "s0639": {
+  "s0650": {
    "source": "Nothing matches.",
    "text": "Nic tomu neodpovídá."
   },
-  "s0640": {
+  "s0651": {
    "source": "nothing of ai's",
    "text": "nic od ai"
   },
-  "s0641": {
+  "s0652": {
    "source": "Nothing yet",
    "text": "Zatím nic"
   },
-  "s0642": {
+  "s0653": {
+   "source": "NOW",
+   "text": "TEĎ"
+  },
+  "s0654": {
    "source": "Now",
    "text": "Teď"
   },
-  "s0643": {
+  "s0655": {
    "source": "now",
    "text": "teď"
   },
-  "s0644": {
+  "s0656": {
    "source": "Now in",
    "text": "Teď v"
   },
-  "s0645": {
+  "s0657": {
    "source": "Now on the server",
    "text": "Teď na serveru"
   },
-  "s0646": {
+  "s0658": {
    "source": "NTP (time served)",
    "text": "NTP (poskytovaný čas)"
   },
-  "s0647": {
+  "s0659": {
    "source": "number",
    "text": "číslo"
   },
-  "s0648": {
+  "s0660": {
    "source": "Of the machines: the logs and the times on these pages. Codes do not depend on it.",
    "text": "Strojů: logy a časy na těchto stránkách. Kódy na něm nezávisí."
   },
-  "s0649": {
+  "s0661": {
    "source": "Of them security",
    "text": "Z toho bezpečnostních"
   },
-  "s0650": {
+  "s0662": {
    "source": "Off",
    "text": "Vypnuto"
   },
-  "s0651": {
+  "s0663": {
    "source": "off",
    "text": "vypnutý"
   },
-  "s0652": {
+  "s0664": {
    "source": "Off keeps it here without putting it in.",
    "text": "Vypnuté zůstane uložené, ale nenasadí se."
   },
-  "s0653": {
+  "s0665": {
    "source": "off the time servers",
    "text": "od časových serverů"
   },
-  "s0654": {
+  "s0666": {
    "source": "Off: each machine keeps its own /etc/chrony.conf (AlmaLinux's pool, or what you set by hand) - shown and checked here, not changed. On: the servers below, the same on every node; the file's own server and pool lines are commented out, and put back when switched off again.",
    "text": "Vypnuto: každý stroj si ponechá svůj /etc/chrony.conf (pool AlmaLinuxu, nebo co tam nastavíte ručně) – tady se jen zobrazuje a kontroluje. Zapnuto: servery níže, stejné na všech nodech; vlastní řádky server a pool v souboru se zakomentují a po vypnutí se vrátí."
   },
-  "s0655": {
+  "s0667": {
    "source": "Off: nothing is changed in the firewall. Turned on, what ai's functions need is let in by itself, and the rules of your own with it.",
    "text": "Vypnuto: ve firewallu se nic nemění. Po zapnutí se samo povolí, co potřebují funkce ai, a s tím i vaše vlastní pravidla."
   },
-  "s0656": {
+  "s0668": {
    "source": "Offset",
    "text": "Odchylka"
   },
-  "s0657": {
+  "s0669": {
    "source": "OK",
    "text": "OK"
   },
-  "s0658": {
+  "s0670": {
    "source": "On",
    "text": "Zapnuto"
   },
-  "s0659": {
+  "s0671": {
    "source": "on",
    "text": "zapnuto"
   },
-  "s0660": {
+  "s0672": {
    "source": "on it",
    "text": "nahraný"
   },
-  "s0661": {
+  "s0673": {
    "source": "On the command line",
    "text": "Na příkazové řádce"
   },
-  "s0662": {
+  "s0674": {
    "source": "On the server",
    "text": "Na serveru"
   },
-  "s0663": {
+  "s0675": {
    "source": "On the server:",
    "text": "Na serveru:"
   },
-  "s0664": {
+  "s0676": {
    "source": "on, automatic",
    "text": "zapnuto, automaticky"
   },
-  "s0665": {
+  "s0677": {
    "source": "on, set by hand",
    "text": "zapnuto, ručně"
   },
-  "s0666": {
+  "s0678": {
    "source": "Once a day, at the hour below: a newer signed version found there is fetched, checked and put in. The terminals go on running; the pages reconnect after a few seconds.",
    "text": "Jednou denně, v hodinu níže: novější podepsaná verze, která se tam najde, se stáhne, zkontroluje a nasadí. Terminály běží dál; stránky se po pár sekundách znovu připojí."
   },
-  "s0667": {
+  "s0679": {
    "source": "One a line. Empty: the home folder of the Linux account. An administrator may use every folder.",
    "text": "Jedna na řádek. Prázdné: domovská složka účtu Linuxu. Administrátor smí používat všechny složky."
   },
-  "s0668": {
+  "s0680": {
    "source": "One after the other: each goes into maintenance, the web address moves to the other node, it restarts and comes back into service - then the next. RADIUS and the pages go on answering all the time.",
    "text": "Jeden po druhém: každý přejde do údržby, webová adresa se přesune na druhý node, restartuje se a vrátí do provozu – pak další. RADIUS i stránky odpovídají celou dobu."
   },
-  "s0669": {
+  "s0681": {
    "source": "One folder up.",
    "text": "O složku výš."
   },
-  "s0670": {
+  "s0682": {
    "source": "One NAME=value a line, set in every terminal started from here (an API key, a proxy, DISABLE_AUTOUPDATER=1...). Lines starting with # are ignored.",
    "text": "Jedno JMÉNO=hodnota na řádek, nastavené v každém terminálu spuštěném odsud (API klíč, proxy, DISABLE_AUTOUPDATER=1…). Řádky začínající # se ignorují."
   },
-  "s0671": {
+  "s0683": {
    "source": "one public key line, as ssh-ed25519 AAAA... comment",
    "text": "jeden řádek veřejného klíče, jako ssh-ed25519 AAAA… komentář"
   },
-  "s0672": {
+  "s0684": {
    "source": "one server",
    "text": "jeden server"
   },
-  "s0673": {
+  "s0685": {
    "source": "One, a range, or several by commas. Empty: every port.",
    "text": "Jeden, rozsah, nebo několik oddělených čárkou. Prázdné: všechny porty."
   },
-  "s0674": {
+  "s0686": {
    "source": "only an administrator installs or updates Claude Code",
    "text": "Claude Code instaluje a aktualizuje jen administrátor"
   },
-  "s0675": {
+  "s0687": {
    "source": "only an administrator may do that",
    "text": "to smí jen administrátor"
   },
-  "s0676": {
+  "s0688": {
    "source": "Only from",
    "text": "Jen z"
   },
-  "s0677": {
+  "s0689": {
    "source": "only https:// addresses are asked",
    "text": "ptá se jen na adresy https://"
   },
-  "s0678": {
+  "s0690": {
    "source": "Only on",
    "text": "Jen na"
   },
-  "s0679": {
+  "s0691": {
    "source": "Only put it in",
    "text": "Jen vložit"
   },
-  "s0680": {
+  "s0692": {
    "source": "Only the services",
    "text": "Jen služby"
   },
-  "s0681": {
+  "s0693": {
    "source": "Only these networks (one a line)",
    "text": "Jen tyto sítě (jedna na řádek)"
   },
-  "s0682": {
+  "s0694": {
    "source": "Only those of one folder.",
    "text": "Jen ty z jedné složky."
   },
-  "s0683": {
+  "s0695": {
    "source": "Only type it, do not send it",
    "text": "Jen napsat, neodesílat"
   },
-  "s0684": {
+  "s0696": {
    "source": "Onto the nodes",
    "text": "Na uzly"
   },
-  "s0685": {
+  "s0697": {
    "source": "open",
    "text": "otevřený"
   },
-  "s0686": {
+  "s0698": {
+   "source": "Open it",
+   "text": "Otevřít"
+  },
+  "s0699": {
    "source": "Open Upgrades",
    "text": "Otevřít aktualizace"
   },
-  "s0687": {
+  "s0700": {
    "source": "Opus to plan, Sonnet to do",
    "text": "Opus plánuje, Sonnet provádí"
   },
-  "s0688": {
+  "s0701": {
    "source": "Or",
    "text": "Nebo"
   },
-  "s0689": {
+  "s0702": {
    "source": "or",
    "text": "nebo"
   },
-  "s0690": {
+  "s0703": {
    "source": "other",
    "text": "jiné"
   },
-  "s0691": {
+  "s0704": {
    "source": "out of service",
    "text": "mimo provoz"
   },
-  "s0692": {
+  "s0705": {
    "source": "Overview",
    "text": "Přehled"
   },
-  "s0693": {
+  "s0706": {
    "source": "Owner",
    "text": "Vlastník"
   },
-  "s0694": {
+  "s0707": {
    "source": "Package",
    "text": "Balíček"
   },
-  "s0695": {
+  "s0708": {
    "source": "Page Down",
    "text": "Page Down"
   },
-  "s0696": {
+  "s0709": {
    "source": "Page Up",
    "text": "Page Up"
   },
-  "s0697": {
+  "s0710": {
    "source": "pages",
    "text": "stránky"
   },
-  "s0698": {
+  "s0711": {
+   "source": "PASSWORD",
+   "text": "HESLO"
+  },
+  "s0712": {
    "source": "Password",
    "text": "Heslo"
   },
-  "s0699": {
+  "s0713": {
    "source": "password",
    "text": "heslo"
   },
-  "s0700": {
+  "s0714": {
    "source": "paused",
    "text": "pozastaveno"
   },
-  "s0701": {
+  "s0715": {
    "source": "peer",
    "text": "peer"
   },
-  "s0702": {
+  "s0716": {
    "source": "pending",
    "text": "čeká"
   },
-  "s0703": {
+  "s0717": {
    "source": "Permissions",
    "text": "Oprávnění"
   },
-  "s0704": {
+  "s0718": {
    "source": "PHP of the pages",
    "text": "PHP stránek"
   },
-  "s0705": {
+  "s0719": {
    "source": "Pick it up",
    "text": "Navázat"
   },
-  "s0706": {
+  "s0720": {
    "source": "Pick up a conversation",
    "text": "Navázat na konverzaci"
   },
-  "s0707": {
+  "s0721": {
    "source": "ping, and IPv6 cannot work without ICMPv6 (neighbour discovery)",
    "text": "ping; IPv6 bez ICMPv6 nefunguje (neighbour discovery)"
   },
-  "s0708": {
+  "s0722": {
    "source": "plain text",
    "text": "prostý text"
   },
-  "s0709": {
+  "s0723": {
    "source": "plan only",
    "text": "jen plánovat"
   },
-  "s0710": {
+  "s0724": {
    "source": "plugins",
    "text": "pluginy"
   },
-  "s0711": {
+  "s0725": {
    "source": "Port",
    "text": "Port"
   },
-  "s0712": {
+  "s0726": {
    "source": "Power off",
    "text": "Vypnout"
   },
-  "s0713": {
+  "s0727": {
    "source": "Power off both",
    "text": "Vypnout oba"
   },
-  "s0714": {
+  "s0728": {
    "source": "preferred",
    "text": "preferovaný"
   },
-  "s0715": {
+  "s0729": {
    "source": "Pressed, a command is typed into the terminal and sent. Anything you have written there yet goes with it. Typing / in the terminal shows the same list - and the commands of your own (.claude/commands).",
    "text": "Po stisknutí se příkaz napíše do terminálu a odešle. Co už tam máte napsané, odejde s ním. Napsáním / v terminálu se ukáže tentýž seznam – i s vašimi vlastními příkazy (.claude/commands)."
   },
-  "s0716": {
+  "s0730": {
    "source": "Protocol",
    "text": "Protokol"
   },
-  "s0717": {
+  "s0731": {
    "source": "Protocols",
    "text": "Protokoly"
   },
-  "s0718": {
+  "s0732": {
    "source": "Put a newer version in by itself",
    "text": "Novější verzi nasadit samo"
   },
-  "s0719": {
+  "s0733": {
    "source": "put back",
    "text": "vráceno"
   },
-  "s0720": {
+  "s0734": {
    "source": "Put it back",
    "text": "Vrátit"
   },
-  "s0721": {
+  "s0735": {
    "source": "Put it in",
    "text": "Nasadit"
   },
-  "s0722": {
+  "s0736": {
    "source": "Put the old back now",
    "text": "Vrátit staré hned"
   },
-  "s0723": {
+  "s0737": {
    "source": "Put the old back now?",
    "text": "Vrátit staré hned?"
   },
-  "s0724": {
+  "s0738": {
    "source": "Put the text into the terminal and press Enter (Ctrl+Enter).",
    "text": "Vložit text do terminálu a stisknout Enter (Ctrl+Enter)."
   },
-  "s0725": {
+  "s0739": {
    "source": "Put the text into the terminal without pressing Enter.",
    "text": "Vložit text do terminálu bez stisku Enteru."
   },
-  "s0726": {
+  "s0740": {
    "source": "Put them back",
    "text": "Vrátit je"
   },
-  "s0727": {
+  "s0741": {
    "source": "putting it in…",
    "text": "nasazuje se…"
   },
-  "s0728": {
+  "s0742": {
    "source": "QR code",
    "text": "QR kód"
   },
-  "s0729": {
+  "s0743": {
    "source": "Quick",
    "text": "Rychlá volba"
   },
-  "s0730": {
+  "s0744": {
    "source": "RADIUS",
    "text": "RADIUS"
   },
-  "s0731": {
+  "s0745": {
    "source": "radius",
    "text": "radius"
   },
-  "s0732": {
+  "s0746": {
    "source": "Ran as",
    "text": "Běžel jako"
   },
-  "s0733": {
+  "s0747": {
    "source": "Reached",
    "text": "Dosaženo"
   },
-  "s0734": {
+  "s0748": {
    "source": "Read",
    "text": "Načteno"
   },
-  "s0735": {
+  "s0749": {
    "source": "read",
    "text": "načteno"
   },
-  "s0736": {
+  "s0750": {
    "source": "Read a file…",
    "text": "Načíst soubor…"
   },
-  "s0737": {
+  "s0751": {
    "source": "Read files…",
    "text": "Načíst soubory…"
   },
-  "s0738": {
+  "s0752": {
    "source": "Read it",
    "text": "Přečíst"
   },
-  "s0739": {
+  "s0753": {
    "source": "Read it again",
    "text": "Načíst znovu"
   },
-  "s0740": {
+  "s0754": {
    "source": "read only",
    "text": "jen pro čtení"
   },
-  "s0741": {
+  "s0755": {
    "source": "Read the keys again on every node",
    "text": "Načíst klíče znovu na všech uzlech"
   },
-  "s0742": {
+  "s0756": {
    "source": "Reading the keys of each node…",
    "text": "Načítají se klíče jednotlivých uzlů…"
   },
-  "s0743": {
+  "s0757": {
    "source": "reading…",
    "text": "čtu…"
   },
-  "s0744": {
+  "s0758": {
    "source": "Really? This cannot be taken back.",
    "text": "Opravdu? Nelze to vrátit zpět."
   },
-  "s0745": {
+  "s0759": {
    "source": "Realm",
    "text": "Realm"
   },
-  "s0746": {
+  "s0760": {
    "source": "Realms",
    "text": "Realmy"
   },
-  "s0747": {
+  "s0761": {
    "source": "realms",
    "text": "realmy"
   },
-  "s0748": {
+  "s0762": {
    "source": "Realms - or type part of a name",
    "text": "Realmy – nebo napište část jména"
   },
-  "s0749": {
+  "s0763": {
    "source": "recovery code",
    "text": "záložní kód"
   },
-  "s0750": {
+  "s0764": {
    "source": "refuse",
    "text": "odmítnout"
   },
-  "s0751": {
+  "s0765": {
    "source": "Refused",
    "text": "Odmítnuto"
   },
-  "s0752": {
+  "s0766": {
    "source": "refused",
    "text": "odmítnut"
   },
-  "s0753": {
+  "s0767": {
    "source": "Reject",
    "text": "Odmítnout"
   },
-  "s0754": {
+  "s0768": {
    "source": "reject",
    "text": "odmítnut"
   },
-  "s0755": {
+  "s0769": {
    "source": "Release keys trusted",
    "text": "Důvěryhodné release klíče"
   },
-  "s0756": {
+  "s0770": {
    "source": "Rename",
    "text": "Přejmenovat"
   },
-  "s0757": {
+  "s0771": {
    "source": "Rename it",
    "text": "Přejmenovat"
   },
-  "s0758": {
+  "s0772": {
    "source": "Rename it, start it again, end it, open it in a window of its own.",
    "text": "Přejmenovat, spustit znovu, ukončit, otevřít ve vlastním okně."
   },
-  "s0759": {
+  "s0773": {
    "source": "Request",
    "text": "Požadavek"
   },
-  "s0760": {
+  "s0774": {
    "source": "required",
    "text": "povinný"
   },
-  "s0761": {
+  "s0775": {
    "source": "Reset",
    "text": "Vrátit"
   },
-  "s0762": {
+  "s0776": {
    "source": "Restart",
    "text": "Restart"
   },
-  "s0763": {
+  "s0777": {
    "source": "Restart after the update",
    "text": "Restart po aktualizaci"
   },
-  "s0764": {
+  "s0778": {
    "source": "restart after the update",
    "text": "restart po aktualizaci"
   },
-  "s0765": {
+  "s0779": {
    "source": "Restart ai",
    "text": "Restartovat ai"
   },
-  "s0766": {
+  "s0780": {
    "source": "Restart and power off",
    "text": "Restart a vypnutí"
   },
-  "s0767": {
+  "s0781": {
    "source": "Restart both at once",
    "text": "Restartovat oba najednou"
   },
-  "s0768": {
+  "s0782": {
    "source": "Restart by itself when needed",
    "text": "Restartovat samo, když je potřeba"
   },
-  "s0769": {
+  "s0783": {
    "source": "Restart it",
    "text": "Restartovat"
   },
-  "s0770": {
+  "s0784": {
    "source": "restart needed",
    "text": "potřebuje restart"
   },
-  "s0771": {
+  "s0785": {
    "source": "Restart nginx and PHP",
    "text": "Restartovat nginx a PHP"
   },
-  "s0772": {
+  "s0786": {
    "source": "Restart one after the other",
    "text": "Restartovat jeden po druhém"
   },
-  "s0773": {
+  "s0787": {
    "source": "Restart or switch off the server, or only its services.",
    "text": "Restartovat nebo vypnout server, nebo jen jeho služby."
   },
-  "s0774": {
+  "s0788": {
    "source": "Restart the server",
    "text": "Restartovat server"
   },
-  "s0775": {
+  "s0789": {
    "source": "Restart the server?",
    "text": "Restartovat server?"
   },
-  "s0776": {
+  "s0790": {
    "source": "Restart them, one at a time",
    "text": "Restartovat je, jeden po druhém"
   },
-  "s0777": {
+  "s0791": {
    "source": "Restarted one after the other, each in maintenance while it is, the service never stops.",
    "text": "Restartují se jeden po druhém, každý mezitím v údržbě, služba se nezastaví."
   },
-  "s0778": {
+  "s0792": {
    "source": "restarting",
    "text": "restartuje se"
   },
-  "s0779": {
+  "s0793": {
    "source": "restarts ai.service (the terminals go on)",
    "text": "restartuje ai.service (terminály běží dál)"
   },
-  "s0780": {
+  "s0794": {
    "source": "restarts nginx and php-fpm",
    "text": "restartuje nginx a php-fpm"
   },
-  "s0781": {
+  "s0795": {
    "source": "restarts the server",
    "text": "restartuje server"
   },
-  "s0782": {
+  "s0796": {
    "source": "Right",
    "text": "Vpravo"
   },
-  "s0783": {
+  "s0797": {
    "source": "right",
    "text": "správně"
   },
-  "s0784": {
+  "s0798": {
    "source": "Rights",
    "text": "Práva"
   },
-  "s0785": {
+  "s0799": {
    "source": "Role",
    "text": "Role"
   },
-  "s0786": {
+  "s0800": {
    "source": "Room",
    "text": "Místo"
   },
-  "s0787": {
+  "s0801": {
    "source": "Root",
    "text": "Kořen"
   },
-  "s0788": {
+  "s0802": {
    "source": "Root delay / dispersion",
    "text": "Root delay / disperze"
   },
-  "s0789": {
+  "s0803": {
    "source": "Root may sign in",
    "text": "Root se smí přihlásit"
   },
-  "s0790": {
+  "s0804": {
    "source": "root may sign in",
    "text": "root se smí přihlásit"
   },
-  "s0791": {
+  "s0805": {
+   "source": "root signs in to the ordinary shell; `ai --console` opens the console",
+   "text": "root se přihlásí do běžného shellu; `ai --console` otevře konzoli"
+  },
+  "s0806": {
    "source": "RSA 4096 (for old clients)",
    "text": "RSA 4096 (pro staré klienty)"
   },
-  "s0792": {
+  "s0807": {
    "source": "RSA 4096 (where something old needs RSA)",
    "text": "RSA 4096 (kde něco staršího vyžaduje RSA)"
   },
-  "s0793": {
+  "s0808": {
    "source": "Rules of your own",
    "text": "Vlastní pravidla"
   },
-  "s0794": {
+  "s0809": {
    "source": "running",
    "text": "běží"
   },
-  "s0795": {
+  "s0810": {
    "source": "Running",
    "text": "Běží"
   },
-  "s0796": {
+  "s0811": {
    "source": "Running for",
    "text": "Běží"
   },
-  "s0797": {
+  "s0812": {
    "source": "Running now",
    "text": "Právě běží"
   },
-  "s0798": {
+  "s0813": {
    "source": "running, with trouble",
    "text": "běží, s potížemi"
   },
-  "s0799": {
+  "s0814": {
    "source": "Runs as",
    "text": "Běží jako"
   },
-  "s0800": {
+  "s0815": {
    "source": "Runs as (Linux account)",
    "text": "Běží jako (účet Linuxu)"
   },
-  "s0801": {
+  "s0816": {
    "source": "Runs as, unless the account says otherwise",
    "text": "Běží jako, pokud účet neříká jinak"
   },
-  "s0802": {
+  "s0817": {
    "source": "Save",
    "text": "Uložit"
   },
-  "s0803": {
+  "s0818": {
    "source": "Save it",
    "text": "Uložit"
   },
-  "s0804": {
+  "s0819": {
    "source": "Save it as a file",
    "text": "Uložit jako soubor"
   },
-  "s0805": {
+  "s0820": {
    "source": "Save the changed settings. They take effect the moment they are saved - nothing restarts.",
    "text": "Uložit změněná nastavení. Platí okamžikem uložení – nic se nerestartuje."
   },
-  "s0806": {
+  "s0821": {
    "source": "Save the changes",
    "text": "Uložit změny"
   },
-  "s0807": {
+  "s0822": {
    "source": "Saved",
    "text": "Uloženo"
   },
-  "s0808": {
+  "s0823": {
    "source": "saved",
    "text": "uloženo"
   },
-  "s0809": {
+  "s0824": {
    "source": "Saved with the bar at the bottom; each node then puts them in by itself within seconds.",
    "text": "Ukládá se lištou dole; každý node je pak do pár sekund sám nastaví."
   },
-  "s0810": {
+  "s0825": {
    "source": "Scan it with the app (Google or Microsoft Authenticator…) and write the six digits it shows.",
    "text": "Naskenujte ho aplikací (Google nebo Microsoft Authenticator…) a zadejte šest číslic, které ukáže."
   },
-  "s0811": {
+  "s0826": {
    "source": "Scrolls back through the terminal (tmux): arrows and Page Up/Down, q to come back. The mouse wheel does the same.",
    "text": "Listování historií terminálu (tmux): šipky a Page Up/Down, q pro návrat. Totéž dělá kolečko myši."
   },
-  "s0812": {
+  "s0827": {
    "source": "Search",
    "text": "Hledat"
   },
-  "s0813": {
+  "s0828": {
    "source": "Search domains",
    "text": "Prohledávané domény"
   },
-  "s0814": {
+  "s0829": {
    "source": "Security updates only",
    "text": "Jen bezpečnostní aktualizace"
   },
-  "s0815": {
+  "s0830": {
    "source": "self-signed",
    "text": "podepsaný sám sebou"
   },
-  "s0816": {
+  "s0831": {
    "source": "Send",
    "text": "Odeslat"
   },
-  "s0817": {
+  "s0832": {
    "source": "Send a code",
    "text": "Poslat kód"
   },
-  "s0818": {
+  "s0833": {
    "source": "Send a package…",
    "text": "Nahrát balíček…"
   },
-  "s0819": {
+  "s0834": {
    "source": "Send another",
    "text": "Poslat další"
   },
-  "s0820": {
+  "s0835": {
    "source": "Send files",
    "text": "Nahrát soubory"
   },
-  "s0821": {
+  "s0836": {
    "source": "Send files from this computer into this folder. Dropping them onto the list, or pasting them (Ctrl+V), does the same.",
    "text": "Nahrát soubory z tohoto počítače do této složky. Totéž udělá jejich přetažení na seznam nebo vložení (Ctrl+V)."
   },
-  "s0822": {
+  "s0837": {
    "source": "Send the code",
    "text": "Poslat kód"
   },
-  "s0823": {
+  "s0838": {
    "source": "Sending",
    "text": "Odesílání"
   },
-  "s0824": {
+  "s0839": {
    "source": "sending",
    "text": "odesílá se"
   },
-  "s0825": {
+  "s0840": {
    "source": "Sending…",
    "text": "Odesílá se…"
   },
-  "s0826": {
+  "s0841": {
    "source": "sent",
    "text": "odesláno"
   },
-  "s0827": {
+  "s0842": {
    "source": "sent by e-mail",
    "text": "posláno e-mailem"
   },
-  "s0828": {
+  "s0843": {
    "source": "sent by SMS",
    "text": "posláno přes SMS"
   },
-  "s0829": {
+  "s0844": {
    "source": "Sent to",
    "text": "Posílat na"
   },
-  "s0830": {
+  "s0845": {
    "source": "Separated by commas.",
    "text": "Oddělené čárkami."
   },
-  "s0831": {
+  "s0846": {
    "source": "Serve the time to",
    "text": "Poskytovat čas sítím"
   },
-  "s0832": {
+  "s0847": {
    "source": "Server",
    "text": "Server"
   },
-  "s0833": {
+  "s0848": {
    "source": "server",
    "text": "server"
   },
-  "s0834": {
+  "s0849": {
    "source": "set",
    "text": "nastaveno"
   },
-  "s0835": {
+  "s0850": {
    "source": "set by hand",
    "text": "ručně"
   },
-  "s0836": {
+  "s0851": {
    "source": "set here",
    "text": "nastavená zde"
   },
-  "s0837": {
+  "s0852": {
+   "source": "Set it",
+   "text": "Nastavit"
+  },
+  "s0853": {
    "source": "Set up the second step",
    "text": "Nastavení druhého kroku"
   },
-  "s0838": {
+  "s0854": {
    "source": "Setting",
    "text": "Nastavení"
   },
-  "s0839": {
+  "s0855": {
    "source": "Settings",
    "text": "Nastavení"
   },
-  "s0840": {
+  "s0856": {
    "source": "settings",
    "text": "nastavení"
   },
-  "s0841": {
+  "s0857": {
    "source": "Settings sections",
    "text": "Sekce nastavení"
   },
-  "s0842": {
+  "s0858": {
    "source": "SHA-256",
    "text": "SHA-256"
   },
-  "s0843": {
+  "s0859": {
    "source": "shell",
    "text": "shell"
   },
-  "s0844": {
+  "s0860": {
    "source": "Shift+Enter for new lines",
    "text": "Shift+Enter pro nové řádky"
   },
-  "s0845": {
+  "s0861": {
    "source": "Shift+Tab: switches Claude Code's mode - asking, accepting edits, planning.",
    "text": "Shift+Tab: přepíná režim Claude Code – ptát se, přijímat úpravy, plánovat."
   },
-  "s0846": {
+  "s0862": {
    "source": "Shortest password",
    "text": "Nejkratší heslo"
   },
-  "s0847": {
+  "s0863": {
    "source": "Show",
    "text": "Zobrazit"
   },
-  "s0848": {
+  "s0864": {
    "source": "show",
    "text": "zobrazit"
   },
-  "s0849": {
+  "s0865": {
    "source": "Show it",
    "text": "Zobrazit"
   },
-  "s0850": {
+  "s0866": {
    "source": "Show or hide the list of terminals.",
    "text": "Ukázat nebo skrýt seznam terminálů."
   },
-  "s0851": {
+  "s0867": {
    "source": "Show this window",
    "text": "Zobrazit toto období"
   },
-  "s0852": {
+  "s0868": {
    "source": "shown",
    "text": "zobrazeno"
   },
-  "s0853": {
+  "s0869": {
    "source": "Shown here and as the comment of the rule in iptables.",
    "text": "Zobrazí se zde a jako komentář pravidla v iptables."
   },
-  "s0854": {
+  "s0870": {
    "source": "Shown this once. It has to be changed at the first sign-in.",
    "text": "Ukazuje se jen teď. Při prvním přihlášení se musí změnit."
   },
-  "s0855": {
+  "s0871": {
    "source": "Sign in",
    "text": "Přihlásit"
   },
-  "s0856": {
+  "s0872": {
    "source": "sign in",
    "text": "přihlásit se"
   },
-  "s0857": {
+  "s0873": {
    "source": "sign in to a Claude account",
    "text": "přihlášení k účtu Claude"
   },
-  "s0858": {
+  "s0874": {
    "source": "Sign in to go on.",
    "text": "Pokračujte přihlášením."
   },
-  "s0859": {
+  "s0875": {
    "source": "Sign out",
    "text": "Odhlásit"
   },
-  "s0860": {
+  "s0876": {
    "source": "sign out",
    "text": "odhlášení"
   },
-  "s0861": {
+  "s0877": {
    "source": "sign-in failed",
    "text": "přihlášení selhalo"
   },
-  "s0862": {
+  "s0878": {
    "source": "sign-ins",
    "text": "přihlášení"
   },
-  "s0863": {
+  "s0879": {
    "source": "Signed by",
    "text": "Podepsal"
   },
-  "s0864": {
+  "s0880": {
    "source": "Signed in",
    "text": "Přihlášen"
   },
-  "s0865": {
+  "s0881": {
    "source": "signed in",
    "text": "přihlášeno"
   },
-  "s0866": {
+  "s0882": {
    "source": "Signed in now",
    "text": "Právě přihlášení"
   },
-  "s0867": {
+  "s0883": {
    "source": "signed out - the changes not saved are lost; reload the page to sign in again",
    "text": "odhlášeno – neuložené změny jsou ztracené; pro nové přihlášení načtěte stránku znovu"
   },
-  "s0868": {
+  "s0884": {
    "source": "Signed out after (hours without a click)",
    "text": "Odhlásit po (hodinách bez kliknutí)"
   },
-  "s0869": {
+  "s0885": {
    "source": "Signed out after at most (hours)",
    "text": "Odhlásit nejpozději po (hodinách)"
   },
-  "s0870": {
+  "s0886": {
    "source": "Signing in",
    "text": "Přihlašování"
   },
-  "s0871": {
+  "s0887": {
    "source": "signing in",
    "text": "přihlášení"
   },
-  "s0872": {
+  "s0888": {
    "source": "Signing in…",
    "text": "Přihlašuji…"
   },
-  "s0873": {
+  "s0889": {
    "source": "Since",
    "text": "Od"
   },
-  "s0874": {
+  "s0890": {
    "source": "Size",
    "text": "Velikost"
   },
-  "s0875": {
+  "s0891": {
    "source": "Size of the terminal's letters",
    "text": "Velikost písma terminálu"
   },
-  "s0876": {
+  "s0892": {
    "source": "Smaller letters",
    "text": "Menší písmo"
   },
-  "s0877": {
+  "s0893": {
    "source": "SMS",
    "text": "SMS"
   },
-  "s0878": {
+  "s0894": {
    "source": "Software",
    "text": "Software"
   },
-  "s0879": {
+  "s0895": {
    "source": "Source",
    "text": "Zdroj"
   },
-  "s0880": {
+  "s0896": {
    "source": "Sources that have to agree",
    "text": "Kolik zdrojů se musí shodnout"
   },
-  "s0881": {
+  "s0897": {
    "source": "sqlite",
    "text": "sqlite"
   },
-  "s0882": {
+  "s0898": {
    "source": "SSH",
    "text": "SSH"
   },
-  "s0883": {
+  "s0899": {
    "source": "SSH (22) always open",
    "text": "SSH (22) vždy otevřené"
   },
-  "s0884": {
+  "s0900": {
    "source": "SSH keys",
    "text": "SSH klíče"
   },
-  "s0885": {
+  "s0901": {
    "source": "SSH keys of root",
    "text": "SSH klíče uživatele root"
   },
-  "s0886": {
+  "s0902": {
    "source": "SSH port",
    "text": "SSH port"
   },
-  "s0887": {
+  "s0903": {
    "source": "ssh-keygen is not on this machine, so a key cannot be made or read here: dnf install openssh-clients.",
    "text": "Na tomto stroji není ssh-keygen, takže zde nelze klíč vytvořit ani načíst: dnf install openssh-clients."
   },
-  "s0888": {
+  "s0904": {
    "source": "sshd is not here",
    "text": "sshd tu není"
   },
-  "s0889": {
+  "s0905": {
    "source": "Start",
    "text": "Spustit"
   },
-  "s0890": {
+  "s0906": {
    "source": "Start it",
    "text": "Spustit"
   },
-  "s0891": {
+  "s0907": {
    "source": "Start it again",
    "text": "Spustit znovu"
   },
-  "s0892": {
+  "s0908": {
    "source": "Start one in a folder, and it goes on running on the server until it is ended here - close the browser, lose the connection, come back from another computer: it is where you left it. Files dropped or pasted into the terminal (Ctrl+V) are handed to Claude.",
    "text": "Spusťte ho v některé složce a poběží na serveru, dokud ho tady neukončíte – zavřete prohlížeč, ztratíte spojení, vrátíte se z jiného počítače: najdete ho tam, kde jste ho nechali. Soubory přetažené nebo vložené do terminálu (Ctrl+V) dostane Claude."
   },
-  "s0893": {
+  "s0909": {
    "source": "Start with",
    "text": "Začít"
   },
-  "s0894": {
+  "s0910": {
    "source": "Started",
    "text": "Spuštěn"
   },
-  "s0895": {
+  "s0911": {
    "source": "started",
    "text": "spuštěno"
   },
-  "s0896": {
+  "s0912": {
    "source": "Started by",
    "text": "Spustil"
   },
-  "s0897": {
+  "s0913": {
    "source": "starting",
    "text": "startuje"
   },
-  "s0898": {
+  "s0914": {
    "source": "starting and stopping",
    "text": "spouštění a zastavování"
   },
-  "s0899": {
+  "s0915": {
    "source": "State",
    "text": "Stav"
   },
-  "s0900": {
+  "s0916": {
    "source": "Status",
    "text": "Stav"
   },
-  "s0901": {
+  "s0917": {
    "source": "Step",
    "text": "Krok"
   },
-  "s0902": {
+  "s0918": {
    "source": "Step it",
    "text": "Srovnat"
   },
-  "s0903": {
+  "s0919": {
    "source": "Step it now",
    "text": "Srovnat hned"
   },
-  "s0904": {
+  "s0920": {
    "source": "Step when off by more than (s)",
    "text": "Skokově srovnat při odchylce nad (s)"
   },
-  "s0905": {
+  "s0921": {
    "source": "Stop",
    "text": "Přestat"
   },
-  "s0906": {
+  "s0922": {
    "source": "Stop it",
    "text": "Zastavit"
   },
-  "s0907": {
+  "s0923": {
    "source": "Stop the update",
    "text": "Zastavit aktualizaci"
   },
-  "s0908": {
+  "s0924": {
    "source": "stopped",
    "text": "zastaveno"
   },
-  "s0909": {
+  "s0925": {
    "source": "Stratum",
    "text": "Stratum"
   },
-  "s0910": {
+  "s0926": {
    "source": "Subject",
    "text": "Předmět"
   },
-  "s0911": {
+  "s0927": {
    "source": "Swap",
    "text": "Swap"
   },
-  "s0912": {
+  "s0928": {
    "source": "Switch it off",
    "text": "Vypnout"
   },
-  "s0913": {
+  "s0929": {
+   "source": "Switch it on",
+   "text": "Zapnout"
+  },
+  "s0930": {
+   "source": "Switch off",
+   "text": "Vypnout"
+  },
+  "s0931": {
    "source": "Switch the server off",
    "text": "Vypnout server"
   },
-  "s0914": {
+  "s0932": {
    "source": "Switch the server off?",
    "text": "Vypnout server?"
   },
-  "s0915": {
+  "s0933": {
    "source": "Switched off",
    "text": "Vypnuto"
   },
-  "s0916": {
+  "s0934": {
    "source": "switched off",
    "text": "vypnuto"
   },
-  "s0917": {
+  "s0935": {
    "source": "Switched off - may not sign in",
    "text": "Vypnutý – nesmí se přihlásit"
   },
-  "s0918": {
+  "s0936": {
    "source": "switched off in the directory",
    "text": "vypnutý v adresáři"
   },
-  "s0919": {
+  "s0937": {
    "source": "switched on",
    "text": "zapnuto"
   },
-  "s0920": {
+  "s0938": {
    "source": "Switched on, the server takes IPv6 beside IPv4: nginx answers on both, the firewall is set for both.",
    "text": "Po zapnutí server vedle IPv4 používá i IPv6: nginx odpovídá na obou, firewall je nastavený pro obě."
   },
-  "s0921": {
+  "s0939": {
    "source": "switches the server off",
    "text": "vypne server"
   },
-  "s0922": {
+  "s0940": {
    "source": "switching off",
    "text": "vypíná se"
   },
-  "s0923": {
+  "s0941": {
    "source": "synchronised",
    "text": "synchronizováno"
   },
-  "s0924": {
+  "s0942": {
    "source": "synchronised (not chrony)",
    "text": "synchronizováno (ne chrony)"
   },
-  "s0925": {
+  "s0943": {
    "source": "synchronised, but off",
    "text": "synchronizováno, ale mimo"
   },
-  "s0926": {
+  "s0944": {
    "source": "system",
    "text": "systém"
   },
-  "s0927": {
+  "s0945": {
    "source": "System",
    "text": "Systém"
   },
-  "s0928": {
+  "s0946": {
    "source": "System updates",
    "text": "Aktualizace systému"
   },
-  "s0929": {
+  "s0947": {
    "source": "systemctl restart php-fpm nginx",
    "text": "systemctl restart php-fpm nginx"
   },
-  "s0930": {
+  "s0948": {
    "source": "Tab: completes a path or a command.",
    "text": "Tab: doplní cestu nebo příkaz."
   },
-  "s0931": {
+  "s0949": {
    "source": "Table",
    "text": "Tabulka"
   },
-  "s0932": {
+  "s0950": {
    "source": "Take ai's rules away",
    "text": "Odebrat pravidla ai"
   },
-  "s0933": {
+  "s0951": {
    "source": "Take it away",
    "text": "Odstranit"
   },
-  "s0934": {
+  "s0952": {
    "source": "Take it off",
    "text": "Vyřadit"
   },
-  "s0935": {
+  "s0953": {
    "source": "Take it off the list",
    "text": "Odebrat ze seznamu"
   },
-  "s0936": {
+  "s0954": {
    "source": "Take the key away",
    "text": "Odebrat klíč"
   },
-  "s0937": {
+  "s0955": {
    "source": "Take the key away?",
    "text": "Odebrat klíč?"
   },
-  "s0938": {
+  "s0956": {
    "source": "Take them away",
    "text": "Odebrat"
   },
-  "s0939": {
+  "s0957": {
    "source": "Take this key away",
    "text": "Odebrat tento klíč"
   },
-  "s0940": {
+  "s0958": {
    "source": "Take this rule away",
    "text": "Odebrat toto pravidlo"
   },
-  "s0941": {
+  "s0959": {
    "source": "taken",
    "text": "přijato"
   },
-  "s0942": {
+  "s0960": {
    "source": "taken away",
    "text": "odebráno"
   },
-  "s0943": {
+  "s0961": {
    "source": "Taken from the address when one is given.",
    "text": "Je-li zadána adresa, vezme se z ní."
   },
-  "s0944": {
+  "s0962": {
    "source": "Taken off",
    "text": "Pořízeno z"
   },
-  "s0945": {
+  "s0963": {
    "source": "tell Anthropic about a problem",
    "text": "nahlásit problém společnosti Anthropic"
   },
-  "s0946": {
+  "s0964": {
    "source": "Terminals",
    "text": "Terminály"
   },
-  "s0947": {
+  "s0965": {
    "source": "Terminals run as",
    "text": "Terminály běží jako"
   },
-  "s0948": {
+  "s0966": {
    "source": "Terminals run as (Linux account)",
    "text": "Terminály běží jako (účet Linuxu)"
   },
-  "s0949": {
+  "s0967": {
    "source": "Terminals running",
    "text": "Běžící terminály"
   },
-  "s0950": {
+  "s0968": {
    "source": "test",
    "text": "test"
   },
-  "s0951": {
+  "s0969": {
    "source": "text",
    "text": "text"
   },
-  "s0952": {
+  "s0970": {
    "source": "that file is bigger than the server takes",
    "text": "ten soubor je větší, než server přijme"
   },
-  "s0953": {
+  "s0971": {
    "source": "that file is far bigger than a key",
    "text": "ten soubor je na klíč příliš velký"
   },
-  "s0954": {
+  "s0972": {
    "source": "that is more than the server takes",
    "text": "to je víc, než server přijme"
   },
-  "s0955": {
+  "s0973": {
    "source": "that key is there already",
    "text": "ten klíč už tam je"
   },
-  "s0956": {
+  "s0974": {
    "source": "that request did not come from this page",
    "text": "ten požadavek nepřišel z této stránky"
   },
-  "s0957": {
+  "s0975": {
    "source": "that terminal has ended",
    "text": "ten terminál skončil"
   },
-  "s0958": {
+  "s0976": {
    "source": "that terminal is somebody else's",
    "text": "ten terminál patří někomu jinému"
   },
-  "s0959": {
+  "s0977": {
    "source": "the account",
    "text": "účet"
   },
-  "s0960": {
+  "s0978": {
    "source": "The account you are signed in as: its password, the language of these pages, the letters of the terminal.",
    "text": "Účet, pod kterým jste přihlášeni: jeho heslo, jazyk těchto stránek, velikost písma terminálu."
   },
-  "s0961": {
+  "s0979": {
    "source": "The accounts",
    "text": "Účty"
   },
-  "s0962": {
+  "s0980": {
    "source": "The address",
    "text": "Adresa"
   },
-  "s0963": {
+  "s0981": {
    "source": "the address",
    "text": "adresa"
   },
-  "s0964": {
+  "s0982": {
    "source": "The address the codes go to - a code goes there now to prove it is yours.",
    "text": "Adresa pro kódy – teď na ni přijde kód, kterým ověříte, že je vaše."
   },
-  "s0965": {
+  "s0983": {
+   "source": "the ai console opens when root signs in at the console or over SSH (q leaves it for the shell)",
+   "text": "konzole ai se otevře, když se root přihlásí na konzoli nebo přes SSH (q ji opustí do shellu)"
+  },
+  "s0984": {
    "source": "the answer",
    "text": "odpověď"
   },
-  "s0966": {
+  "s0985": {
    "source": "the app",
    "text": "aplikace"
   },
-  "s0967": {
+  "s0986": {
    "source": "the body is not an object",
    "text": "tělo požadavku není objekt"
   },
-  "s0968": {
+  "s0987": {
    "source": "the body is not JSON",
    "text": "tělo požadavku není JSON"
   },
-  "s0969": {
+  "s0988": {
    "source": "the browser has its keys back",
    "text": "prohlížeč má své klávesy zpět"
   },
-  "s0970": {
+  "s0989": {
    "source": "The browsers warn about it again until it is trusted.",
    "text": "Prohlížeče budou znovu varovat, dokud mu nebudou důvěřovat."
   },
-  "s0971": {
+  "s0990": {
    "source": "The certificate (PEM), with its chain after it",
    "text": "Certifikát (PEM), za ním jeho řetězec"
   },
-  "s0972": {
+  "s0991": {
    "source": "the certificate is in",
    "text": "certifikát je nasazen"
   },
-  "s0973": {
+  "s0992": {
    "source": "The certificate nginx shows for these pages. install.sh made a self-signed one; put in your own (with its chain), or make a new self-signed one for other names. nginx checks it before it takes it - one it does not take is never put in.",
    "text": "Certifikát, který nginx ukazuje pro tyto stránky. install.sh vytvořil certifikát podepsaný sám sebou; vložte vlastní (s řetězcem), nebo vytvořte nový pro jiná jména. nginx ho před přijetím zkontroluje – takový, který nepřijme, se nikdy nenasadí."
   },
-  "s0974": {
+  "s0993": {
    "source": "The certificate of these pages: given, or made here.",
    "text": "Certifikát těchto stránek: dodaný, nebo vytvořený zde."
   },
-  "s0975": {
+  "s0994": {
    "source": "The clock is set only when at least this many sources agree. 1 with one server; 2 or 3 with several.",
    "text": "Hodiny se nastaví, jen když se shodne aspoň tolik zdrojů. 1 při jednom serveru; 2 nebo 3 při více."
   },
-  "s0976": {
+  "s0995": {
    "source": "The clock set to the time servers at once (chronyc makestep), not slewed slowly - for a clock that is far off.",
    "text": "Hodiny se nastaví podle časových serverů okamžitě (chronyc makestep), ne pomalým doladěním – pro hodiny, které jsou hodně mimo."
   },
-  "s0977": {
+  "s0996": {
    "source": "The clock: its time zone and time servers (chrony).",
    "text": "Hodiny: časové pásmo a časové servery (chrony)."
   },
-  "s0978": {
+  "s0997": {
    "source": "the code",
    "text": "kód"
   },
-  "s0979": {
+  "s0998": {
    "source": "The code your authenticator app shows for these pages now.",
    "text": "Kód, který vaše aplikace autentikátoru pro tyto stránky právě ukazuje."
   },
-  "s0980": {
+  "s0999": {
    "source": "The command that starts Claude Code",
    "text": "Příkaz, který spouští Claude Code"
   },
-  "s0981": {
+  "s1000": {
    "source": "The connection",
    "text": "Připojení"
   },
-  "s0982": {
+  "s1001": {
    "source": "the connection dropped - again in",
    "text": "spojení se přerušilo – znovu za"
   },
-  "s0983": {
+  "s1002": {
+   "source": "The console at login",
+   "text": "Konzole při přihlášení"
+  },
+  "s1003": {
    "source": "the conversation into a file or the clipboard",
    "text": "konverzace do souboru nebo schránky"
   },
-  "s0984": {
+  "s1004": {
    "source": "the conversation shortened into a summary, to go on with less",
    "text": "konverzace zkrácená do shrnutí, aby se pokračovalo s menším kontextem"
   },
-  "s0985": {
+  "s1005": {
    "source": "the daemon is not answering — is ai.service running?",
    "text": "démon neodpovídá — běží ai.service?"
   },
-  "s0986": {
+  "s1006": {
    "source": "The daemon is not answering. Nobody can sign in until",
    "text": "Démon neodpovídá. Nikdo se nepřihlásí, dokud neběží"
   },
-  "s0987": {
+  "s1007": {
    "source": "The daemon is running, but this page may not read what it wrote.",
    "text": "Démon běží, ale tato stránka nesmí číst, co zapsal."
   },
-  "s0988": {
+  "s1008": {
    "source": "The database",
    "text": "Databáze"
   },
-  "s0989": {
+  "s1009": {
    "source": "the database",
    "text": "databáze"
   },
-  "s0990": {
+  "s1010": {
    "source": "the default",
    "text": "výchozí"
   },
-  "s0991": {
+  "s1011": {
    "source": "The directory a new terminal starts in, unless one is chosen. Empty: the home directory of the account it runs as.",
    "text": "Adresář, ve kterém nový terminál začne, pokud se nezvolí jiný. Prázdné: domovský adresář účtu, pod kterým běží."
   },
-  "s0992": {
+  "s1012": {
    "source": "the end is before the start",
    "text": "konec je před začátkem"
   },
-  "s0993": {
+  "s1013": {
    "source": "The file",
    "text": "Soubor"
   },
-  "s0994": {
+  "s1014": {
    "source": "the file did not arrive whole",
    "text": "soubor nepřišel celý"
   },
-  "s0995": {
+  "s1015": {
    "source": "The files of the server: look, fetch, send, drop them in; a text file opened and edited here.",
    "text": "Soubory serveru: prohlížet, stahovat, nahrávat, přetáhnout sem; textový soubor otevřít a upravit přímo zde."
   },
-  "s0996": {
+  "s1016": {
    "source": "The files of this terminal's working directory.",
    "text": "Soubory pracovního adresáře tohoto terminálu."
   },
-  "s0997": {
+  "s1017": {
    "source": "The firewall",
    "text": "Firewall"
   },
-  "s0998": {
+  "s1018": {
    "source": "The firewall (iptables / ip6tables)",
    "text": "Firewall (iptables / ip6tables)"
   },
-  "s0999": {
+  "s1019": {
    "source": "The firewall and who may reach the pages are shown to administrators only.",
    "text": "Firewall a to, kdo smí na stránky, vidí jen administrátoři."
   },
-  "s1000": {
+  "s1020": {
    "source": "The folder",
    "text": "Složka"
   },
-  "s1001": {
+  "s1021": {
    "source": "The folder shown. Type another and press Enter.",
    "text": "Zobrazená složka. Napište jinou a stiskněte Enter."
   },
-  "s1002": {
+  "s1022": {
    "source": "The folders this account may use, and the ones you keep (the star).",
    "text": "Složky, které tento účet smí používat, a ty, které si držíte (hvězdička)."
   },
-  "s1003": {
+  "s1023": {
    "source": "The hash",
    "text": "Hash"
   },
-  "s1004": {
+  "s1024": {
    "source": "the home folder",
    "text": "domovská složka"
   },
-  "s1005": {
+  "s1025": {
    "source": "the hooks",
    "text": "hooky"
   },
-  "s1006": {
+  "s1026": {
    "source": "The key",
    "text": "Klíč"
   },
-  "s1007": {
+  "s1027": {
    "source": "The key for",
    "text": "Klíč pro"
   },
-  "s1008": {
+  "s1028": {
    "source": "The keys in an account's ~/.ssh/authorized_keys - who may sign in to it over SSH.",
    "text": "Klíče v ~/.ssh/authorized_keys účtu – kdo se k němu smí přihlásit přes SSH."
   },
-  "s1009": {
+  "s1029": {
    "source": "The keys of",
    "text": "Klíče účtu"
   },
-  "s1010": {
+  "s1030": {
    "source": "The keys that may sign in over SSH, to root or another account: made here, added or taken away.",
    "text": "Klíče, které se smí přihlásit přes SSH, k rootovi či jinému účtu: vytvořit zde, přidat, odebrat."
   },
-  "s1011": {
+  "s1031": {
    "source": "The keys that may sign in to the server as root over SSH - the lines of /root/.ssh/authorized_keys. A key made here is shown once, to be kept by you, and kept nowhere on the server; one of your own is put on by its public half. Every change is written into Events.",
    "text": "Klíče, které se smí přihlásit k serveru jako root přes SSH – řádky souboru /root/.ssh/authorized_keys. Klíč vytvořený zde se ukáže jednou, abyste si ho uschovali, a na serveru se nikde nedrží; vlastní klíč se nahraje svou veřejnou částí. Každá změna se zapíše do Událostí."
   },
-  "s1012": {
+  "s1032": {
    "source": "The keys that may sign in to the server as root over SSH: made here, added or taken away.",
    "text": "Klíče, které se smí přihlásit k serveru jako root přes SSH: vytvořit zde, přidat, odebrat."
   },
-  "s1013": {
+  "s1033": {
    "source": "The kind",
    "text": "Typ"
   },
-  "s1014": {
+  "s1034": {
    "source": "the last conversation of this folder (--continue)",
    "text": "poslední konverzací této složky (--continue)"
   },
-  "s1015": {
+  "s1035": {
    "source": "The last…",
    "text": "Posledních…"
   },
-  "s1016": {
+  "s1036": {
    "source": "The Linux account a terminal runs as for an account that has none of its own.",
    "text": "Účet Linuxu, pod kterým běží terminál účtu, který žádný vlastní nemá."
   },
-  "s1017": {
+  "s1037": {
    "source": "The log",
    "text": "Log"
   },
-  "s1018": {
+  "s1038": {
    "source": "The machine",
    "text": "Stroj"
   },
-  "s1019": {
+  "s1039": {
    "source": "the MCP servers",
    "text": "MCP servery"
   },
-  "s1020": {
+  "s1040": {
    "source": "The menu hides itself at the edge of the screen and slides out when you point at it. Press this to keep it open.",
    "text": "Menu se schová na okraj obrazovky a vysune se, když na něj najedete myší. Stiskem ho necháte otevřené."
   },
-  "s1021": {
+  "s1041": {
    "source": "The menu is staying open. Press again to let it hide itself at the edge of the screen.",
    "text": "Menu zůstává otevřené. Dalším stiskem ho necháte schovávat se u okraje obrazovky."
   },
-  "s1022": {
+  "s1042": {
    "source": "The name of the new file",
    "text": "Název nového souboru"
   },
-  "s1023": {
+  "s1043": {
    "source": "The name of the new folder",
    "text": "Název nové složky"
   },
-  "s1024": {
+  "s1044": {
    "source": "The new address is not in the network of the web address: keepalived could not put the web address on this node. Tick it only while the whole cluster moves to another network - this node now, the other next, the web address last (High availability).",
    "text": "Nová adresa není v síti webové adresy: keepalived by webovou adresu na tomto nodu nemohl držet. Zaškrtněte to jen při stěhování celého clusteru do jiné sítě – teď tento node, pak druhý, nakonec webová adresa (Vysoká dostupnost)."
   },
-  "s1025": {
+  "s1045": {
    "source": "The new firewall waits to be kept",
    "text": "Nový firewall čeká na potvrzení"
   },
-  "s1026": {
+  "s1046": {
    "source": "The new network waits to be kept",
    "text": "Nová síť čeká na potvrzení"
   },
-  "s1027": {
+  "s1047": {
    "source": "The new one again",
    "text": "Nové ještě jednou"
   },
-  "s1028": {
+  "s1048": {
    "source": "the newest known",
    "text": "nejnovější známá"
   },
-  "s1029": {
+  "s1049": {
    "source": "The nodes",
    "text": "Uzly"
   },
-  "s1030": {
+  "s1050": {
    "source": "The nodes need a restart",
    "text": "Uzly potřebují restart"
   },
-  "s1031": {
+  "s1051": {
    "source": "The nodes not yet begun stay as they are; one being updated finishes.",
    "text": "Uzly, které ještě nezačaly, zůstanou, jak jsou; právě aktualizovaný uzel dokončí."
   },
-  "s1032": {
+  "s1052": {
    "source": "The nodes take each other too",
    "text": "Nody se synchronizují i navzájem"
   },
-  "s1033": {
+  "s1053": {
+   "source": "The number",
+   "text": "Číslo"
+  },
+  "s1054": {
    "source": "The one you were given",
    "text": "To, které jste dostali"
   },
-  "s1034": {
+  "s1055": {
    "source": "The operating system's packages, looked at and updated, its output shown as it goes.",
    "text": "Balíčky operačního systému – zjistit a aktualizovat, s výpisem průběžně na obrazovce."
   },
-  "s1035": {
+  "s1056": {
    "source": "The operating system's packages, updated by dnf (or apt). The update runs as a job of its own on the server - closing the page or restarting ai does not stop it - and what it says shows here as it goes. A restart an update needs is offered when it is done, or made by itself.",
    "text": "Balíčky operačního systému, aktualizované přes dnf (nebo apt). Aktualizace běží na serveru jako samostatná úloha – zavření stránky ani restart ai ji nezastaví – a co vypisuje, se ukazuje zde průběžně. Restart, který aktualizace potřebuje, se po dokončení nabídne, nebo proběhne sám."
   },
-  "s1036": {
+  "s1057": {
    "source": "The other node",
    "text": "Druhý uzel"
   },
-  "s1037": {
+  "s1058": {
    "source": "The other node first, then this one - each in maintenance while it restarts, so the web address and the service never stop.",
    "text": "Nejdřív druhý node, pak tento – každý je během restartu v údržbě, takže webová adresa ani služba se nezastaví."
   },
-  "s1038": {
+  "s1059": {
    "source": "The other node first, then this one - each out of service while it is updated, the web address on the other, RADIUS answered there; back in service before the next one starts.",
    "text": "Nejdřív druhý uzel, pak tento – každý je během aktualizace mimo provoz, webová adresa i RADIUS jsou na druhém; do provozu se vrátí dřív, než začne další."
   },
-  "s1039": {
+  "s1060": {
    "source": "the package was refused",
    "text": "balíček byl odmítnut"
   },
-  "s1040": {
+  "s1061": {
    "source": "The packages of the operating system (dnf or apt). The update runs as a job of its own on the server - closing the page or restarting this program does not stop it - and what it says shows here as it goes. The terminals go on running.",
    "text": "Balíčky operačního systému (dnf nebo apt). Aktualizace běží na serveru jako samostatná úloha – zavření stránky ani restart tohoto programu ji nezastaví – a co vypisuje, se ukazuje zde průběžně. Terminály běží dál."
   },
-  "s1041": {
+  "s1062": {
    "source": "the page got something that is not an answer",
    "text": "stránka dostala něco, co není odpověď"
   },
-  "s1042": {
+  "s1063": {
    "source": "The pages",
    "text": "Stránky"
   },
-  "s1043": {
+  "s1064": {
    "source": "The pages, the terminals and the files share ports 80 and 443, so who may reach them is said by nginx; the machine itself always may.",
    "text": "Stránky, terminály i soubory sdílejí porty 80 a 443, takže kdo na ně smí, určuje nginx; stroj sám smí vždy."
   },
-  "s1044": {
+  "s1065": {
    "source": "the passphrase",
    "text": "heslo"
   },
-  "s1045": {
+  "s1066": {
    "source": "the password is changed",
    "text": "heslo je změněno"
   },
-  "s1046": {
+  "s1067": {
    "source": "the password was copied",
    "text": "heslo bylo zkopírováno"
   },
-  "s1047": {
+  "s1068": {
    "source": "The pause (minutes)",
    "text": "Pauza (minuty)"
   },
-  "s1048": {
+  "s1069": {
    "source": "the person",
    "text": "člověk"
   },
-  "s1049": {
+  "s1070": {
    "source": "The phone",
    "text": "Telefon"
   },
-  "s1050": {
+  "s1071": {
    "source": "The phone number with its country code - a code goes there now to prove it is yours.",
    "text": "Telefonní číslo s předvolbou – teď na něj přijde kód, kterým ověříte, že je vaše."
   },
-  "s1051": {
+  "s1072": {
    "source": "The present one",
    "text": "Současné"
   },
-  "s1052": {
+  "s1073": {
    "source": "the present password is not that",
    "text": "současné heslo je jiné"
   },
-  "s1053": {
+  "s1074": {
    "source": "The private key - shown once",
    "text": "Privátní klíč – ukazuje se jen jednou"
   },
-  "s1054": {
+  "s1075": {
    "source": "the private key is on the clipboard",
    "text": "soukromý klíč je ve schránce"
   },
-  "s1055": {
+  "s1076": {
    "source": "the public key is on the clipboard",
    "text": "veřejný klíč je ve schránce"
   },
-  "s1056": {
+  "s1077": {
    "source": "the rest of INPUT",
    "text": "zbytek INPUT"
   },
-  "s1057": {
+  "s1078": {
    "source": "the role is admin or user",
    "text": "role je admin nebo user"
   },
-  "s1058": {
+  "s1079": {
    "source": "The root helper of this node is not installed (install.sh --upgrade puts it in).",
    "text": "Pomocník roota na tomto uzlu není nainstalovaný (doinstaluje ho install.sh --upgrade)."
   },
-  "s1059": {
+  "s1080": {
    "source": "The rules below are in force",
    "text": "Pravidla níže platí"
   },
-  "s1060": {
+  "s1081": {
    "source": "The same key on every node",
    "text": "Stejný klíč na všech uzlech"
   },
-  "s1061": {
+  "s1082": {
    "source": "The second step",
    "text": "Druhý krok"
   },
-  "s1062": {
+  "s1083": {
    "source": "The server",
    "text": "Server"
   },
-  "s1063": {
+  "s1084": {
    "source": "THE SERVER",
    "text": "SERVER"
   },
-  "s1064": {
+  "s1085": {
    "source": "The server at a glance: what it is, how busy, its disks, its addresses, who is signed in.",
    "text": "Server na první pohled: co to je, jak je vytížený, jeho disky, adresy a kdo je přihlášen."
   },
-  "s1065": {
+  "s1086": {
    "source": "the server could not be reached",
    "text": "server je nedostupný"
   },
-  "s1066": {
+  "s1087": {
    "source": "the server is not answering just now",
    "text": "server právě neodpovídá"
   },
-  "s1067": {
+  "s1088": {
    "source": "the server is not answering just now - try again in a moment",
    "text": "server teď neodpovídá – zkuste to za chvíli"
   },
-  "s1068": {
+  "s1089": {
    "source": "The server is switched off. Nothing answers - and every terminal ends - until somebody switches it on again at the machine.",
    "text": "Server se vypne. Nic neodpovídá – a všechny terminály skončí –, dokud ho někdo u stroje znovu nezapne."
   },
-  "s1069": {
+  "s1090": {
    "source": "The server keeps its clock with chrony: here is how far off it is, which servers it follows, and the time servers and the time zone set for it.",
    "text": "Server si drží čas pomocí chrony: tady je vidět, jak moc se odchyluje, které servery sleduje, a jaké časové servery a časové pásmo má nastavené."
   },
-  "s1070": {
+  "s1091": {
    "source": "The server restarted or switched off from here; the page follows it down and up again. The terminals live in tmux: restarting the server ends them all, restarting only ai or the web server (below) ends none.",
    "text": "Restart nebo vypnutí serveru odsud; stránka ho sleduje při vypnutí i opětovném startu. Terminály žijí v tmux: restart serveru je ukončí všechny, restart jen ai nebo webového serveru (níže) žádný."
   },
-  "s1071": {
+  "s1092": {
    "source": "The server restarts: for a minute or two nothing answers, and every terminal ends.",
    "text": "Server se restartuje: minutu či dvě nic neodpovídá a všechny terminály skončí."
   },
-  "s1072": {
+  "s1093": {
    "source": "The server's address, gateway, DNS servers and host name.",
    "text": "Adresa serveru, brána, DNS servery a název stroje."
   },
-  "s1073": {
+  "s1094": {
    "source": "The server's address, gateway, DNS servers, host name and - switched on - IPv6, set through NetworkManager. A change goes back by itself unless it is kept: open the pages at the new address and press Keep it.",
    "text": "Adresa serveru, brána, DNS servery, název stroje a – je-li zapnuté – IPv6, nastavované přes NetworkManager. Změna se sama vrátí, pokud se nepotvrdí: otevřete stránky na nové adrese a stiskněte Ponechat."
   },
-  "s1074": {
+  "s1095": {
    "source": "the shells it runs in the background",
    "text": "shelly, které spouští na pozadí"
   },
-  "s1075": {
+  "s1096": {
    "source": "the terminal is not connected",
    "text": "terminál není připojený"
   },
-  "s1076": {
+  "s1097": {
    "source": "The terminal over the whole screen, and every key of the keyboard given to it - Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab, Esc and F11 too, which the browser keeps for itself otherwise (Chrome and Edge). Hold Esc to come back.",
    "text": "Terminál přes celou obrazovku a všechny klávesy klávesnice předané jemu – i Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab, Esc a F11, které si jinak nechává prohlížeč (Chrome a Edge). Zpět podržením Esc."
   },
-  "s1077": {
+  "s1098": {
    "source": "The terminal over the whole window (Esc twice, or this again, to come back).",
    "text": "Terminál přes celé okno (zpět dvakrát Esc, nebo znovu toto tlačítko)."
   },
-  "s1078": {
+  "s1099": {
    "source": "The terminals live in tmux: restarting this program or the web server ends none of them. Restarting the server ends them all.",
    "text": "Terminály žijí v tmux: restart tohoto programu ani webového serveru žádný neukončí. Restart serveru ukončí všechny."
   },
-  "s1079": {
+  "s1100": {
    "source": "The time servers",
    "text": "Časové servery"
   },
-  "s1080": {
+  "s1101": {
    "source": "the two new ones are not the same",
    "text": "obě nová hesla nejsou stejná"
   },
-  "s1081": {
+  "s1102": {
    "source": "the two were not the same",
    "text": "obě nebyla stejná"
   },
-  "s1082": {
+  "s1103": {
    "source": "The update",
    "text": "Aktualizace"
   },
-  "s1083": {
+  "s1104": {
    "source": "the upgrade is running",
    "text": "upgrade probíhá"
   },
-  "s1084": {
+  "s1105": {
    "source": "The web address",
    "text": "Webová adresa"
   },
-  "s1085": {
+  "s1106": {
    "source": "The window after this one",
    "text": "Následující období"
   },
-  "s1086": {
+  "s1107": {
    "source": "The window before this one",
    "text": "Předchozí období"
   },
-  "s1087": {
+  "s1108": {
    "source": "the window is empty",
    "text": "výpis je prázdný"
   },
-  "s1088": {
+  "s1109": {
    "source": "The working directory",
    "text": "Pracovní adresář"
   },
-  "s1089": {
+  "s1110": {
    "source": "there",
    "text": "je tam"
   },
-  "s1090": {
+  "s1111": {
    "source": "There is no account on this machine yet. Make one on the server:",
    "text": "Na tomto stroji zatím není žádný účet. Založte ho na serveru:"
   },
-  "s1091": {
+  "s1112": {
    "source": "There is no certificate at the place nginx reads it from.",
    "text": "V místě, odkud ho nginx čte, není žádný certifikát."
   },
-  "s1092": {
+  "s1113": {
    "source": "there is no key made or given for that",
    "text": "pro to tu žádný klíč nebyl vytvořen ani zadán"
   },
-  "s1093": {
+  "s1114": {
    "source": "these pages",
    "text": "tyto stránky"
   },
-  "s1094": {
+  "s1115": {
    "source": "These pages (80, 443) always open",
    "text": "Tyto stránky (80, 443) vždy otevřené"
   },
-  "s1095": {
+  "s1116": {
    "source": "these pages, the terminals and the files; who may reach them is under \"Who may reach the pages\"",
    "text": "tyto stránky, terminály a soubory; kdo na ně smí, je v části „Kdo smí na stránky“"
   },
-  "s1096": {
+  "s1117": {
    "source": "They are",
    "text": "Je to"
   },
-  "s1097": {
+  "s1118": {
    "source": "This account was given its password by somebody else. Before anything else, choose one that only you know.",
    "text": "Tento účet dostal heslo od někoho jiného. Než cokoli dalšího, zvolte si takové, které znáte jen vy."
   },
-  "s1098": {
+  "s1119": {
    "source": "this browser keeps some keys for itself (Ctrl+W, Ctrl+T, Ctrl+N): Chrome or Edge give them all",
    "text": "tento prohlížeč si některé klávesy nechává (Ctrl+W, Ctrl+T, Ctrl+N): Chrome nebo Edge je předají všechny"
   },
-  "s1099": {
+  "s1120": {
    "source": "this is the last administrator: make another one first",
    "text": "toto je poslední administrátor: nejdřív založte dalšího"
   },
-  "s1100": {
+  "s1121": {
    "source": "This is the newest version there.",
    "text": "Toto je nejnovější verze, která tam je."
   },
-  "s1101": {
+  "s1122": {
    "source": "this month",
    "text": "tento měsíc"
   },
-  "s1102": {
+  "s1123": {
    "source": "this node",
    "text": "tento uzel"
   },
-  "s1103": {
+  "s1124": {
    "source": "this one",
    "text": "tento"
   },
-  "s1104": {
+  "s1125": {
    "source": "this page",
    "text": "tato stránka"
   },
-  "s1105": {
+  "s1126": {
    "source": "This page's server is restarting",
    "text": "Server této stránky se restartuje"
   },
-  "s1106": {
+  "s1127": {
    "source": "This program",
    "text": "Tento program"
   },
-  "s1107": {
+  "s1128": {
    "source": "This server",
    "text": "Tento server"
   },
-  "s1108": {
+  "s1129": {
    "source": "this server serves the time to the networks set under Settings → Time",
    "text": "tento server poskytuje čas sítím nastaveným v Nastavení → Čas"
   },
-  "s1109": {
+  "s1130": {
    "source": "This terminal has ended.",
    "text": "Tento terminál skončil."
   },
-  "s1110": {
+  "s1131": {
    "source": "this week",
    "text": "tento týden"
   },
-  "s1111": {
+  "s1132": {
    "source": "Throw away",
    "text": "Zahodit"
   },
-  "s1112": {
+  "s1133": {
    "source": "Throw away the changes",
    "text": "Zahodit změny"
   },
-  "s1113": {
+  "s1134": {
    "source": "Throw away the changes on this page and read the settings back as they are.",
    "text": "Zahodit změny na této stránce a načíst nastavení znovu, jak jsou."
   },
-  "s1114": {
+  "s1135": {
    "source": "Time",
    "text": "Čas"
   },
-  "s1115": {
+  "s1136": {
    "source": "Time servers",
    "text": "Časové servery"
   },
-  "s1116": {
+  "s1137": {
    "source": "Time servers (one a line; empty: those of the system)",
    "text": "Časové servery (jeden na řádek; prázdné: ty systémové)"
   },
-  "s1117": {
+  "s1138": {
    "source": "Time zone",
    "text": "Časové pásmo"
   },
-  "s1118": {
+  "s1139": {
    "source": "TLS",
    "text": "TLS"
   },
-  "s1119": {
+  "s1140": {
    "source": "To",
    "text": "Komu"
   },
-  "s1120": {
+  "s1141": {
    "source": "to choose a password",
    "text": "má si zvolit heslo"
   },
-  "s1121": {
+  "s1142": {
    "source": "to manage the machine - turned off, take care to keep a rule of your own for it",
    "text": "ke správě stroje – když ho vypnete, nezapomeňte si na něj nechat vlastní pravidlo"
   },
-  "s1122": {
+  "s1143": {
    "source": "today",
    "text": "dnes"
   },
-  "s1123": {
+  "s1144": {
    "source": "too many attempts - wait a minute and try again",
    "text": "příliš mnoho pokusů – počkejte minutu a zkuste to znovu"
   },
-  "s1124": {
+  "s1145": {
    "source": "too variable",
    "text": "příliš kolísá"
   },
-  "s1125": {
+  "s1146": {
    "source": "trusted",
    "text": "důvěryhodný"
   },
-  "s1126": {
+  "s1147": {
    "source": "Try",
    "text": "Vyzkoušet"
   },
-  "s1127": {
+  "s1148": {
    "source": "Try again",
    "text": "Zkusit znovu"
   },
-  "s1128": {
+  "s1149": {
    "source": "Turn it on",
    "text": "Zapnout"
   },
-  "s1129": {
+  "s1150": {
    "source": "Twice Escape: Claude Code goes back to an earlier message (rewind).",
    "text": "Dvakrát Escape: Claude Code se vrátí k dřívější zprávě (rewind)."
   },
-  "s1130": {
+  "s1151": {
    "source": "two hundred rules at most",
    "text": "nejvýš dvě stě pravidel"
   },
-  "s1131": {
+  "s1152": {
    "source": "Typed into the app instead of scanning",
    "text": "Zadá se do aplikace místo naskenování"
   },
-  "s1132": {
+  "s1153": {
    "source": "ufw manages this server's firewall. Change it with ufw, or switch it off (ufw disable) to manage it here.",
    "text": "Firewall tohoto serveru spravuje ufw. Měňte ho přes ufw, nebo ho vypněte (ufw disable) a spravujte zde."
   },
-  "s1133": {
+  "s1154": {
    "source": "unreachable",
    "text": "nedostupný"
   },
-  "s1134": {
+  "s1155": {
    "source": "Up",
    "text": "Nahoru"
   },
-  "s1135": {
+  "s1156": {
    "source": "up again",
    "text": "znovu běží"
   },
-  "s1136": {
+  "s1157": {
    "source": "up to date",
    "text": "aktuální"
   },
-  "s1137": {
+  "s1158": {
    "source": "Update",
    "text": "Aktualizovat"
   },
-  "s1138": {
+  "s1159": {
    "source": "Update everything",
    "text": "Aktualizovat vše"
   },
-  "s1139": {
+  "s1160": {
    "source": "Update it",
    "text": "Aktualizovat"
   },
-  "s1140": {
+  "s1161": {
    "source": "Update it now",
    "text": "Aktualizovat teď"
   },
-  "s1141": {
+  "s1162": {
    "source": "Update the nodes",
    "text": "Aktualizovat uzly"
   },
-  "s1142": {
+  "s1163": {
    "source": "Update the system?",
    "text": "Aktualizovat systém?"
   },
-  "s1143": {
+  "s1164": {
    "source": "Update them, one at a time",
    "text": "Aktualizovat je, jeden po druhém"
   },
-  "s1144": {
+  "s1165": {
    "source": "Update this server",
    "text": "Aktualizovat tento server"
   },
-  "s1145": {
+  "s1166": {
    "source": "updated",
    "text": "aktualizováno"
   },
-  "s1146": {
+  "s1167": {
    "source": "Updated by",
    "text": "Aktualizuje"
   },
-  "s1147": {
+  "s1168": {
    "source": "Updates waiting",
    "text": "Čekající aktualizace"
   },
-  "s1148": {
+  "s1169": {
    "source": "updating",
    "text": "aktualizuje se"
   },
-  "s1149": {
+  "s1170": {
    "source": "Upgrade",
    "text": "Upgradovat"
   },
-  "s1150": {
+  "s1171": {
    "source": "Upgrade now",
    "text": "Upgradovat teď"
   },
-  "s1151": {
+  "s1172": {
    "source": "Upgrades",
    "text": "Upgrady"
   },
-  "s1152": {
+  "s1173": {
    "source": "upgrading",
    "text": "aktualizuje se"
   },
-  "s1153": {
+  "s1174": {
    "source": "Used",
    "text": "Použito"
   },
-  "s1154": {
+  "s1175": {
    "source": "used",
    "text": "použitý"
   },
-  "s1155": {
+  "s1176": {
    "source": "user",
    "text": "uživatel"
   },
-  "s1156": {
+  "s1177": {
    "source": "user - terminals of their own, files in their folders",
    "text": "uživatel – vlastní terminály, soubory ve svých složkách"
   },
-  "s1157": {
+  "s1178": {
+   "source": "valid",
+   "text": "platný"
+  },
+  "s1179": {
    "source": "Valid",
    "text": "Platnost"
   },
-  "s1158": {
+  "s1180": {
    "source": "Valid for",
    "text": "Platnost"
   },
-  "s1159": {
+  "s1181": {
    "source": "Valid for (days)",
    "text": "Platný (dní)"
   },
-  "s1160": {
+  "s1182": {
    "source": "Value",
    "text": "Hodnota"
   },
-  "s1161": {
+  "s1183": {
    "source": "Version",
    "text": "Verze"
   },
-  "s1162": {
+  "s1184": {
    "source": "version, account, model, connections",
    "text": "verze, účet, model, připojení"
   },
-  "s1163": {
+  "s1185": {
    "source": "Version, the name of the pages, the language, what is running, the log.",
    "text": "Verze, název stránek, jazyk, co běží, log."
   },
-  "s1164": {
+  "s1186": {
    "source": "vim keys in its input",
    "text": "klávesy vim v jeho vstupu"
   },
-  "s1165": {
+  "s1187": {
    "source": "waiting",
    "text": "čeká"
   },
-  "s1166": {
+  "s1188": {
    "source": "Waiting",
    "text": "Čekající"
   },
-  "s1167": {
+  "s1189": {
    "source": "waiting for root",
    "text": "čeká na root"
   },
-  "s1168": {
+  "s1190": {
    "source": "waits its turn",
    "text": "čeká, až na něj přijde řada"
   },
-  "s1169": {
+  "s1191": {
    "source": "web address",
    "text": "webová adresa"
   },
-  "s1170": {
+  "s1192": {
    "source": "weeks",
    "text": "týdnů"
   },
-  "s1171": {
+  "s1193": {
    "source": "Welcome back.",
    "text": "Vítejte zpět."
   },
-  "s1172": {
+  "s1194": {
    "source": "What",
    "text": "Co"
   },
-  "s1173": {
+  "s1195": {
    "source": "What ai lets in by itself",
    "text": "Co ai povoluje samo"
   },
-  "s1174": {
+  "s1196": {
    "source": "what ai needs",
    "text": "co potřebuje ai"
   },
-  "s1175": {
+  "s1197": {
    "source": "what Claude Code can do, and its keys",
    "text": "co Claude Code umí a jeho klávesy"
   },
-  "s1176": {
+  "s1198": {
    "source": "What Claude Code keeps of every conversation (~/.claude/projects), newest first. Pick one up again: a new terminal opens in its folder with",
    "text": "Co si Claude Code uchovává z každé konverzace (~/.claude/projects), nejnovější nahoře. Navažte na ni: ve její složce se otevře nový terminál s"
   },
-  "s1177": {
+  "s1199": {
    "source": "What happened",
    "text": "Co se stalo"
   },
-  "s1178": {
+  "s1200": {
+   "source": "what happened",
+   "text": "co se stalo"
+  },
+  "s1201": {
    "source": "What happens",
    "text": "Co se stane"
   },
-  "s1179": {
+  "s1202": {
    "source": "what is new in it",
    "text": "co je v něm nového"
   },
-  "s1180": {
+  "s1203": {
    "source": "what is waiting",
    "text": "co čeká"
   },
-  "s1181": {
+  "s1204": {
    "source": "What it does",
    "text": "Co udělá"
   },
-  "s1182": {
+  "s1205": {
    "source": "what it may do without asking",
    "text": "co smí dělat bez ptaní"
   },
-  "s1183": {
+  "s1206": {
    "source": "What it says",
    "text": "Co vypisuje"
   },
-  "s1184": {
+  "s1207": {
    "source": "what it says",
    "text": "co říká"
   },
-  "s1185": {
+  "s1208": {
    "source": "What it was about",
    "text": "O čem byla"
   },
-  "s1186": {
+  "s1209": {
    "source": "What the last upgrade said",
    "text": "Co vypsal poslední upgrade"
   },
-  "s1187": {
+  "s1210": {
    "source": "What the machine has now",
    "text": "Co má stroj teď"
   },
-  "s1188": {
+  "s1211": {
    "source": "What the pages call this server, beside its host name. Empty: the host name alone.",
    "text": "Jak stránky tento server nazývají, vedle názvu stroje. Prázdné: jen název stroje."
   },
-  "s1189": {
+  "s1212": {
    "source": "what this conversation has cost",
    "text": "kolik tato konverzace stála"
   },
-  "s1190": {
+  "s1213": {
    "source": "What this program does",
    "text": "Co tento program dělá"
   },
-  "s1191": {
+  "s1214": {
    "source": "What was there before the change comes back at once.",
    "text": "Co bylo před změnou, se hned vrátí."
   },
-  "s1192": {
+  "s1215": {
    "source": "Whatever no rule names is",
    "text": "Co žádné pravidlo nejmenuje, se"
   },
-  "s1193": {
+  "s1216": {
    "source": "Whatever only AI-IN let in (SSH, the pages) is then up to your own rules.",
    "text": "Co pouštěl jen AI-IN (SSH, stránky), pak závisí na vašich vlastních pravidlech."
   },
-  "s1194": {
+  "s1217": {
    "source": "When",
    "text": "Kdy"
   },
-  "s1195": {
+  "s1218": {
    "source": "Where",
    "text": "Kde"
   },
-  "s1196": {
+  "s1219": {
    "source": "where",
    "text": "kde"
   },
-  "s1197": {
+  "s1220": {
    "source": "Where files given to Claude go",
    "text": "Kam jdou soubory předané Claude"
   },
-  "s1198": {
+  "s1221": {
    "source": "Where it starts. It is made if it is not there yet and the box below says so.",
    "text": "Kde začne. Pokud ještě neexistuje a přepínač níže to říká, vytvoří se."
   },
-  "s1199": {
+  "s1222": {
    "source": "Where new versions are looked for",
    "text": "Kde se hledají nové verze"
   },
-  "s1200": {
+  "s1223": {
    "source": "Where the time comes from",
    "text": "Odkud se bere čas"
   },
-  "s1201": {
+  "s1224": {
    "source": "Whether",
    "text": "Zda"
   },
-  "s1202": {
+  "s1225": {
    "source": "Whether there is a newer version - it is only said, unless the next switch is on too.",
    "text": "Zda je venku novější verze – jen se to oznámí, pokud není zapnutý i další přepínač."
   },
-  "s1203": {
+  "s1226": {
    "source": "Which terminals the list shows.",
    "text": "Které terminály seznam ukazuje."
   },
-  "s1204": {
+  "s1227": {
    "source": "Who",
    "text": "Kdo"
   },
-  "s1205": {
+  "s1228": {
    "source": "Who may reach the pages",
    "text": "Kdo smí na stránky"
   },
-  "s1206": {
+  "s1229": {
    "source": "Who may reach the pages waits to be kept",
    "text": "Kdo smí na stránky – čeká na potvrzení"
   },
-  "s1207": {
+  "s1230": {
    "source": "Who may reach the pages, and the machine's own firewall: what ai's functions need is let in by itself, and you add whatever else you want - for IPv4 and IPv6.",
    "text": "Kdo smí na stránky a vlastní firewall stroje: co potřebují funkce ai, se povolí samo, a vy přidáte cokoli dalšího – pro IPv4 i IPv6."
   },
-  "s1208": {
+  "s1231": {
    "source": "who may reach the pages: changed",
    "text": "kdo smí na stránky: změněno"
   },
-  "s1209": {
+  "s1232": {
    "source": "Who may reach these pages",
    "text": "Kdo smí na tyto stránky"
   },
-  "s1210": {
+  "s1233": {
    "source": "Who may reach these pages, and the server's firewall (iptables or firewalld).",
    "text": "Kdo smí na tyto stránky a firewall serveru (iptables nebo firewalld)."
   },
-  "s1211": {
+  "s1234": {
    "source": "Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.",
    "text": "Kdo se smí přihlásit k těmto stránkám, co kdo smí, pod jakým účtem Linuxu běží jeho terminály a kdo je právě přihlášen."
   },
-  "s1212": {
+  "s1235": {
    "source": "Whoever signs in here is this account on the server: its files, its rights, its Claude Code sign-in.",
    "text": "Kdo se tu přihlásí, je na serveru tímto účtem: jeho soubory, jeho práva, jeho přihlášení ke Claude Code."
   },
-  "s1213": {
+  "s1236": {
    "source": "Whose",
    "text": "Čí"
   },
-  "s1214": {
+  "s1237": {
    "source": "Whose conversations: the Linux account Claude Code ran as.",
    "text": "Čí konverzace: účet Linuxu, pod kterým Claude Code běžel."
   },
-  "s1215": {
+  "s1238": {
    "source": "Whose files it may change, whose Claude Code sign-in it uses.",
    "text": "Čí soubory smí měnit a čí přihlášení ke Claude Code používá."
   },
-  "s1216": {
+  "s1239": {
    "source": "Windows looking at it",
    "text": "Oken, která ho sledují"
   },
-  "s1217": {
+  "s1240": {
    "source": "With",
    "text": "S"
   },
-  "s1218": {
+  "s1241": {
    "source": "With a key",
    "text": "Klíčem"
   },
-  "s1219": {
+  "s1242": {
    "source": "With a password",
    "text": "Heslem"
   },
-  "s1220": {
+  "s1243": {
    "source": "With npm",
    "text": "Přes npm"
   },
-  "s1221": {
+  "s1244": {
    "source": "with options",
    "text": "s volbami"
   },
-  "s1222": {
+  "s1245": {
    "source": "with the ended ones",
    "text": "i s ukončenými"
   },
-  "s1223": {
+  "s1246": {
    "source": "Words added to every start of Claude Code, as on its command line - for example --model opus. Each new terminal can add its own.",
    "text": "Parametry přidané ke každému spuštění Claude Code, jako na jeho příkazové řádce – třeba --model opus. Každý nový terminál může přidat své."
   },
-  "s1224": {
+  "s1247": {
    "source": "words of it, a folder…",
    "text": "slova z ní, složka…"
   },
-  "s1225": {
+  "s1248": {
    "source": "Worked out from what is set up, and changed with it. What keeps the pages reachable from this machine cannot be turned off.",
    "text": "Odvozeno z toho, co je nastavené, a mění se s tím. Co drží stránky dosažitelné z tohoto stroje, nelze vypnout."
   },
-  "s1226": {
+  "s1249": {
    "source": "working",
    "text": "pracuje se"
   },
-  "s1227": {
+  "s1250": {
    "source": "Working directory offered first",
    "text": "Nabízený pracovní adresář"
   },
-  "s1228": {
+  "s1251": {
    "source": "Write",
    "text": "Psát"
   },
-  "s1229": {
+  "s1252": {
    "source": "Write here - Ctrl+Enter sends it, with Enter after it",
    "text": "Pište sem – Ctrl+Enter odešle text i s Enterem"
   },
-  "s1230": {
+  "s1253": {
    "source": "Writes far more into /var/log/ai/ai.log.",
    "text": "Zapisuje mnohem víc do /var/log/ai/ai.log."
   },
-  "s1231": {
+  "s1254": {
    "source": "Wrong",
    "text": "Chybných"
   },
-  "s1232": {
+  "s1255": {
    "source": "wrong",
    "text": "chybně"
   },
-  "s1233": {
+  "s1256": {
    "source": "wrong name or password",
    "text": "chybné jméno nebo heslo"
   },
-  "s1234": {
+  "s1257": {
    "source": "Wrong passwords before a pause",
    "text": "Chybných hesel před pauzou"
   },
-  "s1235": {
+  "s1258": {
+   "source": "Yes",
+   "text": "Ano"
+  },
+  "s1259": {
    "source": "yes",
    "text": "ano"
   },
-  "s1236": {
+  "s1260": {
    "source": "yesterday",
    "text": "včera"
   },
-  "s1237": {
+  "s1261": {
    "source": "you",
    "text": "vy"
   },
-  "s1238": {
+  "s1262": {
    "source": "Your own certificate",
    "text": "Vlastní certifikát"
   },
-  "s1239": {
+  "s1263": {
    "source": "your rules",
    "text": "vaše pravidla"
   },
-  "s1240": {
+  "s1264": {
    "source": "Zabbix agent",
    "text": "Zabbix agent"
   },
-  "s1241": {
+  "s1265": {
    "source": "…in the first updates",
    "text": "…v prvních aktualizacích"
   },
-  "s1242": {
+  "s1266": {
    "source": "↑ ↓ and Tab or Enter take one · Esc closes",
    "text": "↑ ↓ a Tab nebo Enter vybere · Esc zavře"
   }
@@ -5021,1122 +5117,1162 @@
    "text": "Nový název pro {0}"
   },
   "p0012": {
+   "source": "A new password for {0}",
+   "text": "Nové heslo pro {0}"
+  },
+  "p0013": {
    "source": "a restart is wanted · looked {0}",
    "text": "je potřeba restart · zjišťováno {0}"
   },
-  "p0013": {
+  "p0014": {
    "source": "ai {0}",
    "text": "ai {0}"
   },
-  "p0014": {
+  "p0015": {
    "source": "ai {0} is not at {1}",
    "text": "ai {0} na {1} není"
   },
-  "p0015": {
+  "p0016": {
    "source": "ai {0} is not at {1} any more",
    "text": "ai {0} už na {1} není"
   },
-  "p0016": {
+  "p0017": {
    "source": "ai {0} is not newer than {1}, which runs here",
    "text": "ai {0} není novější než {1}, která tu běží"
   },
-  "p0017": {
+  "p0018": {
    "source": "ai {0} is out - Settings - Upgrades",
    "text": "Vyšlo ai {0} – Nastavení – Upgrady"
   },
-  "p0018": {
+  "p0019": {
    "source": "ai {0} on {1}.",
    "text": "ai {0} na {1}."
   },
-  "p0019": {
+  "p0020": {
    "source": "and in {0}",
    "text": "a v {0}"
   },
-  "p0020": {
+  "p0021": {
    "source": "and {0} more",
    "text": "a dalších {0}"
   },
-  "p0021": {
+  "p0022": {
    "source": "Anthropic's own installer, in a terminal you watch: {0}",
    "text": "Instalátor od Anthropicu, v terminálu, který sledujete: {0}"
   },
-  "p0022": {
+  "p0023": {
    "source": "as it is ({0})",
    "text": "jak je ({0})"
   },
-  "p0023": {
+  "p0024": {
    "source": "asked: {0} does it now",
    "text": "zadáno: {0} to teď provede"
   },
-  "p0024": {
+  "p0025": {
    "source": "Asking {0} about {1}…",
    "text": "Dotaz na {0} ohledně {1}…"
   },
-  "p0025": {
+  "p0026": {
    "source": "at least {0} characters",
    "text": "alespoň {0} znaků"
   },
-  "p0026": {
+  "p0027": {
    "source": "at least {0} line(s)",
    "text": "alespoň {0} řádků"
   },
-  "p0027": {
+  "p0028": {
    "source": "Back to the first page of this list.{0}",
    "text": "Zpět na první stránku tohoto seznamu.{0}"
   },
-  "p0028": {
+  "p0029": {
    "source": "Being written on {0}…",
    "text": "Zapisuje se na {0}…"
   },
-  "p0029": {
+  "p0030": {
    "source": "below {0}",
    "text": "pod {0}"
   },
-  "p0030": {
+  "p0031": {
    "source": "Between the two nodes: {0}",
    "text": "Mezi oběma nody: {0}"
   },
-  "p0031": {
+  "p0032": {
    "source": "Between the two nodes: {0} - codes right on one node may be refused on the other",
    "text": "Mezi oběma nody: {0} – kódy správné na jednom nodu může druhý odmítnout"
   },
-  "p0032": {
+  "p0033": {
    "source": "changed: {0}",
    "text": "změněno: {0}"
   },
-  "p0033": {
+  "p0034": {
    "source": "Changing the network of {0}",
    "text": "Mění se síť nodu {0}"
   },
-  "p0034": {
+  "p0035": {
    "source": "checked against {0}",
    "text": "ověřováno proti {0}"
   },
-  "p0035": {
+  "p0036": {
    "source": "Checking {0}",
    "text": "Kontroluje se {0}"
   },
-  "p0036": {
+  "p0037": {
    "source": "checking {0} ({1})…",
    "text": "kontroluji {0} ({1})…"
   },
-  "p0037": {
+  "p0038": {
    "source": "Claude · {0}",
    "text": "Claude · {0}"
   },
-  "p0038": {
+  "p0039": {
    "source": "Delete {0}?",
    "text": "Smazat {0}?"
   },
-  "p0039": {
+  "p0040": {
+   "source": "done by {0}",
+   "text": "provedl {0}"
+  },
+  "p0041": {
    "source": "done: {0} → {1}",
    "text": "hotovo: {0} → {1}"
   },
-  "p0040": {
+  "p0042": {
    "source": "Download {0}",
    "text": "Stáhnout {0}"
   },
-  "p0041": {
+  "p0043": {
    "source": "exited",
    "text": "skončil"
   },
-  "p0042": {
+  "p0044": {
    "source": "exited ({0})",
    "text": "skončil ({0})"
   },
-  "p0043": {
+  "p0045": {
+   "source": "expired {0}",
+   "text": "vypršel {0}"
+  },
+  "p0046": {
    "source": "expires {0}",
    "text": "vyprší {0}"
   },
-  "p0044": {
+  "p0047": {
    "source": "failed: {0}",
    "text": "selhalo: {0}"
   },
-  "p0045": {
+  "p0048": {
    "source": "filled {0}",
    "text": "naplněno {0}"
   },
-  "p0046": {
+  "p0049": {
    "source": "For {0}",
    "text": "Pro {0}"
   },
-  "p0047": {
+  "p0050": {
    "source": "For {0} only",
    "text": "Jen pro {0}"
   },
-  "p0048": {
+  "p0051": {
    "source": "for {0} · {1}",
    "text": "pro {0} · {1}"
   },
-  "p0049": {
+  "p0052": {
    "source": "found {0}",
    "text": "nalezen {0}"
   },
-  "p0050": {
+  "p0053": {
    "source": "free of {0} on",
    "text": "volných z {0} na"
   },
-  "p0051": {
+  "p0054": {
    "source": "GitHub did not answer: {0}",
    "text": "GitHub neodpověděl: {0}"
   },
-  "p0052": {
+  "p0055": {
    "source": "Hidden - {0} line(s).",
    "text": "Skryto – {0} {0:řádek|řádky|řádků}."
   },
-  "p0053": {
+  "p0056": {
    "source": "HTTP {0}",
    "text": "HTTP {0}"
   },
-  "p0054": {
+  "p0057": {
+   "source": "Import {0}",
+   "text": "Import {0}"
+  },
+  "p0058": {
    "source": "in - keep it within {0} s",
    "text": "nasazeno – potvrďte do {0} s"
   },
-  "p0055": {
+  "p0059": {
    "source": "It has ended: {0}",
    "text": "Skončil: {0}"
   },
-  "p0056": {
+  "p0060": {
    "source": "it is {0} - too big to show here; download it instead",
    "text": "má {0} – příliš velký na zobrazení zde; stáhněte si ho"
   },
-  "p0057": {
+  "p0061": {
    "source": "last {0}",
    "text": "naposledy {0}"
   },
-  "p0058": {
+  "p0062": {
    "source": "last {0} ago",
    "text": "naposledy před {0}"
   },
-  "p0059": {
+  "p0063": {
    "source": "last {0} days",
    "text": "posledních {0} dní"
   },
-  "p0060": {
+  "p0064": {
    "source": "last {0} hours",
    "text": "posledních {0} hodin"
   },
-  "p0061": {
+  "p0065": {
    "source": "last {0} minutes",
    "text": "posledních {0} minut"
   },
-  "p0062": {
+  "p0066": {
    "source": "last {0} weeks",
    "text": "posledních {0} týdnů"
   },
-  "p0063": {
+  "p0067": {
    "source": "look {0} up in {1}",
    "text": "vyhledat {0} v {1}"
   },
-  "p0064": {
+  "p0068": {
    "source": "looked {0}",
    "text": "zjišťováno {0}"
   },
-  "p0065": {
+  "p0069": {
    "source": "Looked {0}: {1}",
    "text": "Zkontrolováno {0}: {1}"
   },
-  "p0066": {
+  "p0070": {
    "source": "looking for updates on {0}",
    "text": "zjišťují se aktualizace na {0}"
   },
-  "p0067": {
+  "p0071": {
    "source": "Looking for updates… ({0})",
    "text": "Hledám aktualizace… ({0})"
   },
-  "p0068": {
+  "p0072": {
    "source": "Made {0}",
    "text": "Vytvořen {0}"
   },
-  "p0069": {
+  "p0073": {
    "source": "made {0}",
    "text": "vytvořeno {0}"
   },
-  "p0070": {
+  "p0074": {
    "source": "made {0} ({1}): {2}",
    "text": "vytvořeno: {0} ({1}): {2}"
   },
-  "p0071": {
+  "p0075": {
    "source": "made {0} on {1}",
    "text": "vytvořeno {0} na uzlu {1}"
   },
-  "p0072": {
+  "p0076": {
    "source": "made {0} on {1} by {2}",
    "text": "vytvořeno {0} na uzlu {1}, vytvořil {2}"
   },
-  "p0073": {
+  "p0077": {
    "source": "Make a fresh pair here - Ed25519, or RSA 4096 where something old needs RSA. Its private half is shown to you once; its public half goes into root's authorized_keys of {0}.",
    "text": "Vytvoří zde nový pár – Ed25519, nebo RSA 4096, kde něco staršího vyžaduje RSA. Soukromá část se vám zobrazí jen jednou; veřejná se zapíše do authorized_keys roota na {0}."
   },
-  "p0074": {
+  "p0078": {
    "source": "Make a key for {0}",
    "text": "Vytvořit klíč pro {0}"
   },
-  "p0075": {
+  "p0079": {
    "source": "more than {0}",
    "text": "více než {0}"
   },
-  "p0076": {
+  "p0080": {
    "source": "more than {0} lines",
    "text": "více než {0} řádků"
   },
-  "p0077": {
+  "p0081": {
    "source": "needed after the update - {0}",
    "text": "potřeba po aktualizaci – {0}"
   },
-  "p0078": {
+  "p0082": {
    "source": "NetworkManager (nmcli) is not on {0}: its network can only be set by hand there.",
    "text": "Na {0} není NetworkManager (nmcli): síť se tam dá nastavit jen ručně."
   },
-  "p0079": {
+  "p0083": {
    "source": "NetworkManager ({0}): {1} via {2}, DNS {3}",
    "text": "NetworkManager ({0}): {1} přes {2}, DNS {3}"
   },
-  "p0080": {
+  "p0084": {
    "source": "NetworkManager ({0}): {1} via {2}, DNS {3}, IPv6 {4}",
    "text": "NetworkManager ({0}): {1} přes {2}, DNS {3}, IPv6 {4}"
   },
-  "p0081": {
+  "p0085": {
    "source": "New settings for {0}",
    "text": "Nové nastavení pro {0}"
   },
-  "p0082": {
+  "p0086": {
    "source": "nginx does not take it, so everything was put back: {0}",
    "text": "nginx to nepřijal, takže se vše vrátilo: {0}"
   },
-  "p0083": {
+  "p0087": {
    "source": "No key lets root in over SSH on {0}.",
    "text": "Na {0} se root přes SSH nepřihlásí žádným klíčem."
   },
-  "p0084": {
+  "p0088": {
    "source": "no key {0} is there",
    "text": "klíč {0} tam není"
   },
-  "p0085": {
+  "p0089": {
    "source": "Not answering for {0} - asked again every two seconds; the page comes back by itself.",
    "text": "Neodpovídá {0} – dotaz každé dvě sekundy; stránka se vrátí sama."
   },
-  "p0086": {
+  "p0090": {
    "source": "Not answering for {0}. The page asks again every two seconds.",
    "text": "Neodpovídá {0}. Stránka se ptá znovu každé dvě sekundy."
   },
-  "p0087": {
+  "p0091": {
    "source": "nothing newer than {0}",
    "text": "nic novějšího než {0}"
   },
-  "p0088": {
+  "p0092": {
    "source": "on {0} - step {1} of {2}",
    "text": "na {0} – krok {1} z {2}"
   },
-  "p0089": {
+  "p0093": {
    "source": "on {0} - {1} so far, usually about {2} min",
    "text": "na {0} – zatím {1}, obvykle asi {2} min"
   },
-  "p0090": {
+  "p0094": {
    "source": "Only {0} to {1}.",
    "text": "Jen {0} až {1}."
   },
-  "p0091": {
+  "p0095": {
    "source": "Only {0} to {1}. ",
    "text": "Jen {0} až {1}. "
   },
-  "p0092": {
+  "p0096": {
    "source": "page {0} of {1}",
    "text": "stránka {0} z {1}"
   },
-  "p0093": {
+  "p0097": {
    "source": "page {0}{1} of more than {2} · more than {3} row(s)",
    "text": "stránka {0}{1} z více než {2} · více než {3} řádků"
   },
-  "p0094": {
+  "p0098": {
    "source": "page {0}{1} of {2} · {3} row(s)",
    "text": "stránka {0}{1} z {2} · {3} {3:řádek|řádky|řádků}"
   },
-  "p0095": {
+  "p0099": {
    "source": "PHP {0}",
    "text": "PHP {0}"
   },
-  "p0096": {
+  "p0100": {
    "source": "Power off {0}?",
    "text": "Vypnout {0}?"
   },
-  "p0097": {
+  "p0101": {
    "source": "put back: {0}",
    "text": "vráceno: {0}"
   },
-  "p0098": {
+  "p0102": {
    "source": "reach {0}",
    "text": "spojit se s {0}"
   },
-  "p0099": {
+  "p0103": {
    "source": "reached {0}",
    "text": "spojeno s {0}"
   },
-  "p0100": {
+  "p0104": {
    "source": "Refused: {0}",
    "text": "Odmítnuto: {0}"
   },
-  "p0101": {
+  "p0105": {
    "source": "refused{0}",
    "text": "odmítnuto{0}"
   },
-  "p0102": {
+  "p0106": {
    "source": "Request {0}",
    "text": "Požadavek {0}"
   },
-  "p0103": {
+  "p0107": {
    "source": "Restart {0}",
    "text": "Restartovat {0}"
   },
-  "p0104": {
+  "p0108": {
    "source": "Restart {0}?",
    "text": "Restartovat {0}?"
   },
-  "p0105": {
+  "p0109": {
    "source": "Restarted now: {0}, one after the other.",
    "text": "Restartuje se teď: {0}, jeden po druhém."
   },
-  "p0106": {
+  "p0110": {
    "source": "Restarted now: {0}.",
    "text": "Restartuje se teď: {0}."
   },
-  "p0107": {
+  "p0111": {
    "source": "restarting {0}, one at a time",
    "text": "restartuje se {0}, jeden po druhém"
   },
-  "p0108": {
+  "p0112": {
    "source": "Restarting: {0} - followed on Restart and power off.",
    "text": "Restartuje se: {0} – průběh na stránce Restart a vypnutí."
   },
-  "p0109": {
+  "p0113": {
    "source": "Restarting: {0} so far - a restart takes a minute or two.",
    "text": "Restart: zatím {0} – restart trvá minutu či dvě."
   },
-  "p0110": {
+  "p0114": {
    "source": "Root on {0} did not put it in: ",
    "text": "Root na {0} to nenasadil: "
   },
-  "p0111": {
+  "p0115": {
    "source": "sending {0}…",
    "text": "nahrávám {0}…"
   },
-  "p0112": {
+  "p0116": {
    "source": "sent by {0}",
    "text": "poslal {0}"
   },
-  "p0113": {
+  "p0117": {
    "source": "sent to {0}",
    "text": "odesláno na {0}"
   },
-  "p0114": {
+  "p0118": {
    "source": "sent to {0} ({1} of {2})",
    "text": "posílá se do {0} ({1} z {2})"
   },
-  "p0115": {
+  "p0119": {
    "source": "Sent to {0} - write the code from it below.",
    "text": "Odesláno na {0} – kód z něj zadejte níže."
   },
-  "p0116": {
+  "p0120": {
    "source": "sent to {0} - {1}",
    "text": "posláno na {0} – {1}"
   },
-  "p0117": {
+  "p0121": {
    "source": "sent to {0} in {1} s - {2}",
    "text": "posláno na {0} za {1} s – {2}"
   },
-  "p0118": {
+  "p0122": {
    "source": "Sent to {0}.",
    "text": "Odesláno na {0}."
   },
-  "p0119": {
+  "p0123": {
    "source": "shell · {0}",
    "text": "shell · {0}"
   },
-  "p0120": {
+  "p0124": {
    "source": "sign in as {0} ({1})",
    "text": "přihlásit se jako {0} ({1})"
   },
-  "p0121": {
+  "p0125": {
    "source": "signed by {0}",
    "text": "podepsal {0}"
   },
-  "p0122": {
+  "p0126": {
    "source": "signed in as {0}",
    "text": "přihlášen jako {0}"
   },
-  "p0123": {
+  "p0127": {
    "source": "signed in from {0}",
    "text": "přihlášen přes {0}"
   },
-  "p0124": {
+  "p0128": {
    "source": "signing in {0} s",
    "text": "přihlášení {0} s"
   },
-  "p0125": {
+  "p0129": {
    "source": "started by {0}",
    "text": "spustil {0}"
   },
-  "p0126": {
+  "p0130": {
    "source": "Step the clock of {0} now?",
    "text": "Srovnat hodiny nodu {0} hned?"
   },
-  "p0127": {
+  "p0131": {
    "source": "Take {0} away?",
    "text": "Odstranit {0}?"
   },
-  "p0128": {
+  "p0132": {
    "source": "Take {0} off the list",
    "text": "Vyřadit {0} ze seznamu"
   },
-  "p0129": {
+  "p0133": {
    "source": "Take {0} out of service",
    "text": "Vyřadit {0} z provozu"
   },
-  "p0130": {
+  "p0134": {
    "source": "that file is bigger than this server takes ({0} MB at most)",
    "text": "ten soubor je větší, než tento server přijme (nejvýš {0} MB)"
   },
-  "p0131": {
+  "p0135": {
    "source": "The account {0}",
    "text": "Účet {0}"
   },
-  "p0132": {
+  "p0136": {
    "source": "the account {0} is gone",
    "text": "účet {0} je odebrán"
   },
-  "p0133": {
+  "p0137": {
    "source": "the account {0} is made",
    "text": "účet {0} je vytvořen"
   },
-  "p0134": {
+  "p0138": {
    "source": "The clock jumps to the time servers' time at once. Codes and logs written in that moment may look out of order.",
    "text": "Hodiny okamžitě skočí na čas časových serverů. Kódy a logy zapsané v tu chvíli mohou vypadat v nesprávném pořadí."
   },
-  "p0135": {
+  "p0139": {
    "source": "the connection dropped - again in {0} s",
    "text": "spojení se přerušilo – znovu za {0} s"
   },
-  "p0136": {
+  "p0140": {
    "source": "the default ({0})",
    "text": "výchozí ({0})"
   },
-  "p0137": {
+  "p0141": {
    "source": "The directory {0}",
    "text": "Adresář {0}"
   },
-  "p0138": {
+  "p0142": {
    "source": "the directory {0}",
    "text": "adresář {0}"
   },
-  "p0139": {
+  "p0143": {
+   "source": "the directory {0} is saved",
+   "text": "adresář {0} je uložen"
+  },
+  "p0144": {
    "source": "the file did not arrive whole ({0} of {1} bytes)",
    "text": "soubor nedorazil celý ({0} z {1} bajtů)"
   },
-  "p0140": {
+  "p0145": {
    "source": "the file {0} is Claude's now: {1}",
    "text": "soubor {0} teď má Claude: {1}"
   },
-  "p0141": {
+  "p0146": {
    "source": "The filter table as iptables-save shows it, read {0}. The marked lines are ai's (the chain AI-IN and the jump to it); the rest are yours, and ai never changes them. ",
    "text": "Tabulka filter, jak ji ukazuje iptables-save, načtená {0}. Zvýrazněné řádky patří ai (řetězec AI-IN a skok do něj); ostatní jsou vaše a ai je nikdy nemění. "
   },
-  "p0142": {
+  "p0147": {
    "source": "the key is exported as {0}",
    "text": "klíč je exportovaný jako {0}"
   },
-  "p0143": {
+  "p0148": {
    "source": "The last page of this list.{0}",
    "text": "Poslední stránka tohoto seznamu.{0}"
   },
-  "p0144": {
+  "p0149": {
    "source": "the last {0} hours",
    "text": "posledních {0} hodin"
   },
-  "p0145": {
+  "p0150": {
    "source": "the last {0} h{1}{2}",
    "text": "posledních {0} h{1}{2}"
   },
-  "p0146": {
+  "p0151": {
    "source": "The machine's whole name. The node keeps its name in ai ({0}) whatever the machine is called.",
    "text": "Celé jméno stroje. Node si v ai ponechá své jméno ({0}), ať se stroj jmenuje jakkoli."
   },
-  "p0147": {
+  "p0152": {
    "source": "The network of {0} is changed",
    "text": "Síť nodu {0} je změněná"
   },
-  "p0148": {
+  "p0153": {
    "source": "the network of {0} is changed",
    "text": "síť nodu {0} je změněná"
   },
-  "p0149": {
+  "p0154": {
    "source": "The network of {0} was not changed",
    "text": "Síť nodu {0} nebyla změněna"
   },
-  "p0150": {
+  "p0155": {
    "source": "the network of {0} was not changed",
    "text": "síť nodu {0} nebyla změněna"
   },
-  "p0151": {
+  "p0156": {
    "source": "The next page of this list.{0}",
    "text": "Další stránka tohoto seznamu.{0}"
   },
-  "p0152": {
+  "p0157": {
    "source": "The nginx file of the pages ({0}) has no list written by install.sh: change it there.",
    "text": "Soubor nginx těchto stránek ({0}) nemá seznam zapsaný install.sh: změňte ho tam."
   },
-  "p0153": {
+  "p0158": {
    "source": "the package was refused: {0}",
    "text": "balíček byl odmítnut: {0}"
   },
-  "p0154": {
+  "p0159": {
    "source": "The page before this one.{0}",
    "text": "Předchozí stránka.{0}"
   },
-  "p0155": {
+  "p0160": {
    "source": "The password of {0}",
    "text": "Heslo účtu {0}"
   },
-  "p0156": {
+  "p0161": {
    "source": "the password: {0}",
    "text": "heslo: {0}"
   },
-  "p0157": {
+  "p0162": {
    "source": "The pasted text as a file called",
    "text": "Vložený text jako soubor s názvem"
   },
-  "p0158": {
+  "p0163": {
    "source": "the picture {0} is Claude's now: {1}",
    "text": "obrázek {0} teď má Claude: {1}"
   },
-  "p0159": {
+  "p0164": {
    "source": "The realm {0}",
    "text": "Realm {0}"
   },
-  "p0160": {
+  "p0165": {
+   "source": "the realm {0} is saved",
+   "text": "realm {0} je uložen"
+  },
+  "p0166": {
    "source": "the realm {0} takes {1} already",
    "text": "realm {0} už bere {1}"
   },
-  "p0161": {
+  "p0167": {
    "source": "the server did not answer in {0} s",
    "text": "server neodpověděl do {0} s"
   },
-  "p0162": {
+  "p0168": {
    "source": "The server is not answering just now ({0}) - asking again.",
    "text": "Server právě neodpovídá ({0}) – ptám se znovu."
   },
-  "p0163": {
+  "p0169": {
    "source": "The web address ({0}) is meant to be in another network than the new address",
    "text": "Webová adresa ({0}) má být záměrně v jiné síti než nová adresa"
   },
-  "p0164": {
+  "p0170": {
    "source": "The whole firewall on {0} (read only)",
    "text": "Celý firewall na {0} (jen ke čtení)"
   },
-  "p0165": {
+  "p0171": {
    "source": "Then, on your machine: ssh -i {0} root@…",
    "text": "Potom na svém počítači: ssh -i {0} root@…"
   },
-  "p0166": {
+  "p0172": {
    "source": "there is a {0} there already",
    "text": "{0} už tam je"
   },
-  "p0167": {
+  "p0173": {
    "source": "there is an account called {0} already",
    "text": "účet {0} už existuje"
   },
-  "p0168": {
+  "p0174": {
    "source": "There is no iptables on {0}.",
    "text": "Na {0} není iptables."
   },
-  "p0169": {
+  "p0175": {
    "source": "there is no Linux account {0} on this machine",
    "text": "na tomto stroji není účet Linuxu {0}"
   },
-  "p0170": {
+  "p0176": {
    "source": "there: {0}",
    "text": "je tam: {0}"
   },
-  "p0171": {
+  "p0177": {
    "source": "This is the only time it is shown. Whoever holds it signs in to {0} as root.",
    "text": "Zobrazí se jen tentokrát. Kdokoli ho má, přihlásí se na {0} jako root."
   },
-  "p0172": {
+  "p0178": {
    "source": "This page's server is not answering for {0} - restarting, or the web address moving; asked again every few seconds.",
    "text": "Server této stránky neodpovídá {0} – restartuje se, nebo se přesouvá webová adresa; dotaz se opakuje každých pár sekund."
   },
-  "p0173": {
+  "p0179": {
    "source": "Time servers NOT set {0}: {1}",
    "text": "Časové servery NENASTAVENY {0}: {1}"
   },
-  "p0174": {
+  "p0180": {
    "source": "Time servers set {0}: {1}",
    "text": "Časové servery nastaveny {0}: {1}"
   },
-  "p0175": {
+  "p0181": {
    "source": "tmux would not start it: {0}",
    "text": "tmux ho nespustil: {0}"
   },
-  "p0176": {
+  "p0182": {
    "source": "token: {0}",
    "text": "token: {0}"
   },
-  "p0177": {
+  "p0183": {
    "source": "too many wrong passwords - try again in {0} min",
    "text": "příliš mnoho chybných hesel – zkuste to znovu za {0} min"
   },
-  "p0178": {
+  "p0184": {
    "source": "until {0}",
    "text": "do {0}"
   },
-  "p0179": {
+  "p0185": {
    "source": "up {0} · {1}",
    "text": "běží {0} · {1}"
   },
-  "p0180": {
+  "p0186": {
    "source": "upgrade to {0}",
    "text": "aktualizace na {0}"
   },
-  "p0181": {
+  "p0187": {
    "source": "Upgrade to {0} now",
    "text": "Aktualizovat na {0} teď"
   },
-  "p0182": {
+  "p0188": {
    "source": "Upgrade to {0}?",
    "text": "Upgradovat na {0}?"
   },
-  "p0183": {
+  "p0189": {
    "source": "used {0}",
    "text": "použit {0}"
   },
-  "p0184": {
+  "p0190": {
    "source": "used {0} · {1}",
    "text": "použit {0} · {1}"
   },
-  "p0185": {
+  "p0191": {
    "source": "waiting for {0} to start",
    "text": "čekám, až začne {0}"
   },
-  "p0186": {
+  "p0192": {
    "source": "What ran in it has ended (exit {0}). Its last screen is above.",
    "text": "Co v něm běželo, skončilo (exit {0}). Jeho poslední obrazovka je výše."
   },
-  "p0187": {
+  "p0193": {
    "source": "What ran in it has ended. Its last screen is above.",
    "text": "Co v něm běželo, skončilo. Jeho poslední obrazovka je výše."
   },
-  "p0188": {
+  "p0194": {
    "source": "What {0} holds, most first",
    "text": "Co obsahuje {0}, nejčastější první"
   },
-  "p0189": {
+  "p0195": {
    "source": "Whoever holds {0} may no longer sign in as {1} with it.",
    "text": "Kdo drží {0}, se s ním už nepřihlásí jako {1}."
   },
-  "p0190": {
+  "p0196": {
    "source": "written into {0} as {1}",
    "text": "zapsáno do {0} jako {1}"
   },
-  "p0191": {
+  "p0197": {
    "source": "written {0}",
    "text": "zapsáno {0}"
   },
-  "p0192": {
+  "p0198": {
    "source": "You are on page {0}{1} of {2}.",
    "text": "Jste na stránce {0}{1} z {2}."
   },
-  "p0193": {
+  "p0199": {
    "source": "You: {0}",
    "text": "Vy: {0}"
   },
-  "p0194": {
+  "p0200": {
    "source": "{0} % · {1} of {2} node(s) done",
    "text": "{0} % · hotovo {1} z {2} uzlů"
   },
-  "p0195": {
+  "p0201": {
    "source": "{0} (+{1} step)",
    "text": "{0} (+{1} krok)"
   },
-  "p0196": {
+  "p0202": {
    "source": "{0} (not answering)",
    "text": "{0} (neodpovídá)"
   },
-  "p0197": {
+  "p0203": {
+   "source": "{0} (the newest)",
+   "text": "{0} (nejnovější)"
+  },
+  "p0204": {
    "source": "{0} (this one)",
    "text": "{0} (tento)"
   },
-  "p0198": {
+  "p0205": {
    "source": "{0} (yours)",
    "text": "{0} (váš)"
   },
-  "p0199": {
+  "p0206": {
    "source": "{0} ({1} step)",
    "text": "{0} ({1} krok)"
   },
-  "p0200": {
+  "p0207": {
    "source": "{0} - keep it within {1} s",
    "text": "{0} – potvrďte do {1} s"
   },
-  "p0201": {
+  "p0208": {
    "source": "{0} - the last 8 tries",
    "text": "{0} – posledních 8 pokusů"
   },
-  "p0202": {
+  "p0209": {
    "source": "{0} - {1} ({2} days left)",
    "text": "{0} – {1} (zbývá {2} dní)"
   },
-  "p0203": {
+  "p0210": {
    "source": "{0} / {1} names",
    "text": "{0} / {1} jmen"
   },
-  "p0204": {
+  "p0211": {
    "source": "{0} a page",
    "text": "{0} na stránku"
   },
-  "p0205": {
+  "p0212": {
    "source": "{0} accounts",
    "text": "{0} {0:účet|účty|účtů}"
   },
-  "p0206": {
+  "p0213": {
    "source": "{0} addresses",
    "text": "{0} {0:adresa|adresy|adres}"
   },
-  "p0207": {
+  "p0214": {
    "source": "{0} ago",
    "text": "před {0}"
   },
-  "p0208": {
+  "p0215": {
    "source": "{0} change(s) not saved yet",
    "text": "{0} {0:neuložená změna|neuložené změny|neuložených změn}"
   },
-  "p0209": {
+  "p0216": {
    "source": "{0} Claude Code · {1} open now",
    "text": "{0} Claude Code · {1} právě otevřených"
   },
-  "p0210": {
+  "p0217": {
    "source": "{0} days",
    "text": "{0} {0:den|dny|dní}"
   },
-  "p0211": {
+  "p0218": {
    "source": "{0} days ago",
    "text": "před {0} dny"
   },
-  "p0212": {
+  "p0219": {
    "source": "{0} days left",
    "text": "zbývá {0} {0:den|dny|dní}"
   },
-  "p0213": {
+  "p0220": {
    "source": "{0} days {1} h",
    "text": "{0} dní {1} h"
   },
-  "p0214": {
+  "p0221": {
    "source": "{0} deleted {1}",
    "text": "{0} smazal {1}"
   },
-  "p0215": {
+  "p0222": {
    "source": "{0} digits, {1} s, {2}",
    "text": "{0} číslic, {1} s, {2}"
   },
-  "p0216": {
+  "p0223": {
    "source": "{0} emptied {1} at {2}",
    "text": "{0} vyprázdnil {1} na {2}"
   },
-  "p0217": {
+  "p0224": {
    "source": "{0} ended a sign-in",
    "text": "{0} ukončil přihlášení"
   },
-  "p0218": {
+  "p0225": {
    "source": "{0} event(s)",
    "text": "{0} {0:událost|události|událostí}"
   },
-  "p0219": {
+  "p0226": {
    "source": "{0} failed: {1}",
    "text": "{0} selhalo: {1}"
   },
-  "p0220": {
+  "p0227": {
    "source": "{0} free on {1}",
    "text": "{0} volno na {1}"
   },
-  "p0221": {
+  "p0228": {
    "source": "{0} goes into maintenance, the web address moves to the other node, and it restarts; back up, it comes back into service by itself.",
    "text": "{0} přejde do údržby, webová adresa se přesune na druhý node a restartuje se; po naběhnutí se sám vrátí do provozu."
   },
-  "p0222": {
+  "p0229": {
    "source": "{0} gone",
    "text": "{0} {0:chybí|chybí|chybí}"
   },
-  "p0223": {
+  "p0230": {
    "source": "{0} h ago",
    "text": "před {0} h"
   },
-  "p0224": {
+  "p0231": {
    "source": "{0} has not said what its network is yet - Read it again.",
    "text": "{0} zatím neřekl, jakou má síť – načtěte znovu."
   },
-  "p0225": {
+  "p0232": {
    "source": "{0} here already",
    "text": "{0} už tu je"
   },
-  "p0226": {
+  "p0233": {
    "source": "{0} in maintenance",
    "text": "{0} v údržbě"
   },
-  "p0227": {
+  "p0234": {
    "source": "{0} in the directory",
    "text": "{0} v adresáři"
   },
-  "p0228": {
+  "p0235": {
+   "source": "{0} in use",
+   "text": "{0} se používá"
+  },
+  "p0236": {
    "source": "{0} is at {1}",
    "text": "{0} je na {1}"
   },
-  "p0229": {
+  "p0237": {
+   "source": "{0} is deleted",
+   "text": "{0} je smazán"
+  },
+  "p0238": {
    "source": "{0} is going on already",
    "text": "{0} už probíhá"
   },
-  "p0230": {
+  "p0239": {
    "source": "{0} is not a folder on this server",
    "text": "{0} není složka na tomto serveru"
   },
-  "p0231": {
+  "p0240": {
    "source": "{0} is not a host name",
    "text": "{0} není název hostitele"
   },
-  "p0232": {
+  "p0241": {
    "source": "{0} is not an address",
    "text": "{0} není adresa"
   },
-  "p0233": {
+  "p0242": {
    "source": "{0} is not answering.",
    "text": "{0} neodpovídá."
   },
-  "p0234": {
+  "p0243": {
    "source": "{0} is not on this machine",
    "text": "{0} na tomto stroji není"
   },
-  "p0235": {
+  "p0244": {
    "source": "{0} is not taken away from here",
    "text": "{0} se odsud neodstraňuje"
   },
-  "p0236": {
+  "p0245": {
    "source": "{0} is not there",
    "text": "{0} chybí"
   },
-  "p0237": {
+  "p0246": {
    "source": "{0} is off",
    "text": "{0} je vypnuto"
   },
-  "p0238": {
+  "p0247": {
    "source": "{0} is older than {1}, which runs here: going back is done on the command line",
    "text": "{0} je starší než {1}, která tu běží: návrat zpět se dělá z příkazové řádky"
   },
-  "p0239": {
+  "p0248": {
    "source": "{0} is out",
    "text": "vyšla {0}"
   },
-  "p0240": {
+  "p0249": {
    "source": "{0} is outside the folders this account may use",
    "text": "{0} je mimo složky, které tento účet smí používat"
   },
-  "p0241": {
+  "p0250": {
    "source": "{0} is switched off; the web address moves to the other node, which goes on answering alone. It has to be switched on again at the machine.",
    "text": "{0} se vypne; webová adresa přejde na druhý node, který odpovídá sám. Znovu se musí zapnout u stroje."
   },
-  "p0242": {
+  "p0251": {
    "source": "{0} item(s)",
    "text": "{0} {0:položka|položky|položek}"
   },
-  "p0243": {
+  "p0252": {
    "source": "{0} item(s) (only the first 10 000)",
    "text": "{0} {0:položka|položky|položek} (jen prvních 10 000)"
   },
-  "p0244": {
+  "p0253": {
    "source": "{0} keeps",
    "text": "{0} drží"
   },
-  "p0245": {
+  "p0254": {
    "source": "{0} left",
    "text": "zbývá {0}"
   },
-  "p0246": {
+  "p0255": {
    "source": "{0} line(s)",
    "text": "{0} {0:řádek|řádky|řádků}"
   },
-  "p0247": {
+  "p0256": {
+   "source": "{0} locked out",
+   "text": "zablokováno: {0}"
+  },
+  "p0257": {
    "source": "{0} made the account {1} ({2})",
    "text": "{0} vytvořil účet {1} ({2})"
   },
-  "p0248": {
+  "p0258": {
    "source": "{0} min ago",
    "text": "před {0} min"
   },
-  "p0249": {
+  "p0259": {
    "source": "{0} more",
    "text": "a {0} dalších"
   },
-  "p0250": {
+  "p0260": {
    "source": "{0} needs a restart",
    "text": "{0} potřebuje restart"
   },
-  "p0251": {
+  "p0261": {
    "source": "{0} now.",
    "text": "teď {0}."
   },
-  "p0252": {
+  "p0262": {
    "source": "{0} of ours",
    "text": "{0} našich"
   },
-  "p0253": {
+  "p0263": {
    "source": "{0} of {1}",
    "text": "{0} z {1}"
   },
-  "p0254": {
+  "p0264": {
    "source": "{0} of {1} picked",
    "text": "vybráno {0} z {1}"
   },
-  "p0255": {
+  "p0265": {
    "source": "{0} of {1} switched on",
    "text": "{0} z {1} zapnuto"
   },
-  "p0256": {
+  "p0266": {
    "source": "{0} off",
    "text": "{0} vypnuto"
   },
-  "p0257": {
+  "p0267": {
    "source": "{0} only",
    "text": "jen {0}"
   },
-  "p0258": {
+  "p0268": {
    "source": "{0} or later,",
    "text": "{0} nebo novější,"
   },
-  "p0259": {
+  "p0269": {
    "source": "{0} out of service",
    "text": "{0} mimo provoz"
   },
-  "p0260": {
+  "p0270": {
    "source": "{0} package(s) to update · looked {1}",
    "text": "{0} {0:balíček|balíčky|balíčků} k aktualizaci · zjišťováno {1}"
   },
-  "p0261": {
+  "p0271": {
    "source": "{0} package(s) to update · looked {1} · a restart of the server is wanted",
    "text": "{0} {0:balíček|balíčky|balíčků} k aktualizaci · zjišťováno {1} · je potřeba restart serveru"
   },
-  "p0262": {
+  "p0272": {
    "source": "{0} processor(s) · {1} · {2}",
    "text": "{0} {0:procesor|procesory|procesorů} · {1} · {2}"
   },
-  "p0263": {
+  "p0273": {
    "source": "{0} refused",
    "text": "{0} odmítnuto"
   },
-  "p0264": {
+  "p0274": {
    "source": "{0} row(s)",
    "text": "{0} {0:řádek|řádky|řádků}"
   },
-  "p0265": {
+  "p0275": {
    "source": "{0} s ago",
    "text": "před {0} s"
   },
-  "p0266": {
+  "p0276": {
    "source": "{0} says it again within a few seconds",
    "text": "{0} to během pár sekund řekne znovu"
   },
-  "p0267": {
+  "p0277": {
    "source": "{0} set a new password for {1}",
    "text": "{0} nastavil nové heslo pro {1}"
   },
-  "p0268": {
+  "p0278": {
    "source": "{0} set the time: {1}",
    "text": "{0} nastavil(a) čas: {1}"
   },
-  "p0269": {
+  "p0279": {
    "source": "{0} set up {1} at {2}",
    "text": "{0} nastavil {1} na {2}"
   },
-  "p0270": {
+  "p0280": {
    "source": "{0} shown",
    "text": "{0} zobrazeno"
   },
-  "p0271": {
+  "p0281": {
    "source": "{0} signed in",
    "text": "{0} přihlášeno"
   },
-  "p0272": {
+  "p0282": {
    "source": "{0} signed in from {1}",
    "text": "{0} se přihlásil z {1}"
   },
-  "p0273": {
+  "p0283": {
    "source": "{0} steps",
    "text": "{0} kroků"
   },
-  "p0274": {
+  "p0284": {
    "source": "{0} switched {1} off",
    "text": "{0} vypnul {1}"
   },
-  "p0275": {
+  "p0285": {
    "source": "{0} switched {1} on",
    "text": "{0} zapnul {1}"
   },
-  "p0276": {
+  "p0286": {
    "source": "{0} terminal(s) running.",
    "text": "{0} {0:terminál běží|terminály běží|terminálů běží}."
   },
-  "p0277": {
+  "p0287": {
    "source": "{0} The filters above stay as they are.",
    "text": "{0} Filtry nahoře zůstávají, jak jsou."
   },
-  "p0278": {
+  "p0288": {
    "source": "{0} to go",
    "text": "zbývá {0}"
   },
-  "p0279": {
+  "p0289": {
    "source": "{0} waiting",
    "text": "{0} čeká"
   },
-  "p0280": {
+  "p0290": {
    "source": "{0} {1} free of {2}",
    "text": "{0} {1} volno z {2}"
   },
-  "p0281": {
+  "p0291": {
    "source": "{0} · {1} · {2} ago",
    "text": "{0} · {1} · před {2}"
   },
-  "p0282": {
+  "p0292": {
    "source": "{0}, in step",
    "text": "{0}, seřízeno"
   },
-  "p0283": {
+  "p0293": {
    "source": "{0}, not in step yet",
    "text": "{0}, zatím neseřízeno"
   },
-  "p0284": {
+  "p0294": {
    "source": "{0}: sshd does not let root sign in at all (PermitRootLogin no) - the keys below are not used there until it does.",
    "text": "{0}: sshd rootovi přihlášení vůbec nepovoluje (PermitRootLogin no) – klíče níže se tam nepoužijí, dokud to nepovolí."
   },
-  "p0285": {
+  "p0295": {
    "source": "{0}: sshd takes no keys (PubkeyAuthentication no).",
    "text": "{0}: sshd nepřijímá klíče (PubkeyAuthentication no)."
   },
-  "p0286": {
+  "p0296": {
    "source": "{0}:{1} left",
    "text": "zbývá {0}:{1}"
   },
-  "p0287": {
+  "p0297": {
    "source": "{0}{1} right now.",
    "text": "{0}{1} právě teď."
   },
-  "p0288": {
+  "p0298": {
    "source": "· {0} not read",
    "text": "· {0} nenačteno"
   },
-  "p0289": {
+  "p0299": {
    "source": "· {0} refused",
    "text": "· {0} odmítnuto"
   },
-  "p0290": {
+  "p0300": {
    "source": "· {0}s later",
    "text": "· o {0} s později"
   },
-  "p0291": {
+  "p0301": {
    "source": "… and {0} more",
    "text": "… a dalších {0}"
   }
@@ -6187,10 +6323,14 @@
    "text": "Nastavuje se přes NetworkManager. Změna se sama vrátí, pokud se nepotvrdí: otevřete stránky na nové adrese a stiskněte <b>Ponechat</b>."
   },
   "r0012": {
+   "source": "The ai console (<code>ai --console</code>) opens by itself when root signs in at the server's screen or over SSH; q leaves it for the ordinary shell. Never inside a terminal of these pages.",
+   "text": "Konzole ai (<code>ai --console</code>) se otevře sama, když se root přihlásí na obrazovce serveru nebo přes SSH; q ji opustí do běžného shellu. Nikdy uvnitř terminálu těchto stránek."
+  },
+  "r0013": {
    "source": "The connection is brought up again with the new settings. Open the pages at the new address and press <b>Keep it</b> - not kept, the old settings come back by themselves.",
    "text": "Připojení se znovu nahodí s novým nastavením. Otevřete stránky na nové adrese a stiskněte <b>Ponechat</b> – bez potvrzení se staré nastavení vrátí samo."
   },
-  "r0013": {
+  "r0014": {
    "source": "Who may sign in to these pages. An <b>administrator</b> may do everything, start terminals as any Linux account and change the server; a <b>user</b> has terminals of their own only, running as the Linux account given here, and files only in its folders. Whoever signs in here is, on the server, the Linux account their terminals run as.",
    "text": "Kdo se smí přihlásit k těmto stránkám. <b>Administrátor</b> smí všechno, spouštět terminály jako kterýkoli účet Linuxu a měnit server; <b>uživatel</b> má jen vlastní terminály, běžící jako zde zadaný účet Linuxu, a soubory jen ve svých složkách. Kdo se tu přihlásí, je na serveru tím účtem Linuxu, pod kterým běží jeho terminály."
   }

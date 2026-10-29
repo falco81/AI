@@ -1204,7 +1204,7 @@ function showPane(name) {
   if (name === 'osup') loadOsup(); else if (typeof ouPoll === 'function') ouPoll(false);
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
   if (name === 'upgrade') loadUpgrade();
-  if (name === 'about') loadAbout();
+  if (name === 'about') { loadAbout(); loadConsoleLogin(); }
   markDirtyCount();
 }
 document.querySelectorAll('#ctl-nav button[data-pane]').forEach(function (b) {
@@ -1669,6 +1669,17 @@ function loadAbout() {
       ['Its folders', noI18n(el('span', 'mono small', d.paths.state + ' · ' + d.paths.config + ' · ' + d.paths.log))],
       ['On the command line', noI18n(el('span', 'mono', 'ai --status · ai --sessions · ai --attach ID'))]
     ]));
+  }).catch(oops);
+}
+function loadConsoleLogin() {
+  api('console-login').then(function (d) {
+    var host = $('ab-console');
+    clear(host);
+    var sw = switchBox(d.on);
+    sw._input.onchange = function () {
+      api('console-login', {on: !!sw._get()}).then(function (r) { toast(r.message, 'good'); }).catch(oops);
+    };
+    host.appendChild(formField('It opens when root signs in', sw, d.there ? '' : '/etc/profile.d/zz-ai-console.sh is not there - install.sh --upgrade puts it in.'));
   }).catch(oops);
 }
 $('ab-log').onclick = function () {

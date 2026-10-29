@@ -72,7 +72,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -226,6 +226,7 @@ def config_rebuild(store=None):
 # ---------------------------------------------------------------------------
 LOG_LOCK = threading.Lock()
 LOG_TO_FILE = [False]
+LOG_TO_STDERR = [False]        # the daemon's own; the command line says what it does itself
 LOG_SPARE = {}
 
 
@@ -240,11 +241,12 @@ def log(text, level='info'):
                     f.write(line + '\n')
             except OSError:
                 pass
-        try:
-            sys.stderr.write(line + '\n')
-            sys.stderr.flush()
-        except (OSError, ValueError):
-            pass
+        if LOG_TO_STDERR[0] or level in ('error', 'crit'):
+            try:
+                sys.stderr.write(line + '\n')
+                sys.stderr.flush()
+            except (OSError, ValueError):
+                pass
 
 
 def log_sparing(key, text, level='warn', every=600):
@@ -2869,6 +2871,19 @@ def api_upgrade_do(c):
     raise Refused('look, fetch, install or hide')
 
 
+@route('GET', '/api/console-login', admin=True)
+def api_console_login(c):
+    return {'on': console_at_login(), 'there': CONSOLE_PROFILE.exists()}
+
+
+@route('POST', '/api/console-login', admin=True)
+def api_console_login_do(c):
+    said = console_at_login_set(bool(c.body.get('on')))
+    c.daemon.store.add_event('settings', '%s switched %s the ai console at root\'s login' % (
+        c.name, 'on' if c.body.get('on') else 'off'), 'warn', who=c.name)
+    return {'on': console_at_login(), 'message': said}
+
+
 @route('GET', '/api/linux', admin=True)
 def api_linux(c):
     return {'accounts': linux_accounts()}
@@ -4285,6 +4300,7 @@ class Daemon:
     def run(self):
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         LOG_TO_FILE[0] = True
+        LOG_TO_STDERR[0] = True
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(str(STATE_DIR), 0o711)
         self.write_token()
@@ -4312,10 +4328,2899 @@ class Daemon:
 
 
 # ---------------------------------------------------------------------------
+# Colour - as isemon does it
+# ---------------------------------------------------------------------------
+# colorama when it is installed, and the same escape sequences written by hand
+# when it is not. A nicety, never a dependency: a server being put right at two
+# in the morning is not the one to find that ai will not start because a
+# colour library is missing. colorama adds a Windows console, a
+# terminal reset however the program ends, and nothing else on Linux.
+try:
+    import colorama
+    from colorama import Fore as _Fore, Style as _Style
+    HAVE_COLORAMA = True
+except Exception:                       # not installed, or installed broken
+    colorama = None
+    HAVE_COLORAMA = False
+
+    class _Fore(object):
+        RED = '\033[31m'; GREEN = '\033[32m'; YELLOW = '\033[33m'
+        BLUE = '\033[34m'; MAGENTA = '\033[35m'; CYAN = '\033[36m'
+        WHITE = '\033[37m'; RESET = '\033[39m'
+
+    class _Style(object):
+        BRIGHT = '\033[1m'; DIM = '\033[2m'; NORMAL = '\033[22m'
+        RESET_ALL = '\033[0m'
+
+_COLORAMA_READY = False
+
+
+def write_private(path, text):
+    """A file only root reads, so from its first byte (1.0.94)."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(text)
+
+
+def start_colour():
+    global _COLORAMA_READY
+    if _COLORAMA_READY or not HAVE_COLORAMA:
+        return
+    _COLORAMA_READY = True
+    try:
+        if hasattr(colorama, 'just_fix_windows_console'):
+            colorama.just_fix_windows_console()
+        else:
+            colorama.init()
+    except Exception:
+        pass
+
+
+ANSI = re.compile(r'\033\[[0-9;]*m')
+TERM_CTL = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+
+
+def term_safe(text):
+    """What came from outside, safe on a terminal (1.0.139): a User-Name or a
+    reason from a packet carried escapes that cleared the screen, set the
+    title or wrote the clipboard. Colours are kept; any other control
+    character is shown as \\xNN."""
+    t = str(text)
+    out, at = [], 0
+    for m in ANSI.finditer(t):
+        out.append(TERM_CTL.sub(lambda c: '\\x%02x' % ord(c.group(0)), t[at:m.start()]))
+        out.append(m.group(0))
+        at = m.end()
+    out.append(TERM_CTL.sub(lambda c: '\\x%02x' % ord(c.group(0)), t[at:]))
+    return ''.join(out)
+
+
+def plain_len(text):
+    """How wide something looks, the colour taken out."""
+    return len(ANSI.sub('', str(text)))
+
+
+def plain_pad(text, width):
+    return str(text) + ' ' * max(0, width - plain_len(text))
+
+
+class Palette(object):
+    """Every colour the command line uses, in one place."""
+
+    def __init__(self, on):
+        self.on = bool(on)
+        if self.on:
+            start_colour()
+
+        def code(*parts):
+            return ''.join(parts) if self.on else ''
+
+        self.c_ok = code(_Fore.GREEN)
+        self.c_warn = code(_Fore.YELLOW)
+        self.c_bad = code(_Style.BRIGHT, _Fore.RED)
+        self.c_info = code(_Fore.CYAN)
+        self.c_head = code(_Style.BRIGHT, _Fore.CYAN)
+        self.c_key = code(_Fore.WHITE)
+        self.c_addr = code(_Fore.MAGENTA)
+        self.c_hi = code(_Style.BRIGHT)
+        self.c_dim = code(_Style.DIM)
+        self.off = code(_Style.RESET_ALL)
+        try:
+            self.width = max(60, min(120, shutil.get_terminal_size((100, 24)).columns))
+        except Exception:
+            self.width = 100
+
+    def paint(self, text, colour):
+        if not self.on or not colour:
+            return str(text)
+        return '%s%s%s' % (colour, text, self.off)
+
+    def good(self, t):
+        return self.paint(t, self.c_ok)
+
+    def bad(self, t):
+        return self.paint(t, self.c_bad)
+
+    def warn(self, t):
+        return self.paint(t, self.c_warn)
+
+    def info(self, t):
+        return self.paint(t, self.c_info)
+
+    def dim(self, t):
+        return self.paint(t, self.c_dim)
+
+    soft = dim
+
+    def head(self, t):
+        return self.paint(t, self.c_head)
+
+    def bold(self, t):
+        return self.paint(t, self.c_hi)
+
+    hi = bold
+
+    def addr(self, t):
+        return self.paint(t, self.c_addr)
+
+    def ok_line(self, t):
+        return (self.good('✔ ') if self.on else '[ ok ] ') + str(t)
+
+    def warn_line(self, t):
+        return (self.warn('! ') if self.on else '[warn] ') + str(t)
+
+    def bad_line(self, t):
+        return (self.bad('✘ ') if self.on else '[fail] ') + str(t)
+
+
+def colour_wanted(no_color=False, stream=None):
+    """What the person asked for, then NO_COLOR, then FORCE_COLOR, then the
+    terminal itself - in that order, as isemon decides it."""
+    if no_color or os.environ.get('NO_COLOR') is not None:
+        return False
+    if os.environ.get('FORCE_COLOR') or os.environ.get('CLICOLOR_FORCE'):
+        return True
+    if str(os.environ.get('TERM') or '').lower() in ('dumb', '') \
+            and not os.environ.get('TERM_PROGRAM'):
+        return False
+    try:
+        return bool((stream or sys.stdout).isatty())
+    except Exception:
+        return False
+
+
+# ---- colour in every output (1.0.132) ---------------------------------------------
+# With colour on, every table and every line the command line prints is
+# coloured the same way - tables by their cells, other lines as they read:
+# "key: value", addresses, times, and the words that say how a thing is.
+# Whatever already carries its own colour is left as it is.
+TABLE_PAL = None
+TONE_GOOD = {'on', 'yes', 'active', 'ok', 'accept', 'accepted', 'running', 'answering',
+             'in place', 'in service', 'done', 'synchronised', 'healthy', 'up', 'enabled',
+             'signed in', 'good', 'valid', 'sent', 'taken', 'checked'}
+TONE_BAD = {'off', 'no', 'reject', 'rejected', 'failed', 'fail', 'error', 'gone', 'down',
+            'locked', 'locked out', 'expired', 'not answering', 'inactive', 'dead', 'disabled',
+            'refused', 'missing', 'broken', 'lost', 'crit'}
+TONE_WARN = {'pending', 'waiting', 'maintenance', 'in maintenance', 'paused', 'warn',
+             'warning', 'not set up', 'unknown', 'stale', 'not yet'}
+TONE_DIM = {'never', '-', '–', '(none)', 'none', 'as they come', 'not set', ''}
+RE_ADDR = re.compile(r'(?<![\w.:])(\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?(?::\d{1,5})?)(?![\w.])')
+RE_TIME = re.compile(r'\b(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})([ T]\d{2}:\d{2}(?::\d{2})?)?\b')
+
+
+def tone_cell(text, pal):
+    """One value coloured by what it says."""
+    t = str(text)
+    if not pal or not pal.on or ANSI.search(t):
+        return t
+    low = t.strip().lower()
+    if low in TONE_GOOD:
+        return pal.good(t)
+    if low in TONE_BAD:
+        return pal.bad(t)
+    if low in TONE_WARN:
+        return pal.warn(t)
+    if low in TONE_DIM:
+        return pal.dim(t)
+    if RE_TIME.fullmatch(t.strip()):
+        return pal.dim(t)
+    return tone_words(t, pal)
+
+
+def tone_words(t, pal):
+    """Addresses and times inside a text."""
+    t = RE_ADDR.sub(lambda m: pal.addr(m.group(1)), t)
+    return RE_TIME.sub(lambda m: pal.dim(m.group(0)), t)
+
+
+def _cut(text, width):
+    """`text` no wider than `width` on the screen, its colour kept or - when it
+    has to be cut - taken off."""
+    if plain_len(text) <= width:
+        return text
+    return ANSI.sub('', text)[:width]
+
+
+def table(rows, heads, widths=None):
+    if not rows:
+        return '  (none)'
+    pal = TABLE_PAL
+    cells = [[tone_cell(term_safe(c), pal) for c in r] for r in rows]
+    cols = list(zip(*([heads] + [[str(c) for c in r] for r in cells])))
+    w = widths or [min(48, max(plain_len(x) for x in col)) for col in cols]
+    head = '  ' + '  '.join(h.upper().ljust(w[i]) for i, h in enumerate(heads))
+    out = [pal.head(head) if pal and pal.on else head]
+    for r in cells:
+        out.append('  ' + '  '.join(plain_pad(_cut(str(c), w[i]), w[i])
+                                    for i, c in enumerate(r)))
+    return '\n'.join(out)
+
+
+class ColourOut(object):
+    """stdout, every line coloured on its way out unless it is already."""
+    LINE_KV = re.compile(r'^(\s*)([A-Za-z][\w .()/\'-]{0,40}?)(:\s+|\s{2,})(\S.*)$')
+
+    def __init__(self, stream, pal):
+        self.s, self.pal, self.buf = stream, pal, ''
+
+    def _line(self, ln):
+        p = self.pal
+        ln = term_safe(ln)
+        if not p.on or not ln.strip() or ANSI.search(ln):
+            return ln
+        m = self.LINE_KV.match(ln)
+        if m and not ln.lstrip().startswith(('$', '#')):
+            return '%s%s%s%s' % (m.group(1), p.info(m.group(2)), m.group(3),
+                                 tone_cell(m.group(4), p))
+        return tone_words(ln, p)
+
+    def write(self, text):
+        self.buf += str(text)
+        if '\n' in self.buf:
+            done, self.buf = self.buf.rsplit('\n', 1)
+            self.s.write('\n'.join(self._line(x) for x in done.split('\n')) + '\n')
+        return len(text)
+
+    def flush(self):
+        if self.buf:
+            self.s.write(self.buf)
+            self.buf = ''
+        self.s.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.s, name)
+
+
+def ask_password(prompt='password', twice=True, env='AI_PASSWORD'):
+    said = os.environ.get(env) if env else None
+    if said:
+        return said
+    first = getpass.getpass('%s: ' % prompt)
+    if twice:
+        again = getpass.getpass('and again: ')
+        if first != again:
+            raise SystemExit('those two are not the same')
+    return first
+
+
+class HelpfulParser(argparse.ArgumentParser):
+    """An ArgumentParser whose help is isemon's: two columns, in colour.
+    Anything going wrong in the drawing falls back to argparse's own."""
+    palette = None
+
+    def format_help(self):
+        try:
+            return help_text(self, self.palette or Palette(False))
+        except Exception:
+            return super(HelpfulParser, self).format_help()
+
+    def error(self, message):
+        pal = self.palette or Palette(False)
+        sys.stderr.write('%s\n' % pal.bad_line(message))
+        sys.stderr.write(pal.dim('try:  ai --help') + '\n')
+        raise SystemExit(2)
+
+
+def help_option_words(action):
+    names = ', '.join(action.option_strings)
+    if action.nargs == 0:
+        return names, ''
+    if action.metavar:
+        meta = ' '.join(action.metavar) if isinstance(action.metavar, tuple) else action.metavar
+    elif action.choices:
+        meta = '{%s}' % ','.join(str(c) for c in action.choices)
+    else:
+        meta = action.dest.upper()
+    if action.nargs in ('+', '*'):
+        meta += ' ...'
+    return names, meta
+
+
+def help_text(parser, pal):
+    """The whole of --help, in the width of this terminal."""
+    import textwrap
+    width = pal.width
+    out = ['%s %s' % (pal.head('ai'), pal.bold(__version__)),
+           pal.dim('Claude Code on this server, from a web browser - and the server looked after '
+                   'from the same pages - in one Python file'),
+           '',
+           '%s ai %s' % (pal.paint('usage:', pal.c_key), pal.dim('[--json] [--no-color] '
+                                                                 '[what to do]')),
+           pal.dim('       with nothing at all it says what it is doing')]
+    every = [a for g in parser._action_groups for a in g._group_actions]
+    left = min(34, max([len(' '.join(x for x in help_option_words(a) if x))
+                        for a in every] or [20]) + 2)
+    for group in parser._action_groups:
+        actions = [a for a in group._group_actions if a.help != argparse.SUPPRESS]
+        if not actions:
+            continue
+        out.append('')
+        out.append(pal.head((group.title or '').upper()))
+        if group.description:
+            for line in textwrap.wrap(group.description, width - 2):
+                out.append('  ' + pal.dim(line))
+        for action in actions:
+            names, meta = help_option_words(action)
+            painted = pal.good(names) + (' ' + pal.warn(meta) if meta else '')
+            says = action.help or ''
+            if (action.default not in (None, False, '', argparse.SUPPRESS)
+                    and action.nargs != 0 and action.default != []
+                    and '[%s]' % action.default not in says):
+                says += ' [%s]' % action.default
+            lines = textwrap.wrap(says, max(24, width - left - 4)) or ['']
+            if plain_len(painted) > left:
+                out.append('  ' + painted)
+                lines_at = 0
+            else:
+                out.append('  %s  %s' % (plain_pad(painted, left), lines[0]))
+                lines_at = 1
+            for more in lines[lines_at:]:
+                out.append('  %s  %s' % (' ' * left, more))
+    out.append('')
+    out.append(pal.head('THINGS PEOPLE ACTUALLY TYPE'))
+    wide = min(36, max(len(c.split('\n')[0]) for c, _ in HELP_EXAMPLES) + 2)
+    for command, says in HELP_EXAMPLES:
+        first, *rest = command.split('\n')
+        if len(first) + 2 > wide:
+            out.append('  ' + pal.info(first) + ('' if rest or not says else ''))
+            for r in rest:
+                out.append('  ' + pal.info(r))
+            if says:
+                out.append('  %s  %s' % (' ' * wide, pal.dim(says)))
+        else:
+            out.append('  %s%s' % (plain_pad(pal.info(first), wide), pal.dim(says)))
+            for r in rest:
+                out.append('  ' + pal.info(r))
+    out.append('')
+    for note in ('the pages are at https://<this machine>/ · the configuration is %s' % CONFIG_FILE,
+                 'typed with nothing at all it is --status; systemd runs the daemon as '
+                 '--daemon',
+                 'colour is off when this is piped, and with --no-color or NO_COLOR=1'
+                 + ('' if HAVE_COLORAMA else ' (colorama is not installed; colour is '
+                                             'written by hand)')):
+        for line in textwrap.wrap(note, width - 4):
+            out.append('  ' + pal.dim(line))
+    out.append('')
+    return '\n'.join(out)
+
+
+# ---------------------------------------------------------------------------
+# The console: ai run by its menus, on the server's own screen
+# ---------------------------------------------------------------------------
+# `ai --console` - and, with `ai --console-at-login on`, what root sees first
+# after signing in at the console or over SSH. Taken from otp's console
+# (otp 1.0.161) whole: the same screen, the same windows, forms, lists and
+# live views; only the menus are ai's. Everything is done by the same
+# `ai ...` commands the command line has, each run as it would be typed, so
+# nothing here can do more than they do. q leaves it for the ordinary shell;
+# ! opens a shell and comes back when it is closed. Coloured with colorama
+# when present.
+import textwrap  # noqa: E402
+import collections  # noqa: E402
+
+
+class ConsoleBack(Exception):
+    """Back to the menu."""
+
+
+class Console(object):
+    def __init__(self, pal):
+        self.pal = pal
+        self.me = os.path.abspath(sys.argv[0] if sys.argv and sys.argv[0].endswith('.py')
+                                  else __file__)
+        try:
+            __import__('readline')     # arrows and history in input()
+        except ImportError:
+            pass
+
+    # ---- small things ---------------------------------------------------------------
+    def cmd(self, *args, show=True):
+        """`ai ARGS`, its output on the screen; its exit code."""
+        argv = ai_argv() + [str(a) for a in args]
+        if not self.pal.on:
+            argv.append('--no-color')
+        if show:
+            print(self.pal.dim('$ ai ' + ' '.join(self._quote(a) for a in args)))
+        try:
+            return subprocess.call(argv)
+        except KeyboardInterrupt:
+            print()
+            return 130
+
+    def out(self, *args):
+        """`ai ARGS --json`, read."""
+        try:
+            got = subprocess.run(ai_argv() + [str(a) for a in args] + ['--json'],
+                                 capture_output=True, text=True, timeout=60)
+            return json.loads(got.stdout or 'null')
+        except Exception:                               # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _quote(a):
+        a = str(a)
+        return a if re.match(r'^[A-Za-z0-9_@%+=:,./-]+\Z', a) else "'%s'" % a.replace("'", "'\\''")
+
+    # ---- keys on the ordinary terminal: Esc goes back everywhere (1.0.132) ---------
+    def _raw(self):
+        """The terminal's settings, to be put back; None without a terminal."""
+        try:
+            import termios
+            return termios.tcgetattr(sys.stdin.fileno())
+        except Exception:                               # noqa: BLE001
+            return None
+
+    def _restore(self, was):
+        if was is None:
+            return
+        import termios
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, was)
+
+    def key(self, wait=None):
+        """One key, without Enter: 'esc', 'enter', 'bs', 'up'..., a character -
+        or None when `wait` seconds went by without one."""
+        import select
+        import tty
+        fd = sys.stdin.fileno()
+        was = self._raw()
+        try:
+            if was is not None:
+                # TCSANOW: what was typed ahead is kept, not thrown away.
+                import termios
+                tty.setcbreak(fd, termios.TCSANOW)
+            r, _w, _x = select.select([fd], [], [], wait)
+            if not r:
+                return None
+            ch = os.read(fd, 1)
+            if ch == b'\x1b':
+                # Alone, Esc; followed at once by more, a key's sequence.
+                r, _w, _x = select.select([fd], [], [], 0.05)
+                if not r:
+                    return 'esc'
+                rest = os.read(fd, 8)
+                full = {b'[5~': 'pgup', b'[6~': 'pgdn', b'[1~': 'home', b'[4~': 'end',
+                        b'[7~': 'home', b'[8~': 'end', b'[H': 'home', b'[F': 'end',
+                        b'OH': 'home', b'OF': 'end'}.get(rest)
+                if full:
+                    return full
+                return {b'[A': 'up', b'[B': 'down', b'[C': 'right', b'[D': 'left', b'OA': 'up',
+                        b'OB': 'down', b'OC': 'right', b'OD': 'left'}.get(rest[:2], 'seq')
+            if ch in (b'\r', b'\n'):
+                return 'enter'
+            if ch in (b'\x7f', b'\x08'):
+                return 'bs'
+            if ch == b'\x03':
+                return 'ctrl-c'
+            if ch == b'\x04':
+                return 'ctrl-d'
+            if ch == b'\x15':
+                return 'ctrl-u'
+            try:
+                return ch.decode('utf-8')
+            except UnicodeDecodeError:
+                more = ch
+                while len(more) < 4:
+                    more += os.read(fd, 1)
+                    try:
+                        return more.decode('utf-8')
+                    except UnicodeDecodeError:
+                        continue
+                return ''
+        finally:
+            self._restore(was)
+
+    def ask(self, words, default='', secret=False):
+        """A line typed; Esc (or Ctrl+C) goes back to the menu. A secret shows
+        a star for each character, never the characters."""
+        p = self.pal
+        hint = (' [%s]' % default) if default else ''
+        prompt = '  %s%s: ' % (p.info(words), p.dim(hint))
+        if self._raw() is None:
+            try:
+                got = input(prompt)
+            except EOFError:
+                raise ConsoleBack()
+            return got.strip() or default
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        got = ''
+        while True:
+            k = self.key()
+            if k in ('esc', 'ctrl-c', 'ctrl-d'):
+                sys.stdout.write(p.dim('  (back)') + '\n')
+                sys.stdout.flush()
+                raise ConsoleBack()
+            if k == 'enter':
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                return got.strip() or default
+            if k == 'bs':
+                if got:
+                    got = got[:-1]
+                    sys.stdout.write('\b \b')
+            elif k == 'ctrl-u':
+                sys.stdout.write('\b \b' * len(got))
+                got = ''
+            elif k and len(k) == 1 and k.isprintable():
+                got += k
+                sys.stdout.write('*' if secret else k)
+            sys.stdout.flush()
+
+    def yes(self, words):
+        return self.ask(words + ' (y/N)').lower() in ('y', 'yes', 'a', 'ano')
+
+    def pause(self):
+        sys.stdout.write(self.pal.dim('\n  Enter or Esc - back to the menu '))
+        sys.stdout.flush()
+        if self._raw() is None:
+            try:
+                input()
+            except EOFError:
+                pass
+            return
+        while self.key() not in ('enter', 'esc', 'ctrl-c', 'ctrl-d', 'q'):
+            pass
+        sys.stdout.write('\n')
+
+    def stopped(self, wait):
+        """In a live view: True when Esc, q or Ctrl+C was pressed within
+        `wait` seconds."""
+        if self._raw() is None:
+            time.sleep(wait)
+            return False
+        return self.key(wait) in ('esc', 'q', 'ctrl-c', 'ctrl-d')
+
+    def clear_screen(self):
+        if sys.stdout.isatty():
+            sys.stdout.write('\033[H\033[2J')
+            sys.stdout.flush()
+
+    # ---- the menus: a text screen, arrows and Enter (1.0.131) ----------------------
+    # curses: only what changed is written, so nothing blinks; a window made
+    # bigger or smaller (PuTTY's too) is drawn again to its new size. Leaving it
+    # for a command's output and coming back is the one full redraw.
+    HELP = ' Up/Down move   Enter choose   Esc back   ! shell   q leave '
+
+    def status_thread(self):
+        """The line at the top, asked for again every 20 s off the screen's
+        thread - the menu never waits for it."""
+        def look():
+            while not self.closing:
+                # Nothing asked while nobody sees the bar (1.0.136): in a live
+                # view, a page or a shell - asked again on the way back.
+                if self.plain and not self.st_now:
+                    time.sleep(0.5)
+                    continue
+                self.st_now = False
+                st = self.out('--status') or {}
+                active = '?'
+                if shutil.which('systemctl'):
+                    try:
+                        active = subprocess.run(['systemctl', 'is-active', 'ai'],
+                                                capture_output=True, text=True,
+                                                timeout=10).stdout.strip() or '?'
+                    except Exception:                   # noqa: BLE001
+                        pass
+                self.st = dict(st, _active=active)
+                self.st_gen += 1
+                for _ in range(60):
+                    if self.closing or self.st_now:
+                        break
+                    time.sleep(0.5)
+        threading.Thread(target=look, name='ai-console-status', daemon=True).start()
+
+    def _put(self, y, x, text, attr=0):
+        try:
+            h, w = self.scr.getmaxyx()
+            if y < 0 or y >= h or x >= w:
+                return
+            self.scr.addnstr(y, x, str(text), max(0, w - x - (1 if y == h - 1 else 0)), attr)
+        except Exception:                               # noqa: BLE001 - the edge
+            pass
+
+    def _colours(self):
+        c = self.curses
+        self.A = {'head': c.A_REVERSE, 'sel': c.A_REVERSE | c.A_BOLD, 'ok': c.A_BOLD,
+                  'warn': c.A_BOLD, 'bad': c.A_BOLD, 'dim': c.A_DIM, 'key': c.A_BOLD,
+                  'title': c.A_BOLD}
+        if not c.has_colors():
+            return
+        try:
+            c.start_color()
+            try:
+                c.use_default_colors()
+                bg = -1
+            except Exception:                           # noqa: BLE001
+                bg = c.COLOR_BLACK
+            c.init_pair(1, c.COLOR_BLACK, c.COLOR_CYAN)
+            c.init_pair(2, c.COLOR_BLACK, c.COLOR_GREEN)
+            c.init_pair(3, c.COLOR_GREEN, bg)
+            c.init_pair(4, c.COLOR_YELLOW, bg)
+            c.init_pair(5, c.COLOR_RED, bg)
+            c.init_pair(6, c.COLOR_CYAN, bg)
+            self.A.update(head=c.color_pair(1), sel=c.color_pair(2) | c.A_BOLD,
+                          ok=c.color_pair(3) | c.A_BOLD, warn=c.color_pair(4) | c.A_BOLD,
+                          bad=c.color_pair(5) | c.A_BOLD, key=c.color_pair(6) | c.A_BOLD)
+        except Exception:                               # noqa: BLE001
+            pass
+
+    def draw(self, title, items, sel, top, path):
+        scr, A = self.scr, self.A
+        scr.erase()
+        h, w = scr.getmaxyx()
+        st = self.st or {}
+        # The bar at the top: what this is, and how it is.
+        self._put(0, 0, ' ' * w, A['head'])
+        left = ' ai %s  %s ' % (__version__, socket.gethostname())
+        self._put(0, 0, left, A['head'] | self.curses.A_BOLD)
+        active = st.get('_active') or '...'
+        svc = ' service %s ' % active
+        self._put(0, len(left) + 1, svc, A['sel'] if active == 'active' else
+                  (A['head'] if active == '...' else self.curses.A_REVERSE | A['bad']))
+        bits = []
+        if st.get('terms') is not None:
+            bits.append('%s terminal(s) running' % st.get('terms'))
+        if st.get('signed_in') is not None:
+            bits.append('%s signed in' % st.get('signed_in'))
+        if st.get('newer'):
+            bits.append('%s is out' % st['newer'])
+        y = 1
+        right = ' ' + ' | '.join(bits) + ' '
+        if len(left) + len(svc) + len(right) + 2 < w:
+            self._put(0, w - len(right), right, A['head'])
+        elif bits:
+            self._put(1, 1, ' | '.join(bits), A['key'])
+            y = 2
+        for t in st.get('trials') or []:
+            left = max(0, int(float(t.get('until') or 0) - time.time()))
+            self._put(y, 1, '%s waits to be kept: %d:%02d left (Firewall and access > Keep it)' % (
+                {'net': 'the new network', 'fw': 'the change of the firewall',
+                 'access': 'who may reach the pages'}.get(t.get('kind'), t.get('kind')),
+                left // 60, left % 60), A['warn'])
+            y += 1
+        if st and st.get('daemon_alive') is False:
+            self._put(y, 1, 'the daemon is not answering', A['bad'])
+            y += 1
+        for one in (st.get('problems') or [])[:max(0, min(4, h - 12))]:
+            self._put(y, 1, '! ' + str(one), A['warn'])
+            y += 1
+        y += 1
+        self._put(y, 2, path, A['dim'])
+        self._put(y, 2 + len(path), title, A['title'])
+        y += 2
+        # The items, a window of them when the screen is short.
+        room = max(1, h - y - 2)
+        if sel < top:
+            top = sel
+        if sel >= top + room:
+            top = sel - room + 1
+        width = max(20, min(w - 6, max(len(it[1]) for it in items) + 10))
+        for n, it in enumerate(items[top:top + room]):
+            i = top + n
+            line = ' %3s  %s' % (it[0], it[1])
+            line = line + ' ' * max(0, width - len(line))
+            if i == sel:
+                self._put(y + n, 2, line, A['sel'])
+            else:
+                self._put(y + n, 2, ' %3s' % it[0], A['key'])
+                self._put(y + n, 8, it[1])
+        if top > 0:
+            self._put(y - 1, 4, '^ more', A['dim'])
+        if top + room < len(items):
+            self._put(y + room, 4, 'v more', A['dim'])
+        self._put(h - 1, 0, ' ' * (w - 1), A['head'])
+        self._put(h - 1, 0, self.HELP[:w - 1], A['head'])
+        scr.noutrefresh()
+        return top
+
+    def menu(self, title, items, path=''):
+        """items: [(key, words, function[, 'plain'])]; returns 'back' or 'quit'."""
+        c = self.curses
+        sel, top, typed, typed_at, seen = 0, 0, '', 0.0, -1
+        while True:
+            if self.plain:
+                # Back from a command's screen: drawn whole, once.
+                c.reset_prog_mode()
+                self.scr.clear()
+                self.plain = False
+                self.st_now = True
+            top = self.draw(title, items, sel, top, path)
+            self.curses.doupdate()
+            self.backdrop = (lambda _s=sel, _t=top: self.draw(title, items, _s, _t, path))
+            seen = self.st_gen
+            self.scr.timeout(500)
+            while True:
+                k = self.scr.getch()
+                if k != -1 or self.st_gen != seen:
+                    break
+                # The window's size looked at too (PuTTY and others whose
+                # change is not always told): drawn again to the new one.
+                try:
+                    size = os.get_terminal_size(sys.__stdout__.fileno())
+                    if (size.lines, size.columns) != self.scr.getmaxyx():
+                        c.resizeterm(size.lines, size.columns)
+                        k = c.KEY_RESIZE
+                        break
+                except (OSError, ValueError, c.error):
+                    pass
+            if k == -1:
+                continue
+            if k == 27:
+                # An arrow some terminals send as ESC [ B rather than as the
+                # key the terminal description names: read whole here.
+                self.scr.nodelay(True)
+                k2 = self.scr.getch()
+                if k2 in (ord('['), ord('O')):
+                    k3 = self.scr.getch()
+                    k = {ord('A'): c.KEY_UP, ord('B'): c.KEY_DOWN, ord('C'): c.KEY_RIGHT,
+                         ord('D'): c.KEY_LEFT, ord('H'): c.KEY_HOME,
+                         ord('F'): c.KEY_END}.get(k3, -1)
+                    if k3 in (ord('5'), ord('6')):            # PgUp / PgDn: ESC [ 5 ~
+                        self.scr.getch()
+                        k = c.KEY_PPAGE if k3 == ord('5') else c.KEY_NPAGE
+                    if k == -1:
+                        continue
+                elif k2 != -1:
+                    c.ungetch(k2)
+                self.scr.nodelay(False)
+            if k == c.KEY_RESIZE:
+                try:
+                    c.update_lines_cols()
+                except Exception:                       # noqa: BLE001
+                    pass
+                self.scr.clear()
+                continue
+            if k in (c.KEY_UP, ord('k')):
+                sel = (sel - 1) % len(items)
+            elif k in (c.KEY_DOWN, ord('j'), 9):
+                sel = (sel + 1) % len(items)
+            elif k in (c.KEY_HOME, c.KEY_PPAGE):
+                sel = 0
+            elif k in (c.KEY_END, c.KEY_NPAGE):
+                sel = len(items) - 1
+            elif k in (27, c.KEY_LEFT, c.KEY_BACKSPACE, 127, 8):
+                if path:
+                    return 'back'
+            elif k in (ord('q'), ord('Q')):
+                return 'quit'
+            elif k == ord('!'):
+                self.go_plain(self.shell)
+            elif ord('0') <= k <= ord('9'):
+                now = time.time()
+                typed = (typed if now - typed_at < 1.0 else '') + chr(k)
+                typed_at = now
+                hit = [i for i, it in enumerate(items) if it[0] == typed]
+                if hit:
+                    sel = hit[0]
+                    # One that no longer number can grow into: chosen at once.
+                    if not any(it[0].startswith(typed) and it[0] != typed for it in items):
+                        k = 10
+                        typed = ''
+            if k in (10, 13, c.KEY_ENTER, c.KEY_RIGHT):
+                it = items[sel]
+                # Run on the text screen - its questions are windows there
+                # (1.0.135); only a view of its own ('plain') leaves it.
+                if len(it) > 3 and it[3] == 'plain':
+                    r = self.go_plain(it[2])
+                else:
+                    try:
+                        r = it[2]()
+                    except ConsoleBack:
+                        r = None
+                if r == 'quit':
+                    return 'quit'
+
+    def go_plain(self, fn):
+        """`fn` on the ordinary terminal - a command's output, a question, the
+        live log - and back to the screen after it."""
+        c = self.curses
+        c.def_prog_mode()
+        c.endwin()
+        self.plain = True
+        # A clean screen for it - not what the last command left there.
+        if sys.stdout.isatty():
+            sys.stdout.write('\033[H\033[2J\033[3J')
+            sys.stdout.flush()
+        try:
+            return fn()
+        except ConsoleBack:
+            return None
+        except KeyboardInterrupt:
+            print()
+            return None
+
+    def run(self):
+        main = [
+            ('1', 'Status and checks', self.m_status),
+            ('2', 'Live log', self.m_live_log),
+            ('3', 'Terminals (Claude Code, shells)', self.m_terms),
+            ('4', 'Accounts of the pages', self.m_accounts),
+            ('5', 'Settings', self.m_settings),
+            ('6', 'Firewall and access', self.m_fw),
+            ('7', 'The server: network, time, updates, SSH keys, certificate, power', self.m_server),
+            ('8', 'Upgrades', self.m_upgrades),
+            ('9', 'The service', self.m_service),
+        ]
+        os.environ.setdefault('ESCDELAY', '25')     # Esc at once, not after a second
+        # Lines and blocks drawn as UTF-8 characters, as PuTTY in UTF-8 shows
+        # them - not the line-drawing set, which it draws as letters.
+        os.environ.setdefault('NCURSES_NO_UTF8_ACS', '1')
+        try:
+            import locale
+            locale.setlocale(locale.LC_ALL, '')
+        except Exception:                               # noqa: BLE001
+            pass
+        import curses
+        self.curses = curses
+        self.st, self.st_gen, self.st_now, self.closing, self.plain = {}, 0, False, False, False
+
+        def body(scr):
+            self.scr = scr
+            try:
+                curses.curs_set(0)
+            except Exception:                           # noqa: BLE001
+                pass
+            scr.keypad(True)
+            self._colours()
+            self.status_thread()
+            # It opens on the live log, every line (as otp's); Esc: the menu.
+            if os.environ.get('AI_CONSOLE_START', 'log') == 'log':
+                self.go_plain(lambda: self.live_log(''))
+            self.menu('Main menu', main)
+        try:
+            curses.wrapper(body)
+        finally:
+            self.closing = True
+        print(self.pal.dim('  The ai console is closed - `ai --console` opens it again.'))
+        return 0
+
+    def shell(self):
+        sh = os.environ.get('SHELL') or '/bin/bash'
+        print(self.pal.dim('  A shell - exit (or Ctrl+D) comes back to the ai console.'))
+        try:
+            subprocess.call([sh], env=dict(os.environ, AI_CONSOLE='1'))
+        except KeyboardInterrupt:
+            pass
+
+    def sub(self, title, items):
+        r = self.menu(title, items, path='Main menu > ')
+        return 'quit' if r == 'quit' else None
+
+    # ---- long output: a screen of its own, scrolled (1.0.134) -------------------
+    # As the fullscreen pickers of video_tools: the terminal is not scrolled, a
+    # window (top) into the lines is; each frame is one write (home, each line
+    # cleared to its end, the rest cleared) so nothing blinks, and the scroll
+    # bar is drawn after it into the last column. Arrows, PgUp/PgDn, Home/End,
+    # Space; Esc, q or Enter back. A window made bigger or smaller is drawn
+    # again to its size.
+    def capture(self, argv, env=None):
+        """What a command writes, its colour kept: (text, exit code)."""
+        e = dict(os.environ, **(env or {}))
+        if self.pal.on:
+            e.update(FORCE_COLOR='1', SYSTEMD_COLORS='1')
+        e['COLUMNS'] = str(max(60, self._cols() - 2))
+        try:
+            got = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, env=e, timeout=1800)
+            # Made safe here whatever the colour (1.0.146): with colour off the
+            # command wrote what a packet carried as it came, and page() put it
+            # on root's terminal - the title, the clipboard, the screen.
+            return term_safe(got.stdout.decode('utf-8', 'replace')), got.returncode
+        except subprocess.TimeoutExpired:
+            return 'it took more than 30 minutes and was stopped', 124
+        except OSError as ex:
+            return str(ex), 127
+
+    @staticmethod
+    def _cols():
+        try:
+            return os.get_terminal_size(sys.__stdout__.fileno()).columns
+        except (OSError, ValueError):
+            return 100
+
+    @staticmethod
+    def _fit(line, width):
+        """`line` cut to `width` columns on the screen, its colours kept."""
+        out, seen = [], 0
+        for part in re.split(r'(\x1b\[[0-9;?]*[A-Za-z])', line):
+            if not part:
+                continue
+            if part.startswith('\x1b['):
+                out.append(part)
+                continue
+            if seen + len(part) > width:
+                out.append(part[:max(0, width - seen)])
+                out.append('\x1b[0m')
+                return ''.join(out)
+            out.append(part)
+            seen += len(part)
+        return ''.join(out) + ('\x1b[0m' if '\x1b[' in line else '')
+
+    def page(self, title, text):
+        p = self.pal
+        lines = [ln.expandtabs(8).replace('\r', '') for ln in text.rstrip('\n').split('\n')] or ['']
+        tty = self._raw() is not None and sys.stdout.isatty()
+        if not tty:
+            print(text)
+            return
+        out = sys.stdout
+        out.write('\x1b[?1049h\x1b[?25l')
+        top, size = 0, None
+        try:
+            while True:
+                try:
+                    sz = os.get_terminal_size(sys.__stdout__.fileno())
+                    cols, rows = max(40, sz.columns), max(8, sz.lines)
+                except OSError:
+                    cols, rows = 100, 30
+                avail = max(3, rows - 2)
+                top = max(0, min(top, max(0, len(lines) - avail)))
+                end = min(len(lines), top + avail)
+                head = ' %s ' % title
+                where = ' %d-%d of %d ' % (top + 1, end, len(lines)) if len(lines) > avail \
+                    else ' %d lines ' % len(lines)
+                bar = (head + ' ' * max(0, cols - len(head) - len(where)) + where)[:cols]
+                foot = (' Up/Down PgUp/PgDn Home/End scroll   Esc, q or Enter back ')[:cols - 1]
+                body = [self._fit(ln, cols - 2) for ln in lines[top:end]]
+                body += [''] * (avail - len(body))
+                frame = ['\x1b[7m' + bar + '\x1b[0m' if p.on else bar] + body + \
+                    ['\x1b[7m' + foot + ' ' * max(0, cols - 1 - len(foot)) + '\x1b[0m'
+                     if p.on else foot]
+                out.write('\x1b[H' + '\n'.join(ln + '\x1b[K' for ln in frame) + '\x1b[J')
+                self._scrollbar(2, avail, len(lines), avail, top, cols)
+                out.flush()
+                size = (cols, rows)
+                while True:
+                    k = self.key(0.3)
+                    if k is not None:
+                        break
+                    try:
+                        sz = os.get_terminal_size(sys.__stdout__.fileno())
+                        if (max(40, sz.columns), max(8, sz.lines)) != size:
+                            break
+                    except OSError:
+                        pass
+                if k in ('esc', 'q', 'enter', 'ctrl-c', 'ctrl-d'):
+                    return
+                if k in ('up', 'k'):
+                    top -= 1
+                elif k in ('down', 'j'):
+                    top += 1
+                elif k in ('pgup', 'b'):
+                    top -= avail - 1
+                elif k in ('pgdn', ' ', 'f'):
+                    top += avail - 1
+                elif k in ('home', 'g'):
+                    top = 0
+                elif k in ('end', 'G'):
+                    top = len(lines)
+        finally:
+            out.write('\x1b[?25h\x1b[?1049l')
+            out.flush()
+
+    def _scrollbar(self, base_row, nrows, total, visible, top, cols):
+        if total <= visible or nrows <= 0:
+            return
+        thumb = max(1, min(nrows, round(nrows * visible / total)))
+        span = nrows - thumb
+        denom = max(1, total - visible)
+        tstart = max(0, min(span, round(span * (top / denom))))
+        on = self.pal.on
+        parts = ['\x1b[?7l']
+        for r in range(nrows):
+            hit = tstart <= r < tstart + thumb
+            g = '\u2588' if hit else '\u2502'
+            if on:
+                g = ('\x1b[36m' if hit else '\x1b[2m') + g + '\x1b[0m'
+            parts.append('\x1b[%d;%dH%s' % (base_row + r, cols, g))
+        parts.append('\x1b[?7h')
+        sys.stdout.write(''.join(parts))
+
+    def show(self, *args):
+        """`ai ARGS`, its output on a screen of its own."""
+        # A question left empty is nothing asked for: back to the menu.
+        if any(a is None or str(a).strip() == '' for a in args):
+            return
+        self.clear_screen()
+        print(self.pal.dim('  working… $ ai ' + ' '.join(self._quote(a) for a in args)))
+        argv = ai_argv() + [str(a) for a in args]
+        text, rc = self.capture(argv)
+        if rc not in (0, None):
+            text += '\n' + self.pal.dim('(it ended with %d)' % rc)
+        self.page('$ ai ' + ' '.join(self._quote(a) for a in args), text)
+
+    def show_live(self, *args):
+        """`ai ARGS` straight on the terminal - one that asks something."""
+        if any(a is None or str(a).strip() == '' for a in args):
+            return
+        self.clear_screen()
+        self.cmd(*args)
+        self.pause()
+
+    # ---- 1 status ---------------------------------------------------------------
+    def m_status(self):
+        def events():
+            got = self.form('Events', [
+                {'key': 'n', 'label': 'how many', 'kind': 'number', 'value': '40',
+                 'range': (1, 5000), 'need': True},
+                {'key': 'q', 'label': 'only with the words', 'help':
+                 'Empty: every event. Or a name, a kind (sign-in, terminals, settings) or a word.'}])
+            if got:
+                self.act('--events', '--limit', got['n'], *(['--search', got['q']]
+                                                             if got['q'] else []))
+        return self.sub('Status and checks', [
+            ('1', 'Status', lambda: self.act('--status')),
+            ('2', 'Checks (tmux, Claude Code, nginx, PHP, the certificate, the firewall…)',
+             lambda: self.act('--check')),
+            ('3', 'Events', events),
+            ('4', 'Who is signed in to the pages', lambda: self.act('--sign-ins')),
+        ])
+
+    # ---- 2 live log -------------------------------------------------------------
+    LOG_TONES = {'error': 'bad', 'crit': 'bad', 'warn': 'warn', 'info': '', 'debug': 'dim'}
+
+    def m_live_log(self):
+        self.live(lambda: self.live_log(''))
+
+    # ---- live views: scrolled, and what is typed is a grep (1.0.135) ------------
+    # The log and the journal come into one screen of
+    # their own: the newest at the bottom, followed while the view is at the
+    # end. Up/PgUp/Home scroll back (the view then stays where it is and counts
+    # what came meanwhile), End follows again; a bar on the right shows where
+    # the window is. Whatever is typed filters the lines as `grep -i` does (a
+    # regular expression, or the words as they are when it is not one), the
+    # hits marked; Backspace takes a character back, Ctrl+U all of them. Esc
+    # clears the filter first, then goes back to the menu.
+    LIVE_KEEP = 20000
+
+    def live_log(self, what=''):
+        path = LOG_FILE
+        st = {'f': None, 'ino': None}
+
+        def opened():
+            # Not through a link, nor stuck on a FIFO (as otp's).
+            fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                import stat as _st
+                if not _st.S_ISREG(os.fstat(fd).st_mode):
+                    raise OSError('not a plain file')
+            except OSError:
+                os.close(fd)
+                raise
+            return os.fdopen(fd, 'r', encoding='utf-8', errors='replace')
+
+        def first():
+            try:
+                f = opened()
+            except OSError as e:
+                return [self.pal.bad_line('%s cannot be read: %s' % (path, e))]
+            st['f'] = f
+            st['ino'] = os.fstat(f.fileno()).st_ino
+            # Read from near the end only: a log can be gigabytes.
+            f.seek(0, 2)
+            start = max(0, f.tell() - 2 * 1024 * 1024)
+            f.seek(start)
+            got = f.read().splitlines()
+            # The first line only when reading began inside it (1.0.146): a short
+            # log lost its first whole line.
+            if start and len(got) > 1:
+                got = got[1:]
+            return got[-self.LIVE_KEEP:]
+
+        def more():
+            f = st['f']
+            if f is None:
+                return []
+            out = []
+            while len(out) < 5000:
+                ln = f.readline()
+                if not ln:
+                    break
+                out.append(ln.rstrip('\n'))
+            if not out:
+                try:
+                    if os.stat(str(path)).st_ino != st['ino']:      # rotated
+                        f.close()
+                        st['f'] = opened()
+                        st['ino'] = os.fstat(st['f'].fileno()).st_ino
+                except OSError:
+                    pass
+            return out
+        try:
+            self.live_view('Live log  %s' % path, first, more, self._log_text, what)
+        finally:
+            if st['f']:
+                st['f'].close()
+
+    def journal(self):
+        """journalctl -u ai -f, in the live view."""
+        try:
+            pr = subprocess.Popen(['journalctl', '-u', 'ai', '-f', '-n', '400', '--no-pager'],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                  errors='replace')
+        except OSError as e:
+            self.page('journalctl', self.pal.bad_line(str(e)))
+            return
+        q = collections.deque()
+
+        def pump():
+            for ln in pr.stdout:
+                q.append(ln.rstrip('\n'))
+        threading.Thread(target=pump, daemon=True).start()
+
+        def more():
+            out = []
+            while q:
+                out.append(q.popleft())
+            return out
+
+        def paint(ln):
+            return self._log_text(ln) if re.match(
+                r'^\S+ \S+ (info|warn|error|debug|crit) ', ln) else tone_words(ln, self.pal)
+        try:
+            self.live_view('journalctl -u ai -f', lambda: [], more, paint, '')
+        finally:
+            pr.terminate()
+            try:
+                pr.wait(3)
+            except Exception:                           # noqa: BLE001
+                pr.kill()
+
+    @staticmethod
+    def _grep(find):
+        """What is typed as `grep -i` takes it: a test of one line."""
+        if not find:
+            return lambda s: True
+        try:
+            rx = re.compile(find, re.I)
+            return lambda s: rx.search(s) is not None
+        except (re.error, OverflowError, RecursionError):   # a{9999999999} too (1.0.139)
+            low = find.lower()
+            return lambda s: low in s.lower()
+
+    def _mark(self, coloured, find):
+        """The hits of `find` shown reversed - in the text between the colours."""
+        if not find or not self.pal.on:
+            return coloured
+        try:
+            rx = re.compile(find, re.I)
+        except (re.error, OverflowError, RecursionError):
+            rx = re.compile(re.escape(find), re.I)
+        out = []
+        for part in re.split(r'(\x1b\[[0-9;?]*[A-Za-z])', coloured):
+            if part.startswith('\x1b['):
+                out.append(part)
+            elif part:
+                out.append(rx.sub(lambda m: '\x1b[7m' + m.group(0) + '\x1b[27m'
+                                  if m.group(0) else '', part))
+        return ''.join(out)
+
+    @staticmethod
+    def _slice(line, start, width):
+        """Columns start..start+width of `line` on the screen, its colours kept."""
+        out, seen = [], 0
+        end = start + width
+        for part in re.split(r'(\x1b\[[0-9;?]*[A-Za-z])', line):
+            if not part:
+                continue
+            if part.startswith('\x1b['):
+                out.append(part)
+                continue
+            a, b = seen, seen + len(part)
+            if b > start and a < end:
+                out.append(part[max(0, start - a):max(0, end - a)])
+            seen = b
+        return ''.join(out) + ('\x1b[0m' if '\x1b[' in line else '')
+
+    def live_view(self, title, first, more, paint, find=''):
+        """The live screen: `first()` the lines there are, `more()` those come
+        since (asked a few times a second), `paint(line)` its colours."""
+        p = self.pal
+        if self._raw() is None or not sys.stdout.isatty():
+            for ln in first() + more():
+                print(ln)
+            return
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        was = termios.tcgetattr(fd)
+        out = sys.stdout
+        lines = []                       # (plain, coloured)
+
+        def add(raw):
+            for ln in raw:
+                ln = term_safe(ln.expandtabs(8).replace('\r', ''))
+                col = (paint(ln) if paint else ln) if p.on else self._plain_text(ln)
+                lines.append((self._plain_text(col), col))
+        add(first())
+        test = self._grep(find)
+        hits = [i for i, x in enumerate(lines) if test(x[0])]
+        top, follow, xoff, new, dirty, size = 0, True, 0, 0, True, None
+        tty.setcbreak(fd, termios.TCSANOW)
+        out.write('\x1b[?1049h\x1b[?25l')
+        try:
+            while True:
+                came = more()
+                if came:
+                    n0 = len(lines)
+                    add(came)
+                    got = [i for i in range(n0, len(lines)) if test(lines[i][0])]
+                    hits += got
+                    if not follow:
+                        new += len(got)
+                    if len(lines) > self.LIVE_KEEP * 1.25:
+                        cut = len(lines) - self.LIVE_KEEP
+                        gone = sum(1 for i in hits if i < cut)
+                        del lines[:cut]
+                        hits = [i - cut for i in hits if i >= cut]
+                        top = max(0, top - gone)
+                    dirty = dirty or bool(got)
+                try:
+                    sz = os.get_terminal_size(sys.__stdout__.fileno())
+                    cols, rows = max(40, sz.columns), max(8, sz.lines)
+                except OSError:
+                    cols, rows = 100, 30
+                if (cols, rows) != size:
+                    size, dirty = (cols, rows), True
+                avail = max(3, rows - 2)
+                last = max(0, len(hits) - avail)
+                if follow:
+                    top = last
+                top = max(0, min(top, last))
+                if dirty:
+                    end = min(len(hits), top + avail)
+                    where = (' %d-%d of %d ' % (top + 1, end, len(hits))) if hits else ' 0 '
+                    state = ' following ' if follow else (' PAUSED%s ' % (
+                        ', %d new below' % new if new else ''))
+                    head = ' %s ' % title
+                    gp = '  grep -i: %s_ ' % find if find else '  type to grep '
+                    right = state + where
+                    bar = (head + gp)[:max(0, cols - len(right))]
+                    bar = bar + ' ' * max(0, cols - len(bar) - len(right)) + right
+                    foot = (' type: grep (any case)  Bksp  Ctrl+U clear   Up/Down PgUp/PgDn '
+                            'Home  End: follow   Left/Right  Esc back ')[:cols - 1]
+                    body = [self._slice(self._mark(lines[i][1], find), xoff, cols - 2)
+                            for i in hits[top:end]]
+                    if not hits:
+                        body = ['', '   ' + (p.dim('nothing with "%s" yet' % find) if find
+                                             else p.dim('nothing yet'))]
+                    body += [''] * (avail - len(body))
+                    inv = (lambda t: '\x1b[7m' + t + '\x1b[0m') if p.on else (lambda t: t)
+                    tone = '\x1b[33m' if (not follow and p.on) else ''
+                    frame = [tone + inv(bar[:cols])] + body[:avail] + \
+                        [inv(foot + ' ' * max(0, cols - 1 - len(foot)))]
+                    out.write('\x1b[H' + '\n'.join(ln + '\x1b[K' for ln in frame) + '\x1b[J')
+                    self._scrollbar(2, avail, len(hits), avail, top, cols)
+                    out.flush()
+                    dirty = False
+                k = self.key(0.25)
+                if k is None:
+                    continue
+                dirty = True
+                if k in ('esc', 'ctrl-c', 'ctrl-d'):
+                    if find and k == 'esc':
+                        find = ''
+                    else:
+                        return
+                elif k == 'up':
+                    follow, top = False, top - 1
+                elif k == 'down':
+                    top += 1
+                    follow = top >= last
+                elif k == 'pgup':
+                    follow, top = False, top - (avail - 1)
+                elif k == 'pgdn':
+                    top += avail - 1
+                    follow = top >= last
+                elif k == 'home':
+                    follow, top = False, 0
+                elif k in ('end', 'enter'):
+                    follow, new = True, 0
+                elif k == 'left':
+                    xoff = max(0, xoff - 20)
+                    continue
+                elif k == 'right':
+                    xoff += 20
+                    continue
+                elif k == 'bs':
+                    find = find[:-1]
+                elif k == 'ctrl-u':
+                    find = ''
+                elif k and len(k) == 1 and k.isprintable():
+                    find += k
+                else:
+                    continue
+                if k in ('bs', 'ctrl-u', 'esc') or (k and len(k) == 1 and k.isprintable()):
+                    test = self._grep(find)
+                    hits = [i for i, x in enumerate(lines) if test(x[0])]
+                    follow, new = True, 0
+                if follow:
+                    new = 0
+        finally:
+            out.write('\x1b[?25h\x1b[?1049l')
+            out.flush()
+            termios.tcsetattr(fd, termios.TCSADRAIN, was)
+
+    def _log_text(self, ln):
+        """One line of the log, coloured (colorama when it is there): the time
+        dim, the level by how bad, what it is about in cyan, addresses in
+        magenta, accept and reject in green and red, a whole warning in yellow
+        and a whole error in red."""
+        p = self.pal
+        ln = ln.rstrip('\n')
+        m = re.match(r'^(\S+ \S+) (\w+)(\s+)(.*)$', ln)
+        if not m or not p.on:
+            return ln
+        lvl, rest = m.group(2), m.group(4)
+        tone = self.LOG_TONES.get(lvl, '')
+        paint = {'bad': p.bad, 'warn': p.warn, 'dim': p.dim}.get(tone)
+        what = re.match(r'^([a-z][a-z -]{1,30}): (.*)$', rest)
+        head, body = (what.group(1) + ':', what.group(2)) if what else ('', rest)
+
+        def words(t):
+            t = re.sub(r'(\[?[0-9a-fA-F:]*\d{1,3}(?:\.\d{1,3}){3}\]?(?::\d+)?|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}\b)',
+                       lambda x: p.addr(x.group(1)) + (p.c_warn if tone == 'warn' else
+                                                       p.c_bad if tone == 'bad' else ''), t)
+            t = re.sub(r'\b(accept(?:ed)?|signed in|in place|done|ok)\b',
+                       lambda x: p.good(x.group(1)) + (p.c_warn if tone == 'warn' else ''), t)
+            t = re.sub(r'\b(reject(?:ed)?|refused|failed|wrong|locked out|not answering)\b',
+                       lambda x: p.bad(x.group(1)) + (p.c_warn if tone == 'warn' else ''), t)
+            return t
+        body = words(body)
+        if paint is not None and tone != 'dim':
+            body = paint(body)
+        elif tone == 'dim':
+            body = p.dim(body)
+        lv = (paint or p.info)(lvl.ljust(5))
+        return '%s %s %s%s' % (p.dim(m.group(1)), lv, p.info(head) + (' ' if head else ''), body)
+
+    def _log_line(self, ln):
+        print(self._log_text(ln))
+
+    # ---- 5 accounts -------------------------------------------------------------
+    ROLES = [('admin', 'admin - everything: any terminal, the server'),
+             ('user', 'user - terminals of their own, files in their folders')]
+
+    def _pw_fields(self):
+        return [{'key': 'pw', 'label': 'password', 'kind': 'secret', 'need': True,
+                 'help': 'At least 10 characters; only stars are shown.',
+                 'check': lambda v, _: None if len(v) >= 10 else 'at least 10 characters'},
+                {'key': 'again', 'label': 'again', 'kind': 'secret', 'need': True,
+                 'check': lambda v, vals: None if v == vals.get('pw')
+                 else 'the two passwords are not the same'}]
+
+    def m_accounts(self):
+        def load():
+            return self._rows(self.out('--users') or {}, 'users')
+
+        cols = [('account', lambda u: u.get('name'), 24, None),
+                ('role', lambda u: u.get('role'), 7, None),
+                ('state', lambda u: 'off' if u.get('disabled') else 'on', 5,
+                 lambda u: 'dim' if u.get('disabled') else 'ok'),
+                ('runs as', lambda u: u.get('run_as') or '-', 12, None),
+                ('last in', lambda u: self._when(u.get('last_login')), 16, None),
+                ('note', lambda u: u.get('note') or '', 40, lambda u: 'dim')]
+        return self.sub('Accounts of the pages', [
+            ('1', 'Browse them (Enter: what to do with one)',
+             lambda: self.pick('Accounts of the pages', load, cols, self.account_do)),
+            ('2', 'Make one', self.account_new),
+            ('3', 'Who is signed in now', lambda: self.act('--sign-ins')),
+        ])
+
+    def account_do(self, u):
+        name = u['name']
+        opts = [('pw', 'Set its password'), ('role', 'Change its role (now %s)' % u.get('role')),
+                ('runas', 'The Linux account its terminals run as (now %s)' % u.get('run_as')),
+                ('on', 'Switch it on again') if u.get('disabled') else ('off', 'Switch it off'),
+                ('out', 'End its sign-ins'), ('show', 'Show it all'), ('delete', 'Delete it')]
+        what = self.choose(name, opts, '%s, runs as %s, %s' % (u.get('role'), u.get('run_as'),
+                                                               'off' if u.get('disabled') else 'on'))
+        if what == 'pw':
+            got = self.form('A new password for %s' % name, self._pw_fields())
+            if got:
+                self.act('--passwd', name, env={'AI_PASSWORD': got['pw']})
+        elif what == 'role':
+            r = self.choose('The role of %s' % name, self.ROLES,
+                            cur=[x[0] for x in self.ROLES].index(u.get('role'))
+                            if u.get('role') in [x[0] for x in self.ROLES] else 0)
+            if r and r != u.get('role'):
+                self.act('--set-role', name, '--role', r)
+        elif what == 'runas':
+            got = self.ask_one('The terminals of %s run as' % name, 'Linux account', u.get('run_as_own') or '',
+                               help_='Empty: the default (Settings - Claude Code). The account must be there.',
+                               need=False)
+            if got is not None:
+                self.act('--set-run-as', name, got or '-')
+        elif what == 'off':
+            if self.confirm('Switch off', '%s can no longer sign in to the pages; its terminals go on '
+                            'running.' % name, 'Switch it off'):
+                self.act('--disable-user', name)
+        elif what == 'on':
+            self.act('--enable-user', name)
+        elif what == 'out':
+            self.act('--end-sign-ins', name)
+        elif what == 'show':
+            self.details(name, u, skip=('prefs',))
+        elif what == 'delete':
+            if self.confirm('Delete', 'The account %s is deleted. This cannot be undone. Its terminals '
+                            'go on running.' % name, 'Delete it', danger=True):
+                self.act('--del-user', name)
+
+    def account_new(self):
+        got = self.form('Make an account', [
+            {'key': 'name', 'label': 'name', 'need': True,
+             'help': 'What it signs in with: letters, digits, . _ - @',
+             'check': lambda v, _: None if re.match(r'^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$', v)
+             else 'letters, digits and . _ - @ only'},
+            {'key': 'role', 'label': 'role', 'kind': 'choice', 'value': 'user',
+             'options': self.ROLES,
+             'help': 'admin may do everything; user has terminals of its own, as its Linux account.'},
+            {'key': 'run_as', 'label': 'runs as', 'help':
+             'The Linux account its terminals run as. Empty: the default (Settings - Claude Code).'}]
+            + self._pw_fields())
+        if got:
+            self.act('--add-user', got['name'], '--role', got['role'],
+                     *(['--run-as', got['run_as']] if got.get('run_as') else []),
+                     env={'AI_PASSWORD': got['pw']})
+
+    # ---- 6 settings -------------------------------------------------------------
+    def m_settings(self):
+        def by_key():
+            keys = sorted(SCHEMA_KEYS)
+            key = self.ask_one('Change one by its key', 'the key', help_=(
+                'Its key, as `ai --settings` shows it - e.g. claude_args, upgrade_auto. '
+                'Then the same window as in Browse opens.'),
+                check=lambda v, _: None if v in keys else 'there is no setting %s' % v)
+            if not key:
+                return
+            row = next((r[1] for r in self._settings_rows() if r[0] == 'set'
+                        and r[1]['key'] == key), None)
+            if not row:
+                self.note('Change one', 'there is no setting %s' % key, 'bad')
+                return
+            done = self._edit_one(row)
+            if done:
+                self.note('Change one', done[0], 'bad' if done[1] else 'ok')
+        return self.sub('Settings', [
+            ('1', 'Browse and change (arrows, Enter)', self.settings_tui),
+            ('2', 'Change one by its key', by_key),
+            ('3', 'All of them as text', lambda: self.act('--settings')),
+        ])
+
+    # ---- settings on the text screen: arrows, Enter, a window to change one (1.0.134)
+    PANE_TITLES = [('claude', 'Claude Code'), ('access', 'Signing in'), ('upgrade', 'Upgrades'),
+                   ('general', 'About')]
+
+    def _settings_rows(self):
+        got = self.out('--settings') or []
+        rows = got.get('settings') if isinstance(got, dict) else got
+        by = {r['key']: r for r in rows or [] if isinstance(r, dict) and r.get('key')}
+        out, seen = [], set()
+        for pane, words in self.PANE_TITLES:
+            keys = [k for k, r in by.items() if r.get('pane') == pane]
+            if not keys:
+                continue
+            out.append(('head', words))
+            for k in keys:
+                out.append(('set', by[k]))
+                seen.add(k)
+        rest = [k for k in by if k not in seen]
+        if rest:
+            out.append(('head', 'Everything else'))
+            out += [('set', by[k]) for k in rest]
+        return out
+
+    @staticmethod
+    def _shown(v):
+        if v is True:
+            return 'on'
+        if v is False:
+            return 'off'
+        return '' if v is None else str(v)
+
+    def _kind(self, key):
+        s = SCHEMA_KEYS.get(key)
+        kind, extra = (s[2], s[5]) if s else ('str', {})
+        if kind == 'bool':
+            return 'switch', ['1', '0']
+        if kind == 'choice':
+            return 'choice', [c[0] for c in extra.get('choices') or []]
+        if kind == 'int':
+            return 'number', [extra.get('min', 0), extra.get('max', 10 ** 9)]
+        return 'text', None
+
+    def settings_tui(self):
+        c, A = self.curses, self.A
+        rows = self._settings_rows()
+        if not rows:
+            return None
+        sel = next(i for i, r in enumerate(rows) if r[0] == 'set')
+        top, said, said_bad, find = 0, '', False, ''
+        while True:
+            if self.plain:
+                c.reset_prog_mode()
+                self.scr.clear()
+                self.plain = False
+
+            def paint():
+                nonlocal top
+                h, w = self.scr.getmaxyx()
+                self.scr.erase()
+                self._put(0, 0, ' ' * w, A['head'])
+                self._put(0, 0, ' ai %s  Settings' % __version__, A['head'] | c.A_BOLD)
+                if find:
+                    self._put(0, max(0, w - len(find) - 12), ' find: %s ' % find, A['head'])
+                avail = max(3, h - 3)
+                if sel < top:
+                    top = sel
+                if sel >= top + avail:
+                    top = sel - avail + 1
+                top = max(0, min(top, max(0, len(rows) - avail)))
+                if top > 0 and rows[top - 1][0] == 'head' and sel - top < avail - 1:
+                    top -= 1                    # the group's heading with its first setting
+                namew = max(20, min(44, w // 3))
+                valw = max(10, min(40, w - namew - 30))
+                for n, r in enumerate(rows[top:top + avail]):
+                    y = 1 + n
+                    if r[0] == 'head':
+                        self._put(y, 1, r[1].upper(), A['key'])
+                        continue
+                    st = r[1]
+                    val = self._shown(st.get('value'))
+                    line = '  %-*s %-*s %s' % (namew, (st.get('label') or st['key'])[:namew], valw,
+                                              val[:valw], st.get('key'))
+                    if top + n == sel:
+                        self._put(y, 0, line + ' ' * max(0, w - 2 - len(line)), A['sel'])
+                    else:
+                        self._put(y, 0, '  ' + (st.get('label') or st['key'])[:namew])
+                        tone = A['dim'] if st.get('source') == 'default' else A['ok']
+                        self._put(y, 3 + namew, val[:valw], tone)
+                        self._put(y, 4 + namew + valw, st.get('key'), A['dim'])
+                # The bar on the right.
+                total = len(rows)
+                if total > avail:
+                    thumb = max(1, min(avail, round(avail * avail / total)))
+                    tstart = max(0, min(avail - thumb, round((avail - thumb) * top
+                                                              / max(1, total - avail))))
+                    utf = 'utf' in (sys.stdout.encoding or '').lower()
+                    for r in range(avail):
+                        hit = tstart <= r < tstart + thumb
+                        self._put(1 + r, w - 1, ('\u2588' if hit else '\u2502') if utf
+                                  else ('#' if hit else '|'), A['key'] if hit else A['dim'])
+                if said:
+                    self._put(h - 2, 1, said[:w - 2], A['bad'] if said_bad else A['ok'])
+                help_ = ' Up/Down PgUp/PgDn Home/End move   Enter change   / find   Esc back '
+                self._put(h - 1, 0, ' ' * (w - 1), A['head'])
+                self._put(h - 1, 0, help_[:w - 1], A['head'])
+                self.scr.noutrefresh()
+                return h, avail
+            self.backdrop = paint
+            h, avail = paint()
+            c.doupdate()
+            self.scr.timeout(500)
+            k = self._getkey()
+            if k is None:
+                continue
+            said = ''
+            sets = [i for i, r in enumerate(rows) if r[0] == 'set']
+            if k == 'esc':
+                if find:
+                    find = ''
+                    continue
+                return None
+            if k == 'q':
+                return 'quit'
+            if k in ('up', 'down', 'pgup', 'pgdn', 'home', 'end'):
+                pos = sets.index(sel) if sel in sets else 0
+                pos = {'up': pos - 1, 'down': pos + 1, 'pgup': pos - (avail - 2),
+                       'pgdn': pos + (avail - 2), 'home': 0, 'end': len(sets) - 1}[k]
+                sel = sets[max(0, min(len(sets) - 1, pos))]
+            elif k == '/':
+                find = self._line_in(h - 2, 'Find (a word of its name or key): ', '') or ''
+                if find:
+                    hit = [i for i in sets if find.lower() in (
+                        str(rows[i][1].get('label')) + ' ' + rows[i][1]['key']).lower()]
+                    if hit:
+                        sel = hit[0]
+                    else:
+                        said, said_bad = 'nothing with "%s"' % find, True
+            elif k == 'n' and find:
+                hit = [i for i in sets if i > sel and find.lower() in (
+                    str(rows[i][1].get('label')) + ' ' + rows[i][1]['key']).lower()]
+                if hit:
+                    sel = hit[0]
+            elif k == 'enter':
+                done = self._edit_one(rows[sel][1])
+                if done:
+                    said, said_bad = done
+                    if not said_bad:
+                        cur = rows[sel][1]['key']
+                        rows = self._settings_rows()
+                        sel = next((i for i, r in enumerate(rows)
+                                    if r[0] == 'set' and r[1]['key'] == cur), sel)
+
+    def _getkey(self, win=None):
+        """A key on the text screen, by name: 'up', 'enter', 'esc', or the character."""
+        c = self.curses
+        src = win or self.scr
+        k = src.getch()
+        if k == -1:
+            # The window's size looked at, as the menus do.
+            try:
+                size = os.get_terminal_size(sys.__stdout__.fileno())
+                if (size.lines, size.columns) != self.scr.getmaxyx():
+                    c.resizeterm(size.lines, size.columns)
+                    self.scr.clear()
+                    return 'resize'
+            except (OSError, ValueError, c.error):
+                pass
+            return None
+        if k == 27:
+            src.nodelay(True)
+            k2 = src.getch()
+            if k2 in (ord('['), ord('O')):
+                seq = ''
+                while True:
+                    k3 = src.getch()
+                    if k3 == -1:
+                        break
+                    seq += chr(k3)
+                    if chr(k3).isalpha() or chr(k3) == '~':
+                        break
+                src.nodelay(False)
+                return {'A': 'up', 'B': 'down', 'C': 'right', 'D': 'left', 'H': 'home',
+                        'F': 'end', '5~': 'pgup', '6~': 'pgdn', '1~': 'home', '4~': 'end',
+                        '7~': 'home', '8~': 'end', '3~': 'del'}.get(seq, None)
+            if k2 != -1:
+                c.ungetch(k2)
+            src.nodelay(False)
+            return 'esc'
+        named = {c.KEY_UP: 'up', c.KEY_DOWN: 'down', c.KEY_LEFT: 'left', c.KEY_RIGHT: 'right',
+                 c.KEY_PPAGE: 'pgup', c.KEY_NPAGE: 'pgdn', c.KEY_HOME: 'home', c.KEY_END: 'end',
+                 c.KEY_ENTER: 'enter', 10: 'enter', 13: 'enter', c.KEY_BACKSPACE: 'bs',
+                 127: 'bs', 8: 'bs', c.KEY_DC: 'del', c.KEY_RESIZE: 'resize', 21: 'ctrl-u',
+                 9: 'tab'}
+        if k in named:
+            if k == c.KEY_RESIZE:
+                try:
+                    c.update_lines_cols()
+                except Exception:                       # noqa: BLE001
+                    pass
+            return named[k]
+        if 0xc0 <= k < 0xf8:
+            # getch() gives UTF-8 a byte at a time (1.0.139): "ž" came as two
+            # Latin-1 letters, and a password typed here was not the one meant.
+            raw = bytearray([k])
+            src.nodelay(True)
+            try:
+                for _ in range(1 if k < 0xe0 else 2 if k < 0xf0 else 3):
+                    k2 = src.getch()
+                    if not 0x80 <= k2 < 0xc0:
+                        break
+                    raw.append(k2)
+            finally:
+                src.nodelay(False)
+            try:
+                return raw.decode('utf-8')
+            except UnicodeDecodeError:
+                return None
+        if 32 <= k < 0x110000:
+            try:
+                return chr(k)
+            except ValueError:
+                return None
+        return None
+
+    def _line_in(self, y, prompt, text, secret=False, win=None, x=1, width=None):
+        """A line typed on the text screen: Enter gives it, Esc gives None."""
+        c = self.curses
+        scr = win or self.scr
+        pos = len(text)
+        try:
+            c.curs_set(1)
+        except Exception:                               # noqa: BLE001
+            pass
+        try:
+            while True:
+                h, w = scr.getmaxyx()
+                room = (width or (w - x - len(prompt) - 2))
+                shown = ('*' * len(text)) if secret else text
+                start = max(0, pos - room + 1)
+                try:
+                    scr.addstr(y, x, prompt, self.A['key'])
+                    scr.addstr(y, x + len(prompt), shown[start:start + room].ljust(room),
+                               self.curses.A_UNDERLINE)
+                    scr.move(y, x + len(prompt) + pos - start)
+                except c.error:
+                    pass
+                scr.refresh()
+                scr.timeout(500)
+                k = self._getkey(scr)
+                if k == 'enter':
+                    return text
+                if k == 'esc':
+                    return None
+                if k == 'bs' and pos > 0:
+                    text = text[:pos - 1] + text[pos:]
+                    pos -= 1
+                elif k == 'del':
+                    text = text[:pos] + text[pos + 1:]
+                elif k == 'left':
+                    pos = max(0, pos - 1)
+                elif k == 'right':
+                    pos = min(len(text), pos + 1)
+                elif k == 'home':
+                    pos = 0
+                elif k == 'end':
+                    pos = len(text)
+                elif k == 'ctrl-u':
+                    text, pos = '', 0
+                elif k and len(k) == 1 and k.isprintable():
+                    text = text[:pos] + k + text[pos:]
+                    pos += 1
+        finally:
+            try:
+                c.curs_set(0)
+            except Exception:                           # noqa: BLE001
+                pass
+
+    def _box(self, win, h, w):
+        """A frame round a window, in UTF-8 lines where the terminal takes them."""
+        c, A = self.curses, self.A
+        if 'utf' in (sys.stdout.encoding or '').lower():
+            hz, vt, tl, tr, bl, br = '\u2500', '\u2502', '\u250c', '\u2510', '\u2514', '\u2518'
+        else:
+            hz, vt, tl, tr, bl, br = '-', '|', '+', '+', '+', '+'
+        for y, line in ((0, tl + hz * (w - 2) + tr), (h - 1, bl + hz * (w - 2) + br)):
+            try:
+                win.addstr(y, 0, line, A['key'])
+            except c.error:
+                pass                                    # the bottom-right corner
+        for y in range(1, h - 1):
+            for x in (0, w - 1):
+                try:
+                    win.addstr(y, x, vt, A['key'])
+                except c.error:
+                    pass
+
+    def _edit_one(self, st):
+        """The window to change one setting: what it is, what it may be, the
+        value checked as the daemon checks it before it is saved. Returns
+        (words, bad) or None when nothing was done."""
+        c, A = self.curses, self.A
+        key = st['key']
+        kind, shape = self._kind(key)
+        secret = bool(st.get('secret'))
+        cur = self._shown(st.get('value'))
+        if kind == 'switch':
+            cur = '1' if st.get('value') in (True, 1, '1', 'on') else '0'
+        text = '' if secret else cur
+        choice = shape.index(cur) if kind in ('switch', 'choice') and cur in (shape or []) else 0
+        err = ''
+        helptext = re.sub(r'<[^>]+>', '', html.unescape(str(st.get('help') or '')))
+        while True:
+            self._under()
+            h, w = self.scr.getmaxyx()
+            ww = max(40, min(96, w - 4))
+            body = []
+            for para in helptext.split('\n'):
+                body += textwrap.wrap(para, ww - 4) or ['']
+            facts = ['now: %s%s' % ('(hidden)' if secret else (self._shown(st.get('value')) or '(empty)'),
+                                    '' if st.get('source') == 'default' else
+                                    '   - %s' % (st.get('source_says') or st.get('source'))),
+                     'as it comes: %s' % (self._shown(st.get('default')) or '(empty)')]
+            if kind == 'number':
+                facts.append('a whole number from %s to %s' % (shape[0], shape[1]))
+            elif kind == 'choice':
+                facts.append('one of: ' + ', '.join(shape))
+            if st.get('file_only'):
+                facts.append('kept in config.json on this machine - it takes effect after a restart')
+            if st.get('node_key'):
+                facts.append('this node\'s own (each node of a cluster has its own)')
+            # The help cut to what the screen has room for - the rest always fits.
+            fixed = len(facts) + 9 + (len(shape) - 1 if kind == 'choice' else 0)
+            body = body[:max(1, h - 2 - fixed)]
+            wh = min(h - 2, len(body) + fixed)
+            win = c.newwin(wh, ww, max(0, (h - wh) // 2), max(0, (w - ww) // 2))
+            win.keypad(True)
+            win.erase()
+            self._box(win, wh, ww)
+            title = ' %s ' % (st.get('label') or key)
+            try:
+                win.addnstr(0, 2, title, ww - 4, A['title'])
+                win.addnstr(1, 2, key, ww - 4, A['dim'])
+                y = 2
+                for ln in body:
+                    win.addnstr(y, 2, ln, ww - 4)
+                    y += 1
+                y += 1
+                for f in facts:
+                    win.addnstr(y, 2, f, ww - 4, A['dim'])
+                    y += 1
+                y += 1
+                if err:
+                    win.addnstr(wh - 2, 2, err[:ww - 4], ww - 4, A['bad'])
+                else:
+                    win.addnstr(wh - 2, 2, ('Left/Right choose' if kind in ('switch', 'choice')
+                                            else 'type the new value') +
+                                '   Enter save   Esc cancel', ww - 4, A['dim'])
+            except c.error:
+                pass
+            if kind in ('switch', 'choice'):
+                words = {'1': 'on', '0': 'off'} if kind == 'switch' else {}
+                x = 2
+                for i, opt in enumerate(shape):
+                    lab = ' %s ' % (words.get(opt) or dict((SCHEMA_KEYS[key][5].get('choices') or [])
+                                                           if key in SCHEMA_KEYS else []).get(opt) or opt)
+                    if kind == 'choice':
+                        # One under the other: their words can be long.
+                        lab = (' > ' if i == choice else '   ') + lab.strip() + ' '
+                        try:
+                            win.addnstr(y, 2, lab, ww - 4, A['sel'] if i == choice else 0)
+                        except c.error:
+                            pass
+                        y += 1
+                        continue
+                    try:
+                        win.addnstr(y, x, lab, max(0, ww - x - 2), A['sel'] if i == choice else 0)
+                    except c.error:
+                        pass
+                    x += len(lab) + 1
+                win.noutrefresh()
+                c.doupdate()
+                win.timeout(500)
+                k = self._getkey(win)
+                if k == 'esc':
+                    return None
+                if k in ('left', 'up'):
+                    choice = (choice - 1) % len(shape)
+                elif k in ('right', 'down', 'tab', ' '):
+                    choice = (choice + 1) % len(shape)
+                elif k == 'enter':
+                    value = shape[choice]
+                else:
+                    continue
+                if k != 'enter':
+                    continue
+            else:
+                win.noutrefresh()
+                c.doupdate()
+                got = self._line_in(y, 'value: ', text, secret=secret, win=win, x=2,
+                                    width=ww - 14)
+                if got is None:
+                    return None
+                text = got
+                if secret and not got:
+                    return ('nothing typed - %s stays as it was' % key, False)
+                value = got
+            # Checked here as the daemon checks it, then saved by `ai --set`.
+            try:
+                setting_value(key, value if kind != 'switch' else value == '1')
+            except (Refused, ValueError, TypeError) as e:
+                err = str(e)
+                continue
+            # A secret goes by the environment, not the command line (as otp's).
+            env = {'AI_VALUE_' + key.upper(): value} if secret else None
+            out, rc = self.capture(ai_argv() + ['--set', '%s=%s' % (
+                key, '@env' if secret else value), '--no-color'], env=env)
+            if rc != 0:
+                err = (out.strip().splitlines() or ['it was not saved'])[-1]
+                continue
+            return ('%s = %s - saved%s' % (key, '(hidden)' if secret else value,
+                                           '; the running service takes it within a minute'
+                                           if not st.get('file_only') else
+                                           '; restart the service for it'), False)
+
+    # ---- windows on the text screen for every menu: arrows and Enter (1.0.135) ----
+    # Nothing is typed at a bare prompt any more: a question is a window (a
+    # form) whose fields are moved between by the arrows, a choice is picked
+    # by the arrows, a list (terminals, accounts…) is scrolled and
+    # Enter on one offers what can be done with it. What is typed is checked
+    # before anything is run; Esc closes the window and goes back. The screen
+    # under a window is drawn again by `self.backdrop` - so a window made
+    # bigger or smaller (PuTTY's too) is drawn right.
+    def _fresh(self):
+        """Back from a command's own screen: the text screen drawn whole again."""
+        if self.plain:
+            self.curses.reset_prog_mode()
+            self.scr.clear()
+            self.plain = False
+            self.st_now = True
+
+    def _under(self):
+        """The screen under a window, written but not yet shown."""
+        self._fresh()
+        fn = getattr(self, 'backdrop', None)
+        if fn:
+            try:
+                fn()
+                return
+            except Exception:                           # noqa: BLE001
+                pass
+        self.scr.noutrefresh()
+
+    def _window(self, want_h, want_w):
+        """A framed window in the middle of the screen; (win, h, w)."""
+        c = self.curses
+        h, w = self.scr.getmaxyx()
+        ww = max(20, min(want_w, w - 2))
+        wh = max(5, min(want_h, h - 2))
+        win = c.newwin(wh, ww, max(0, (h - wh) // 2), max(0, (w - ww) // 2))
+        win.keypad(True)
+        win.erase()
+        self._box(win, wh, ww)
+        return win, wh, ww
+
+    def _wput(self, win, y, x, text, attr=0, width=None):
+        try:
+            wh, ww = win.getmaxyx()
+            if 0 < y < wh - 1 and x < ww - 1:
+                win.addnstr(y, x, str(text), max(0, (width or ww) - (x if width is None else 0)
+                                                 - (1 if width is None else 0)), attr)
+        except self.curses.error:
+            pass
+
+    def _wkey(self, win, wait=500):
+        win.timeout(wait)
+        return self._getkey(win)
+
+    def _wrap(self, text, width):
+        out = []
+        for para in str(text or '').split('\n'):
+            out += textwrap.wrap(para, max(10, width)) or ['']
+        return out
+
+    @staticmethod
+    def _plain_text(text):
+        return re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', str(text or ''))
+
+    def note(self, title, text, tone=''):
+        """Words in a window; any of Enter, Esc, q or Space closes it."""
+        A = self.A
+        while True:
+            self._under()
+            h, w = self.scr.getmaxyx()
+            ww = max(30, min(100, w - 4))
+            lines = self._wrap(text, ww - 4)[:max(1, h - 6)]
+            win, wh, ww = self._window(len(lines) + 4, max(len(title) + 8, min(
+                ww, max(len(x) for x in lines + ['']) + 6, ww)))
+            self._wput(win, 0, 2, ' %s ' % title, A['title'])
+            try:
+                win.addnstr(0, 2, ' %s ' % title, ww - 4, A['title'])
+            except self.curses.error:
+                pass
+            for i, ln in enumerate(lines):
+                self._wput(win, 1 + i, 2, ln, A.get(tone, 0) if tone else 0)
+            self._wput(win, wh - 2, 2, 'Enter or Esc - back', A['dim'])
+            win.noutrefresh()
+            self.curses.doupdate()
+            k = self._wkey(win)
+            if k in ('enter', 'esc', 'q', ' '):
+                return
+
+    def working(self, words):
+        """A window that says something is being done (the screen waits for it)."""
+        self._under()
+        win, wh, ww = self._window(3, min(100, len(words) + 6))
+        self._wput(win, 1, 2, words, self.A['dim'])
+        win.noutrefresh()
+        self.curses.doupdate()
+
+    def confirm(self, title, words, yes='Yes', no='No', danger=False):
+        """Yes or no, chosen by the arrows (or y / n); No unless chosen."""
+        A = self.A
+        pick = 1
+        while True:
+            self._under()
+            h, w = self.scr.getmaxyx()
+            ww = max(40, min(80, w - 4))
+            lines = self._wrap(words, ww - 4)[:max(1, h - 8)]
+            win, wh, ww = self._window(len(lines) + 5, ww)
+            try:
+                win.addnstr(0, 2, ' %s ' % title, ww - 4, A['bad'] if danger else A['title'])
+            except self.curses.error:
+                pass
+            for i, ln in enumerate(lines):
+                self._wput(win, 1 + i, 2, ln)
+            x = 2
+            y = wh - 2
+            for i, lab in enumerate((yes, no)):
+                lab = '  %s  ' % lab
+                self._wput(win, y, x, lab, (A['bad'] if danger and i == 0 else A['sel'])
+                           if i == pick else A['key'])
+                x += len(lab) + 2
+            self._wput(win, y, x + 2, 'Left/Right  Enter  Esc', A['dim'])
+            win.noutrefresh()
+            self.curses.doupdate()
+            k = self._wkey(win)
+            if k in ('esc', 'n', 'N'):
+                return False
+            if k in ('y', 'Y'):
+                return True
+            if k in ('left', 'right', 'tab', 'up', 'down'):
+                pick = 1 - pick
+            elif k == 'enter':
+                return pick == 0
+
+    def choose(self, title, options, words='', cur=0):
+        """One of `options` ([(value, words)]), picked by the arrows; Esc None."""
+        A = self.A
+        if not options:
+            return None
+        sel = max(0, min(cur or 0, len(options) - 1))
+        top = 0
+        while True:
+            self._under()
+            h, w = self.scr.getmaxyx()
+            ww = min(90, w - 4, max(36, max(len(o[1]) for o in options) + 12,
+                                    len(title) + 8, len(words) + 6 if words else 0))
+            head = self._wrap(words, ww - 4) if words else []
+            room = max(1, min(len(options), h - 6 - len(head)))
+            win, wh, ww = self._window(room + len(head) + (4 if head else 3), ww)
+            try:
+                win.addnstr(0, 2, ' %s ' % title, ww - 4, A['title'])
+            except self.curses.error:
+                pass
+            y = 1
+            for ln in head:
+                self._wput(win, y, 2, ln, A['dim'])
+                y += 1
+            if head:
+                y += 1
+            if sel < top:
+                top = sel
+            if sel >= top + room:
+                top = sel - room + 1
+            for n, (val, lab) in enumerate(options[top:top + room]):
+                i = top + n
+                line = ' %2d  %s' % (i + 1, lab)
+                if i == sel:
+                    self._wput(win, y + n, 2, line.ljust(ww - 5), A['sel'])
+                else:
+                    self._wput(win, y + n, 2, ' %2d' % (i + 1), A['key'])
+                    self._wput(win, y + n, 7, lab)
+            if len(options) > room:
+                self._wbar(win, y, room, len(options), top, ww - 2)
+            win.noutrefresh()
+            self.curses.doupdate()
+            k = self._wkey(win)
+            if k in ('esc', 'left'):
+                return None
+            if k == 'q':
+                return None
+            if k == 'up':
+                sel = (sel - 1) % len(options)
+            elif k in ('down', 'tab'):
+                sel = (sel + 1) % len(options)
+            elif k in ('home', 'pgup'):
+                sel = 0
+            elif k in ('end', 'pgdn'):
+                sel = len(options) - 1
+            elif k and k.isdigit():
+                n = int(k) - 1
+                if 0 <= n < len(options):
+                    sel = n
+                    return options[sel][0]
+            elif k in ('enter', 'right'):
+                return options[sel][0]
+
+    def _wbar(self, win, y0, rows, total, top, x):
+        """The scroll bar on the right of a list in a window."""
+        A = self.A
+        if total <= rows:
+            return
+        thumb = max(1, min(rows, round(rows * rows / total)))
+        tstart = max(0, min(rows - thumb, round((rows - thumb) * top / max(1, total - rows))))
+        utf = 'utf' in (sys.stdout.encoding or '').lower()
+        for r in range(rows):
+            hit = tstart <= r < tstart + thumb
+            try:
+                win.addstr(y0 + r, x, ('█' if hit else '│') if utf else
+                           ('#' if hit else '|'), A['key'] if hit else A['dim'])
+            except self.curses.error:
+                pass
+
+    def form(self, title, fields, words='', check=None, ok='OK'):
+        """Questions in one window. fields: [{'key', 'label', 'kind': 'text' |
+        'secret' | 'choice' | 'number', 'value', 'options': [(value, words)],
+        'need': True, 'range': (a, b), 'help', 'check': fn(value, values) ->
+        an error or None, 'when': fn(values) -> shown or not}]. Up/Down (Tab)
+        move between them, a choice is changed by Left/Right, Enter checks
+        them all and gives {key: value}; Esc gives None. A secret shows a star
+        for each character, never the characters."""
+        c, A = self.curses, self.A
+        vals, pos = {}, {}
+        for f in fields:
+            f.setdefault('kind', 'text')
+            if f['kind'] == 'choice':
+                opts = [o[0] for o in f['options']]
+                vals[f['key']] = f.get('value') if f.get('value') in opts else opts[0]
+            else:
+                vals[f['key']] = str(f.get('value') if f.get('value') is not None else '')
+            pos[f['key']] = len(vals[f['key']]) if f['kind'] != 'choice' else 0
+        at, err, err_at = 0, '', None
+        try:
+            c.curs_set(1)
+        except Exception:                               # noqa: BLE001
+            pass
+        try:
+            while True:
+                shown = [f for f in fields if not f.get('when') or f['when'](vals)]
+                at = max(0, min(at, len(shown) - 1))
+                f = shown[at]
+                self._under()
+                h, w = self.scr.getmaxyx()
+                ww = max(50, min(100, w - 4))
+                head = self._wrap(words, ww - 4) if words else []
+                labw = min(30, max(len(x.get('label') or x['key']) for x in shown) + 1)
+                fieldw = max(8, ww - labw - 7)
+                helps = self._wrap(f.get('help') or '', ww - 4) if f.get('help') else []
+                helps = helps[:4]
+                wh = len(head) + (1 if head else 0) + len(shown) + 2 + 4 + 1
+                win, wh, ww = self._window(wh, ww)
+                try:
+                    win.addnstr(0, 2, ' %s ' % title, ww - 4, A['title'])
+                except c.error:
+                    pass
+                y = 1
+                for ln in head:
+                    self._wput(win, y, 2, ln, A['dim'])
+                    y += 1
+                if head:
+                    y += 1
+                cursor = None
+                for i, x in enumerate(shown):
+                    lab = (x.get('label') or x['key'])[:labw - 1]
+                    here = i == at
+                    self._wput(win, y, 2, lab.rjust(labw), A['key'] if here else 0)
+                    vx = 3 + labw + 1
+                    v = vals[x['key']]
+                    if x['kind'] == 'choice':
+                        words_ = dict(x['options']).get(v, v)
+                        txt = ('< %s >' % words_) if here else ('  %s' % words_)
+                        self._wput(win, y, vx, txt[:fieldw], A['sel'] if here else A['ok'])
+                    else:
+                        t = ('*' * len(v)) if x['kind'] == 'secret' else v
+                        p = pos[x['key']] if here else len(t)
+                        start = max(0, p - fieldw + 1)
+                        self._wput(win, y, vx, t[start:start + fieldw].ljust(fieldw),
+                                   c.A_UNDERLINE | (A['key'] if here else 0))
+                        if here:
+                            cursor = (y, vx + p - start)
+                    if err and err_at == x['key']:
+                        self._wput(win, y, ww - 3, '!', A['bad'])
+                    y += 1
+                y += 1
+                for ln in helps:
+                    self._wput(win, y, 2, ln, A['dim'])
+                    y += 1
+                if err:
+                    self._wput(win, wh - 2, 2, err[:ww - 4], A['bad'])
+                else:
+                    self._wput(win, wh - 2, 2, ('Up/Down field   ' + ('Left/Right choose   '
+                               if any(x['kind'] == 'choice' for x in shown) else '') +
+                               'Enter %s   Esc cancel' % ok)[:ww - 4], A['dim'])
+                if cursor:
+                    try:
+                        c.curs_set(1)
+                        win.move(*cursor)
+                    except c.error:
+                        pass
+                else:
+                    try:
+                        c.curs_set(0)
+                    except Exception:                   # noqa: BLE001
+                        pass
+                win.noutrefresh()
+                c.doupdate()
+                k = self._wkey(win)
+                if k is None or k == 'resize':
+                    continue
+                key, kind = f['key'], f['kind']
+                if k == 'esc':
+                    return None
+                if k in ('up',) or (k == 'tab' and False):
+                    at = (at - 1) % len(shown)
+                elif k in ('down', 'tab'):
+                    at = (at + 1) % len(shown)
+                elif k == 'enter':
+                    err, err_at = '', None
+                    for i, x in enumerate(shown):
+                        v = vals[x['key']]
+                        if x['kind'] != 'choice':
+                            v = v.strip() if x['kind'] != 'secret' else v
+                            vals[x['key']] = v
+                        bad = None
+                        if x.get('need') and v == '':
+                            bad = '%s - it is needed' % (x.get('label') or x['key'])
+                        elif x['kind'] == 'number' and v != '':
+                            try:
+                                n = int(v)
+                                lo, hi = x.get('range') or (None, None)
+                                if (lo is not None and n < lo) or (hi is not None and n > hi):
+                                    bad = '%s - a whole number from %s to %s' % (
+                                        x.get('label') or x['key'], lo, hi)
+                            except ValueError:
+                                bad = '%s - a whole number' % (x.get('label') or x['key'])
+                        if not bad and x.get('check') and v != '':
+                            try:
+                                bad = x['check'](v, vals)
+                            except Exception as e:              # noqa: BLE001
+                                bad = str(e)
+                        if bad:
+                            err, err_at, at = bad, x['key'], i
+                            break
+                    if err:
+                        continue
+                    got = {x['key']: vals[x['key']] for x in shown}
+                    if check:
+                        bad = check(got)
+                        if bad:
+                            err, err_at = (bad if isinstance(bad, tuple) else (bad, None))
+                            if err_at:
+                                at = next((i for i, x in enumerate(shown) if x['key'] == err_at),
+                                          at)
+                            continue
+                    return got
+                elif kind == 'choice':
+                    opts = [o[0] for o in f['options']]
+                    i = opts.index(vals[key]) if vals[key] in opts else 0
+                    if k in ('left',):
+                        vals[key] = opts[(i - 1) % len(opts)]
+                    elif k in ('right', ' '):
+                        vals[key] = opts[(i + 1) % len(opts)]
+                    err = ''
+                else:
+                    t, p = vals[key], pos[key]
+                    if k == 'bs' and p > 0:
+                        t, p = t[:p - 1] + t[p:], p - 1
+                    elif k == 'del':
+                        t = t[:p] + t[p + 1:]
+                    elif k == 'left':
+                        p = max(0, p - 1)
+                    elif k == 'right':
+                        p = min(len(t), p + 1)
+                    elif k == 'home':
+                        p = 0
+                    elif k == 'end':
+                        p = len(t)
+                    elif k == 'ctrl-u':
+                        t, p = '', 0
+                    elif k and len(k) == 1 and k.isprintable():
+                        if kind == 'number' and not (k.isdigit() or (k == '-' and p == 0)):
+                            continue
+                        t, p = t[:p] + k + t[p:], p + 1
+                    else:
+                        continue
+                    vals[key], pos[key] = t, p
+                    if err_at == key:
+                        err, err_at = '', None
+        finally:
+            try:
+                c.curs_set(0)
+            except Exception:                           # noqa: BLE001
+                pass
+
+    def ask_one(self, title, label, value='', help_='', need=True, secret=False, check=None):
+        """One question in a window; its answer, or None (Esc)."""
+        got = self.form(title, [{'key': 'v', 'label': label, 'value': value, 'help': help_,
+                                 'need': need, 'kind': 'secret' if secret else 'text',
+                                 'check': check}])
+        return None if got is None else got['v']
+
+    def pick(self, title, load, cols, act=None, empty='nothing here', words=''):
+        """A list to scroll with the arrows: `load()` gives its rows (asked
+        again after something was done to one), `cols` [(heading, fn(row),
+        width, tone fn(row) or None)]. Enter calls `act(row)`; / finds. Esc
+        back, q leaves the console."""
+        c, A = self.curses, self.A
+        rows = load() or []
+        sel, top, find, said, said_bad = 0, 0, '', '', False
+        while True:
+            self._fresh()
+            h, w = self.scr.getmaxyx()
+            seen = [r for r in rows if not find or find.lower() in ' '.join(
+                str(fn(r)) for _h, fn, _w, _t in cols).lower()]
+            sel = max(0, min(sel, len(seen) - 1))
+            avail = max(3, h - 5 - (1 if words else 0))
+            if sel < top:
+                top = sel
+            if sel >= top + avail:
+                top = sel - avail + 1
+            top = max(0, min(top, max(0, len(seen) - avail)))
+            # Widths: as given; the last one takes what is left.
+            ws = [cw for _h, _f, cw, _t in cols]
+            fixed = sum(x + 2 for x in ws[:-1])
+            ws[-1] = max(8, min(ws[-1] or 200, w - 4 - fixed))
+
+            def paint(_title=title, _seen=seen, _top=top, _sel=sel, _ws=ws, _avail=avail):
+                self.scr.erase()
+                self._put(0, 0, ' ' * w, A['head'])
+                self._put(0, 0, ' ai %s  %s ' % (__version__, _title), A['head'] | c.A_BOLD)
+                right = ' %d%s ' % (len(_seen), (' of %d, with "%s"' % (len(rows), find))
+                                    if find else '')
+                self._put(0, max(0, w - len(right) - 1), right, A['head'])
+                y = 1
+                if words:
+                    self._put(y, 1, words[:w - 2], A['dim'])
+                    y += 1
+                x = 2
+                for (hd, _f, _w, _t), cw in zip(cols, _ws):
+                    self._put(y + 1, x, hd[:cw], A['key'])
+                    x += cw + 2
+                y += 2
+                if not _seen:
+                    self._put(y + 1, 4, empty if not find else 'nothing with "%s"' % find,
+                              A['dim'])
+                for n, r in enumerate(_seen[_top:_top + _avail]):
+                    i = _top + n
+                    x = 2
+                    if i == _sel:
+                        self._put(y + n, 1, ' ' * (w - 3), A['sel'])
+                    for (hd, fn, _w, tone), cw in zip(cols, _ws):
+                        try:
+                            v = str(fn(r))
+                        except Exception:               # noqa: BLE001
+                            v = '?'
+                        attr = A['sel'] if i == _sel else (A.get(tone(r) or '', 0) if tone else 0)
+                        self._put(y + n, x, v[:cw], attr)
+                        x += cw + 2
+                if len(_seen) > _avail:
+                    thumb = max(1, min(_avail, round(_avail * _avail / len(_seen))))
+                    ts = max(0, min(_avail - thumb, round((_avail - thumb) * _top
+                                                          / max(1, len(_seen) - _avail))))
+                    utf = 'utf' in (sys.stdout.encoding or '').lower()
+                    for r_ in range(_avail):
+                        hit = ts <= r_ < ts + thumb
+                        self._put(y + r_, w - 1, ('█' if hit else '│') if utf
+                                  else ('#' if hit else '|'), A['key'] if hit else A['dim'])
+                if said:
+                    self._put(h - 2, 1, said[:w - 2], A['bad'] if said_bad else A['ok'])
+                help_ = ' Up/Down PgUp/PgDn Home/End move   Enter %s   / find   Esc back ' % (
+                    'what to do with it' if act else 'look')
+                self._put(h - 1, 0, ' ' * (w - 1), A['head'])
+                self._put(h - 1, 0, help_[:w - 1], A['head'])
+                self.scr.noutrefresh()
+            self.backdrop = paint
+            paint()
+            c.doupdate()
+            self.scr.timeout(500)
+            k = self._getkey()
+            if k is None:
+                continue
+            said = ''
+            if k == 'esc':
+                if find:
+                    find = ''
+                    continue
+                return None
+            if k == 'q':
+                return 'quit'
+            if k in ('up', 'down', 'pgup', 'pgdn', 'home', 'end'):
+                sel = {'up': sel - 1, 'down': sel + 1, 'pgup': sel - (avail - 1),
+                       'pgdn': sel + (avail - 1), 'home': 0, 'end': len(seen) - 1}[k]
+            elif k == '/':
+                got = self.ask_one('Find', 'with the words', find, need=False,
+                                   help_='Only the rows with these words in them stay; '
+                                         'Esc in the list shows them all again.')
+                if got is not None:
+                    find, sel, top = got, 0, 0
+            elif k in ('enter', 'right') and seen and act:
+                r = act(seen[sel])
+                if r == 'quit':
+                    return 'quit'
+                if isinstance(r, tuple):
+                    said, said_bad = r
+                rows = load() or []
+
+    def act(self, *args, env=None, title=None, quiet_ok=None):
+        """`ai ARGS` run: a short answer in a window, a long one on a screen
+        of its own to scroll. Returns the exit code."""
+        argv = ai_argv() + [str(a) for a in args]
+        shown = '$ ai ' + ' '.join(self._quote(a) for a in args)
+        return self.act_argv(argv, title or shown, env=env, quiet_ok=quiet_ok)
+
+    def act_argv(self, argv, title, env=None, quiet_ok=None):
+        self.working('working…  ' + title)
+        text, rc = self.capture(argv, env=env)
+        plain = self._plain_text(text).rstrip()
+        if rc == 0 and not plain and quiet_ok:
+            plain = text = quiet_ok
+        h, w = self.scr.getmaxyx()
+        lines = self._wrap(plain, max(30, min(100, w - 4)) - 4)
+        if len(lines) <= max(3, min(14, h - 8)):
+            self.note(title if rc == 0 else '%s - it ended with %d' % (title, rc),
+                      plain or '(it said nothing)', '' if rc == 0 else 'bad')
+        else:
+            if rc not in (0, None):
+                text += '\n' + self.pal.dim('(it ended with %d)' % rc)
+            self.go_plain(lambda: self.page(title, text))
+        return rc
+
+    def live(self, fn):
+        """A view of its own on the terminal (a live log, a progress)."""
+        self.go_plain(fn)
+
+    # ---- small parts the lists use ------------------------------------------------
+    @staticmethod
+    def _when(ts):
+        if not ts:
+            return '-'
+        try:
+            return time.strftime('%Y-%m-%d %H:%M', time.localtime(float(ts)))
+        except (TypeError, ValueError):
+            return str(ts)
+
+    @staticmethod
+    def _rows(got, *keys):
+        if isinstance(got, dict):
+            for k in keys:
+                if isinstance(got.get(k), list):
+                    return got[k]
+            return []
+        return got if isinstance(got, list) else []
+
+    def details(self, title, row, skip=()):
+        """One row's fields as words, in a window or on its own screen."""
+        lines = []
+        for k, v in row.items():
+            if k in skip or v in (None, '', [], {}):
+                continue
+            if isinstance(v, (list, dict)):
+                v = json.dumps(v, default=str, ensure_ascii=False)
+            elif k in ('created', 'last_used', 'last_seen', 'last_in', 'activated', 'at',
+                       'pending_at', 'locked_until') and isinstance(v, (int, float)):
+                v = self._when(v)
+            lines.append('%-16s %s' % (k, v))
+        h, w = self.scr.getmaxyx()
+        if len(lines) <= h - 8:
+            self.note(title, '\n'.join(lines))
+        else:
+            self.go_plain(lambda: self.page(title, '\n'.join(lines)))
+
+    # ---- 9 backups --------------------------------------------------------------
+    # ---- 10 upgrades ------------------------------------------------------------
+    def m_upgrades(self):
+        def online():
+            self.working('working…  looking for a new version')
+            row = self.out('--upgrade-check') or {}
+            if row.get('error'):
+                self.note('Upgrade from the web', '%s:\n%s' % (row.get('url'), row['error']), 'bad')
+                return
+            here = ver_tuple(__version__)
+            newer = [p for p in row.get('packages') or [] if ver_tuple(p.get('version')) > here]
+            if not newer:
+                self.note('Upgrade from the web', 'Nothing newer than %s at %s.' % (
+                    __version__, row.get('url')), 'ok')
+                return
+            ver = self.choose('Upgrade from the web', [
+                (p['version'], 'ai %s%s' % (p['version'], '   (the newest)' if i == 0 else ''))
+                for i, p in enumerate(newer)], 'This server runs %s. Found at %s:' % (
+                    __version__, row.get('url')))
+            if not ver:
+                return
+            if not self.confirm('Upgrade to %s' % ver, 'It is fetched, its signature checked, and put in. '
+                                'The terminals go on running; the pages are back after a few seconds.',
+                                'Upgrade'):
+                return
+            self.live(lambda: self.show_live('--upgrade-online', ver, '--yes'))
+
+        def install():
+            path = self.ask_one('Upgrade from a package', 'the package', '/root/',
+                                help_='ai-X.Y.Z.tar.gz, as released - its signature is checked first.',
+                                check=lambda v, _: None if os.path.isfile(v) and v.endswith('.tar.gz')
+                                else 'not an ai-X.Y.Z.tar.gz')
+            if not path:
+                return
+            if not self.confirm('Upgrade', 'ai is upgraded with %s once its signature is checked.' % path,
+                                'Upgrade'):
+                return
+
+            def run_signed():
+                self.clear_screen()
+                subprocess.call([sys.executable, '-I', upgrader(), '--run', path])
+                self.pause()
+            self.live(run_signed)
+        return self.sub('Upgrades', [
+            ('1', 'How it stands', lambda: self.act('--upgrade-status')),
+            ('2', 'Look for a new version on the web now', lambda: self.act('--upgrade-check')),
+            ('3', 'Upgrade from the web', online),
+            ('4', 'Upgrade from a package file', install),
+        ])
+
+    # ---- 11 the service ---------------------------------------------------------
+    def m_service(self):
+        def restart():
+            if self.confirm('Restart the service', 'The pages do not answer for a few seconds; the '
+                            'terminals go on running.', 'Restart'):
+                self.act_argv(['systemctl', 'restart', 'ai'], '$ systemctl restart ai',
+                              quiet_ok='restarted')
+                self.st_now = True
+
+        def at_login():
+            on = console_at_login()
+            r = self.choose('The console at login', [
+                ('on', 'On - root sees this console first when signing in'),
+                ('off', 'Off - root gets the ordinary shell')],
+                'It is %s now.' % ('ON' if on else 'off'), cur=0 if on else 1)
+            if r and (r == 'on') != on:
+                try:
+                    self.note('The console at login', console_at_login_set(r == 'on'), 'ok')
+                except SystemExit as e:
+                    self.note('The console at login', str(e), 'bad')
+        php = ' '.join(['php-fpm'] + ['php%s-fpm' % p.name[7:] for p in Path('/usr/sbin').glob('php-fpm?*')])
+        return self.sub('The service', [
+            ('1', 'Its state', lambda: self.act_argv(
+                ['systemctl', 'status', 'ai', '--no-pager', '-n', '60', '-l'],
+                '$ systemctl status ai')),
+            ('2', 'Restart it', restart),
+            ('3', 'The pages (nginx, PHP)', lambda: self.act_argv(
+                ['systemctl', 'status', 'nginx'] + php.split() + ['--no-pager', '-n', '5'],
+                '$ systemctl status nginx php-fpm')),
+            ('4', 'Its journal, live', self.journal, 'plain'),
+            ('5', 'The console at login: on or off', at_login),
+        ])
+
+    # ---- 3 terminals ------------------------------------------------------------------
+    def m_terms(self):
+        def load():
+            return [t for t in self._rows(self.out('--sessions') or {}, 'terms')
+                    if self.show_ended or t.get('state') != 'ended']
+
+        def toggle():
+            self.show_ended = not self.show_ended
+            self.note('Terminals', 'The ended ones are %s.' % ('listed too' if self.show_ended else 'left out'))
+        self.show_ended = getattr(self, 'show_ended', False)
+        cols = [('id', lambda t: t.get('id'), 8, None),
+                ('state', lambda t: t.get('state'), 8,
+                 lambda t: {'running': 'ok', 'exited': 'warn', 'ended': 'dim'}.get(t.get('state'))),
+                ('as', lambda t: t.get('run_as'), 10, None),
+                ('who', lambda t: t.get('owner') or '-', 12, None),
+                ('name', lambda t: t.get('title'), 28, None),
+                ('folder', lambda t: t.get('path') or t.get('cwd'), 60, lambda t: 'dim')]
+        return self.sub('Terminals', [
+            ('1', 'Browse them (Enter: open one here, end it…)',
+             lambda: self.pick('Terminals', load, cols, self.term_do,
+                               empty='no terminal - make one with New Claude Code')),
+            ('2', 'New Claude Code', lambda: self.term_new('claude')),
+            ('3', 'New shell', lambda: self.term_new('shell')),
+            ('4', 'Ended ones in the list too: on or off', toggle),
+        ])
+
+    def term_do(self, t):
+        tid = t['id']
+        opts = [] if t.get('state') == 'ended' else [('attach', 'Open it here (Ctrl+b d leaves it running)')]
+        if t.get('state') == 'exited':
+            opts.append(('restart', 'Start it again'))
+        if t.get('state') == 'ended':
+            opts += [('again', 'Start it again, the same way'), ('screen', 'Its last screen')]
+        else:
+            opts.append(('end', 'End it'))
+        opts.append(('show', 'Show it all'))
+        what = self.choose(t.get('title') or tid, opts, '%s · %s · %s' % (t.get('state'), t.get('run_as'),
+                                                                          t.get('path') or t.get('cwd')))
+        if what == 'attach':
+            def go():
+                self.clear_screen()
+                subprocess.call(ai_argv() + ['--attach', tid])
+            self.live(go)
+        elif what == 'restart':
+            self.act('--restart-term', tid)
+        elif what == 'again':
+            self.act('--again', tid)
+        elif what == 'screen':
+            self.show('--screen', tid)
+        elif what == 'end':
+            if self.confirm('End it', 'What runs in "%s" ends now.' % (t.get('title') or tid), 'End it',
+                            danger=True):
+                self.act('--end', tid)
+        elif what == 'show':
+            self.details(t.get('title') or tid, t)
+
+    def term_new(self, kind):
+        fields = [{'key': 'dir', 'label': 'working directory', 'value': os.getcwd() if os.getcwd() != '/'
+                   else os.path.expanduser('~'), 'need': True, 'help': 'Where it starts - a full path.',
+                   'check': lambda v, _: None if os.path.isdir(v) else 'there is no folder %s' % v},
+                  {'key': 'run_as', 'label': 'runs as', 'value': 'root',
+                   'help': 'The Linux account it runs as.'}]
+        if kind == 'claude':
+            fields += [{'key': 'how', 'label': 'start with', 'kind': 'choice', 'value': 'new',
+                        'options': [('new', 'a new conversation'), ('continue', 'the last conversation of the folder'),
+                                    ('pick', 'one of its conversations, chosen')]},
+                       {'key': 'model', 'label': 'model', 'help': 'Empty: as Claude Code chooses; opus, sonnet…'}]
+        got = self.form('New Claude Code' if kind == 'claude' else 'New shell', fields)
+        if not got:
+            return
+        args = ['--new', got['dir'], '--run-as', got['run_as'] or 'root']
+        if kind == 'shell':
+            args.append('--shell')
+        else:
+            if got.get('how') in ('continue', 'pick'):
+                args.append('--' + got['how'])
+            if got.get('model'):
+                args += ['--model', got['model']]
+        out, rc = self.capture(ai_argv() + args + ['--json'])
+        try:
+            tid = json.loads(out).get('id')
+        except (ValueError, AttributeError):
+            tid = None
+        if rc != 0 or not tid:
+            self.note('New terminal', self._plain_text(out).strip() or 'it did not start', 'bad')
+            return
+        if self.confirm('Started', 'The terminal %s runs - on the pages too. Open it here now?' % tid,
+                        'Open it', 'Not now'):
+            def go():
+                self.clear_screen()
+                subprocess.call(ai_argv() + ['--attach', tid])
+            self.live(go)
+
+    # ---- 6 the firewall and who may reach the pages -------------------------------------
+    def m_fw(self):
+        def port():
+            got = self.form('Let a port in', [
+                {'key': 'port', 'label': 'port', 'need': True, 'help': '443, 8000-8100 or 80,443; with '
+                 '/udp for UDP (53/udp).',
+                 'check': lambda v, _: None if re.match(r'^\d{1,5}([-,]\d{1,5})*(/(tcp|udp))?$', v)
+                 else 'a port, a range or ports by commas, /tcp or /udp'},
+                {'key': 'from', 'label': 'from', 'help': 'An address or a network. Empty: from anywhere.'},
+                {'key': 'note', 'label': 'note', 'help': 'Shown on the pages and as the rule\'s comment.'}])
+            if got:
+                self.act('--fw-open', got['port'], *(['--from', got['from']] if got.get('from') else []),
+                         *(['--note', got['note']] if got.get('note') else []))
+
+        def drop():
+            n = self.ask_one('Take a rule of your own away', 'its number', help_=(
+                'The number `ai --fw status` shows by it.'),
+                check=lambda v, _: None if v.isdigit() else 'a number')
+            if n:
+                self.act('--fw-del', n)
+
+        def pages():
+            got = self.ask_one('Who may reach the pages', 'networks', help_=(
+                'Comma between: 192.168.0.0/16,10.0.0.0/8 - or all for everybody. This machine always may. '
+                'It goes back by itself unless kept.'), need=True)
+            if got:
+                self.act('--pages-from', got)
+
+        def onoff():
+            r = self.choose('ai\'s firewall rules', [
+                ('on', 'On - the chain AI-IN first in INPUT (iptables), or rich rules (firewalld)'),
+                ('off', 'Off - ai\'s rules taken away; the rest of the firewall stays as it is')])
+            if r:
+                self.act('--fw', r)
+        return self.sub('Firewall and access', [
+            ('1', 'How it stands', lambda: self.act('--fw', 'status')),
+            ('2', 'Open HTTP and HTTPS (the pages) in the firewall', lambda: self.act('--open-web')),
+            ('3', 'Let a port in', port),
+            ('4', 'Take a rule of your own away', drop),
+            ('5', 'ai\'s firewall rules on or off', onoff),
+            ('6', 'Who may reach the pages', pages),
+            ('7', 'Keep the change waiting to be kept', lambda: self.act('--change-keep', 'all')),
+            ('8', 'Put the old back now', lambda: self.act('--change-back', 'all')),
+        ])
+
+    # ---- 7 the server ---------------------------------------------------------------------
+    def m_server(self):
+        def keyadd():
+            got = self.ask_one('Add a public key for root', 'the key', help_=(
+                'One line of a .pub file: ssh-ed25519 AAAA… you@laptop'), need=True)
+            if got:
+                self.act('--sshkey-add', got)
+
+        def power(how):
+            if self.confirm('Restart the server' if how == 'reboot' else 'Switch the server off',
+                            'Every terminal ends with it.' + ('' if how == 'reboot' else
+                                                             ' It stays off until somebody switches it on.'),
+                            'Restart' if how == 'reboot' else 'Switch it off', danger=True):
+                self.act('--' + how, '--yes')
+        return self.sub('The server', [
+            ('1', 'The network', lambda: self.act('--net')),
+            ('2', 'The time (chrony)', lambda: self.act('--ntp')),
+            ('3', 'Look for system updates', lambda: self.act('--osup', 'check')),
+            ('4', 'Update the system now, followed live', lambda: self.show_live('--osup', 'upgrade'), 'plain'),
+            ('5', 'SSH keys of root', lambda: self.act('--sshkeys')),
+            ('6', 'Add a public key for root', keyadd),
+            ('7', 'The certificate of the pages', lambda: self.act('--cert')),
+            ('8', 'Restart the server', lambda: power('reboot')),
+            ('9', 'Switch the server off', lambda: power('poweroff')),
+        ])
+
+
+
+# In /etc itself, where only root writes (as otp's).
+CONSOLE_FLAG = Path(os.environ.get('AI_CONSOLE_FLAG', '/etc/ai-console-login'))
+CONSOLE_PROFILE = Path('/etc/profile.d/zz-ai-console.sh')
+
+
+def console_at_login():
+    try:
+        fd = os.open(str(CONSOLE_FLAG), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return False
+        return os.read(fd, 8).decode('ascii', 'replace').strip() == 'on'
+    finally:
+        os.close(fd)
+
+
+def console_at_login_set(on):
+    if os.geteuid() != 0:
+        raise SystemExit('ai: only root sets that')
+    # Written beside it and put in its place: a link or a pipe found there is
+    # replaced, never followed.
+    tmp = '%s.%d.tmp' % (CONSOLE_FLAG, os.getpid())
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        os.write(fd, b'on\n' if on else b'off\n')
+        os.fchmod(fd, 0o644)
+    finally:
+        os.close(fd)
+    os.rename(tmp, str(CONSOLE_FLAG))
+    return ('the ai console opens when root signs in at the console or over SSH (q leaves '
+            'it for the shell)' if on else 'root signs in to the ordinary shell; '
+            '`ai --console` opens the console')
+
+
+def console_main(pal):
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise SystemExit('ai: the console needs a terminal')
+    return Console(pal).run()
+
+
+def ai_argv():
+    """How this program runs itself again (the console's commands)."""
+    me = str(LIB_DIR / 'ai.py') if (LIB_DIR / 'ai.py').is_file() else os.path.abspath(__file__)
+    return [sys.executable, me]
+
+
+# ---------------------------------------------------------------------------
 # The command line
 # ---------------------------------------------------------------------------
+# Everything the pages can do that a server needs at two in the morning, as
+# otp's command line does it: in colour on a terminal (colorama when it is
+# there), plain anywhere else, `--json` for a script and for the console.
+# It talks to the database and the machine directly, never through the API -
+# the moment the command line is most needed is the moment nobody can sign in.
+HELP_EXAMPLES = [
+    ('ai', 'what it is doing (the same as --status)'),
+    ('ai --console', 'everything by its menus, on this screen'),
+    ('ai --check', 'every part of it: tmux, Claude Code, nginx, PHP, the certificate, the firewall'),
+    ('ai --open-web', 'HTTP and HTTPS let in by the firewall (firewalld, ufw or iptables)'),
+    ('ai --fw-open 8080 --from 10.0.0.0/8', 'a port of your own let in'),
+    ('ai --pages-from 192.168.0.0/16,10.0.0.0/8', 'who may reach the pages (all = everybody)'),
+    ('ai --sessions', 'the terminals, running and ended'),
+    ('ai --attach 1a2b3c4d', 'one of them, here; Ctrl+b d leaves it running'),
+    ('ai --new /srv/project --continue', 'Claude Code in a folder, its last conversation'),
+    ('ai --add-user jan --role user --run-as jan', 'the password asked for (or AI_PASSWORD)'),
+    ('ai --set upgrade_auto=1', 'a setting changed'),
+    ('ai --upgrade-online', 'the newest version: fetched, checked, put in'),
+]
+
+
+def build_parser():
+    p = HelpfulParser(prog='ai', add_help=False, allow_abbrev=False,
+                      usage='ai [--json] [--no-color] [what to do]',
+                      description='Claude Code on this server, from a web browser')
+    g = p.add_argument_group('EVERYWHERE')
+    g.add_argument('-h', '--help', action='store_true', help='this, and stop')
+    g.add_argument('--version', action='store_true', help='which version this is, and stop')
+    g.add_argument('--no-color', '--no-colour', action='store_true', dest='no_color',
+                   help='plain text, no colour')
+    g.add_argument('--json', action='store_true', help='answer as JSON where it makes sense')
+    g.add_argument('--yes', action='store_true', help='never ask')
+    g.add_argument('--daemon', action='store_true', help='run the daemon in the foreground (what systemd starts)')
+    g.add_argument('--console', action='store_true', help='ai by its menus, on this screen (q leaves it)')
+    g.add_argument('--console-at-login', choices=('on', 'off', 'status'), metavar='on|off|status',
+                   help='the console when root signs in, or the ordinary shell')
+    g = p.add_argument_group('LOOKING', 'Reading what it knows. None of these change anything.')
+    g.add_argument('--status', action='store_true', help='what it is doing, in one screen')
+    g.add_argument('--check', action='store_true', help='a health check, every part of it')
+    g.add_argument('--events', action='store_true', help='what happened: sign-ins, terminals, changes')
+    g.add_argument('--log', action='store_true', help='its own log, the last lines')
+    g.add_argument('--sign-ins', action='store_true', help='who is signed in to the pages now')
+    g.add_argument('--limit', type=int, default=40, metavar='N', help='how many rows [40]')
+    g.add_argument('--search', metavar='TEXT', default='', help='only rows holding this')
+    g = p.add_argument_group('TERMINALS', 'Claude Code and shells in tmux: they go on when nobody looks.')
+    g.add_argument('--sessions', action='store_true', help='the terminals, running and ended')
+    g.add_argument('--attach', metavar='ID', help='one terminal, here (Ctrl+b d leaves it running)')
+    g.add_argument('--screen', metavar='ID', help='what one shows now (or its last screen)')
+    g.add_argument('--new', metavar='DIR', help='a new terminal in DIR: Claude Code, or --shell')
+    g.add_argument('--shell', action='store_true', help='with --new: a shell, not Claude Code')
+    g.add_argument('--continue', action='store_true', dest='cont',
+                   help='with --new: the last conversation of the folder')
+    g.add_argument('--pick', action='store_true', help='with --new: choose one of its conversations')
+    g.add_argument('--model', default='', help='with --new: the model (opus, sonnet…)')
+    g.add_argument('--title', default='', help='with --new: its name')
+    g.add_argument('--end', metavar='ID', help='end a terminal')
+    g.add_argument('--restart-term', metavar='ID', help='start what ran in a terminal again')
+    g.add_argument('--again', metavar='ID', help='an ended terminal started afresh, the same way')
+    g = p.add_argument_group('ACCOUNTS', 'Who may sign in to the pages.')
+    g.add_argument('--users', action='store_true', help='the accounts')
+    g.add_argument('--add-user', metavar='NAME', help='an account (--role, --run-as; the password asked)')
+    g.add_argument('--role', default='user', choices=ROLES, help='with --add-user, --set-role [user]')
+    g.add_argument('--run-as', default='', metavar='ACCOUNT', help='the Linux account its terminals run as')
+    g.add_argument('--password', default='', help='its password (otherwise asked, or AI_PASSWORD)')
+    g.add_argument('--make-password', action='store_true', help='make a password, print it, to be changed')
+    g.add_argument('--passwd', metavar='NAME', help='a new password for an account')
+    g.add_argument('--del-user', '--drop-user', metavar='NAME', dest='del_user', help='an account taken away')
+    g.add_argument('--disable-user', metavar='NAME', help='may no longer sign in (its terminals go on)')
+    g.add_argument('--enable-user', metavar='NAME', help='may sign in again')
+    g.add_argument('--set-role', metavar='NAME', help='its role, from --role')
+    g.add_argument('--set-run-as', nargs=2, metavar=('NAME', 'ACCOUNT'),
+                   help='the Linux account its terminals run as (- for the default)')
+    g.add_argument('--end-sign-ins', metavar='NAME', help='every sign-in of an account ended')
+    g = p.add_argument_group('SETTINGS')
+    g.add_argument('--settings', action='store_true', help='every setting and its value')
+    g.add_argument('--set', action='append', metavar='KEY=VALUE', default=[],
+                   help='a setting changed (VALUE @env: from AI_VALUE_KEY)')
+    g.add_argument('--setting', nargs=2, metavar=('KEY', 'VALUE'), help=argparse.SUPPRESS)
+    g = p.add_argument_group('FIREWALL AND ACCESS', 'A change goes back by itself unless kept (--change-keep).')
+    g.add_argument('--fw', choices=('status', 'on', 'off'), metavar='status|on|off',
+                   help='ai\'s firewall rules: how they stand, or on or off')
+    g.add_argument('--open-web', action='store_true',
+                   help='HTTP and HTTPS let in: firewalld\'s services, ufw, or ai\'s rules (iptables)')
+    g.add_argument('--fw-open', metavar='PORT[/udp]', help='a rule of your own: a port (443, 8000-8100, 80,443)')
+    g.add_argument('--from', default='', dest='source', metavar='CIDR', help='with --fw-open: only from there')
+    g.add_argument('--note', default='', help='with --fw-open: what it is for')
+    g.add_argument('--fw-del', type=int, metavar='N', help='a rule of your own taken away (its number)')
+    g.add_argument('--pages-from', metavar='CIDR,..|all', help='who may reach the pages')
+    g.add_argument('--change-keep', choices=('net', 'fw', 'access', 'all'), help='keep a change on trial')
+    g.add_argument('--change-back', choices=('net', 'fw', 'access', 'all'), help='put the old back now')
+    g = p.add_argument_group('THE SERVER')
+    g.add_argument('--net', action='store_true', help='its network, as NetworkManager has it')
+    g.add_argument('--ntp', action='store_true', help='its clock: chrony, the time servers, the zone')
+    g.add_argument('--osup', choices=('status', 'check', 'upgrade'), metavar='status|check|upgrade',
+                   help='the system\'s updates: what waits, looked for, or put in (followed here)')
+    g.add_argument('--sshkeys', action='store_true', help='the keys that may sign in as root')
+    g.add_argument('--sshkey-add', metavar='LINE', help='a public key for root (ssh-ed25519 AAAA…)')
+    g.add_argument('--cert', action='store_true', help='the certificate of the pages')
+    g.add_argument('--reboot', action='store_true', help='restart the server (asks, or --yes)')
+    g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
+    g = p.add_argument_group('UPGRADES')
+    g.add_argument('--upgrade-check', action='store_true', help='whether a newer version is out')
+    g.add_argument('--upgrade-online', nargs='?', const='newest', metavar='VERSION',
+                   help='fetch the newest (or VERSION) from upgrade_url and put it in')
+    g.add_argument('--upgrade-status', action='store_true', help='the last upgrade, and what it said')
+    return p
+
+
+class CliDaemon(object):
+    """What the parts shared with the daemon need of it, on the command line:
+    a change on trial is taken back by the running daemon if not kept."""
+
+    def __init__(self, store):
+        self.store = store
+        self.trials = Trials(self)
+        self.upgrades = Upgrades(self)
+        self.started = time.time()
+        self.osup_checking = False
+
+
 def cli_store():
-    if not DB_FILE.exists() and os.geteuid() != 0:
+    if os.geteuid() != 0 and not DB_FILE.exists():
         raise SystemExit('ai: %s is not there - run as root' % DB_FILE)
     st = Store(DB_FILE)
     config_rebuild(st)
@@ -4332,158 +7237,601 @@ def ago(ts):
     return '%d s ago' % s
 
 
-def cli_status(st):
-    tm = Terms(st)
-    admin = {'name': 'cli', 'role': 'admin'}
-    terms = tm.list(admin)
-    up = '?'
+def when(ts):
+    return time.strftime('%d-%m-%Y %H:%M', time.localtime(float(ts))) if ts else '-'
+
+
+def daemon_alive():
     try:
-        with urllib.request.urlopen('http://127.0.0.1:%d/api/health' % int(CONFIG.get('api_port')), timeout=3):
-            up = 'answering'
-    except urllib.error.HTTPError:
-        up = 'answering'
+        token = TOKEN_FILE.read_text().strip()
+        req = urllib.request.Request('http://127.0.0.1:%d/api/health' % int(CONFIG.get('api_port') or 9871),
+                                     headers={'X-Ai-Token': token})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
     except Exception:                                   # noqa: BLE001
-        up = 'NOT answering'
-    print('ai %s on %s - the daemon is %s' % (__version__, host_name(), up))
-    print('  database   %s' % DB_FILE)
-    print('  accounts   %s' % ', '.join('%s (%s%s)' % (u['name'], u['role'], ', off' if u['disabled'] else '')
-                                        for u in st.users()))
-    live = [t for t in terms if t['state'] != 'ended']
-    print('  terminals  %d running' % len(live))
-    for t in live:
-        print('    %s  %-8s %-10s %-7s %s  (%s)' % (t['id'], t['run_as'], t['owner'] or '-', t['state'],
-                                                    t['title'], t['path']))
+        return False
+
+
+def status_row(d):
+    st = d.store
+    tm = Terms(st)
+    terms = tm.list({'name': 'cli', 'role': 'admin'})
     online = st.meta_json('upgrade:online', {}) or {}
-    if online.get('newest'):
-        print('  newest     %s at %s (%s)' % (online['newest']['version'], online.get('url'), ago(online.get('at'))))
+    newest = online.get('newest') or {}
+    problems = []
+    if not which('tmux'):
+        problems.append('tmux is not installed: no terminal can start')
+    cert = cert_facts()
+    if cert.get('until_ts') and cert['until_ts'] - time.time() < 14 * 86400:
+        problems.append('the certificate of the pages runs out %s' % cert.get('until'))
+    alive = daemon_alive()
+    if not alive:
+        problems.append('the daemon is not answering (systemctl status ai)')
+    return {'version': __version__, 'host': host_name(), 'daemon_alive': alive,
+            'terms': len([t for t in terms if t['state'] != 'ended']),
+            'signed_in': len(st.q('SELECT id FROM sessions')), 'accounts': len(st.users()),
+            'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
+            'trials': d.trials.view(), 'problems': problems, 'term_list': terms,
+            'upgrade_url': CONFIG.get('upgrade_url'), 'looked': online.get('at')}
+
+
+def say_json(obj):
+    print(json.dumps(obj, indent=2, default=str, ensure_ascii=False))
+
+
+def cli_status(d, pal, as_json):
+    s = status_row(d)
+    if as_json:
+        say_json(s)
+        return 0
+    print('%s %s on %s - the daemon is %s' % (pal.head('ai'), pal.bold(__version__), pal.bold(s['host']),
+                                              pal.good('answering') if s['daemon_alive'] else pal.bad('NOT answering')))
+    print('  database     %s' % DB_FILE)
+    print('  accounts     %d, %d signed in now' % (s['accounts'], s['signed_in']))
+    print('  terminals    %d running' % s['terms'])
+    live = [t for t in s['term_list'] if t['state'] != 'ended']
+    if live:
+        print(table([[t['id'], t['state'], t['run_as'], t['owner'] or '-', t['title'], t['path']] for t in live],
+                    ['id', 'state', 'as', 'who', 'name', 'folder']))
+    if s['newer']:
+        print(pal.warn_line('ai %s is out - ai --upgrade-online' % s['newer']))
+    for t in s['trials']:
+        print(pal.warn_line('%s waits to be kept: %d s left (ai --change-keep %s)' % (t['words'], t['left'], t['kind'])))
+    for pr in s['problems']:
+        print(pal.bad_line(pr))
+    return 0 if s['daemon_alive'] else 1
+
+
+def cli_check(d, pal, as_json):
+    out = []
+
+    def one(what, ok, said, warn=False):
+        out.append({'what': what, 'ok': bool(ok), 'warn': bool(warn and not ok), 'said': said})
+    one('tmux', which('tmux'), first_line([tmux_bin(), '-V']) or 'not installed')
+    one('python', sys.version_info >= (3, 9), sys.version.split()[0])
+    alive = daemon_alive()
+    one('the daemon', alive, 'answering on 127.0.0.1:%s' % CONFIG.get('api_port') if alive
+        else 'not answering - systemctl status ai')
+    try:
+        g = grp.getgrnam(WEB_GROUP)
+        st = os.stat(str(TOKEN_FILE))
+        one('the pages\' token', st.st_gid == g.gr_gid and st.st_mode & 0o040, '%s, group %s' % (TOKEN_FILE, WEB_GROUP))
+    except (KeyError, OSError) as e:
+        one('the pages\' token', False, str(e))
+    rc, so, se = run(['nginx', '-t'], timeout=20)
+    one('nginx', rc == 0, ((se or so).strip().splitlines() or ['?'])[-1])
+    php = [p for p in Path('/run/php-fpm').glob('ai.sock')] + [p for p in Path('/run/php').glob('ai.sock')]
+    one('php-fpm', bool(php), str(php[0]) if php else 'the socket ai.sock is not there - is php-fpm running?')
+    c = cert_facts()
+    days = int((c['until_ts'] - time.time()) // 86400) if c.get('until_ts') else None
+    one('the certificate', c.get('there') and (days is None or days > 14),
+        '%s days left%s' % (days, ', self-signed' if c.get('self_signed') else '') if c.get('there') else 'not there',
+        warn=c.get('there'))
+    b = fw_backend()
+    if b == 'firewalld':
+        rc, so, _se = run(['firewall-cmd', '--list-services'], timeout=10)
+        rc2, so2, _se2 = run(['firewall-cmd', '--list-ports'], timeout=10)
+        web = 'https' in so.split() or '443/tcp' in so2.split() or bool(fw_conf(d.store)['on'])
+        one('the firewall', web, 'firewalld: %s' % ('HTTPS is let in' if web else
+                                                   'HTTPS is NOT let in - ai --open-web'))
+    elif b == 'ufw':
+        rc, so, _se = run(['ufw', 'status'], timeout=10)
+        web = re.search(r'^(443|443/tcp|Nginx Full|80,443/tcp)\b.*ALLOW', so, re.M) is not None
+        one('the firewall', web, 'ufw: %s' % ('HTTPS is let in' if web else 'HTTPS is NOT let in - ai --open-web'))
+    else:
+        c2 = fw_conf(d.store)
+        one('the firewall', True, '%s%s' % (b or 'none', ', ai\'s rules on' if c2['on'] else ''))
+    if which('getenforce'):
+        rc, so, _se = run(['getenforce'], timeout=5)
+        if so.strip() not in ('Disabled', ''):
+            rc, so2, _se = run(['getsebool', 'httpd_can_network_connect'], timeout=5)
+            one('SELinux', 'on' in so2, so2.strip() or '?')
+    for name in sorted({run_as_of(u) for u in d.store.users()} | {'root'}):
+        try:
+            f = claude_facts(linux_user(name), fresh=True)
+            one('Claude Code for %s' % name, bool(f.get('version')),
+                (f.get('version') or 'not installed - Settings - Claude Code, or: curl -fsSL '
+                 'https://claude.ai/install.sh | bash') + (', signed in' if f.get('signed_in') else ''),
+                warn=True)
+        except Refused as e:
+            one('Claude Code for %s' % name, False, str(e))
+    du = shutil.disk_usage(str(STATE_DIR) if STATE_DIR.exists() else '/')
+    one('the disk', du.free > 1 << 30, '%s free' % human_bytes(du.free))
+    if as_json:
+        say_json({'checks': out, 'ok': all(x['ok'] or x['warn'] for x in out)})
+    else:
+        for x in out:
+            line = '%-22s %s' % (x['what'], x['said'])
+            print(pal.ok_line(line) if x['ok'] else (pal.warn_line(line) if x['warn'] else pal.bad_line(line)))
+    return 0 if all(x['ok'] or x['warn'] for x in out) else 1
+
+
+def cli_fw_status(d, pal, as_json):
+    v = fw_view(d)
+    n = v['nodes'][0]
+    if as_json:
+        say_json(v)
+        return 0
+    c, a = v['conf'], v['access'].get('pages') or {}
+    print('%s  %s' % (pal.head('the firewall'), n['fw'].get('backend') or 'none'))
+    print('  ai\'s rules     %s' % ('on' if c['on'] else 'off'))
+    print('  the pages      from %s' % ('everybody' if a.get('any') else ', '.join(a.get('from') or [])))
+    if c['rules']:
+        print(pal.head('\nrules of your own'))
+        print(table([[i + 1, r['action'], 'IPv%s' % r['family'] if r['family'] else 'both',
+                      r['proto'] + ((' ' + r['port']) if r['port'] else ''), r['source'] or 'anywhere',
+                      'off' if r.get('disabled') else 'on', r.get('note') or ''] for i, r in enumerate(c['rules'])],
+                    ['#', 'action', 'ip', 'what', 'from', 'state', 'note']))
+    print(pal.head('\nwhat ai lets in by itself'))
+    print(table([[x['key'], 'off' if x['key'] in c['off'] else 'on', x['title'],
+                  ', '.join('%s %s%s' % (r['proto'], r['port'], ' from ' + r['source'] if r['source'] else '')
+                            for r in x['rules'])] for x in n['auto']], ['key', 'state', 'what', 'rules']))
+    for t in v['trials']:
+        print(pal.warn_line('%s waits to be kept: %d s left (ai --change-keep %s)' % (t['words'], t['left'], t['kind'])))
+    return 0
+
+
+def cli_fw_save(d, pal, conf=None, access=None):
+    c = fw_conf(d.store) if conf is None else conf
+    body = {'on': c['on'], 'off': c['off'], 'rules': c['rules']}
+    if access is not None:
+        body['access'] = access
+        body['even_if_me'] = True
+    got = fw_save(d, body, 'the command line', '127.0.0.1')
+    print(pal.ok_line(got['message']))
+    print(pal.dim('  ai --change-keep fw keeps it; ai --change-back fw puts the old back'))
+    return 0
+
+
+def cli_open_web(d, pal):
+    """HTTP and HTTPS let in, by whatever looks after this machine's firewall."""
+    b = fw_backend()
+    c = fw_conf(d.store)
+    if c['on']:
+        if 'web' in c['off']:
+            c['off'] = [k for k in c['off'] if k != 'web']
+        fw_put(d, c)
+        d.store.set_meta_json('fw:conf', dict(c, at=time.time(), by='the command line'))
+        print(pal.ok_line('ai\'s rules let 80 and 443 in (%s)' % b))
+    if b == 'firewalld':
+        for svc in ('http', 'https'):
+            run(['firewall-cmd', '--permanent', '--add-service=' + svc], timeout=30, check=True)
+        run(['firewall-cmd', '--reload'], timeout=60, check=True)
+        print(pal.ok_line('firewalld: the services http and https are let in, now and after a restart'))
+    elif b == 'ufw':
+        for port in ('80/tcp', '443/tcp'):
+            run(['ufw', 'allow', port], timeout=30, check=True)
+        print(pal.ok_line('ufw: 80/tcp and 443/tcp allowed'))
+    elif b == 'iptables' and not c['on']:
+        done = []
+        for fam in (4, 6):
+            tool = FW_TOOLS[fam][0]
+            if not which(tool):
+                continue
+            rule = ['INPUT', '-p', 'tcp', '-m', 'multiport', '--dports', '80,443', '-m', 'comment',
+                    '--comment', 'ai: the pages', '-j', 'ACCEPT']
+            if run([tool, '-C'] + rule, timeout=10)[0] != 0:
+                run([tool, '-I'] + rule[:1] + ['1'] + rule[1:], timeout=10, check=True)
+            for path in FW_FILES[fam]:
+                if os.path.exists(path):
+                    rc, so, _se = run([FW_TOOLS[fam][2]], timeout=30)
+                    if rc == 0 and so.strip():
+                        write_atomic(path, so, mode=0o600)
+                    break
+            done.append('IPv%d' % fam)
+        print(pal.ok_line('iptables: 80 and 443 let in first in INPUT (%s)' % ', '.join(done)))
+    elif b == 'test':
+        print(pal.ok_line('a test machine: nothing changed'))
+    elif not c['on']:
+        print(pal.ok_line('there is no firewall running here - 80 and 443 are open already'))
+    return 0
+
+
+def cli_trial(d, pal, kind, keep):
+    kinds = [kind] if kind != 'all' else [t['kind'] for t in d.trials.view()]
+    if not kinds:
+        print(pal.ok_line('nothing waits to be kept'))
+        return 0
+    for k in kinds:
+        ok = d.trials.keep(k, 'the command line') if keep else d.trials.back(k, 'the command line')
+        print((pal.ok_line if ok else pal.warn_line)('%s: %s' % (k, ('kept' if keep else 'the old is back')
+                                                              if ok else 'nothing waited')))
+    return 0
+
+
+def cli_terms_new(d, a, pal):
+    u = {'name': 'cli', 'role': 'admin', 'run_as': a.run_as or '', 'roots': '[]'}
+    opts = {}
+    if a.cont:
+        opts['continue'] = True
+    if a.pick:
+        opts['pick'] = True
+    if a.model:
+        opts['model'] = a.model
+    tid = Terms(d.store).new(u, 'shell' if a.shell else 'claude', a.new, a.title, opts,
+                             run_as=a.run_as or str(CONFIG.get('default_run_as') or 'root'))
+    if a.json:
+        say_json({'id': tid})
+    else:
+        print(pal.ok_line('started %s - ai --attach %s (and on the pages)' % (tid, tid)))
+    return 0
+
+
+def cli_osup(d, a, pal):
+    if a.osup == 'check' or a.osup == 'upgrade':
+        if a.osup == 'upgrade' and not a.yes and sys.stdin.isatty() and \
+                input('update every package of the system now? [y/N] ').strip().lower() not in ('y', 'yes', 'a', 'ano'):
+            return 1
+        r = osup_do(d, {'action': 'check' if a.osup == 'check' else 'start', 'reboot': 'ask'}, 'the command line')
+        print(pal.ok_line(r['message']))
+        seen = 0
+        while True:
+            time.sleep(1.0)
+            st = osup_state()
+            lines = st.get('lines') or []
+            for ln in lines[seen:]:
+                print('  ' + term_safe(ln))
+            seen = len(lines)
+            if st.get('state') in ('done', 'failed'):
+                break
+        v = osup_view(d)
+        ck = v['nodes'][0]['check']
+        if a.osup == 'check':
+            print(pal.ok_line('%s update(s) waiting%s' % (ck.get('count', 0), ', a restart is wanted now'
+                                                          if ck.get('reboot_now') else '')))
+        else:
+            print((pal.ok_line if st.get('state') == 'done' else pal.bad_line)('the update: %s' % st.get('state')))
+            if st.get('reboot'):
+                print(pal.warn_line('a restart is needed - ai --reboot'))
+        return 0 if st.get('state') == 'done' else 1
+    v = osup_view(d)
+    ck = v['nodes'][0]['check']
+    if a.json:
+        say_json(v)
+        return 0
+    print('%s  %s' % (pal.head('the system\'s updates'), ck.get('pm') or pkg_manager()))
+    print('  waiting        %s' % (ck.get('count', 0) if ck.get('checked') else 'not looked yet - ai --osup check'))
+    print('  looked         %s' % when(ck.get('checked')))
+    print('  a restart      %s' % ('wanted now' if ck.get('reboot_now') else 'not wanted'))
+    for pk in (ck.get('packages') or [])[:a.limit]:
+        print('    ' + pk)
     return 0
 
 
 def cli_main(argv):
-    p = argparse.ArgumentParser(prog='ai', description='Claude Code on this server, from the web pages.')
-    p.add_argument('--daemon', action='store_true', help='run the daemon (systemd does)')
-    p.add_argument('--status', action='store_true', help='what it is doing')
-    p.add_argument('--version', action='store_true')
-    p.add_argument('--sessions', action='store_true', help='the terminals, running and ended')
-    p.add_argument('--attach', metavar='ID', help='one terminal, here (Ctrl+b d leaves it running)')
-    p.add_argument('--new', metavar='DIR', help='a new Claude Code terminal in DIR (as --run-as)')
-    p.add_argument('--users', action='store_true', help='the accounts of the pages')
-    p.add_argument('--add-user', metavar='NAME', help='an account (--role, --run-as, --password)')
-    p.add_argument('--role', default='user', choices=ROLES)
-    p.add_argument('--run-as', default='', help='the Linux account its terminals run as')
-    p.add_argument('--password', default='', help='its password (otherwise asked, or made with --make-password)')
-    p.add_argument('--make-password', action='store_true', help='make a password and print it')
-    p.add_argument('--passwd', metavar='NAME', help='a new password for an account')
-    p.add_argument('--drop-user', metavar='NAME')
-    p.add_argument('--events', action='store_true', help='the last events')
-    p.add_argument('--upgrade-check', action='store_true', help='whether a newer version is out')
-    p.add_argument('--upgrade-online', nargs='?', const='newest', metavar='VERSION',
-                   help='fetch the newest (or VERSION) from upgrade_url and put it in')
-    p.add_argument('--setting', nargs=2, metavar=('KEY', 'VALUE'), help='change a setting')
-    p.add_argument('--settings', action='store_true', help='every setting and its value')
-    p.add_argument('--yes', action='store_true')
-    a = p.parse_args(argv)
+    said = list(argv)
+    parser = build_parser()
+    pal = Palette(colour_wanted('--no-color' in said or '--no-colour' in said) and '--json' not in said)
+    parser.palette = pal
+    global TABLE_PAL
+    TABLE_PAL = pal
+    a = parser.parse_args(argv)
+    if (pal.on or sys.stdout.isatty()) and not a.console and not a.json and not a.daemon and \
+            not a.attach and not isinstance(sys.stdout, ColourOut):
+        sys.stdout = ColourOut(sys.stdout, pal)
+    if a.help:
+        sys.stdout.write(parser.format_help())
+        return 0
     if a.version:
-        print('ai %s' % __version__)
+        print('%s %s%s' % (pal.head('ai'), pal.bold(__version__), '' if HAVE_COLORAMA
+                           else pal.dim('  (colorama is not installed; colour is written by hand)')))
         return 0
     if a.daemon:
         Daemon().run()
         return 0
+    if a.console_at_login:
+        if a.console_at_login != 'status':
+            print(pal.ok_line(console_at_login_set(a.console_at_login == 'on')))
+        else:
+            print(pal.ok_line('the console at login is %s' % ('ON' if console_at_login() else 'off')))
+        if not CONSOLE_PROFILE.exists():
+            print(pal.warn_line('%s is not there - install.sh puts it in' % CONSOLE_PROFILE))
+        return 0
+    if a.console:
+        return console_main(pal)
     st = cli_store()
-    if a.sessions:
-        for t in Terms(st).list({'name': 'cli', 'role': 'admin'}):
-            print('%s  %-8s %-10s %-8s %-40s %s' % (t['id'], t['run_as'], t['owner'] or '-', t['state'],
-                                                     t['title'][:40], t['path']))
-        return 0
-    if a.attach:
-        r = Terms(st).row(a.attach)
-        pw = linux_user(r['run_as'])
-        sock = str(TMUX_DIR / pw.pw_name / 'sock')
-        cmd = [tmux_bin(), '-u', '-S', sock, 'attach-session', '-t', 'ai-' + r['id']]
-        if os.geteuid() == 0 and pw.pw_uid != 0:
-            cmd = ['runuser', '-u', pw.pw_name, '--'] + cmd
-        os.execvp(cmd[0], cmd)
-    if a.new:
-        u = {'name': 'cli', 'role': 'admin', 'run_as': a.run_as or '', 'roots': '[]'}
-        tid = Terms(st).new(u, 'claude', a.new, '', {}, run_as=a.run_as or run_as_of(u))
-        print('started %s - ai --attach %s' % (tid, tid))
-        return 0
-    if a.users:
-        for u in st.users():
-            v = user_view(u)
-            print('%-20s %-6s runs as %-10s %s%s' % (v['name'], v['role'], v['run_as'],
-                                                    'off ' if v['disabled'] else '', ago(v['last_login'])))
-        return 0
+    d = CliDaemon(st)
     auth = Auth(st)
-    if a.add_user or a.passwd:
-        name = a.add_user or a.passwd
-        pw_ = a.password or (new_password() if a.make_password else '')
-        if not pw_:
-            pw_ = getpass.getpass('a password for %s: ' % name)
-            if getpass.getpass('and again: ') != pw_:
-                raise SystemExit('ai: the two were not the same')
-        try:
+    tm = Terms(st)
+    admin = {'name': 'cli', 'role': 'admin'}
+    try:
+        # ---- terminals ------------------------------------------------------------
+        if a.sessions:
+            terms = tm.list(admin)
+            if a.json:
+                say_json({'terms': terms})
+            else:
+                print(table([[t['id'], t['state'], t['run_as'], t['owner'] or '-', t['title'], t['path'],
+                              ago(t['activity'])] for t in terms],
+                            ['id', 'state', 'as', 'who', 'name', 'folder', 'last']))
+            return 0
+        if a.attach:
+            r = tm.row(a.attach)
+            pw = linux_user(r['run_as'])
+            if r['id'] not in tm.live(True):
+                raise Refused('that terminal has ended (ai --again %s starts it afresh)' % r['id'])
+            sock = str(TMUX_DIR / pw.pw_name / 'sock')
+            cmd = [tmux_bin(), '-u', '-S', sock, 'attach-session', '-t', 'ai-' + r['id']]
+            if os.geteuid() == 0 and pw.pw_uid != 0:
+                cmd = ['runuser', '-u', pw.pw_name, '--'] + cmd
+            os.execvp(cmd[0], cmd)
+        if a.screen:
+            r = tm.row(a.screen)
+            print(tm.capture(r, 200) if r['id'] in tm.live(True) else (r.get('last_screen') or '(nothing kept)'))
+            return 0
+        if a.new:
+            return cli_terms_new(d, a, pal)
+        if a.end or a.restart_term or a.again:
+            r = tm.row(a.end or a.restart_term or a.again)
+            if a.end:
+                tm.kill(admin, r)
+                print(pal.ok_line('%s ended' % r['id']))
+            elif a.restart_term:
+                tm.restart(admin, r)
+                print(pal.ok_line('%s started again' % r['id']))
+            else:
+                print(pal.ok_line('started %s - ai --attach %s' % ((tid := tm.again(admin, r)), tid)))
+            return 0
+        # ---- accounts ---------------------------------------------------------------
+        if a.users:
+            users = [user_view(u) for u in st.users()]
+            if a.json:
+                say_json({'users': users})
+            else:
+                print(table([[u['name'], u['role'], 'off' if u['disabled'] else 'on', u['run_as'],
+                              when(u['last_login']), u['note']] for u in users],
+                            ['account', 'role', 'state', 'runs as', 'last in', 'note']))
+            return 0
+        if a.add_user or a.passwd:
+            name = a.add_user or a.passwd
+            pw_ = a.password or os.environ.get('AI_PASSWORD') or (new_password() if a.make_password else '')
+            if not pw_:
+                pw_ = ask_password('a password for %s' % name)
             if a.add_user:
                 auth.add_user(name, pw_, a.role, a.run_as, must_change=a.make_password, by='the command line')
             else:
                 auth.set_password(name, pw_, 'the command line', must_change=a.make_password)
                 st.x('DELETE FROM sessions WHERE name=?', (name,))
-        except Refused as e:
-            raise SystemExit('ai: %s' % e)
-        print('%s: done%s' % (name, ' - password: %s' % pw_ if a.make_password else ''))
-        return 0
-    if a.drop_user:
-        try:
-            auth.drop_user(a.drop_user, 'the command line')
-        except Refused as e:
-            raise SystemExit('ai: %s' % e)
-        return 0
-    if a.events:
-        for e in reversed(st.q('SELECT * FROM events ORDER BY id DESC LIMIT 40')):
-            print('%s %-6s %-12s %s' % (time.strftime('%d-%m-%Y %H:%M', time.localtime(e['at'])), e['level'],
-                                        e['kind'], e['text']))
-        return 0
-    if a.settings:
-        for k, pane, kind, label, _h, extra in SCHEMA:
-            v = CONFIG.get(k)
-            print('%-20s %-8s %s' % (k, pane, '(hidden)' if extra.get('secret') and v else json.dumps(v)))
-        return 0
-    if a.setting:
-        k, v = a.setting
-        if k not in SCHEMA_KEYS:
-            raise SystemExit('ai: there is no setting %s (ai --settings)' % k)
-        try:
-            st.set_setting(k, setting_value(k, v if SCHEMA_KEYS[k][2] != 'bool' else v in ('1', 'true', 'on', 'yes')),
-                           'the command line')
-        except Refused as e:
-            raise SystemExit('ai: %s' % e)
-        print('%s = %s (the daemon takes it within a minute, or: systemctl reload ai)' % (k, v))
-        return 0
-    if a.upgrade_check or a.upgrade_online:
-        class D:
-            pass
-        d = D()
-        d.store = st
-        up = Upgrades(d)
-        row = up.look('the command line')
-        if row.get('error'):
-            raise SystemExit('ai: %s' % row['error'])
-        for pk in row.get('packages') or []:
-            print('  %s%s' % (pk['version'], '  <- newer' if ver_tuple(pk['version']) > ver_tuple(__version__) else ''))
-        newest = row.get('newest') or {}
-        if not a.upgrade_online:
-            print('this is %s; the newest at %s is %s' % (__version__, row['url'], newest.get('version', '-')))
+            print('%s: done%s' % (name, ' - password: %s' % pw_ if a.make_password else ''))
             return 0
-        want = newest.get('version') if a.upgrade_online == 'newest' else a.upgrade_online
-        if not want or ver_tuple(want) <= ver_tuple(__version__):
-            print('nothing newer than %s to put in' % __version__)
+        if a.del_user:
+            auth.drop_user(a.del_user, 'the command line')
+            print(pal.ok_line('%s taken away' % a.del_user))
             return 0
-        if not a.yes and input('put ai %s in now? [y/N] ' % want).strip().lower() not in ('y', 'yes'):
-            return 1
-        path, info = up.fetch(want, 'the command line')
-        print('ai %s, signed by %s - checked; putting it in' % (info['version'], info.get('signed_by')))
-        os.execvp(sys.executable, [sys.executable, '-I', upgrader(), '--run', str(path)])
-    return cli_status(st)
+        if a.disable_user or a.enable_user:
+            auth.edit_user(a.disable_user or a.enable_user, 'the command line', disabled=bool(a.disable_user))
+            print(pal.ok_line('%s %s' % (a.disable_user or a.enable_user, 'switched off' if a.disable_user else 'switched on')))
+            return 0
+        if a.set_role:
+            auth.edit_user(a.set_role, 'the command line', role=a.role)
+            print(pal.ok_line('%s is %s' % (a.set_role, ROLE_WORDS[a.role])))
+            return 0
+        if a.set_run_as:
+            name, acct = a.set_run_as
+            auth.edit_user(name, 'the command line', run_as='' if acct == '-' else acct)
+            print(pal.ok_line('the terminals of %s run as %s' % (name, 'the default' if acct == '-' else acct)))
+            return 0
+        if a.end_sign_ins:
+            n = st.x('DELETE FROM sessions WHERE name=?', (a.end_sign_ins,))
+            print(pal.ok_line('%d sign-in(s) of %s ended' % (n, a.end_sign_ins)))
+            return 0
+        if a.sign_ins:
+            rows = st.q('SELECT name, created, seen, ip, agent FROM sessions ORDER BY seen DESC')
+            if a.json:
+                say_json({'sessions': rows})
+            else:
+                print(table([[r['name'], r['ip'], when(r['created']), ago(r['seen']), (r['agent'] or '')[:40]]
+                             for r in rows], ['who', 'from', 'since', 'last', 'browser']))
+            return 0
+        # ---- settings -------------------------------------------------------------------
+        if a.settings:
+            saved = st.settings_all()
+            rows = [{'key': k, 'pane': pane, 'kind': kind, 'label': label, 'help': h, 'extra': extra,
+                     'value': ('' if extra.get('secret') and CONFIG.get(k) else CONFIG.get(k)),
+                     'secret': bool(extra.get('secret')), 'default': DEFAULTS.get(k),
+                     'source': 'saved' if k in saved else 'default'}
+                    for k, pane, kind, label, h, extra in SCHEMA]
+            if a.json:
+                say_json({'settings': rows})
+            else:
+                print(table([[r['key'], r['pane'], '(hidden)' if r['secret'] and CONFIG.get(r['key'])
+                              else json.dumps(r['value']), r['source']] for r in rows],
+                            ['key', 'pane', 'value', 'from']))
+            return 0
+        sets = list(a.set) + (['%s=%s' % tuple(a.setting)] if a.setting else [])
+        if sets:
+            for one in sets:
+                k, sep, v = one.partition('=')
+                if not sep or k not in SCHEMA_KEYS:
+                    raise Refused('there is no setting %s (ai --settings)' % k)
+                if v == '@env':
+                    v = os.environ.get('AI_VALUE_' + k.upper(), '')
+                if SCHEMA_KEYS[k][2] == 'bool':
+                    v = v.lower() in ('1', 'true', 'on', 'yes', 'ano')
+                st.set_setting(k, setting_value(k, v), 'the command line')
+                print(pal.ok_line('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(v))))
+            st.add_event('settings', 'the command line changed: %s' % ', '.join(s.split('=')[0] for s in sets), 'info')
+            print(pal.dim('  the running daemon takes it within a minute'))
+            return 0
+        # ---- the firewall ---------------------------------------------------------------
+        if a.fw:
+            if a.fw == 'status':
+                return cli_fw_status(d, pal, a.json)
+            c = fw_conf(st)
+            c['on'] = a.fw == 'on'
+            return cli_fw_save(d, pal, c)
+        if a.open_web:
+            return cli_open_web(d, pal)
+        if a.fw_open:
+            port, _s, proto = a.fw_open.partition('/')
+            c = fw_conf(st)
+            c['rules'].append(dict(fw_rule_checked({'proto': proto or 'tcp', 'port': port, 'source': a.source,
+                                                    'action': 'accept', 'note': a.note}), id=secrets.token_hex(4)))
+            if not c['on']:
+                print(pal.warn_line('ai\'s rules are off: the rule is kept, and in force once they are on (ai --fw on)'))
+            return cli_fw_save(d, pal, c)
+        if a.fw_del:
+            c = fw_conf(st)
+            if not 0 < a.fw_del <= len(c['rules']):
+                raise Refused('there is no rule %d (ai --fw status)' % a.fw_del)
+            c['rules'].pop(a.fw_del - 1)
+            return cli_fw_save(d, pal, c)
+        if a.pages_from:
+            every = a.pages_from.strip().lower() == 'all'
+            nets = [] if every else [x.strip() for x in a.pages_from.split(',') if x.strip()]
+            return cli_fw_save(d, pal, access={'pages': {'any': every, 'from': nets}})
+        if a.change_keep or a.change_back:
+            return cli_trial(d, pal, a.change_keep or a.change_back, bool(a.change_keep))
+        # ---- the server ---------------------------------------------------------------------
+        if a.net:
+            v = net_view(d, fresh=True)
+            if a.json:
+                say_json(v)
+                return 0
+            data = v['nodes'][0]['now']['data'] or {}
+            conf, live = data.get('conf') or {}, data.get('live') or {}
+            print('%s  %s' % (pal.head('the network'), 'NetworkManager' if data.get('nm') else 'by hand (no nmcli)'))
+            print('  host name      %s' % data.get('hostname'))
+            print('  connection     %s (%s)' % (data.get('con') or '-', data.get('dev') or '-'))
+            print('  IPv4           %s' % (', '.join(conf.get('ipv4_addresses') or []) or
+                                           ', '.join(x['addr'] for x in live.get('addrs4') or [])))
+            print('  gateway        %s' % (conf.get('ipv4_gateway') or live.get('gw4') or '-'))
+            print('  DNS            %s' % (', '.join(conf.get('ipv4_dns') or live.get('dns') or []) or '-'))
+            print('  IPv6           %s' % (', '.join(x['addr'] for x in live.get('addrs6') or []) or 'off'))
+            print(pal.dim('  changed on the pages: Settings - Network (it goes back by itself unless kept)'))
+            return 0
+        if a.ntp:
+            v = ntp_view(d)
+            if a.json:
+                say_json(v)
+                return 0
+            data = v['nodes'][0]['now']['data']
+            t = data.get('tracking') or {}
+            print('%s  %s' % (pal.head('the time'), 'chrony' if data.get('chrony') else 'no chrony'))
+            print('  time zone      %s' % (data.get('timezone') or '-'))
+            print('  synchronised   %s' % (data.get('ntpsynchronized') or '-'))
+            print('  follows        %s, stratum %s' % (t.get('ref') or t.get('ref_id') or '-', t.get('stratum', '-')))
+            print('  off by         %s s' % t.get('offset', '-'))
+            for s in data.get('sources') or []:
+                print('    %s %-30s stratum %s' % (s.get('state'), s.get('name'), s.get('stratum')))
+            return 0
+        if a.osup:
+            return cli_osup(d, a, pal)
+        if a.sshkeys or a.sshkey_add:
+            if a.sshkey_add:
+                print(pal.ok_line(sshkeys_do(d, {'action': 'add', 'line': a.sshkey_add}, 'the command line')['message']))
+            v = sshkeys_view(d, fresh=True)
+            n = v['nodes'][0]
+            if a.json:
+                say_json(v)
+                return 0
+            print(table([[k.get('type'), k.get('fp'), k.get('comment') or '-'] for k in n['keys']],
+                        ['kind', 'fingerprint', 'comment']))
+            sd = n.get('sshd') or {}
+            print('  root may sign in: %s, with a password: %s, port %s' % (
+                sd.get('permit_root', '?'), sd.get('password', '?'), sd.get('port', '?')))
+            return 0
+        if a.cert:
+            c = cert_facts()
+            if a.json:
+                say_json(c)
+                return 0
+            if not c.get('there'):
+                print(pal.bad_line('there is no certificate at %s' % CERT_FILE))
+                return 1
+            for k in ('subject', 'issuer', 'from', 'until', 'sha256'):
+                print('  %-14s %s' % (k, c.get(k, '-')))
+            print('  %-14s %s' % ('names', ', '.join(c.get('names') or [])))
+            return 0
+        if a.reboot or a.poweroff:
+            how = 'reboot' if a.reboot else 'poweroff'
+            if not a.yes and input('%s the server now? every terminal ends [y/N] ' % (
+                    'restart' if a.reboot else 'switch off')).strip().lower() not in ('y', 'yes', 'a', 'ano'):
+                return 1
+            power_ask(d, how, 'the command line')
+            print(pal.ok_line('the server %s in 3 s' % ('restarts' if a.reboot else 'switches off')))
+            return 0
+        # ---- upgrades ---------------------------------------------------------------------------
+        if a.upgrade_status:
+            v = d.upgrades.view()
+            if a.json:
+                say_json(v)
+                return 0
+            s = v.get('status') or {}
+            print('  here           ai %s' % __version__)
+            print('  looked at      %s (%s)' % (v.get('url'), ago((v.get('online') or {}).get('at'))))
+            print('  newer          %s' % (', '.join(p['version'] for p in v.get('newer') or []) or 'none'))
+            print('  the last one   %s %s %s' % (s.get('version') or '-', s.get('state') or '-', when(s.get('at'))))
+            if v.get('log'):
+                print(pal.dim('\n' + '\n'.join(v['log'].strip().splitlines()[-20:])))
+            return 0
+        if a.upgrade_check or a.upgrade_online:
+            row = d.upgrades.look('the command line')
+            if a.json and a.upgrade_check:
+                say_json(row)
+                return 0
+            if row.get('error'):
+                raise SystemExit('ai: %s' % row['error'])
+            for pk in row.get('packages') or []:
+                print('  %s%s' % (pk['version'], '  <- newer' if ver_tuple(pk['version']) > ver_tuple(__version__) else ''))
+            newest = row.get('newest') or {}
+            if not a.upgrade_online:
+                print('this is %s; the newest at %s is %s' % (__version__, row['url'], newest.get('version', '-')))
+                return 0
+            want = newest.get('version') if a.upgrade_online == 'newest' else a.upgrade_online
+            if not want or ver_tuple(want) <= ver_tuple(__version__):
+                print(pal.ok_line('nothing newer than %s to put in' % __version__))
+                return 0
+            if not a.yes and input('put ai %s in now? [y/N] ' % want).strip().lower() not in ('y', 'yes', 'a', 'ano'):
+                return 1
+            path, info = d.upgrades.fetch(want, 'the command line')
+            print(pal.ok_line('ai %s, signed by %s - checked; putting it in' % (info['version'], info.get('signed_by'))))
+            os.execvp(sys.executable, [sys.executable, '-I', upgrader(), '--run', str(path)])
+        # ---- looking ------------------------------------------------------------------------------
+        if a.events:
+            where, args = '', []
+            if a.search:
+                where = ' WHERE text LIKE ? OR who LIKE ? OR kind LIKE ?'
+                args = ['%' + a.search + '%'] * 3
+            rows = st.q('SELECT * FROM events%s ORDER BY id DESC LIMIT ?' % where, args + [a.limit])
+            if a.json:
+                say_json({'events': rows})
+            else:
+                for e in reversed(rows):
+                    tone = {'warn': pal.warn, 'bad': pal.bad}.get(e['level'], lambda x: x)
+                    print('%s %s %s' % (pal.dim(when(e['at'])), pal.info(('%-12s' % e['kind'])), tone(term_safe(e['text']))))
+            return 0
+        if a.log:
+            text = read_text(LOG_FILE, most=1 << 22)
+            for ln in text.splitlines()[-a.limit:]:
+                print(term_safe(ln))
+            return 0
+        if a.check:
+            return cli_check(d, pal, a.json)
+        return cli_status(d, pal, a.json)
+    except Refused as e:
+        print(pal.bad_line(str(e)), file=sys.stderr)
+        return 1
 
 
 def main(argv=None):
@@ -4491,9 +7839,6 @@ def main(argv=None):
     config_rebuild()
     try:
         return cli_main(argv)
-    except Refused as e:
-        print('ai: %s' % e, file=sys.stderr)
-        return 1
     except KeyboardInterrupt:
         return 130
 

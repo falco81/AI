@@ -222,7 +222,8 @@ if [[ -n "$DO_UNINSTALL" ]]; then
     fi
     ASSUME_YES="" confirm "Go ahead?" n || { say "Nothing was changed."; exit 0; }
     run systemctl disable --now ai.service 2>/dev/null || true
-    for one in "$UNIT_FILE" "$LOGROTATE_FILE" "$NGINX_CONF" "$BIN_LINK" /etc/php-fpm.d/ai.conf /etc/php/*/fpm/pool.d/ai.conf; do
+    for one in "$UNIT_FILE" "$LOGROTATE_FILE" "$NGINX_CONF" "$BIN_LINK" /etc/php-fpm.d/ai.conf /etc/php/*/fpm/pool.d/ai.conf \
+               /etc/profile.d/zz-ai-console.sh /etc/ai-console-login; do
         [[ -e "$one" ]] && run rm -f "$one"
     done
     [[ -d "$LIB_DIR" ]] && run rm -rf "$LIB_DIR"
@@ -626,6 +627,47 @@ install_claude() {
     fi
 }
 
+install_colour() {      # colorama: the command line in colour, as otp's
+    # Nothing needs it - without it ai writes the same escape sequences
+    # itself - so it is offered and never insisted on.
+    if python3 -c 'import colorama' 2>/dev/null; then
+        good "python3-colorama is here - the command line is in colour"
+        return 0
+    fi
+    if [[ "$PKG" == "dnf" ]]; then
+        run dnf install -y python3-colorama >/dev/null 2>&1 || true
+    elif [[ "$PKG" == "apt" ]]; then
+        run apt-get install -y python3-colorama >/dev/null 2>&1 || true
+    fi
+    # Not in the distribution's own repositories (on RHEL 9 it is EPEL's):
+    # pip, where there is one, for the system Python.
+    if ! python3 -c 'import colorama' 2>/dev/null && python3 -m pip --version >/dev/null 2>&1; then
+        run python3 -m pip install --quiet colorama >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$DRY_RUN" ]] || python3 -c 'import colorama' 2>/dev/null; then
+        good "python3-colorama installed - the command line is in colour"
+    else
+        note "python3-colorama is not available; colour is written by hand instead,"
+        note "which works on this terminal and is the only difference."
+    fi
+    return 0
+}
+
+install_console() {     # the ai console when root signs in, as otp's
+    if [[ -n "$DRY_RUN" ]]; then note "[would write] /etc/profile.d/zz-ai-console.sh"; return 0; fi
+    install -m 0644 "$SOURCE_DIR/deploy/ai-console-login.sh" /etc/profile.d/zz-ai-console.sh
+    # The choice is kept in /etc itself, where only root writes; an upgrade
+    # leaves it as it is.
+    local flag=/etc/ai-console-login
+    [[ -L "$flag" ]] && rm -f "$flag"
+    if [[ ! -f "$flag" ]]; then
+        printf 'on\n' > "$flag"
+        chmod 0644 "$flag"
+    fi
+    good "the ai console at login: $(head -c 4 "$flag") (ai --console-at-login on|off)"
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # Doing it
 # ---------------------------------------------------------------------------
@@ -688,7 +730,9 @@ fi
 FIRST_PW=""
 PW_GIVEN=""
 install_packages
+install_colour
 install_program
+install_console
 install_pages
 [[ -z "$DO_UPGRADE" ]] && open_firewall
 start_all
@@ -708,6 +752,6 @@ if [[ -n "$FIRST_PW" ]]; then
 elif [[ -n "${PW_GIVEN:-}" ]]; then
     say "Sign in as:     $ADMIN_USER, with the password you gave"
 fi
-say "On the server:  ai --status · ai --sessions · ai --attach ID"
+say "On the server:  ai --console (menus) · ai --status · ai --check · ai --help"
 [[ -n "$DO_UPGRADE" ]] && say "The terminals that were running go on running."
 exit 0

@@ -3,6 +3,29 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.3 — 29 October 2026
+
+**The command line and the console, as otp's**
+- `ai --console`: otp's console, whole - the menus on a text screen, windows
+  and forms, lists to scroll, the live log and the journal with grep as you
+  type - with ai's menus: status and checks, terminals (opened right there in
+  tmux, started, ended), accounts, settings, firewall and access, the server
+  (network, time, updates, SSH keys, certificate, power), upgrades, the
+  service. It opens by itself when root signs in (`ai --console-at-login
+  on|off`); never inside a terminal of the pages.
+- In colour, as otp's: colorama when it is there (install.sh installs
+  python3-colorama), the same escape sequences by hand when it is not; every
+  table and line coloured; `--help` in two columns; `--json` and `--no-color`.
+- New commands: `--check`, `--open-web` (HTTP and HTTPS let in by firewalld,
+  ufw or iptables), `--fw status|on|off`, `--fw-open PORT [--from CIDR]`,
+  `--fw-del N`, `--pages-from`, `--change-keep`, `--change-back`, `--net`,
+  `--ntp`, `--osup check|upgrade|status`, `--sshkeys`, `--sshkey-add`,
+  `--cert`, `--reboot`, `--poweroff`, `--screen`, `--end`, `--restart-term`,
+  `--again`, `--new … --shell|--continue|--pick|--model`, `--del-user`,
+  `--disable-user`, `--enable-user`, `--set-role`, `--set-run-as`,
+  `--end-sign-ins`, `--sign-ins`, `--log`, `--set KEY=VALUE`,
+  `--upgrade-status`.
+
 ## 1.0.2 — 29 October 2026
 
 **install.sh gone through against otp's, line by line**

@@ -66,6 +66,7 @@ if (isset($_GET['api'])) {
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
+        'console-login' => '/api/console-login',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -73,7 +74,7 @@ if (isset($_GET['api'])) {
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
-        'power' => '/api/power', 'upgrade' => '/api/upgrade',
+        'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
     ];
     if ($post) {
         if (!isset($writes[$what])) {
@@ -580,6 +581,10 @@ tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z && ./install.sh --upgrade</pre></div>
   <div class="ctl-pane" id="pane-about" hidden>
     <div class="ctl-head"><h2 class="ctl-title">About</h2></div>
     <div class="card full"><div id="about-state"></div></div>
+    <div class="card full"><h2>The console at login</h2>
+      <p class="note">The ai console (<code>ai --console</code>) opens by itself when root signs in at the
+        server's screen or over SSH; q leaves it for the ordinary shell. Never inside a terminal of these pages.</p>
+      <div id="ab-console"></div></div>
     <div class="card full"><div id="sect-general"></div></div>
     <div class="card full"><h2>Its own log <span class="right"><button class="btn small cmd" id="ab-log" data-icon="refresh">Read it</button></span></h2>
       <pre class="lines tall" id="ab-logtext">–</pre></div>

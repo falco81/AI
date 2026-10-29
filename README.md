@@ -27,15 +27,19 @@ the standard library for the daemon, PHP pages that only relay to it, nginx in
 front. No pip packages, no Node.js on the server (Claude Code itself aside).
 
 ```
+    ai --console               everything by its menus (opens by itself when root signs in)
     ai --status                what it is doing, in one screen
+    ai --check                 every part of it, checked
+    ai --open-web              HTTP and HTTPS let in by the firewall
     ai --sessions              the terminals, running and ended
     ai --attach ID             one of them, here (Ctrl+b d leaves it running)
     ai --new /srv/project      a new Claude Code terminal there
     ai --add-user NAME --role admin
-    ai --passwd NAME
-    ai --upgrade-check         whether a newer version is out
-    ai --upgrade-online        the newest: fetched, checked, put in
+    ai --upgrade-online        the newest version: fetched, checked, put in
 ```
+
+In colour (colorama), `--json` for scripts; the console and every command:
+[docs/console.md](docs/console.md).
 
 ## What is in it
 
