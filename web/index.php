@@ -93,7 +93,7 @@ if (isset($_GET['api'])) {
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
         'ntp' => '/api/ntp', 'power' => '/api/power', 'upgrade' => '/api/upgrade', 'linux' => '/api/linux',
         'console-login' => '/api/console-login', 'mfa' => '/api/auth/mfa', 'lockouts' => '/api/lockouts',
-        'mail' => '/api/mail',
+        'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db', 'export' => '/api/export',
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
@@ -102,7 +102,8 @@ if (isset($_GET['api'])) {
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
         'power' => '/api/power', 'upgrade' => '/api/upgrade', 'console-login' => '/api/console-login',
-        'lockouts' => '/api/lockouts', 'mail' => '/api/mail',
+        'lockouts' => '/api/lockouts', 'mail' => '/api/mail', 'web' => '/api/web', 'db' => '/api/db',
+        'import' => '/api/import',
     ];
     if ($post) {
         if (!isset($writes[$what])) {
@@ -476,6 +477,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
     <div class="ctl-group">This program</div>
+    <button type="button" data-pane="db" data-icon="db" title="The database: copies made every night, downloaded, put back.">Database</button>
+    <button type="button" data-pane="carry" data-icon="archive" title="The whole configuration as one file: exported, imported.">Export and import</button>
     <button type="button" data-pane="upgrade" data-icon="up" title="New versions of ai: from the web by themselves, or sent here.">Upgrades</button>
     <button type="button" data-pane="about" data-icon="info" title="Version, the name of the pages, the language, what is running, the log.">About</button>
   </nav>
@@ -549,27 +552,64 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
   </div>
 
   <div class="ctl-pane" id="pane-web" hidden>
-    <div class="ctl-head"><h2 class="ctl-title">Certificate and TLS</h2>
-      <p class="ctl-lede">The certificate nginx shows for these pages. install.sh made a self-signed one;
-        put in your own (with its chain), or make a new self-signed one for other names. nginx checks
-        it before it takes it - one it does not take is never put in.</p></div>
-    <div class="card full"><h2>Now</h2><div id="ce-now"></div></div>
-    <div class="card full"><h2>Your own certificate</h2>
-      <div class="formgrid">
-        <div class="set-item"><label>The certificate (PEM), with its chain after it</label><textarea id="ce-cert" rows="6" class="mono" placeholder="-----BEGIN CERTIFICATE-----"></textarea></div>
-        <div class="set-item"><label>Its private key (PEM, not locked)</label><textarea id="ce-key" rows="6" class="mono" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+    <div class="ctl-head"><h2 class="ctl-title">Certificates and TLS</h2>
+      <p class="ctl-lede">How the pages speak HTTPS: the certificate with its chain, the protocols,
+        the ciphers.</p></div>
+    <div class="card full">
+      <h2>Certificates</h2>
+      <p class="note">A certificate is sent as PEM files (the certificate, its key, the chain, the
+        root - in any order, or all in one file) or as a PFX / PKCS#12 file, with its password or
+        without; or the request is made here and only what the authority sends back is uploaded.
+        It is put in nginx and nginx is asked before it is reloaded - one it does not take is never
+        put in.</p>
+      <div id="web-certs" class="cert-grid"></div>
+    </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-db" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">The database</h2>
+      <p class="ctl-lede">One database holds everything: the accounts and their sign-ins, the settings,
+        the events and the list of terminals. It is a SQLite file on this machine. The secrets in it are
+        sealed with a key kept beside it, in the state folder - and every copy is kept with that key
+        beside it.</p></div>
+    <div class="card full"><div id="sect-db"></div></div>
+    <div class="card full">
+      <h2>The copies it keeps <span class="right muted small" id="db-now"></span></h2>
+      <p class="note">Every night at the hour above, SQLite's own backup of the database in use, packed with
+        the key its secrets are sealed with and config.json. A copy is the database whole: put back, it
+        replaces every account, every setting and every event - and a copy of what is there now is made
+        first, so that can be undone too.</p>
+      <div id="db-says"></div>
+      <div class="btnrow admin-only" style="margin-top:12px">
+        <button class="btn cmd" id="db-make" data-icon="save" title="A copy now, rather than waiting for tonight. It is kept with the others and counts as one of them.">Make one now</button>
       </div>
-      <div class="btnrow" style="margin-top:10px">
-        <button class="btn cmd primary" id="ce-put" data-icon="save">Put it in</button>
-        <button class="btn cmd" id="ce-file" data-icon="upload">Read files…</button>
-        <input type="file" id="ce-input" multiple accept=".pem,.crt,.cer,.key,.txt" hidden>
-      </div></div>
-    <div class="card full"><h2>A new self-signed one</h2>
-      <div class="formgrid">
-        <div class="set-item"><label>For the names (and addresses)</label><input type="text" id="ce-names" class="mono"></div>
-        <div class="set-item"><label>Valid for (days)</label><input type="number" id="ce-days" value="825" min="1" max="3650"></div>
+      <div id="db-copies" style="margin-top:18px"></div>
+      <div class="admin-only" style="margin-top:18px">
+        <h4>Put a copy back</h4>
+        <p class="note">A copy from somewhere else - one downloaded from here, or from another server of ai.
+          Nothing happens until it has been read, checked and shown to you.</p>
+        <div class="drop" id="dbu-drop">
+          <input type="file" id="dbu-file" accept=".gz,.db,application/gzip,application/octet-stream" hidden>
+          <span id="dbu-says">Drop a copy here, or press to choose one</span>
+        </div>
       </div>
-      <div class="btnrow" style="margin-top:10px"><button class="btn cmd" id="ce-self" data-icon="key">Make it</button></div></div>
+    </div>
+  </div>
+
+  <div class="ctl-pane" id="pane-carry" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Export and import</h2>
+      <p class="ctl-lede">The whole configuration as one file: the settings, the accounts of these pages,
+        the certificate and TLS of the pages, who may reach the pages, the firewall and the mail server's
+        authorities. The events and the terminals are not in it: they move with a copy of the database.
+        On the command line: ai --export-config FILE [--with-secrets] and ai --import-config FILE --yes.</p></div>
+    <div class="card full">
+      <div class="btnrow">
+        <button class="btn cmd admin-only" id="ex-plain" data-icon="download">Export</button>
+        <button class="btn cmd danger admin-only" id="ex-whole" data-icon="key">Export with the secrets</button>
+        <button class="btn cmd admin-only" id="ex-load" data-icon="upload">Import a file…</button>
+        <input type="file" id="ex-file" accept=".json" hidden>
+      </div>
+    </div>
   </div>
 
   <div class="ctl-pane" id="pane-fw" hidden>

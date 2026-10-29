@@ -154,6 +154,10 @@ DEFAULTS = {
     'notify_to': '',
     'notify_level': 'warn',
     'notify_gap_min': 15,
+    # copies of the database (otp's Database pane)
+    'db_copy_on': True,
+    'db_copy_hour': 2,
+    'db_copy_keep': 14,
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
 SEALED_KEYS = ('smtp_password',)
@@ -218,6 +222,13 @@ SCHEMA = [
     ('upgrade_auto_hour', 'upgrade', 'int', 'At what hour', 'Local time of this server, 0-23.',
      {'min': 0, 'max': 23}),
     ('debug', 'general', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
+    ('db_copy_on', 'db', 'bool', 'A copy every night',
+     'SQLite\'s own backup of the database in use, with the key its secrets are sealed with and '
+     'config.json beside it, into /var/lib/ai/copies.', {}),
+    ('db_copy_hour', 'db', 'int', 'At what hour', 'Local time of this server, 0-23.',
+     {'min': 0, 'max': 23, 'when': ['db_copy_on', [True]]}),
+    ('db_copy_keep', 'db', 'int', 'Copies kept', 'The newest ones; older ones are taken away.',
+     {'min': 1, 'max': 365}),
     ('admin_2fa', 'access', 'bool', 'The second step of signing in, for everybody',
      'After a right password these pages ask for a code too: from an authenticator app, or sent '
      'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
@@ -3647,6 +3658,458 @@ def cert_self(names, days=825):
         nginx_swap({CERT_FILE: read_text(c), KEY_FILE: read_text(k)})
 
 
+TLS_PRESETS = {
+    # The ciphers ai and otp have always used: ECDHE only, AEAD only.
+    'standard': {'protocols': ['TLSv1.2', 'TLSv1.3'], 'ciphers': (
+        'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:'
+        'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:'
+        'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305')},
+    # Mozilla's "intermediate": the same and the DHE ones (DH parameters).
+    'intermediate': {'protocols': ['TLSv1.2', 'TLSv1.3'], 'ciphers': (
+        'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:'
+        'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:'
+        'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:'
+        'DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305')},
+    # Mozilla's "modern": TLS 1.3 alone - its ciphers are not chosen.
+    'modern': {'protocols': ['TLSv1.3'], 'ciphers': ''},
+}
+DH_WORDS = {'none': 'none (ECDHE only needs none)',
+            'ffdhe2048': 'RFC 7919 ffdhe2048', 'ffdhe3072': 'RFC 7919 ffdhe3072',
+            'ffdhe4096': 'RFC 7919 ffdhe4096', 'gen2048': 'made here, 2048 bits',
+            'gen3072': 'made here, 3072 bits (a minute or so)',
+            'gen4096': 'made here, 4096 bits (several minutes)'}
+
+def _openssl(args, data=None, env=None, what='openssl'):
+    e = dict(os.environ)
+    e.update(env or {})
+    got = subprocess.run(['openssl'] + args, input=data, capture_output=True, env=e,
+                         timeout=120)
+    if got.returncode != 0:
+        said = (got.stderr or got.stdout or b'').decode('utf-8', 'replace').strip()
+        raise ValueError('%s: %s' % (what, (said.splitlines() or ['openssl said no'])[-1][:200]))
+    return got.stdout
+
+
+PEM_CERT = re.compile(r'-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+?-----END CERTIFICATE-----')
+PEM_KEY = re.compile(r'-----BEGIN ((?:RSA |EC |ENCRYPTED )?PRIVATE KEY)-----[A-Za-z0-9+/=\s:,-]+?'
+                     r'-----END \1-----')
+
+
+def cert_info(pem):
+    """What a certificate says of itself, for the pages."""
+    out = _openssl(['x509', '-noout', '-subject', '-issuer', '-startdate', '-enddate',
+                    '-fingerprint', '-sha256', '-ext', 'subjectAltName', '-nameopt',
+                    'RFC2253'], pem.encode(), what='the certificate').decode()
+    info = {'san': []}
+    lines = out.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith('subject='):
+            info['subject'] = line[8:].strip()
+        elif line.startswith('issuer='):
+            info['issuer'] = line[7:].strip()
+        elif line.startswith('notBefore='):
+            info['not_before'] = _cert_time(line[10:])
+        elif line.startswith('notAfter='):
+            info['not_after'] = _cert_time(line[9:])
+        elif 'Fingerprint=' in line:
+            info['fingerprint'] = line.split('=', 1)[1].strip()
+        elif 'Subject Alternative Name' in line and i + 1 < len(lines):
+            info['san'] = [x.strip().split(':', 1)[-1] for x in lines[i + 1].split(',')
+                           if x.strip()]
+    info['self_signed'] = info.get('subject') == info.get('issuer')
+    cn = re.search(r'(?:^|,)CN=([^,]+)', info.get('subject') or '')
+    info['cn'] = cn.group(1) if cn else ''
+    try:
+        pub = _openssl(['x509', '-noout', '-pubkey'], pem.encode()).decode()
+        txt = _openssl(['pkey', '-pubin', '-noout', '-text'], pub.encode()).decode()
+        m = re.search(r'\((\d+) bit\)', txt)
+        info['key'] = ('%s %s bit' % ('EC' if 'ASN1 OID' in txt or 'NIST' in txt else 'RSA',
+                                      m.group(1))) if m else ''
+    except ValueError:
+        info['key'] = ''
+    return info
+
+
+def _cert_time(text):
+    try:
+        return datetime.strptime(text.strip().replace('  ', ' '),
+                                 '%b %d %H:%M:%S %Y %Z').replace(
+            tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def _pub_of_cert(pem):
+    return _openssl(['x509', '-noout', '-pubkey'], pem.encode(), what='the certificate')
+
+
+def _pub_of_key(pem):
+    return _openssl(['pkey', '-pubout'], pem.encode(), what='the key')
+
+
+def key_plain(pem, password=''):
+    """A private key without its passphrase, as PEM."""
+    return _openssl(['pkey', '-passin', 'env:AI_PW'], pem.encode(),
+                    {'AI_PW': password or ''},
+                    what='the key (a wrong or missing password?)').decode()
+
+
+def cert_bundle(cert='', key='', chain='', root='', pfx=b'', password='', pending_key=''):
+    """Whatever was sent - one PEM with everything in it, separate parts, or
+    a PFX / PKCS#12 with or without a password - as the parts nginx needs:
+    the certificate, its key, the chain up from it, the root. The key is the
+    certificate's own or nothing is taken."""
+    certs, keys = [], []
+    if pfx:
+        got = None
+        for extra in ([], ['-legacy']):
+            try:
+                got = _openssl(['pkcs12', '-nodes', '-passin', 'env:AI_PW'] + extra, pfx,
+                               {'AI_PW': password or ''}, what='the PFX / PKCS#12 file')
+                break
+            except ValueError as e:
+                last = e
+        if got is None:
+            raise ValueError('%s - is the password right?' % last)
+        text = got.decode('utf-8', 'replace')
+        certs += [m.group(0) for m in PEM_CERT.finditer(text)]
+        keys += [m.group(0) for m in PEM_KEY.finditer(text)]
+    for part in (cert, chain, root, key):
+        part = str(part or '')
+        certs += [m.group(0) for m in PEM_CERT.finditer(part)]
+        keys += [m.group(0) for m in PEM_KEY.finditer(part)]
+    if not certs:
+        raise ValueError('no certificate was found in what was sent (PEM, or a PFX / PKCS#12 '
+                         'file)')
+    if len(keys) > 1:
+        raise ValueError('more than one private key was sent')
+    if keys:
+        key_pem = key_plain(keys[0], password)
+    elif pending_key:
+        key_pem = pending_key
+    else:
+        raise ValueError('no private key came with it: send the key too (or the PFX), or make '
+                         'the request here first so the key is waiting')
+    want = _pub_of_key(key_pem)
+    leaf = next((c for c in certs if _pub_of_cert(c) == want), None)
+    if not leaf:
+        raise ValueError('none of the certificates is the one of this key')
+    others = [c for c in certs if c != leaf]
+    infos = {c: cert_info(c) for c in others}
+    roots = [c for c in others if infos[c]['self_signed']]
+    roots += [m.group(0) for m in PEM_CERT.finditer(str(root or '')) if m.group(0) not in roots]
+    inter = [c for c in others if c not in roots]
+    # The chain in order: each the issuer of the one before it.
+    chain_out, at = [], cert_info(leaf)
+    while inter:
+        nxt = next((c for c in inter if infos[c].get('subject') == at.get('issuer')), None)
+        if not nxt:
+            chain_out += inter
+            break
+        chain_out.append(nxt)
+        inter.remove(nxt)
+        at = infos[nxt]
+    info = cert_info(leaf)
+    verify = ''
+    if roots:
+        with tempfile.TemporaryDirectory(prefix='ai-cert-') as t:
+            def put(name, text):
+                p = os.path.join(t, name)
+                with open(p, 'w') as f:
+                    f.write(text)
+                return p
+            args = ['verify', '-CAfile', put('root.pem', '\n'.join(roots) + '\n')]
+            if chain_out:
+                args += ['-untrusted', put('chain.pem', '\n'.join(chain_out) + '\n')]
+            args.append(put('leaf.pem', leaf + '\n'))
+            try:
+                _openssl(args, what='the chain')
+                verify = 'ok'
+            except ValueError as e:
+                verify = str(e)
+    return {'cert': leaf + '\n', 'chain': ''.join(c + '\n' for c in chain_out),
+            'root': ''.join(c + '\n' for c in roots), 'key': key_pem, 'info': info,
+            'chain_info': [cert_info(c) for c in chain_out],
+            'root_info': [cert_info(c) for c in roots], 'verify': verify}
+
+
+def _san_ext(names):
+    out = []
+    for n in names:
+        n = str(n).strip()
+        if not n:
+            continue
+        try:
+            plain_ip(n, 'address')
+            out.append('IP:' + n)
+        except (ValueError, Refused):
+            if not re.match(r'^(\*\.)?[A-Za-z0-9.-]{1,253}\Z', n):
+                raise ValueError('%r is not a name or an address' % n)
+            out.append('DNS:' + n)
+    return ','.join(out)
+
+
+def _subject(cn, org='', unit='', country='', city=''):
+    def esc(v):
+        return re.sub(r'([/\\=+,])', r'\\\1', str(v).strip())
+    if not cn or not re.match(r'^[A-Za-z0-9*.-]{1,64}\Z', cn):
+        raise ValueError('the common name is a host name')
+    s = '/CN=' + esc(cn)
+    if org:
+        s += '/O=' + esc(org)
+    if unit:
+        s += '/OU=' + esc(unit)
+    if city:
+        s += '/L=' + esc(city)
+    if country:
+        if not re.match(r'^[A-Za-z]{2}\Z', country):
+            raise ValueError('the country is two letters (CZ)')
+        s += '/C=' + country.upper()
+    return s
+
+
+def new_key(kind):
+    if kind == 'ec':
+        return _openssl(['genpkey', '-algorithm', 'EC', '-pkeyopt',
+                         'ec_paramgen_curve:P-256']).decode()
+    bits = {'rsa2048': 2048, 'rsa3072': 3072, 'rsa4096': 4096}.get(kind)
+    if not bits:
+        raise ValueError('the key is ec, rsa2048, rsa3072 or rsa4096')
+    return _openssl(['genpkey', '-algorithm', 'RSA', '-pkeyopt',
+                     'rsa_keygen_bits:%d' % bits]).decode()
+
+
+def make_csr(cn, names, kind='rsa2048', **subject):
+    key = new_key(kind)
+    with tempfile.TemporaryDirectory(prefix='ai-csr-') as t:
+        kf = os.path.join(t, 'k.pem')
+        with open(kf, 'w') as f:
+            f.write(key)
+        csr = _openssl(['req', '-new', '-key', kf, '-subj', _subject(cn, **subject),
+                        '-addext', 'subjectAltName=' + _san_ext([cn] + list(names))],
+                       what='the request').decode()
+    return key, csr
+
+
+def make_selfsigned(cn, names, days=825, kind='rsa2048', **subject):
+    key = new_key(kind)
+    with tempfile.TemporaryDirectory(prefix='ai-crt-') as t:
+        kf = os.path.join(t, 'k.pem')
+        with open(kf, 'w') as f:
+            f.write(key)
+        crt = _openssl(['req', '-new', '-x509', '-key', kf, '-days', str(int(days)), '-subj',
+                        _subject(cn, **subject), '-addext',
+                        'subjectAltName=' + _san_ext([cn] + list(names))],
+                       what='the certificate').decode()
+    return key, crt
+
+
+
+def tls_view(prof):
+    """A profile as the pages may see it: no key."""
+    if not prof:
+        return None
+    out = {k: v for k, v in prof.items() if k not in ('key', 'pending_key')}
+    out['has_key'] = bool(prof.get('key'))
+    out['pending'] = bool(prof.get('pending_key'))
+    return out
+
+
+def tls_policy_checked(b):
+    preset = str(b.get('preset') or 'standard')
+    if preset not in list(TLS_PRESETS) + ['custom']:
+        raise ValueError('the TLS settings are standard, intermediate, modern or custom')
+    out = {'preset': preset}
+    if preset == 'custom':
+        prot = b.get('protocols') or []
+        if not isinstance(prot, list) or not prot or \
+                any(p not in ('TLSv1.2', 'TLSv1.3') for p in prot):
+            raise ValueError('the protocols are TLSv1.2 and/or TLSv1.3')
+        out['protocols'] = [p for p in ('TLSv1.2', 'TLSv1.3') if p in prot]
+        ciphers = str(b.get('ciphers') or '').strip()
+        if ciphers:
+            if not re.match(r'^[A-Za-z0-9_+!@=:.-]{1,2000}\Z', ciphers):
+                raise ValueError('the ciphers are an OpenSSL cipher list')
+            _openssl(['ciphers', ciphers], what='OpenSSL does not know that cipher list')
+        out['ciphers'] = ciphers
+    dh = str(b.get('dh') or 'none')
+    if dh not in DH_WORDS:
+        raise ValueError('the DH parameters are one of %s' % ', '.join(DH_WORDS))
+    out['dh'] = dh
+    out['prefer'] = bool(b.get('prefer'))
+    try:
+        # Not said is the two years nginx is shipped with (1.0.94), not none:
+        # the first TLS change on the pages dropped HSTS without a word.
+        hv = b.get('hsts')
+        out['hsts'] = max(0, min(63072000, int(hv) if hv not in (None, '') else 63072000))
+    except (TypeError, ValueError):
+        raise ValueError('HSTS is a number of seconds')
+    return out
+
+
+# ---- the certificate and TLS of the pages, as otp's Certificates and TLS -----------------------
+# Kept in meta 'web:tls': the certificate, its chain and root, the key (sealed),
+# a request waiting for its certificate (its key sealed), and how TLS is
+# spoken - the protocols and ciphers, DH parameters, HSTS. Put into nginx by
+# the daemon itself (it is root): the files written, the lines of the server
+# on 443 set, nginx -t, reload - or everything put back.
+CA_FILE = CERT_DIR / 'ai-ca.pem'
+DH_FILE = CERT_DIR / 'ai-dh.pem'
+DH_EXPECT_S = {'gen2048': 15, 'gen3072': 120, 'gen4096': 600}
+TLS_LOCK = threading.Lock()
+TLS_STATE = {'state': '', 'said': [], 'progress': None, 'at': 0.0}
+
+
+def tls_prof(store):
+    got = store.meta_json('web:tls', None)
+    return got if isinstance(got, dict) else None
+
+
+def tls_keep(store, prof, by):
+    prof = dict(prof)
+    prof['at'] = time.time()
+    prof['by'] = by
+    store.set_meta_json('web:tls', prof)
+
+
+def set_directive(block, name, value):
+    """`name value;` in a server { } - replaced where it is, put in after
+    server_name where it is not, taken out for None (otp_web.py's)."""
+    lines = block.split('\n')
+    depth, at, insert_at = 0, [], None
+    for n, line in enumerate(lines):
+        if depth == 1 and re.match(r'^\s*%s\s' % re.escape(name), line):
+            at.append(n)
+        if depth == 1 and insert_at is None and re.match(r'^\s*server_name\s', line):
+            insert_at = n + 1
+        depth += line.count('{') - line.count('}')
+    if value is None:
+        for n in reversed(at):
+            del lines[n]
+        return '\n'.join(lines)
+    text = '    %-25s %s;' % (name, value)
+    if at:
+        lines[at[0]] = text
+        for n in reversed(at[1:]):
+            del lines[n]
+    else:
+        lines.insert(insert_at if insert_at is not None else 1, text)
+    return '\n'.join(lines)
+
+
+def nginx_tls_block(conf):
+    """(before, the server { } that listens on 443, after) of nginx's file."""
+    lines = conf.split('\n')
+    depth, start = 0, None
+    for n, line in enumerate(lines):
+        if depth == 0 and re.match(r'^\s*server\s*\{', line):
+            start = n
+        depth += line.count('{') - line.count('}')
+        if depth == 0 and start is not None:
+            block = '\n'.join(lines[start:n + 1])
+            if re.search(r'^\s*listen\s+[^;]*443', block, re.M):
+                return '\n'.join(lines[:start]), block, '\n'.join(lines[n + 1:])
+            start = None
+    raise Refused('%s has no server { } listening on 443' % NGINX_CONF)
+
+
+def tls_resolved(prof):
+    preset = prof.get('preset') or 'standard'
+    p = TLS_PRESETS.get(preset) or {'protocols': prof.get('protocols') or ['TLSv1.2', 'TLSv1.3'],
+                                    'ciphers': prof.get('ciphers') or ''}
+    return {'protocols': p['protocols'], 'ciphers': p['ciphers'] or TLS_PRESETS['standard']['ciphers'],
+            'prefer': bool(prof.get('prefer')), 'dh': prof.get('dh') or 'none',
+            'hsts': int(prof['hsts']) if prof.get('hsts') not in (None, '') else 63072000}
+
+
+def tls_progress(words, step, expect=None):
+    TLS_STATE['progress'] = {'words': words, 'step': step, 'total': 4, 'at': time.time(), 'now': time.time(),
+                             'expect_s': expect}
+
+
+def dh_pem(choice):
+    if choice.startswith('ffdhe'):
+        return _openssl(['genpkey', '-genparam', '-algorithm', 'DH', '-pkeyopt', 'group:%s' % choice],
+                        what='the DH group %s' % choice).decode()
+    tls_progress('making DH parameters of %s bits' % choice[3:], 2, DH_EXPECT_S.get(choice))
+    return _openssl(['dhparam', choice[3:]], what='making DH parameters').decode()
+
+
+def tls_apply(store, prof, by):
+    """Into nginx: the files and the lines. Raises Refused where nginx says no."""
+    t = tls_resolved(prof)
+    files = {}
+    tls_progress('reading nginx', 1)
+    conf = read_text(NGINX_CONF)
+    head, block, tail = nginx_tls_block(conf)
+    said = []
+    if prof.get('cert') and prof.get('key'):
+        key = unseal_secret(prof['key'], 'web:tls')
+        if not key:
+            raise Refused('the key kept for the certificate cannot be opened here (secrets.key changed?)')
+        files[CERT_FILE] = prof['cert'] + (prof.get('chain') or '')
+        files[KEY_FILE] = key
+        block = set_directive(block, 'ssl_certificate', str(CERT_FILE))
+        block = set_directive(block, 'ssl_certificate_key', str(KEY_FILE))
+        if prof.get('root'):
+            files[CA_FILE] = prof['root'] + (prof.get('chain') or '')
+            block = set_directive(block, 'ssl_trusted_certificate', str(CA_FILE))
+        else:
+            block = set_directive(block, 'ssl_trusted_certificate', None)
+        said.append('certificate: %s' % ((prof.get('info') or {}).get('cn') or '?'))
+    block = set_directive(block, 'ssl_protocols', ' '.join(t['protocols']))
+    block = set_directive(block, 'ssl_ciphers', t['ciphers'])
+    block = set_directive(block, 'ssl_prefer_server_ciphers', 'on' if t['prefer'] else 'off')
+    if t['dh'] != 'none':
+        if t['dh'] != prof.get('dh_made') or not DH_FILE.exists():
+            files[DH_FILE] = dh_pem(t['dh'])
+            prof['dh_made'] = t['dh']
+        block = set_directive(block, 'ssl_dhparam', str(DH_FILE))
+    else:
+        block = set_directive(block, 'ssl_dhparam', None)
+    if t['hsts']:
+        block = set_directive(block, 'add_header Strict-Transport-Security', '"max-age=%d" always' % t['hsts'])
+    else:
+        block = set_directive(block, 'add_header Strict-Transport-Security', None)
+    files[NGINX_CONF] = head + ('\n' if head else '') + block + ('\n' if tail else '') + tail
+    tls_progress('nginx checks it and reloads', 3)
+    nginx_swap(files)
+    said.append('%s; %s; DH %s%s' % (' '.join(t['protocols']), 'ciphers as set' if prof.get('preset') == 'custom'
+                                     else (prof.get('preset') or 'standard'), t['dh'],
+                                     '; HSTS %d s' % t['hsts'] if t['hsts'] else '; no HSTS'))
+    tls_keep(store, prof, by)
+    store.add_event('system', '%s put the TLS of the pages into nginx: %s' % (by, '; '.join(said)), 'info', who=by)
+    return said
+
+
+def tls_apply_later(store, prof, by):
+    """In a thread of its own: DH parameters made here take minutes."""
+    if not TLS_LOCK.acquire(blocking=False):
+        raise Refused('a change of the TLS is being put in already - wait for it', 409)
+    TLS_STATE.update(state='working', said=[], at=time.time())
+
+    def go():
+        try:
+            TLS_STATE['said'] = tls_apply(store, prof, by)
+            TLS_STATE['state'] = 'done'
+        except Exception as e:                          # noqa: BLE001
+            TLS_STATE.update(state='failed', said=[str(e)])
+            store.add_event('system', 'the TLS of the pages could not be put in: %s' % e, 'warn', who=by)
+        finally:
+            TLS_STATE['progress'] = None
+            TLS_LOCK.release()
+    threading.Thread(target=go, daemon=True).start()
+
+
+def cert_now_info():
+    try:
+        pem = read_text(CERT_FILE)
+        m = PEM_CERT.search(pem)
+        return cert_info(m.group(0)) if m else None
+    except (OSError, ValueError, Refused):
+        return None
+
+
 # ---- power ------------------------------------------------------------------------------------
 def power(what, by, store):
     if what not in ('reboot', 'poweroff', 'restart-ai', 'restart-web'):
@@ -4947,6 +5410,489 @@ def api_log(c):
 def api_machine(c):
     return {'machine': machine_facts(), 'paths': {'state': str(STATE_DIR), 'config': str(CONFIG_FILE),
                                                   'log': str(LOG_FILE), 'lib': str(LIB_DIR)}}
+
+
+@route('GET', '/api/web', admin=True)
+def api_web(c):
+    prof = tls_prof(c.daemon.store)
+    now = cert_now_info()
+    current = bool(prof and now and (prof.get('info') or {}).get('fingerprint') == now.get('fingerprint')) \
+        or (prof and not prof.get('cert'))
+    p = dict(TLS_STATE['progress']) if TLS_STATE['progress'] else None
+    if p:
+        p['now'] = time.time()
+    me = host_name()
+    view = tls_view(prof)
+    if view is not None:
+        view['info'] = (prof or {}).get('info') or now
+    return {'tls': {me: view}, 'cluster': False, 'may': True, 'presets': TLS_PRESETS, 'dh': DH_WORDS,
+            'vip': {}, 'nodes': [{'name': me, 'me': True, 'host': socket.getfqdn(), 'address': '',
+                                  'web': {'cert_now': now, 'state': TLS_STATE['state'] if TLS_STATE['state'] !=
+                                          'done' else '', 'current': bool(current) and TLS_STATE['state'] != 'working',
+                                          'said': TLS_STATE['said'], 'progress': p}}]}
+
+
+@route('POST', '/api/web', admin=True)
+def api_web_do(c):
+    b, st = c.body, c.daemon.store
+    act = str(b.get('action') or '')
+    prof = tls_prof(st) or {'preset': 'standard', 'dh': 'none', 'hsts': 63072000}
+    try:
+        if act == 'tls_upload':
+            pfx = base64.b64decode(b.get('pfx') or '') if b.get('pfx') else b''
+            pend = unseal_secret(prof.get('pending_key'), 'web:tls-pending') if prof.get('pending_key') else ''
+            got = cert_bundle(cert=b.get('cert') or '', pfx=pfx, password=b.get('password') or '',
+                              pending_key=pend or '')
+            got['key'] = seal_secret(got['key'], 'web:tls')
+            prof.update(got)
+            prof.pop('pending_key', None)
+            prof.pop('csr', None)
+            tls_apply_later(st, prof, c.name)
+            return {'message': 'the certificate of %s is being put in' % (got['info'].get('cn') or '?')}
+        if act == 'tls_csr':
+            names = [x for x in re.split(r'[,\s]+', str(b.get('names') or '')) if x]
+            key, csr = make_csr(str(b.get('cn') or '').strip(), names, str(b.get('kind') or 'rsa2048'),
+                                org=b.get('org') or '', unit=b.get('unit') or '', country=b.get('country') or '',
+                                city=b.get('city') or '')
+            prof['pending_key'] = seal_secret(key, 'web:tls-pending')
+            prof['csr'] = csr
+            tls_keep(st, prof, c.name)
+            st.add_event('system', '%s made a certificate request for %s' % (c.name, b.get('cn')), 'info', who=c.name)
+            return {'csr': csr, 'tls': tls_view(prof)}
+        if act == 'tls_csr_drop':
+            prof.pop('pending_key', None)
+            prof.pop('csr', None)
+            tls_keep(st, prof, c.name)
+            return {'message': 'the request and its key are gone'}
+        if act == 'tls_selfsigned':
+            names = [x for x in re.split(r'[,\s]+', str(b.get('names') or '')) if x]
+            key, crt = make_selfsigned(str(b.get('cn') or '').strip(), names, int(b.get('days') or 825),
+                                       str(b.get('kind') or 'rsa2048'), org=b.get('org') or '')
+            got = cert_bundle(cert=crt, key=key)
+            got['key'] = seal_secret(got['key'], 'web:tls')
+            prof.update(got)
+            tls_apply_later(st, prof, c.name)
+            return {'message': 'a self-signed certificate for %s is being put in' % b.get('cn')}
+        if act == 'tls_policy':
+            prof.update(tls_policy_checked(b))
+            tls_apply_later(st, prof, c.name)
+            return {'message': 'the TLS settings are being put in'}
+        if act == 'tls_pem':
+            if prof.get('cert'):
+                return {'pem': prof['cert'] + (prof.get('chain') or '')}
+            return {'pem': read_text(CERT_FILE)}
+        if act == 'tls_forget':
+            st.x('DELETE FROM meta WHERE k=?', ('web:tls',))
+            st.add_event('system', '%s let the TLS of the pages go: nginx keeps what it has' % c.name, 'info', who=c.name)
+            return {'message': 'ai no longer looks after it - nginx keeps what it has'}
+    except ValueError as e:
+        raise Refused(str(e))
+    raise Refused('no such thing to do')
+
+
+# ---- the database: copies kept, downloaded, put back (as otp's Database pane) -----------------
+# One SQLite file holds everything: the accounts, the sign-ins, the settings,
+# the events, the terminals' list. Every night at db_copy_hour a copy is made
+# with SQLite's own backup (consistent while it is in use), packed with the
+# key the secrets are sealed with (secrets.key) and config.json - a copy
+# without its key would open none of them - and the newest db_copy_keep are
+# kept in /var/lib/ai/copies.
+COPIES_DIR = STATE_DIR / 'copies'
+COPY_RE = re.compile(r'^ai-copy-(\d{8}-\d{6})(?:-[a-z0-9]+)?\.tar\.gz\Z')
+DB_LOCK = threading.Lock()
+
+
+def db_copy(store, why='by hand', by=''):
+    """A copy of the database now, with its key and config.json beside it."""
+    COPIES_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(str(COPIES_DIR), 0o700)
+    stamp_ = datetime.now().strftime('%Y%m%d-%H%M%S')
+    name = 'ai-copy-%s.tar.gz' % stamp_
+    if (COPIES_DIR / name).exists():
+        name = 'ai-copy-%s-%s.tar.gz' % (stamp_, secrets.token_hex(2))
+    import tarfile
+    with tempfile.TemporaryDirectory(prefix='ai-copy-', dir=str(STATE_DIR)) as work:
+        dbp = os.path.join(work, 'ai.db')
+        dst = sqlite3.connect(dbp)
+        with store.lock:
+            store.db.backup(dst)
+        dst.close()
+        tmp = str(COPIES_DIR / ('.' + name + '.part'))
+        with tarfile.open(tmp, 'w:gz') as tar:
+            tar.add(dbp, arcname='ai.db')
+            for p, arc in ((sealing_key_path(), 'secrets.key'), (CONFIG_FILE, 'config.json')):
+                if Path(p).is_file():
+                    tar.add(str(p), arcname=arc)
+            info = json.dumps({'kind': 'ai-copy', 'version': __version__, 'host': host_name(), 'at': time.time(),
+                               'why': why}).encode()
+            ti = tarfile.TarInfo('about.json')
+            ti.size, ti.mtime = len(info), int(time.time())
+            tar.addfile(ti, io.BytesIO(info))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, str(COPIES_DIR / name))
+    store.set_meta_json('db:last_copy', {'at': time.time(), 'name': name, 'why': why})
+    db_copies_trim()
+    store.add_event('database', 'a copy of the database was made (%s): %s' % (why, name), 'info', who=by)
+    return name
+
+
+def db_copies():
+    out = []
+    try:
+        names = os.listdir(str(COPIES_DIR))
+    except OSError:
+        return out
+    for n in sorted(names, reverse=True):
+        if COPY_RE.match(n):
+            st = os.stat(str(COPIES_DIR / n))
+            out.append({'name': n, 'size': st.st_size, 'at': st.st_mtime, 'path': str(COPIES_DIR / n)})
+    return out
+
+
+def db_copies_trim():
+    keep = int(CONFIG.get('db_copy_keep') or 14)
+    for c in db_copies()[keep:]:
+        try:
+            os.unlink(c['path'])
+        except OSError:
+            pass
+
+
+def db_copy_tick(store):
+    """Once a night, at db_copy_hour."""
+    if not CONFIG.get('db_copy_on', True):
+        return
+    now = datetime.now()
+    if now.hour != int(CONFIG.get('db_copy_hour') or 0):
+        return
+    last = (store.meta_json('db:last_copy', {}) or {}).get('at') or 0
+    if time.time() - last < 20 * 3600:
+        return
+    try:
+        db_copy(store, 'every night')
+    except Exception as e:                              # noqa: BLE001
+        store.add_event('database', 'the nightly copy of the database could not be made: %s' % e, 'error')
+
+
+def db_inspect(path):
+    """What a copy holds, read without putting any of it back."""
+    import tarfile
+    path = str(path)
+    out = {'file': os.path.basename(path), 'size': os.path.getsize(path)}
+    with tempfile.TemporaryDirectory(prefix='ai-look-', dir=str(STATE_DIR)) as work:
+        dbp = os.path.join(work, 'ai.db')
+        if tarfile.is_tarfile(path):
+            with tarfile.open(path, 'r:*') as tar:
+                names = tar.getnames()
+                if 'ai.db' not in names:
+                    raise Refused('there is no ai.db in that file - is it a copy of ai?')
+                for m in tar.getmembers():
+                    if m.name in ('ai.db', 'secrets.key', 'about.json', 'config.json') and m.isfile():
+                        with tar.extractfile(m) as f, open(os.path.join(work, m.name), 'wb') as g:
+                            shutil.copyfileobj(f, g)
+            out['has_key'] = os.path.exists(os.path.join(work, 'secrets.key'))
+            out['has_config'] = os.path.exists(os.path.join(work, 'config.json'))
+            try:
+                out['about'] = json.loads(read_text(os.path.join(work, 'about.json')) or '{}')
+            except ValueError:
+                out['about'] = {}
+        else:
+            shutil.copyfile(path, dbp)
+            out['has_key'] = False
+        try:
+            con = sqlite3.connect('file:%s?mode=ro' % dbp, uri=True)
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {'users', 'settings', 'meta', 'events'} <= tables:
+                raise Refused('that database is not one of ai (its tables are not there)')
+            out['users'] = [r[0] for r in con.execute('SELECT name FROM users ORDER BY name')]
+            out['events'] = con.execute('SELECT COUNT(*) FROM events').fetchone()[0]
+            out['settings'] = con.execute('SELECT COUNT(*) FROM settings').fetchone()[0]
+            last = con.execute('SELECT MAX(at) FROM events').fetchone()[0]
+            out['last_event'] = last
+            con.close()
+        except sqlite3.DatabaseError as e:
+            raise Refused('that is not a database SQLite can read: %s' % e)
+        if out['has_key']:
+            key = read_text(os.path.join(work, 'secrets.key')).strip()
+            out['same_key'] = key == read_text(sealing_key_path()).strip()
+    return out
+
+
+def db_restore(daemon, path, by):
+    """A copy put back into the database in use, under its lock: everything is
+    replaced - the accounts, the settings, the events. A copy of now is made
+    first, so even this can be undone."""
+    import tarfile
+    with DB_LOCK:
+        db_inspect(path)
+        before = db_copy(daemon.store, 'before putting %s back' % os.path.basename(str(path)), by)
+        with tempfile.TemporaryDirectory(prefix='ai-back-', dir=str(STATE_DIR)) as work:
+            dbp = os.path.join(work, 'ai.db')
+            key = None
+            if tarfile.is_tarfile(str(path)):
+                with tarfile.open(str(path), 'r:*') as tar:
+                    for m in tar.getmembers():
+                        if m.name in ('ai.db', 'secrets.key') and m.isfile():
+                            with tar.extractfile(m) as f, open(os.path.join(work, m.name), 'wb') as g:
+                                shutil.copyfileobj(f, g)
+                if os.path.exists(os.path.join(work, 'secrets.key')):
+                    key = read_text(os.path.join(work, 'secrets.key')).strip()
+            else:
+                shutil.copyfile(str(path), dbp)
+            src = sqlite3.connect(dbp)
+            st = daemon.store
+            with st.lock:
+                src.backup(st.db)
+                st.db.executescript(SCHEMA_SQL)
+            src.close()
+            if key and re.match(r'^[0-9a-f]{64}\Z', key) and key != read_text(sealing_key_path()).strip():
+                write_atomic(sealing_key_path(), key + '\n', mode=0o600)
+                _KEY_CACHE.clear()
+        Store.__init__(daemon.store, daemon.store.path)     # the columns of this version put right
+        config_rebuild(daemon.store)
+        daemon.store.add_event('database', '%s put the copy %s back (what was there is in %s)' % (
+            by, os.path.basename(str(path)), before), 'warn', who=by)
+        return before
+
+
+@route('GET', '/api/db', admin=True)
+def api_db(c):
+    COPIES_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        size = os.path.getsize(str(DB_FILE))
+    except OSError:
+        size = 0
+    st = c.daemon.store
+    return {'file': str(DB_FILE), 'size': size, 'folder': str(COPIES_DIR), 'copies': db_copies(),
+            'last': st.meta_json('db:last_copy', {}) or {}, 'key': str(sealing_key_path()),
+            'counts': {t: st.one('SELECT COUNT(*) AS n FROM %s' % t)['n'] for t in
+                       ('users', 'sessions', 'events', 'settings', 'terms')},
+            'sqlite': sqlite3.sqlite_version}
+
+
+@route('POST', '/api/db', admin=True)
+def api_db_do(c):
+    act = str(c.body.get('action') or '')
+    st = c.daemon.store
+
+    def one():
+        n = os.path.basename(str(c.body.get('name') or ''))
+        if not COPY_RE.match(n) and not n.startswith('upload-'):
+            raise Refused('no such copy')
+        p = COPIES_DIR / n
+        if not p.is_file():
+            raise Refused('no such copy', 404)
+        return p
+    if act == 'copy':
+        with DB_LOCK:
+            return {'message': 'made: %s' % db_copy(st, 'by hand', c.name), 'copies': db_copies()}
+    if act == 'inspect':
+        return {'what': db_inspect(one())}
+    if act == 'drop':
+        p = one()
+        p.unlink()
+        st.add_event('database', '%s took the copy %s away' % (c.name, p.name), 'info', who=c.name)
+        return {'message': 'taken away: %s' % p.name, 'copies': db_copies()}
+    if act == 'restore':
+        p = one()
+        before = db_restore(c.daemon, p, c.name)
+        if p.name.startswith('upload-'):
+            p.unlink()
+        return {'message': 'put back - what was there before is kept as %s' % before}
+    raise Refused('copy, inspect, drop or restore')
+
+
+# ---- the whole configuration as one file (as otp's Export and import) ---------------------
+# The settings, the accounts of these pages, the firewall and who may reach
+# the pages, the mail server's authorities and the TLS of the pages. Not the
+# events nor the terminals: those go with a copy of the database. With the
+# secrets (the password hashes, the sealed settings, the key of the
+# certificate, the authenticator keys) it is locked with a passphrase made
+# now and shown once.
+def _phrase_key(phrase, salt):
+    return hashlib.pbkdf2_hmac('sha256', str(phrase).encode('utf-8'), salt, 200000)
+
+
+def lock_with(phrase, data):
+    salt, nonce = secrets.token_bytes(16), secrets.token_bytes(16)
+    key = _phrase_key(phrase, salt)
+    raw = json.dumps(data).encode('utf-8')
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    body = bytes(a ^ b for a, b in zip(raw, _seal_stream(hide, nonce, len(raw))))
+    tag = hmac.new(hmac.new(key, b'sign', hashlib.sha256).digest(), nonce + body, hashlib.sha256).digest()
+    return {'kind': 'ai-config-locked', 'salt': base64.b64encode(salt).decode(),
+            'data': base64.b64encode(nonce + body + tag).decode()}
+
+
+def open_with(phrase, locked):
+    try:
+        salt = base64.b64decode(locked['salt'])
+        raw = base64.b64decode(locked['data'])
+    except (KeyError, ValueError, TypeError):
+        raise Refused('the locked part of the file is broken')
+    key = _phrase_key(phrase, salt)
+    nonce, body, tag = raw[:16], raw[16:-32], raw[-32:]
+    if not hmac.compare_digest(tag, hmac.new(hmac.new(key, b'sign', hashlib.sha256).digest(), nonce + body,
+                                             hashlib.sha256).digest()):
+        raise Refused('the passphrase is not right')
+    hide = hmac.new(key, b'hide', hashlib.sha256).digest()
+    return json.loads(bytes(a ^ b for a, b in zip(body, _seal_stream(hide, nonce, len(body)))).decode('utf-8'))
+
+
+def config_export(store, with_secrets=False):
+    saved = store.settings_all()
+    settings = {}
+    for k, v in saved.items():
+        if k not in SCHEMA_KEYS:
+            continue
+        if SCHEMA_KEYS[k][2] == 'password' or SCHEMA_KEYS[k][5].get('secret'):
+            if with_secrets:
+                settings[k] = unseal_secret(v, 'setting:' + k) if SCHEMA_KEYS[k][2] == 'password' else v
+            continue
+        settings[k] = v
+    users = []
+    for u in store.users():
+        one = {k: u[k] for k in ('name', 'role', 'run_as', 'note', 'disabled')}
+        one['roots'] = json.loads(u['roots'] or '[]')
+        if with_secrets:
+            one['pw'] = u['pw']
+            rec = mfa_get(store, u['name'])
+            if rec:
+                rec = dict(rec)
+                if rec.get('secret'):
+                    rec['secret'] = unseal_secret(rec['secret'], mfa_key(u['name']))
+                one['mfa'] = rec
+        users.append(one)
+    tls = tls_prof(store)
+    if tls:
+        tls = dict(tls)
+        tls.pop('pending_key', None)
+        if with_secrets and tls.get('key'):
+            tls['key'] = unseal_secret(tls['key'], 'web:tls')
+        else:
+            tls.pop('key', None)
+    out = {'kind': 'ai-config', 'version': __version__, 'host': host_name(), 'at': time.time(),
+           'settings': settings, 'users': users, 'firewall': store.meta_json('fw:conf', None),
+           'access': store.meta_json('fw:access', None), 'mail_ca': mail_ca_pem(store), 'tls': tls,
+           'with_secrets': bool(with_secrets)}
+    return out
+
+
+def config_import(daemon, conf, by, replace=False, ip='127.0.0.1', wait=False):
+    st = daemon.store
+    if not isinstance(conf, dict) or conf.get('kind') != 'ai-config':
+        raise Refused('that is not a configuration of ai (ai --export-config)')
+    said = []
+    sets = conf.get('settings') or {}
+    n = 0
+    for k, v in sets.items():
+        if k not in SCHEMA_KEYS or k in ('upgrade_url',) and not str(v).startswith('https://'):
+            continue
+        nv = setting_value(k, v)
+        if SCHEMA_KEYS[k][2] == 'password':
+            nv = seal_secret(nv, 'setting:' + k) if nv else ''
+        st.set_setting(k, nv, by)
+        n += 1
+    if replace:
+        for k in list(st.settings_all()):
+            if k not in sets and k in SCHEMA_KEYS and not (SCHEMA_KEYS[k][2] == 'password' and
+                                                           not conf.get('with_secrets')):
+                st.drop_setting(k)
+    said.append('%d setting(s)' % n)
+    names = []
+    for u in conf.get('users') or []:
+        name = str(u.get('name') or '')
+        if not NAME_RE.match(name) or str(u.get('role')) not in ROLES:
+            continue
+        names.append(name)
+        if name == by:
+            continue                    # your own account is left as it is
+        have = st.user(name)
+        pw = u.get('pw') if u.get('pw') and str(u['pw']).startswith(('pbkdf2', 'scrypt')) else None
+        run_as = str(u.get('run_as') or '')
+        try:
+            if run_as:
+                linux_user(run_as)
+        except Refused:
+            run_as = ''
+        if have:
+            st.x('UPDATE users SET role=?, run_as=?, roots=?, note=?, disabled=? WHERE name=?',
+                 (u['role'], run_as, json.dumps(clean_roots(u.get('roots') or [])), clean_line(u.get('note'), 300),
+                  1 if u.get('disabled') else 0, name))
+            if pw:
+                st.x('UPDATE users SET pw=? WHERE name=?', (pw, name))
+        else:
+            st.x('INSERT INTO users(name,pw,role,run_as,roots,disabled,must_change,note,created) VALUES(?,?,?,?,?,?,?,?,?)',
+                 (name, pw or hash_password(new_password()), u['role'], run_as,
+                  json.dumps(clean_roots(u.get('roots') or [])), 1 if u.get('disabled') else 0, 0 if pw else 1,
+                  clean_line(u.get('note'), 300), time.time()))
+        if isinstance(u.get('mfa'), dict) and u['mfa'].get('kind') in ('app', 'mail'):
+            rec = dict(u['mfa'])
+            if rec.get('secret'):
+                rec['secret'] = seal_secret(rec['secret'], mfa_key(name))
+            st.set_meta_json(mfa_key(name), rec)
+    if replace:
+        for u in st.users():
+            if u['name'] not in names and u['name'] != by:
+                st.x('DELETE FROM users WHERE name=?', (u['name'],))
+                st.x('DELETE FROM sessions WHERE name=?', (u['name'],))
+    said.append('%d account(s)' % len(names))
+    if conf.get('mail_ca'):
+        try:
+            mail_ca_set(st, conf['mail_ca'], 'add')
+            said.append('the mail server\'s authorities')
+        except ValueError:
+            pass
+    config_rebuild(st)
+    if isinstance(conf.get('tls'), dict) and conf['tls'].get('cert') and conf['tls'].get('key'):
+        prof = dict(conf['tls'])
+        prof['key'] = seal_secret(prof['key'], 'web:tls')
+        if wait:
+            tls_apply(st, prof, by)
+            said.append('the certificate and TLS')
+        else:
+            tls_apply_later(st, prof, by)
+            said.append('the certificate and TLS (being put in)')
+    fw_new = conf.get('firewall') if isinstance(conf.get('firewall'), dict) else None
+    ac_new = conf.get('access') if isinstance(conf.get('access'), dict) else None
+    same = lambda a, b: json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)   # noqa: E731
+    fw_was = st.meta_json('fw:conf', None) or {}
+    if fw_new and same({k: fw_new.get(k) for k in ('on', 'off', 'rules')}, {k: fw_was.get(k) for k in ('on', 'off', 'rules')}):
+        fw_new = None
+    if ac_new and same(ac_new.get('pages'), (st.meta_json('fw:access', None) or {}).get('pages')):
+        ac_new = None
+    if fw_new or ac_new:
+        b = dict(conf.get('firewall') or fw_conf(st))
+        if isinstance(conf.get('access'), dict):
+            b['access'] = conf['access']
+        try:
+            fw_save(daemon, b, by, ip)
+            said.append('the firewall and who may reach the pages (as a change on trial - keep it)')
+        except Refused as e:
+            said.append('NOT the firewall: %s' % e)
+    st.add_event('settings', '%s imported a configuration (%s): %s' % (by, 'exactly the file' if replace else
+                                                                        'added to what was here', ', '.join(said)),
+                 'warn', who=by)
+    return 'imported: ' + ', '.join(said)
+
+
+@route('GET', '/api/export', admin=True)
+def api_export(c):
+    conf = config_export(c.daemon.store, with_secrets=c.arg('secrets') == '1')
+    if c.arg('secrets') == '1':
+        phrase = '-'.join(secrets.token_hex(3) for _ in range(4))
+        c.daemon.store.add_event('settings', '%s exported the configuration with its secrets' % c.name, 'warn',
+                                 who=c.name)
+        return {'bundle': dict(lock_with(phrase, conf), version=__version__, host=host_name()), 'passphrase': phrase}
+    return {'config': conf}
+
+
+@route('POST', '/api/import', admin=True)
+def api_import(c):
+    conf = c.body.get('config')
+    if isinstance(conf, dict) and conf.get('kind') == 'ai-config-locked':
+        conf = open_with(c.body.get('passphrase') or '', conf)
+    return {'message': config_import(c.daemon, conf, c.name, bool(c.body.get('replace')), c.ip)}
 
 
 @route('GET', '/api/cert', admin=True)
@@ -6423,6 +7369,8 @@ class Daemon:
                             (STATE_DIR / 'first-login.txt').unlink()
                 if n % 20 == 2:
                     self.upgrades.tick()
+                if n % 20 == 5:
+                    db_copy_tick(self.store)
                 if n % 4 == 3 and not self.notifying.locked():
                     threading.Thread(target=self.notify_once, daemon=True).start()
             except Exception as e:                      # noqa: BLE001
@@ -9314,6 +10262,14 @@ def build_parser():
     g.add_argument('--reset-2fa', metavar='NAME', help='the second step of an account taken away (set up again)')
     g.add_argument('--lockouts', action='store_true', help='who is locked out, or counted, after wrong passwords')
     g.add_argument('--unlock', metavar='WHO|all', help='a lockout cleared: an address, a name, or all')
+    g = p.add_argument_group('THE DATABASE AND THE CONFIGURATION')
+    g.add_argument('--db-copy', action='store_true', help='a copy of the database now (with its key)')
+    g.add_argument('--db-copies', action='store_true', help='the copies kept in /var/lib/ai/copies')
+    g.add_argument('--db-restore', metavar='FILE', help='a copy put back (everything replaced; --yes)')
+    g.add_argument('--export-config', metavar='FILE', help='the whole configuration into a file (- for stdout)')
+    g.add_argument('--with-secrets', action='store_true', help='with --export-config: the secrets too, locked')
+    g.add_argument('--import-config', metavar='FILE', help='a configuration taken in (--replace: exactly the file; --yes)')
+    g.add_argument('--replace', action='store_true', help='with --import-config: what is not in the file goes')
     g = p.add_argument_group('MAIL')
     g.add_argument('--mail-test', metavar='ADDRESS', help='a test mail sent, every step shown')
     g = p.add_argument_group('SETTINGS')
@@ -9820,6 +10776,54 @@ def cli_main(argv):
             keys = None if a.unlock == 'all' else ['ip:' + a.unlock, 'name:' + a.unlock.lower()]
             n = lockouts_clear(st, keys, 'the command line')
             print(pal.ok_line('cleared: %d' % n) if n else pal.warn_line('nothing was counted for %s' % a.unlock))
+            return 0
+        if a.db_copy:
+            print(pal.ok_line('made: %s' % (COPIES_DIR / db_copy(st, 'on the command line', 'the command line'))))
+            return 0
+        if a.db_copies:
+            rows = db_copies()
+            if a.json:
+                say_json({'copies': rows})
+            else:
+                print(table([[c['name'], when(c['at']), '%.1f MB' % (c['size'] / 1048576.0)] for c in rows],
+                            ['copy', 'made', 'size']) if rows else pal.warn_line('no copy yet (ai --db-copy)'))
+            return 0
+        if a.db_restore:
+            w = db_inspect(a.db_restore)
+            print('%s: accounts %s, %d events, made %s by ai %s' % (
+                w['file'], ', '.join(w.get('users') or []), w.get('events') or 0,
+                when((w.get('about') or {}).get('at')), (w.get('about') or {}).get('version') or '?'))
+            if not a.yes:
+                raise Refused('everything here is replaced by it: add --yes')
+            print(pal.ok_line('put back - what was here is in %s' % db_restore(d, a.db_restore, 'the command line')))
+            print(pal.dim('  the running daemon reads it at once; restart it to be sure: systemctl restart ai'))
+            return 0
+        if a.export_config:
+            conf = config_export(st, a.with_secrets)
+            out_ = conf
+            if a.with_secrets:
+                phrase = '-'.join(secrets.token_hex(3) for _ in range(4))
+                out_ = dict(lock_with(phrase, conf), version=__version__, host=host_name())
+            text = json.dumps(out_, indent=2, ensure_ascii=False)
+            if a.export_config == '-':
+                sys.stdout.write(text + '\n')
+            else:
+                write_atomic(a.export_config, text + '\n', mode=0o600)
+                print(pal.ok_line('written: %s' % a.export_config))
+            if a.with_secrets:
+                print(pal.warn_line('the passphrase of the file (shown once): %s' % phrase), file=sys.stderr)
+            return 0
+        if a.import_config:
+            try:
+                conf = json.loads(read_text(a.import_config, most=64 << 20))
+            except ValueError:
+                raise Refused('%s is not JSON' % a.import_config)
+            if isinstance(conf, dict) and conf.get('kind') == 'ai-config-locked':
+                conf = open_with(ask_password('the passphrase of the file', twice=False, env='AI_PASSPHRASE'), conf)
+            if not a.yes:
+                raise Refused('the configuration in it is saved here%s: add --yes' % (
+                    ', and what is not in it goes' if a.replace else ''))
+            print(pal.ok_line(config_import(d, conf, 'the command line', a.replace, wait=True)))
             return 0
         if a.mail_test:
             to = mail_checked(a.mail_test)
