@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.29
+
+- **The picture chosen for the sign-in shown to everybody**: the page tells a visitor not signed in from
+  elsewhere no more than the language - and left out which picture was chosen, so from any other machine the
+  sign-in kept showing the default one (from the server itself it was right). It is told the picture now too.
+
 ## 1.0.28
 
 - **The pages after the upgrade to 1.0.27**: install.sh put in the PHP files of the pages by a list of names,

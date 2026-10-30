@@ -178,7 +178,9 @@ if (!$me && !ai_local()) {
     if (!$token_ok || empty($health['users'])) {
         $alive = false;
     }
-    $health = ['lang' => (string) ($health['lang'] ?? 'cs'), 'users' => 1];
+    // Nothing more to a stranger than the language and the picture of the sign-in.
+    $health = ['lang' => (string) ($health['lang'] ?? 'cs'), 'users' => 1,
+               'art' => is_array($health['art'] ?? null) ? $health['art'] : []];
 }
 $initial = $me ? (ai_get('/api/status', 8.0) ?: null) : null;
 $host    = (string) ($_SERVER['HTTP_HOST'] ?? php_uname('n'));
