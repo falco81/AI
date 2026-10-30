@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.16'
+__version__ = '1.0.17'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4073,9 +4073,48 @@ class Terms:
                 'opts': {k: opts.get(k) for k in ('model', 'mode', 'resume', 'continue', 'args',
                                                   'command') if opts.get(k)}}
 
+    def merge(self, live):
+        """One tile a conversation (1.0.17): before 1.0.16 picking one up again
+        started a new terminal each time, and the ended ones stayed in the list
+        beside the one running it. Of the terminals holding one conversation,
+        the running one - else the newest - is kept, the ended rest forgotten."""
+        if time.time() - self.cache.get('merged', 0) < 60:
+            return
+        self.cache['merged'] = time.time()
+        rows = self.store.q("SELECT * FROM terms WHERE kind='claude' ORDER BY created DESC")
+        held = {}
+        for r in rows:
+            try:
+                o = json.loads(r['opts'] or '{}')
+            except ValueError:
+                o = {}
+            # An ended one by the conversation it was started with only - never
+            # by a guess from the times, which may name another's.
+            sid = str(o.get('sid') or (o.get('resume') if UUID_RE.match(str(o.get('resume') or '')) else '') or '')
+            if r['id'] in live:
+                try:
+                    sid = self.claude_sid(r, others=set()) or sid
+                except Exception:                   # noqa: BLE001 - a home that cannot be read
+                    pass
+            if sid:
+                held.setdefault((r['run_as'], sid), []).append(r)
+        for key, group in held.items():
+            if len(group) < 2:
+                continue
+            keep = next((r for r in group if r['id'] in live), group[0])
+            for r in group:
+                if r is keep or r['id'] in live:
+                    continue
+                self.store.x('DELETE FROM terms WHERE id=?', (r['id'],))
+                log('the terminal %s merged into %s: both held the conversation %s' % (r['id'], keep['id'], key[1][:8]))
+
     def list(self, u, ended=True):
         live = self.live()
         self.sync(live)
+        try:
+            self.merge(live)
+        except Exception as e:                      # noqa: BLE001 - never in the way of the list
+            log('merging the terminals of one conversation: %s' % e, 'warn')
         rows = self.store.q('SELECT * FROM terms ORDER BY created DESC')
         out = []
         for r in rows:
@@ -4343,8 +4382,12 @@ class Terms:
             opts = json.loads(r.get('opts') or '{}')
         except ValueError:
             opts = {}
-        own = str(opts.get('sid') or '')
+        own = str(opts.get('sid') or (opts.get('resume') if UUID_RE.match(str(opts.get('resume') or '')) else '') or '')
         if r.get('kind') != 'claude':
+            return own
+        # Ended, it holds what it held: its transcript may well have been
+        # written since - by the terminal that took the conversation over.
+        if r.get('ended') and own:
             return own
         try:
             pw = self.pw_of(r)

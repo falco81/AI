@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.17
+
+- **One tile a conversation in the list**: before 1.0.16 picking a conversation up again started a new terminal
+  each time, and with *with the ended ones* the list showed the same chat many times over beside the one
+  running it. The terminals that held the same conversation are merged by themselves: the running one - else
+  the newest - is kept, the ended copies forgotten. An ended tile is matched only by the conversation it was
+  started with, never by a guess from the times.
+
 ## 1.0.16
 
 - **A chat keeps its tile**: each chat with Claude Code is given its conversation's ID when it starts
