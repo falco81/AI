@@ -546,6 +546,8 @@ var ICONS = {
   add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
   play: '<path d="M7 5v14l11-7z"/>',
   next: '<path d="M9 18l6-6-6-6"/>',
+  /* Four corners outwards: the whole screen (1.0.20). */
+  maximize: '<path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/>',
   unfold: '<path d="M6 9l6 6 6-6"/>',
   prev: '<path d="M15 18l-6-6 6-6"/>',
   last: '<path d="M7 18l6-6-6-6M17 6v12"/>',

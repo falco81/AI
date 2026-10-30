@@ -73,6 +73,15 @@ Claude Code → *Where files given to Claude go*; it gets a `.gitignore` of its
 own) and its path typed into the terminal: a picture becomes `[Image #1]`,
 another file `@path`, for Claude to read.
 
+## Only the terminal
+
+The four corners in the terminal's bar put the terminal alone over the whole
+screen - no bar, no buttons. In Chrome and Edge the keys are locked, so Esc
+reaches the terminal (Claude Code needs it); hold Esc to come back. Where a
+browser cannot give the screen to the terminal alone, it covers the whole
+window and Esc twice comes back. The × in the corner, shown when the mouse
+moves, comes back too.
+
 ## The right mouse button
 
 On the terminal: copy what is selected, paste, select or copy the whole

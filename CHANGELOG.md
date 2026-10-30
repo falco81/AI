@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.20
+
+- **Only the terminal, over the whole screen**: a button in the terminal's bar (four corners) - and on the
+  terminal's right button - puts the terminal alone over the whole screen, no bar, no buttons. Where the keys
+  can be locked (Chrome, Edge) Esc goes to the terminal and is held to come back; where an element cannot take
+  the screen, the terminal covers the whole window and Esc twice comes back. A × shows in the corner when the
+  mouse moves.
+
 ## 1.0.19
 
 - **The terminals' colours as PuTTY's**: the palette of the terminals was the pages' own, light and soft - mc's

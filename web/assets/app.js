@@ -1345,6 +1345,7 @@ function termEnded(id) {
 /* Close (1.0.16): the window only, back to the start page - nothing is ended. */
 $('tb-close').onclick = function () { closeTermView(); loadTerms(); };
 function closeTermView() {
+  if (TL.pure) termPure(false);
   termClose();
   $('term-files').hidden = true;
   TL.open = '';
@@ -1402,6 +1403,62 @@ $('tb-full').onclick = function () {
   document.body.classList.toggle('term-full', TL.full);
   setTimeout(termFit, 50);
 };
+/* Only the terminal, over the whole screen (1.0.20): the browser's full
+   screen for the terminal's own box - nothing else of the page shows. With
+   the keys locked (Chrome, Edge) Esc goes to the terminal and is held to
+   come out; where an element cannot take the screen (an iPhone), the box
+   covers the whole window instead and Esc twice comes out. */
+function termPure(on) {
+  var host = $('term-host');
+  TL.pure = !!on;
+  var x = host.querySelector('.term-pure-x');
+  if (!x) {
+    x = el('button', 'term-pure-x');
+    x.type = 'button';
+    x.innerHTML = iconMarkup('close', 16);
+    x.setAttribute('aria-label', 'Back from the whole screen');
+    x.title = txT('Back from the whole screen');
+    x.onclick = function (e) { e.stopPropagation(); termPure(false); };
+    host.appendChild(x);
+    host.addEventListener('mousemove', function () {
+      if (!TL.pure) return;
+      x.classList.add('shown');
+      clearTimeout(TL.pureX);
+      TL.pureX = setTimeout(function () { x.classList.remove('shown'); }, 1800);
+    });
+  }
+  if (on) {
+    var req = host.requestFullscreen || host.webkitRequestFullscreen;
+    var fallback = function () { host.classList.add('pure'); };
+    if (req) {
+      try {
+        Promise.resolve(req.call(host)).then(function () {
+          if (navigator.keyboard && navigator.keyboard.lock) return navigator.keyboard.lock().catch(function () { });
+        }).catch(fallback);
+      } catch (e) { fallback(); }
+    } else fallback();
+  } else {
+    try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) { }
+    var fs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fs === host) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    host.classList.remove('pure');
+  }
+  setTimeout(function () { termFit(); if (TERM.t) TERM.t.focus(); }, 150);
+}
+$('tb-pure').onclick = function () { termPure(true); };
+['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+  document.addEventListener(ev, function () {
+    var host = $('term-host');
+    if (TL.pure && !(document.fullscreenElement || document.webkitFullscreenElement) && !host.classList.contains('pure')) termPure(false);
+  });
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && TL.pure && $('term-host').classList.contains('pure')) {
+    var at = Date.now();
+    if (TL.pureEsc && at - TL.pureEsc < 400) termPure(false);
+    TL.pureEsc = at;
+  }
+}, true);
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && TL.full) {
     var now = Date.now();
@@ -7614,6 +7671,7 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
       {icon: 'folder', words: 'The files of this chat', go: function () { if (t) chatFiles(t, true); }},
       {icon: 'list', words: 'Claude Code\'s commands', go: function () { $('tb-cmds').click(); }},
       {icon: 'edit', words: 'Write a longer text', go: function () { $('tb-compose').click(); }},
+      {icon: 'maximize', words: 'Only the terminal, over the whole screen', go: function () { termPure(true); }},
       {icon: 'unfold', words: TL.full ? 'Back from the whole window' : 'Over the whole window', go: function () { $('tb-full').click(); }},
       {icon: 'broom', words: 'Clear the screen', key: 'Ctrl+L', go: function () { termKeys('\x0c'); }}
     ];

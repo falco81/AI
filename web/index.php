@@ -393,6 +393,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
           <button class="btn small" id="tb-compose" data-icon="edit" title="A box to write longer text in, sent to the terminal at once - handy on a phone, or for many lines.">Write</button>
           <button class="btn small iconly" id="tb-font-" title="Smaller letters">A−</button>
           <button class="btn small iconly" id="tb-font+" title="Bigger letters">A+</button>
+          <button class="btn small iconly" id="tb-pure" data-icon="maximize" title="Only the terminal, over the whole screen - no bar, no buttons. Hold Esc to come back (or Esc twice where the browser cannot take the whole screen); the × in the corner when the mouse moves does it too."></button>
           <button class="btn small iconly" id="tb-full" data-icon="unfold" title="The terminal over the whole window (Esc twice, or this again, to come back)."></button>
           <button class="btn small" id="tb-more" data-icon="gear" title="Rename it, start it again, end it, open it in a window of its own.">More</button>
           <button class="btn small" id="tb-close" data-icon="out" title="Back to the start page. Only this window is closed: the chat goes on running on the server, and is opened again from the list.">Close</button>

@@ -1388,6 +1388,12 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Back from the whole screen':
+        'Zpět z celé obrazovky',
+    'Only the terminal, over the whole screen':
+        'Jen terminál přes celou obrazovku',
+    'Only the terminal, over the whole screen - no bar, no buttons. Hold Esc to come back (or Esc twice where the browser cannot take the whole screen); the × in the corner when the mouse moves does it too.':
+        'Jen terminál přes celou obrazovku – bez lišty a tlačítek. Zpět podržením Esc (nebo dvakrát Esc, kde prohlížeč celou obrazovku neumí); totéž udělá × v rohu, které se ukáže při pohybu myši.',
     'Ended lately':
         'Nedávno ukončené',
     'all of them':
