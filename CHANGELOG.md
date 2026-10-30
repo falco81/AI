@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.25
+
+- **A chat's choices changed while it runs**: *Change it…* on a chat's right button, its ⋯ and under More - its
+  name, working directory, model (any version), effort, permission mode and more words for Claude Code. Claude
+  Code takes these only when it starts, so the chat is started again in its own tile and goes on with its
+  conversation; a new folder gets the conversation's transcript too, where Claude Code looks for it. A shell
+  can be moved to another folder the same way.
+- Claude Code's own options a chat was started with (effort, tools, system prompt, agent...) are kept when it
+  is started again; only the model, the permission mode and the words were.
+
 ## 1.0.24
 
 - **Files only in the folder of the chats** (Settings -> Claude Code, shown once the folder of the chats is set):

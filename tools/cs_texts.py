@@ -1388,6 +1388,28 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Change it…':
+        'Upravit…',
+    'Change it - model, effort, permissions, folder…':
+        'Upravit – model, úsilí, oprávnění, složka…',
+    'Change it - name, folder…':
+        'Upravit – název, složka…',
+    'Change':
+        'Upravit',
+    'Its conversation goes with it to the new folder.':
+        'Jeho konverzace se přesune s ním do nové složky.',
+    'More words for Claude Code':
+        'Další parametry pro Claude Code',
+    'It is started again with these, going on with its conversation.':
+        'Spustí se znovu s těmito volbami a bude pokračovat ve své konverzaci.',
+    'Claude Code takes these only when it starts: it is started again in its own tile and goes on with its conversation. What it is doing right now is stopped.':
+        'Claude Code tyto volby bere jen při spuštění: spustí se znovu ve své dlaždici a bude pokračovat ve své konverzaci. To, co právě dělá, se přeruší.',
+    'A new folder starts the shell again in it.':
+        'Nová složka spustí shell znovu v ní.',
+    'Save and start it again':
+        'Uložit a spustit znovu',
+    'changed':
+        'změněno',
     'The server':
         'Server',
     'Claude Code - the chats':

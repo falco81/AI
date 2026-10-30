@@ -152,6 +152,15 @@ resume that conversation (`--resume`). A `/clear` or `/resume` inside the chat
 is followed: the tile holds the conversation it wrote last. **Close** in the
 terminal's bar only leaves it: back to the start page, it goes on running.
 
+## Changing a chat
+
+*Change it…* (the right button on a chat, its ⋯, or More) changes its name,
+working directory, model, effort, permission mode and more words for Claude
+Code. Claude Code reads these only when it starts, so the chat is started again
+in its own tile and goes on with its conversation (`--resume`); what it was
+doing just then is stopped. Moved to another folder, the conversation's
+transcript is copied to where Claude Code looks for it there.
+
 ## Nothing ends by closing the browser
 
 Each terminal is a tmux session on the server. Closing the browser, losing

@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.24'
+__version__ = '1.0.25'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -3925,6 +3925,11 @@ CC_OPTIONS = [
 ]
 
 
+# The options of CC_OPTIONS a chat keeps when started again: not the ones that
+# belong to its first start only.
+CC_KEEP = tuple(k for k, _f, _t in CC_OPTIONS if k not in ('session_id', 'fork', 'worktree', 'name'))
+
+
 def cc_option_args(opts):
     out = []
     for key, flag, kind in CC_OPTIONS:
@@ -4085,7 +4090,7 @@ class Terms:
                 'exit_status': lv['exit_status'] if lv else r['exit_status'],
                 'cols': lv['cols'] if lv else 0, 'rows': lv['rows'] if lv else 0,
                 'pane_title': lv['pane_title'] if lv else '',
-                'opts': {k: opts.get(k) for k in ('model', 'mode', 'resume', 'continue', 'args',
+                'opts': {k: opts.get(k) for k in ('model', 'mode', 'effort', 'resume', 'continue', 'args',
                                                   'command') if opts.get(k)}}
 
     def merge(self, live):
@@ -4276,8 +4281,10 @@ class Terms:
             if rc != 0:
                 raise Refused('tmux would not start it: %s' % (se or so).strip()[:300], 500)
             self.cache['at'] = 0
+        # Claude Code's own options kept too (1.0.25), so that starting it again -
+        # or with changes - starts it as it was chosen.
         keep = {k: v for k, v in opts.items() if k in ('model', 'mode', 'resume', 'continue', 'pick',
-                                                       'args', 'command', 'add_dirs')}
+                                                       'args', 'command', 'add_dirs') or k in CC_KEEP}
         if sid:
             keep['sid'] = sid
         if revive:
@@ -4426,6 +4433,59 @@ class Terms:
                 continue
             return it['id']
         return own
+
+    def edit(self, u, r, b):
+        """A chat's choices changed (1.0.25): its name, folder, model, effort,
+        permission mode, more words. Claude Code takes them only when started,
+        so it is started again in its own tile, going on with its conversation.
+        A new folder gets the conversation's transcript too, where Claude Code
+        looks for it (~/.claude/projects/<the folder>)."""
+        try:
+            opts = json.loads(r['opts'] or '{}')
+        except ValueError:
+            opts = {}
+        extra = {}
+        for k in ('model', 'mode', 'effort', 'args'):
+            if k in b:
+                v = str(b.get(k) or '').strip()
+                if k == 'effort' and v and v not in ('low', 'medium', 'high', 'xhigh', 'max'):
+                    raise Refused('the effort is low, medium, high, xhigh or max')
+                if k == 'model' and v and not re.match(r'^[A-Za-z0-9._\[\]:-]{1,80}\Z', v):
+                    raise Refused('that is not a name of a model')
+                extra[k] = v or None
+        title = clean_line(b.get('title'), 120) or r['title']
+        if title != r['title']:
+            self.store.x('UPDATE terms SET title=? WHERE id=?', (title, r['id']))
+            r = dict(r, title=title)
+        cwd = str(b.get('cwd') or '').strip() or r['cwd']
+        was = r['cwd']
+        pw = self.pw_of(r)
+        sid = self.claude_sid(r) if r['kind'] == 'claude' else ''
+        if os.path.normpath(cwd) != os.path.normpath(r['cwd']):
+            if not cwd.startswith('/'):
+                raise Refused('the folder is a full path')
+            cwd = os.path.normpath(cwd)
+            path_allowed(u, cwd)
+            root = chat_root_of(pw)
+            if root and not path_under(cwd, root):
+                raise Refused('a chat runs in %s or a folder under it, not in %s' % (root, cwd))
+            if not os.path.isdir(cwd):
+                raise Refused('%s is not a folder on this server' % cwd)
+            if sid:
+                cc_carry_transcript(pw, sid, cwd)
+        for k, v in extra.items():
+            if v is None:
+                opts.pop(k, None)
+            else:
+                opts[k] = v
+        self.store.x('UPDATE terms SET opts=? WHERE id=?', (json.dumps(opts), r['id']))
+        r = dict(r, opts=json.dumps(opts), cwd=cwd)
+        self.store.add_event('terminals', '%s changed "%s": %s' % (
+            u['name'], r['title'], ', '.join('%s %s' % (k, v or 'as Claude Code chooses') for k, v in extra.items())
+            + (' in %s' % cwd if cwd != was else '')), 'info', who=u['name'])
+        if r['kind'] == 'claude' or b.get('restart'):
+            return self.again(u, r, sid=sid or None)
+        return r['id']
 
     def again(self, u, r, sid=None, extra=None):
         """An ended terminal started afresh in its own place - its row, its
@@ -5084,6 +5144,29 @@ def path_under(path, root):
     """`path` is `root` or inside it, links followed."""
     real, top = os.path.realpath(path), os.path.realpath(root)
     return real == top or real.startswith(top.rstrip('/') + '/')
+
+
+def cc_carry_transcript(pw, sid, cwd):
+    """A conversation's transcript copied to where Claude Code looks for it
+    when started in `cwd` (1.0.25) - its folder of ~/.claude/projects is the
+    path with every other character than a letter or a digit a '-'."""
+    base = Path(pw.pw_dir) / '.claude' / 'projects'
+    src = next(iter(base.glob('*/%s.jsonl' % sid)), None) if UUID_RE.match(str(sid)) else None
+    if not src:
+        return False
+    dest_dir = base / re.sub(r'[^A-Za-z0-9]', '-', cwd)
+    dest = dest_dir / src.name
+    if dest == src:
+        return True
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(src), str(dest))
+    if os.geteuid() == 0:
+        for p in (dest_dir, dest):
+            try:
+                os.chown(str(p), pw.pw_uid, pw.pw_gid)
+            except OSError:
+                pass
+    return True
 
 
 def chat_root_of(pw=None):
@@ -8232,6 +8315,8 @@ def api_terms_do(c):
         return {'id': tm.restart(c.who, r)}
     elif do == 'again':
         return {'id': tm.again(c.who, r)}
+    elif do == 'edit':
+        return {'id': tm.edit(c.who, r, c.body)}
     elif do == 'rename':
         tm.rename(c.who, r, c.body.get('title'))
     elif do == 'forget':

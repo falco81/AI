@@ -1540,6 +1540,7 @@ $('tb-more').onclick = function () {
       {words: 'Start it again', icon: 'refresh', go: function () {
         api('terms', {do: 'restart', id: t.id}).then(function () { closeModal(); termOpen(t.id, $('term-host'), TERM.onState); }).catch(oops);
       }},
+      {words: 'Change it…', icon: 'gear', go: function () { termEdit(t); }},
       {words: 'In a window of its own', icon: 'unfold', go: function () {
         window.open(location.pathname + '#terms/' + t.id, '_blank');
         closeModal();
@@ -7618,6 +7619,7 @@ function termActions(t, row) {
           : (t.id === TL.open ? null : {icon: 'play', words: 'Open it', go: function () { openTerm(t.id); }}),
     !ended ? {icon: 'window', words: 'Open in a new window', go: function () { window.open(location.pathname + '#terms/' + t.id, '_blank'); }} : null,
     'sep',
+    {icon: 'gear', words: t.kind === 'claude' ? 'Change it - model, effort, permissions, folder…' : 'Change it - name, folder…', go: function () { termEdit(t); }},
     {icon: 'pin', words: isPinned(t.id) ? 'Unpin' : 'Pin', go: function () { togglePin(t); }},
     {icon: 'edit', words: 'Rename', go: function () { renameInline(t, row || document.querySelector('.tl-item[data-id="' + t.id + '"]')); }},
     {icon: 'folder', words: 'The files of this chat', disabled: ended && false, go: function () { if (t.id !== TL.open && !ended) openTerm(t.id); chatFiles(t, true); }},
@@ -7653,6 +7655,59 @@ function forgetEnded() {
       Promise.all(gone.map(function (x) { return api('terms', {do: 'forget', id: x.id}).catch(function () { }); }))
         .then(function () { toast(gone.length + ' taken off the list', 'good'); loadTerms(TL.open, true); });
     }, true);
+}
+/* A chat's choices changed (1.0.25): the name, the folder and - for Claude
+   Code - the model, the effort, the permission mode and more words. It is
+   started again in its own tile and goes on with its conversation. */
+var EFFORTS = [['', 'as Claude Code decides'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'extra high'], ['max', 'max']];
+function termEdit(t) {
+  var o = t.opts || {};
+  var f = {};
+  var withNow = function (list, v) { return v && !list.some(function (x) { return x[0] === v; }) ? list.concat([[v, v]]) : list; };
+  modal(txT('Change') + ' ' + t.title, function (body) {
+    var g = el('div', 'formgrid');
+    f.title = textBox(t.title, '');
+    g.appendChild(formField('Its name', f.title));
+    var dirWrap = el('div', 'btnrow');
+    f.cwd = textBox(t.cwd, '', 'mono');
+    f.cwd.style.flex = '1';
+    dirWrap.appendChild(f.cwd);
+    var browse = cmdButton('Choose…', 'archive', 'small');
+    browse.onclick = function () { pickFolder(f.cwd.value, function (p) { f.cwd.value = p; }); };
+    dirWrap.appendChild(browse);
+    var fd = formField('The working directory', dirWrap, t.kind === 'claude' ? 'Its conversation goes with it to the new folder.' : '');
+    fd.classList.add('span-2');
+    g.appendChild(fd);
+    if (t.kind === 'claude') {
+      f.model = selectBox(withNow(MODELS, o.model), o.model || '');
+      g.appendChild(formField('Model', f.model));
+      f.effort = selectBox(EFFORTS, o.effort || '');
+      g.appendChild(formField('Effort (--effort)', f.effort));
+      f.mode = selectBox(withNow(MODES, o.mode), o.mode || '');
+      g.appendChild(formField('Permissions', f.mode));
+      f.args = textBox(o.args || '', '--verbose …', 'mono');
+      g.appendChild(formField('More words for Claude Code', f.args));
+    }
+    body.appendChild(g);
+    var note = el('p', 'note');
+    note.style.marginTop = '16px';
+    note.textContent = txT(t.kind === 'claude'
+      ? (t.state === 'ended' ? 'It is started again with these, going on with its conversation.'
+        : 'Claude Code takes these only when it starts: it is started again in its own tile and goes on with its conversation. What it is doing right now is stopped.')
+      : 'A new folder starts the shell again in it.');
+    body.appendChild(note);
+  }, [{words: 'Close', close: true},
+      {words: 'Save and start it again', cls: 'primary', icon: 'refresh', go: function (b) {
+        var body = {do: 'edit', id: t.id, title: f.title.value, cwd: f.cwd.value.trim()};
+        if (t.kind === 'claude') { body.model = f.model.value; body.effort = f.effort.value; body.mode = f.mode.value; body.args = f.args.value; }
+        else if (f.cwd.value.trim() !== t.cwd) body.restart = true;
+        busy(b, true);
+        api('terms', body).then(function (d) {
+          closeModal();
+          toast('changed', 'good');
+          return loadTerms(d.id || t.id).then(function () { if ((d.id || t.id) === TL.open) termOpen(TL.open, $('term-host'), TERM.onState); });
+        }).catch(oops).then(function () { busy(b, false); });
+      }}], 'wide');
 }
 function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
 
