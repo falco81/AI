@@ -669,6 +669,32 @@ $('tl-new').onclick = function () { newTermAsk('claude'); };
 $('te-claude').onclick = function () { newTermAsk('claude'); };
 $('te-shell').onclick = function () { newTermAsk('shell'); };
 $('te-hist').onclick = function () { showTab('history'); };
+/* The right button anywhere on the list of terminals (1.0.11), not only on
+   a chat: what can be started from it, and how the list is shown. */
+(function () {
+  var side = $('term-side');
+  var menu = function (x, y) {
+    var all = $('tl-show').value === 'all';
+    ctxMenu(x, y, [{head: txT('Terminals')},
+      {icon: 'terminal', words: 'A new Claude Code…', go: function () { newTermAsk('claude'); }},
+      {icon: 'terminal', words: 'A new shell…', go: function () { newTermAsk('shell'); }},
+      {icon: 'history', words: 'Pick up a conversation', go: function () { showTab('history'); }},
+      'sep',
+      {icon: all ? 'eye' : 'list', words: all ? 'Only the running ones' : 'With the ended ones', go: function () {
+        $('tl-show').value = all ? 'live' : 'all';
+        drawTermList();
+      }},
+      {icon: 'search', words: 'Find a terminal', go: function () { side.classList.add('open'); $('tl-q').focus(); }},
+      narrow() ? null : {icon: 'pin', words: TLR.pinned ? 'Let the list hide itself' : 'Keep the list open', go: function () { pinSide(!TLR.pinned); }},
+      {icon: 'refresh', words: 'Read it again', go: function () { loadTerms(); }}]);
+  };
+  side.addEventListener('contextmenu', function (e) {
+    if (e.target.closest('.tl-item, input, select')) return;
+    e.preventDefault();
+    menu(e.clientX, e.clientY);
+  });
+  longPress(side, function (x, y, target) { if (!target.closest('.tl-item, input, select')) menu(x, y); });
+}());
 
 /* ---- the start, as claude.ai starts (1.0.9): a box to write the task in,
    the folder, the model, the mode and the effort as chips under it, and the

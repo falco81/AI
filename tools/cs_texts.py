@@ -1388,6 +1388,20 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'A new Claude Code…':
+        'Nový Claude Code…',
+    'A new shell…':
+        'Nový shell…',
+    'Only the running ones':
+        'Jen běžící',
+    'With the ended ones':
+        'I s ukončenými',
+    'Find a terminal':
+        'Najít terminál',
+    'Let the list hide itself':
+        'Nechat seznam schovávat',
+    'Keep the list open':
+        'Nechat seznam otevřený',
     'Open the folder':
         'Otevřít složku',
     'Copy its path':

@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.12
+
+- **The right button anywhere on the list of terminals**, not only on a chat: a new Claude Code or shell, picking
+  up a conversation, the ended ones shown or not, finding a terminal, the list kept open or hiding itself, read
+  again. A finger held still does the same on a tablet.
+
 ## 1.0.11
 
 - **The pinned menu of the settings moves the page aside again**: pinning it moved the Claude Code tab's page
