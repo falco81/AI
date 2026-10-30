@@ -132,5 +132,17 @@ check('a name of an agent or a command kept to what it may be', bool(ai.CC_NAME_
       and not ai.CC_NAME_RE.match('../x') and not ai.CC_NAME_RE.match('/etc'))
 check('the head of an agent read', ai.cc_front('---\nname: r\ndescription: Reviews\n---\nbody') == {'name': 'r', 'description': 'Reviews'})
 
+check('a million tokens of Opus 5.5 written at its list price', abs(ai.usage_cost('claude-opus-5-5', 0, 10**6, 0, 0) - 20.0) < 1e-9)
+check('the longest name of a model wins its price', abs(ai.usage_cost('claude-sonnet-5-5', 10**6, 0, 0, 0) - 2.0) < 1e-9
+      and abs(ai.usage_cost('claude-sonnet-4-6', 10**6, 0, 0, 0) - 3.0) < 1e-9)
+check('a model of no known price said so', ai.usage_cost('gpt-9', 1, 1, 1, 1) is None)
+_tr = os.path.join(tempfile.mkdtemp(), 'x.jsonl')
+with open(_tr, 'w') as _f:
+    for _ in range(2):      # one answer written twice, once per block
+        _f.write(json.dumps({'timestamp': '2026-10-30T08:00:00Z', 'cwd': '/srv/x', 'message': {'id': 'm1', 'model': 'claude-opus-5-5',
+                             'usage': {'input_tokens': 3, 'output_tokens': 5, 'cache_read_input_tokens': 7}}}) + '\n')
+check('an answer of a transcript counted once', ai.usage_file_rows(_tr, os.stat(_tr)) == [
+    ('2026-10-30', 'claude-opus-5-5', '/srv/x', 3, 5, 0, 7, '2026-10-30T08:00:00Z')])
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

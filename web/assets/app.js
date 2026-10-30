@@ -1892,6 +1892,7 @@ function setCard(id, value, sub, tone) {
   if (tone) $('card-' + id).className = 'card metric ' + tone;
 }
 function loadOverview() {
+  if (typeof loadUsage === 'function') loadUsage();
   api('overview').then(function (d) {
     var running = d.terms.filter(function (t) { return t.state !== 'ended'; });
     setCard('terms', num(running.length), running.filter(function (t) { return t.kind === 'claude'; }).length + ' Claude Code · ' + running.filter(function (t) { return t.viewers; }).length + ' open now', 'info');

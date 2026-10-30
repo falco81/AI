@@ -20,3 +20,27 @@ account.
 | Background sessions | what `claude agents` lists; a background one opened in a terminal (`claude attach`), its output, stopped, removed | |
 | Usage | the tokens of the conversations by day, model and folder | `~/.claude/projects/*/*.jsonl` |
 | Keyboard | `keybindings.json` | `~/.claude/keybindings.json` |
+
+## What the chats used - on the Overview
+
+The Overview tab counts every chat with Claude Code of the Linux accounts you
+may see (an administrator: every account with Claude Code's transcripts; a
+user: their own), over 7 days, 30, 90 or a year:
+
+- the estimated cost, the chats, the cost per chat, the answers, the tokens
+  written by Claude, sent, and read from the cache, and the cache's share;
+- by day and by hour of the day, as cost or as tokens;
+- by model, by account and by folder;
+- every chat - its first words or summary, account, folder, model, answers,
+  tokens, cost and when last - found by words, folder or model and sorted by
+  newest, dearest, longest or most written. A click opens its terminal when it
+  still runs; the right button (a finger held still) picks it up again with
+  `--resume`, copies its ID or the command, or opens its folder in Files.
+
+It is read from Claude Code's own transcripts
+(`~/.claude/projects/*/*.jsonl`), each answer counted once. The cost is an
+estimate at Anthropic's list prices per token (writing the cache is 1.25 x
+input), to compare by: a Claude subscription is not billed by the token. A
+model of no known price is named under the figures and counted at nothing.
+The terminal of a chat is the Claude Code terminal of the same account and
+folder that was open when the chat began.

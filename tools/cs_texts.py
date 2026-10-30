@@ -1388,6 +1388,68 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    "From Claude Code's own transcripts of these Linux accounts:":
+        'Z vlastních záznamů Claude Code těchto účtů Linuxu:',
+    "The cost is an estimate at Anthropic's list prices per token, to compare by - a Claude subscription is not billed by the token.":
+        'Cena je odhad podle ceníku Anthropic za token, pro srovnání – předplatné Claude se po tokenech neúčtuje.',
+    'No price known for:':
+        'Neznámá cena pro:',
+    'By account':
+        'Po účtech',
+    'By hour of the day':
+        'Po hodinách dne',
+    'Cache share':
+        'Podíl cache',
+    'Chat':
+        'Chat',
+    'Chats':
+        'Chaty',
+    'Claude Code: what the chats used':
+        'Claude Code: co chaty spotřebovaly',
+    'Copy its ID':
+        'Zkopírovat ID',
+    'Copy the command to pick it up':
+        'Zkopírovat příkaz k navázání',
+    'Cost':
+        'Cena',
+    'Count again':
+        'Spočítat znovu',
+    'Estimated cost':
+        'Odhad ceny',
+    'Its folder in Files':
+        'Jeho složka v Souborech',
+    'Only the first 300 shown - find a chat to narrow it.':
+        'Zobrazeno jen prvních 300 – zúžte hledáním.',
+    'Open its terminal':
+        'Otevřít jeho terminál',
+    'Per chat':
+        'Na chat',
+    'Pick it up again (--resume)':
+        'Navázat (--resume)',
+    'The chats':
+        'Chaty',
+    'Written by Claude':
+        'Napsal Claude',
+    'cost':
+        'cena',
+    'tokens':
+        'tokeny',
+    'counting the chats…':
+        'počítám chaty…',
+    'find a chat - words, folder, model…':
+        'najít chat – slova, složka, model…',
+    'its terminal ended':
+        'terminál skončil',
+    'newest first':
+        'nejnovější první',
+    'no account':
+        'žádného účtu',
+    'the dearest first':
+        'nejdražší první',
+    'the longest first':
+        'nejdelší první',
+    'the most written first':
+        'nejvíc napsáno první',
     'A new Claude Code…':
         'Nový Claude Code…',
     'A new shell…':

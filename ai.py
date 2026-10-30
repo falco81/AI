@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.12'
+__version__ = '1.0.13'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -8013,6 +8013,13 @@ def api_overview(c):
 
 
 # ---- the terminals ----------------------------------------------------------------------
+@route('GET', '/api/usage')
+def api_usage(c):
+    """What the chats with Claude Code used (1.0.13): each chat, and by day,
+    model, account, folder and hour - the Overview's statistics."""
+    return chat_usage(c.daemon, c.who, int(c.arg('days', '30') or 30))
+
+
 @route('GET', '/api/terms')
 def api_terms(c):
     terms = c.daemon.terms.list(c.who)
@@ -8375,6 +8382,202 @@ def cc_mcp(pw, project):
     return out
 
 
+def usage_file_rows(path, st):
+    """Every answer of one transcript that says what it used, once each (a
+    message is written again for every block of it): (day, model, folder,
+    input, output, cache written, cache read, timestamp). Kept while the file
+    stays the same size and age."""
+    key = (path, st.st_mtime, st.st_size)
+    rows = CC_USAGE_CACHE.get(key)
+    if rows is not None:
+        return rows
+    rows = []
+    seen = set()
+    try:
+        with open(path, encoding='utf-8', errors='replace') as fh:
+            for line in fh:
+                if '"usage"' not in line:
+                    continue
+                try:
+                    m = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(m, dict):
+                    continue
+                msg = m.get('message') or {}
+                u = msg.get('usage') if isinstance(msg, dict) else None
+                mid = (msg.get('id') if isinstance(msg, dict) else None) or m.get('uuid')
+                if not isinstance(u, dict) or not u or mid in seen:
+                    continue
+                seen.add(mid)
+                ts = str(m.get('timestamp') or '')
+                rows.append((ts[:10], str(msg.get('model') or '?'),
+                             str(m.get('cwd') or os.path.basename(os.path.dirname(path))),
+                             int(u.get('input_tokens') or 0), int(u.get('output_tokens') or 0),
+                             int(u.get('cache_creation_input_tokens') or 0),
+                             int(u.get('cache_read_input_tokens') or 0), ts))
+    except OSError:
+        return None
+    for k in [k for k in CC_USAGE_CACHE if k[0] == path]:
+        CC_USAGE_CACHE.pop(k, None)
+    CC_USAGE_CACHE[key] = rows
+    return rows
+
+
+# What a million tokens costs at Anthropic's list prices (1.0.13): input,
+# output, cache read; writing the cache is 1.25 x input. Matched by the
+# start of the model's name, the longest first. Only an estimate for
+# comparison - a Claude subscription is not billed by the token at all.
+MODEL_PRICES = [
+    ('claude-fable-5-1', 10.0, 50.0, 0.25), ('claude-mythos-5-1', 10.0, 50.0, 0.25),
+    ('claude-fable-5', 10.0, 50.0, 1.0), ('claude-mythos', 10.0, 50.0, 1.0),
+    ('claude-opus-5-5', 4.0, 20.0, 0.20), ('claude-opus-5', 5.0, 25.0, 0.50),
+    ('claude-opus-4-8', 5.0, 25.0, 0.50), ('claude-opus-4-7', 5.0, 25.0, 0.50),
+    ('claude-opus-4-6', 5.0, 25.0, 0.50), ('claude-opus-4-5', 5.0, 25.0, 0.50),
+    ('claude-opus-4', 15.0, 75.0, 1.50), ('claude-3-opus', 15.0, 75.0, 1.50),
+    ('claude-sonnet-5-5', 2.0, 10.0, 0.20), ('claude-sonnet-5', 2.0, 10.0, 0.20),
+    ('claude-sonnet', 3.0, 15.0, 0.30), ('claude-3-7-sonnet', 3.0, 15.0, 0.30),
+    ('claude-3-5-sonnet', 3.0, 15.0, 0.30),
+    ('claude-haiku-5-5', 0.10, 0.50, 0.01), ('claude-haiku-4-5', 1.0, 5.0, 0.10),
+    ('claude-3-5-haiku', 0.80, 4.0, 0.08), ('claude-haiku', 1.0, 5.0, 0.10),
+]
+MODEL_PRICES.sort(key=lambda p: -len(p[0]))
+
+
+def usage_cost(model, i, o, cw, cr):
+    """Dollars at list prices, or None for a model not in the table."""
+    m = str(model or '').lower()
+    for name, pin, pout, pread in MODEL_PRICES:
+        if m.startswith(name):
+            return (i * pin + o * pout + cw * pin * 1.25 + cr * pread) / 1e6
+    return None
+
+
+def usage_accounts(who):
+    """The Linux accounts whose chats someone may count: an administrator
+    every one with Claude Code's transcripts, anybody else their own."""
+    if who.get('role') != 'admin':
+        try:
+            return [linux_user(run_as_of(who))]
+        except Refused:
+            return []
+    out = []
+    for pw in pwd.getpwall():
+        if pw.pw_uid != 0 and pw.pw_uid < 1000:
+            continue
+        if os.path.isdir(os.path.join(pw.pw_dir, '.claude', 'projects')):
+            out.append(pw)
+    return out
+
+
+def chat_usage(daemon, who, days=30):
+    """Every chat with Claude Code of the accounts someone may see, with what
+    it used and what that would cost at list prices - and the same by day,
+    model, account and folder. A chat is one transcript of Claude Code; the
+    terminal of these pages it ran in is found by its account, its folder and
+    its time."""
+    days = max(1, min(366, int(days or 30)))
+    since = time.time() - days * 86400
+    cut = datetime.fromtimestamp(since).strftime('%Y-%m-%d')
+    zero = lambda k: {'key': k, 'input': 0, 'output': 0, 'cache_write': 0, 'cache_read': 0,
+                      'messages': 0, 'cost': 0.0, 'chats': 0}
+    total = zero('all')
+    books = {'day': {}, 'model': {}, 'account': {}, 'project': {}, 'hour': {}}
+    chats, unpriced = [], set()
+    terms = daemon.store.q('SELECT id, owner, run_as, title, kind, cwd, created, ended FROM terms')
+    for pw in usage_accounts(who):
+        top = Path(pw.pw_dir) / '.claude' / 'projects'
+        for f in top.glob('*/*.jsonl'):
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if st.st_mtime < since or not UUID_RE.match(f.stem):
+                continue
+            rows = usage_file_rows(str(f), st)
+            if not rows:
+                continue
+            ch = dict(zero(f.stem), id=f.stem, account=pw.pw_name, cwd='', first='', last='', models={})
+            for day, model, cwd, i, o, cw, cr, ts in rows:
+                if (day and day < cut) or model == '<synthetic>':
+                    continue
+                cost = usage_cost(model, i, o, cw, cr)
+                if cost is None:
+                    unpriced.add(model)
+                    cost = 0.0
+                ch['cwd'] = ch['cwd'] or cwd
+                ch.setdefault('_dirs', set()).add(cwd)
+                ch['first'] = min(ch['first'] or ts, ts) if ts else ch['first']
+                ch['last'] = max(ch['last'], ts)
+                ch['models'][model] = ch['models'].get(model, 0) + 1
+                hour = ''
+                if len(ts) >= 13:
+                    try:
+                        hour = '%02d' % datetime.fromisoformat(ts.replace('Z', '+00:00')).astimezone().hour
+                    except ValueError:
+                        hour = ts[11:13]
+                for b in [ch, total] + [books[n].setdefault(k, zero(k)) for n, k in
+                                        (('day', day), ('model', model), ('account', pw.pw_name),
+                                         ('project', cwd), ('hour', hour)) if k]:
+                    b['input'] += i
+                    b['output'] += o
+                    b['cache_write'] += cw
+                    b['cache_read'] += cr
+                    b['messages'] += 1
+                    b['cost'] += cost
+            if not ch['messages']:
+                continue
+            for m in ch['models']:
+                books['model'][m]['chats'] += 1
+            books['account'][pw.pw_name]['chats'] += 1
+            for k in ch.pop('_dirs', ()):
+                books['project'][k]['chats'] += 1
+            total['chats'] += 1
+            facts = conversation_facts(str(f)) or {}
+            ch['title'] = facts.get('summary') or facts.get('first') or ''
+            ch['models'] = sorted(ch['models'], key=lambda m: -ch['models'][m])
+            ch['term'] = usage_term(terms, pw.pw_name, ch)
+            chats.append(ch)
+    chats.sort(key=lambda c: c['last'], reverse=True)
+    for c in chats:
+        c['cost'] = round(c['cost'], 4)
+    out = {'days': days, 'total': dict(total, cost=round(total['cost'], 4)),
+           'chats': chats[:500], 'more': max(0, len(chats) - 500), 'unpriced': sorted(unpriced),
+           'accounts': [pw.pw_name for pw in usage_accounts(who)]}
+    for n, b in books.items():
+        rows = [dict(v, cost=round(v['cost'], 4)) for v in b.values()]
+        if n in ('day', 'hour'):
+            rows.sort(key=lambda x: x['key'])
+        else:
+            rows.sort(key=lambda x: (-x['cost'], -(x['input'] + x['output'])))
+        out['by_' + n] = rows[:60] if n == 'project' else rows
+    return out
+
+
+def _ts_epoch(ts):
+    try:
+        return datetime.fromisoformat(str(ts).replace('Z', '+00:00')).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def usage_term(terms, account, ch):
+    """The terminal of these pages a chat most likely ran in: Claude Code, the
+    same account and folder, open while the chat began."""
+    t0 = _ts_epoch(ch['first'])
+    best = None
+    for t in terms:
+        if t.get('kind') != 'claude' or t.get('run_as') != account:
+            continue
+        if os.path.normpath(str(t.get('cwd') or '')) != os.path.normpath(ch['cwd'] or ''):
+            continue
+        start, end = float(t.get('created') or 0), float(t.get('ended') or 0) or time.time()
+        if t0 and start - 120 <= t0 <= end + 60:
+            if best is None or float(t['created']) > float(best['created']):
+                best = t
+    return {'id': best['id'], 'title': best.get('title') or ''} if best else None
+
+
 def cc_usage(pw, days=30):
     """What the conversations of an account used, from Claude Code's own
     transcripts: tokens by day, by model and by project folder."""
@@ -8391,39 +8594,12 @@ def cc_usage(pw, days=30):
             continue
         if st.st_mtime < since:
             continue
-        key = (str(f), st.st_mtime, st.st_size)
-        rows = CC_USAGE_CACHE.get(key)
+        rows = usage_file_rows(str(f), st)
         if rows is None:
-            rows = []
-            seen = set()
-            try:
-                with open(str(f), encoding='utf-8', errors='replace') as fh:
-                    for line in fh:
-                        if '"usage"' not in line:
-                            continue
-                        try:
-                            m = json.loads(line)
-                        except ValueError:
-                            continue
-                        msg = m.get('message') or {}
-                        u = msg.get('usage') or {}
-                        mid = msg.get('id') or m.get('uuid')
-                        if not u or mid in seen:
-                            continue
-                        seen.add(mid)
-                        rows.append((str(m.get('timestamp') or '')[:10], str(msg.get('model') or '?'),
-                                     str(m.get('cwd') or f.parent.name), int(u.get('input_tokens') or 0),
-                                     int(u.get('output_tokens') or 0),
-                                     int(u.get('cache_creation_input_tokens') or 0),
-                                     int(u.get('cache_read_input_tokens') or 0)))
-            except OSError:
-                continue
-            for k in [k for k in CC_USAGE_CACHE if k[0] == str(f)]:
-                CC_USAGE_CACHE.pop(k, None)
-            CC_USAGE_CACHE[key] = rows
+            continue
         cut = datetime.fromtimestamp(since).strftime('%Y-%m-%d')
         used = False
-        for day, model, cwd, i, o, cw, cr in rows:
+        for day, model, cwd, i, o, cw, cr, _ts in rows:
             if (day and day < cut) or model == '<synthetic>':
                 continue
             used = True

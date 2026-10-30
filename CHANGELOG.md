@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.13
+
+- **What the chats used, on the Overview**: every chat with Claude Code of the accounts you may see, with its
+  answers, tokens (written, sent, cache) and an estimated cost at Anthropic's list prices; the same by day, hour
+  of the day, model, account and folder, as cost or as tokens, over 7 days to a year. A chat opens in its
+  terminal, or is picked up again with `--resume`; found and sorted by newest, dearest, longest. A Claude
+  subscription is not billed by the token: the cost is there to compare by.
+- **Even spacing in the Claude Code tab**: the account and project bar, the heading, each card and the row of
+  tiles are 16 pixels apart everywhere - the tiles touched the card above them.
+
 ## 1.0.12
 
 - **The right button anywhere on the list of terminals**, not only on a chat: a new Claude Code or shell, picking

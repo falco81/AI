@@ -536,6 +536,7 @@ var ICONS = {
     + 'M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   chart: '<path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-8"/>',
+  dollar: '<path d="M12 3v18"/><path d="M16 7.5c0-1.9-1.8-3-4-3s-4 1.1-4 3 1.8 2.6 4 3 4 1.1 4 3-1.8 3-4 3-4-1.1-4-3"/>',
   log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5h.01"/>',
   add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',

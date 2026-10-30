@@ -115,7 +115,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -512,6 +512,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <div class="card"><h2>Signed in now</h2><div id="ov-signed"></div>
       <h2 style="margin-top:16px">Lately</h2><div id="ov-events"></div></div>
   </div>
+  <div class="card full ov-usage" id="ov-usage"></div>
 </section>
 
 <!-- ===================== Events ===================== -->
@@ -1111,5 +1112,6 @@ var PHP_SAFETY = <?= $admin ? json_encode(ai_php_safety(), JSON_HEX_TAG | JSON_H
 <script nonce="<?= h($nonce) ?>" src="/assets/app.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/system.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>" src="/assets/cc.js?v=<?= h(AI_VERSION) ?>"></script>
+<script nonce="<?= h($nonce) ?>" src="/assets/usage.js?v=<?= h(AI_VERSION) ?>"></script>
 </body>
 </html>
