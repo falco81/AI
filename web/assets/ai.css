@@ -3558,3 +3558,4 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 #term-host:fullscreen .term-pure-x,.term-host.pure .term-pure-x{display:grid}
 .term-pure-x.shown,.term-pure-x:hover,.term-pure-x:focus-visible{opacity:1}
 @media (pointer:coarse){#term-host:fullscreen .term-pure-x,.term-host.pure .term-pure-x{opacity:.6}}
+#te-recent .cx-folders{margin-bottom:22px}

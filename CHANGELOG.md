@@ -3,6 +3,11 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.21
+
+- On the start page *Folders used lately* stands above *Going on*, next to the box whose folder it sets, with
+  room under it; its heading is in Czech too.
+
 ## 1.0.20
 
 - **Only the terminal, over the whole screen**: a button in the terminal's bar (four corners) - and on the

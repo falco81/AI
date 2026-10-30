@@ -772,6 +772,22 @@ function drawTermEmpty() {
   setTimeout(function () { if (!$('term-empty').hidden && !('ontouchstart' in window)) $('cx-text').focus(); }, 60);
   var host = $('te-recent');
   clear(host);
+  /* The folders first (1.0.21): a click there sets where the box above starts, so it belongs next to it. */
+  var recent = (prefs().recent || []).slice(0, 8);
+  if (recent.length) {
+    host.appendChild(el('h3', 'cx-h', 'Folders used lately'));
+    var row = el('div', 'cx-folders');
+    recent.forEach(function (p) {
+      var b = el('button', 'cx-chip');
+      b.type = 'button';
+      b.innerHTML = iconMarkup('folder', 14);
+      b.appendChild(noI18n(el('span', '', baseName(p))));
+      b.title = p;
+      b.onclick = function () { CX.cwd = p; cxDraw(); $('cx-text').focus(); };
+      row.appendChild(b);
+    });
+    host.appendChild(row);
+  }
   var card = function (t) {
     var ended = t.state === 'ended';
     var c = el('button', 'cx-card' + (ended ? ' ended' : ''));
@@ -831,21 +847,6 @@ function drawTermEmpty() {
     var g2 = el('div', 'cx-cards');
     gone.slice(0, 6).forEach(function (t) { g2.appendChild(card(t)); });
     host.appendChild(g2);
-  }
-  var recent = (prefs().recent || []).slice(0, 8);
-  if (recent.length) {
-    host.appendChild(el('h3', 'cx-h', 'Folders used lately'));
-    var row = el('div', 'cx-folders');
-    recent.forEach(function (p) {
-      var b = el('button', 'cx-chip');
-      b.type = 'button';
-      b.innerHTML = iconMarkup('folder', 14);
-      b.appendChild(noI18n(el('span', '', baseName(p))));
-      b.title = p;
-      b.onclick = function () { CX.cwd = p; cxDraw(); $('cx-text').focus(); };
-      row.appendChild(b);
-    });
-    host.appendChild(row);
   }
 }
 

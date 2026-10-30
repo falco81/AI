@@ -1388,6 +1388,8 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Folders used lately':
+        'Nedávno použité složky',
     'Back from the whole screen':
         'Zpět z celé obrazovky',
     'Only the terminal, over the whole screen':
