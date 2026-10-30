@@ -118,6 +118,16 @@ under the pointer. The menu of the settings and of the Claude Code tab is otp's:
 pointed at it lies over the page, pinned the page moves aside beside it. On a phone the list and the
 terminal take the screen in turn.
 
+## A chat and its tile
+
+A chat with Claude Code is given its conversation's ID when it starts, and
+keeps its tile in the list: picking that conversation up again (Conversations,
+the Overview, its menu) opens the tile if it runs, or starts it again in its
+own place - name and pin kept - if it ended; *Start it again* and *Restart*
+resume that conversation (`--resume`). A `/clear` or `/resume` inside the chat
+is followed: the tile holds the conversation it wrote last. **Close** in the
+terminal's bar only leaves it: back to the start page, it goes on running.
+
 ## Nothing ends by closing the browser
 
 Each terminal is a tmux session on the server. Closing the browser, losing

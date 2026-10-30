@@ -1388,6 +1388,18 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Opus - the newest':
+        'Opus – nejnovější',
+    'Sonnet - the newest':
+        'Sonnet – nejnovější',
+    'Haiku - the newest':
+        'Haiku – nejnovější',
+    'Fable - the newest':
+        'Fable – nejnovější',
+    'A family (always its newest) or one version. Any other name of a model can be written in the JSON below.':
+        'Rodina (vždy její nejnovější) nebo jedna verze. Jakýkoli jiný název modelu lze zapsat do JSON níže.',
+    'Back to the start page. Only this window is closed: the chat goes on running on the server, and is opened again from the list.':
+        'Zpět na úvodní stránku. Zavře se jen toto okno: chat běží na serveru dál a otevřete ho znovu ze seznamu.',
     'Only in':
         'Jen ve složce',
     'and the folders under it.':

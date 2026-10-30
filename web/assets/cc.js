@@ -271,7 +271,7 @@ function ccText(host, kind, scope, opts) {
 
 /* ---- settings.json: the usual ones as fields, the rest as JSON ------------------- */
 var CC_SET_FIELDS = [
-  ['model', 'The model', 'select', [['', 'as Claude Code decides'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['fable', 'Fable'], ['opusplan', 'Opus to plan, Sonnet to do']], 'Any other name of a model can be written in the JSON below.'],
+  ['model', 'The model', 'select', [['', 'as Claude Code decides']].concat(MODELS.slice(1)), 'A family (always its newest) or one version. Any other name of a model can be written in the JSON below.'],
   ['permissions.defaultMode', 'Permission mode at the start', 'select', CC_MODES, ''],
   ['effortLevel', 'Effort', 'select', [['', 'as Claude Code decides'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'extra high'], ['max', 'max']], ''],
   ['outputStyle', 'Output style', 'text', null, 'The name of a style: Default, Explanatory, Learning or one of yours.'],

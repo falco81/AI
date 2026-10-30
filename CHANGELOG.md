@@ -3,6 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.16
+
+- **A chat keeps its tile**: each chat with Claude Code is given its conversation's ID when it starts
+  (`--session-id`), and ai keeps it. Picking a conversation up again (Conversations, the Overview, the chat's
+  menu) goes back into the terminal that holds it - opened if it still runs, started again in its own place if
+  it ended, with its name and its pin - instead of a new tile. *Start it again* and *Restart* go on with the
+  chat's own conversation (`--resume`), not the folder's last one or an empty new one; a `/clear` or a
+  `/resume` inside the chat is followed.
+- **Close** in the terminal's bar: back to the start page, the chat goes on running on the server.
+- **Every version of the models**: Fable 5.1 and 5, Opus 5.5 to 4.6, Sonnet 5.5 to 4.6, Haiku 5.5 and 4.5 by
+  name, beside the families (always their newest) - in the new terminal dialog, the start page and Claude
+  Code's settings.
+- **F5 anywhere keeps the page**: a page opened at its address (Settings -> Network, Time, the Overview's usage,
+  the Claude Code tab) asked for its data before the scripts that load it were there, and stayed empty.
+
 ## 1.0.15
 
 - The ⋯ of a chat in the list of terminals is in the row's bottom right corner: at the top it lay over the

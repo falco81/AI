@@ -3527,3 +3527,4 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 #ov-usage td.num{font-family:inherit;font-size:13px;font-variant-numeric:tabular-nums;vertical-align:middle}
 #ov-usage td.num.muted{color:var(--tx-dim)}
 #ov-usage td{vertical-align:middle}
+.ctx{max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain}

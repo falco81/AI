@@ -395,6 +395,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
           <button class="btn small iconly" id="tb-font+" title="Bigger letters">A+</button>
           <button class="btn small iconly" id="tb-full" data-icon="unfold" title="The terminal over the whole window (Esc twice, or this again, to come back)."></button>
           <button class="btn small" id="tb-more" data-icon="gear" title="Rename it, start it again, end it, open it in a window of its own.">More</button>
+          <button class="btn small" id="tb-close" data-icon="out" title="Back to the start page. Only this window is closed: the chat goes on running on the server, and is opened again from the list.">Close</button>
         </div>
         <div class="term-split" id="term-split">
         <div class="term-host" id="term-host" data-no-i18n>

@@ -833,8 +833,15 @@ function endedPeek(t) {
 }
 
 /* ---- a new one ---------------------------------------------------------------- */
-var MODELS = [['', 'as Claude Code chooses'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'],
-              ['fable', 'Fable'], ['opusplan', 'Opus to plan, Sonnet to do']];
+/* The families (always their newest), then each version by its own name
+   (1.0.16) - as claude.ai offers them; --model takes either. */
+var MODELS = [['', 'as Claude Code chooses'], ['opus', 'Opus - the newest'], ['sonnet', 'Sonnet - the newest'],
+              ['haiku', 'Haiku - the newest'], ['fable', 'Fable - the newest'], ['opusplan', 'Opus to plan, Sonnet to do'],
+              ['claude-fable-5-1', 'Fable 5.1'], ['claude-fable-5', 'Fable 5'],
+              ['claude-opus-5-5', 'Opus 5.5'], ['claude-opus-5', 'Opus 5'], ['claude-opus-4-8', 'Opus 4.8'],
+              ['claude-opus-4-7', 'Opus 4.7'], ['claude-opus-4-6', 'Opus 4.6'],
+              ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-sonnet-5', 'Sonnet 5'], ['claude-sonnet-4-6', 'Sonnet 4.6'],
+              ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-haiku-4-5', 'Haiku 4.5']];
 var MODES = [['', 'ask before changes (default)'], ['acceptEdits', 'accept edits by itself'],
              ['plan', 'plan only'], ['auto', 'auto (a classifier decides)'], ['manual', 'manual (ask for everything)'],
              ['dontAsk', 'do not ask (deny what is not allowed)'], ['bypassPermissions', 'never ask (bypass permissions)']];
@@ -1295,6 +1302,8 @@ function termEnded(id) {
   box.appendChild(row);
   box.hidden = false;
 }
+/* Close (1.0.16): the window only, back to the start page - nothing is ended. */
+$('tb-close').onclick = function () { closeTermView(); loadTerms(); };
 function closeTermView() {
   termClose();
   $('term-files').hidden = true;
@@ -4058,7 +4067,11 @@ $('ab-log').onclick = function () {
 /* ==========================================================================
    Starting
    ========================================================================== */
-(function start() {
+/* Started once every script of the page is there (1.0.16): run where it
+   stands, a page opened at #settings/network - F5 anywhere - asked for
+   system.js's, cc.js's and usage.js's loaders before they were loaded, and
+   the pane stayed empty. */
+function startPage() {
   hideForRole();
   dressButtons(document);
   explainWhatWasDrawn(document);
@@ -4071,7 +4084,9 @@ $('ab-log').onclick = function () {
   liveLoop();
   if (ME && ME.must_change) setTimeout(mustChange, 50);
   window.addEventListener('beforeunload', function () { termClose(); });
-}());
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startPage);
+else setTimeout(startPage, 0);
 
 /* ---- from otp: who is locked out (1.0.112) -------------------------------------
    Who has wrong attempts counted, how long the lockout still runs - cleared

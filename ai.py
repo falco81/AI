@@ -70,6 +70,7 @@ import tempfile
 import termios
 import threading
 import time
+import uuid
 import traceback
 import urllib.error
 import urllib.parse
@@ -79,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.15'
+__version__ = '1.0.16'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4148,7 +4149,9 @@ class Terms:
                 '    curl -fsSL https://claude.ai/install.sh | bash\\n\\n" "$(id -un)"; '
                 'exec "${SHELL:-/bin/bash}" -l; fi; exec %s %s' % (exe, cmd.replace('"', ''), exe, q))
 
-    def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None):
+    def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None, tid=None):
+        """A terminal started - a new one, or (`tid`) an ended one of the list
+        started again in its own place: its row, its name, its pin."""
         opts = dict(opts or {})
         if kind not in ('claude', 'shell', 'command'):
             raise Refused('a terminal is claude, shell or command')
@@ -4174,8 +4177,24 @@ class Terms:
                     os.chown(cwd, pw.pw_uid, pw.pw_gid)
             else:
                 raise Refused('%s is not a folder on this server' % cwd)
-        tid = secrets.token_hex(4)
+        revive = bool(tid)
+        tid = tid or secrets.token_hex(4)
         name = 'ai-' + tid
+        # Which conversation of Claude Code it holds (1.0.16): a new one is
+        # given its ID here (--session-id), so that the chat is found again -
+        # picked up, started again - in this terminal and not in a new one.
+        sid = ''
+        if kind == 'claude' and not opts.get('attach'):
+            if opts.get('resume') and not opts.get('fork') and UUID_RE.match(str(opts['resume'])):
+                sid = str(opts['resume'])
+            elif opts.get('session_id'):
+                sid = str(opts['session_id'])
+            elif not any(opts.get(k) for k in ('resume', 'continue', 'pick', 'fork')):
+                sid = str(uuid.uuid4())
+                opts['session_id'] = sid
+        if revive:
+            # Whatever is left of it in tmux (a pane that ended, still shown) goes first.
+            self.tmux(pw, ['kill-session', '-t', name])
         env = env_lines(CONFIG.get('claude_env'))
         env.update({'AI_TERMINAL': tid, 'LANG': str(CONFIG.get('term_lang') or 'C.UTF-8')})
         shell = pw.pw_shell if pw.pw_shell and os.path.exists(pw.pw_shell) and \
@@ -4205,6 +4224,15 @@ class Terms:
             self.cache['at'] = 0
         keep = {k: v for k, v in opts.items() if k in ('model', 'mode', 'resume', 'continue', 'pick',
                                                        'args', 'command', 'add_dirs')}
+        if sid:
+            keep['sid'] = sid
+        if revive:
+            self.store.x('UPDATE terms SET ended=NULL, last_screen=NULL, exit_status=NULL, cwd=?, opts=?, '
+                         'title=? WHERE id=?', (cwd, json.dumps(keep), clean_line(title, 120), tid))
+            self.store.add_event('terminals', '%s started "%s" again%s' % (
+                u['name'], clean_line(title, 120), ' - its conversation %s' % opts['resume'][:8]
+                if opts.get('resume') else ''), 'info', who=u['name'])
+            return tid
         self.store.x('INSERT INTO terms(id,owner,run_as,title,kind,cwd,opts,created) VALUES(?,?,?,?,?,?,?,?)',
                      (tid, u['name'], pw.pw_name, clean_line(title, 120), kind, cwd, json.dumps(keep),
                       time.time()))
@@ -4292,6 +4320,11 @@ class Terms:
                              'info', who=u['name'])
 
     def restart(self, u, r):
+        """Started again where it is. A chat with Claude Code goes on with its
+        own conversation (1.0.16) - run again as it was, a new chat began a new,
+        empty one each time, or failed on its session ID."""
+        if r['kind'] == 'claude':
+            return self.again(u, r)
         pw = self.pw_of(r)
         rc, so, se = self.tmux(pw, ['respawn-pane', '-k', '-t', 'ai-' + r['id']])
         if rc != 0:
@@ -4299,17 +4332,79 @@ class Terms:
         self.cache['at'] = 0
         self.store.add_event('terminals', '%s started the terminal "%s" again' % (u['name'], r['title']),
                              'info', who=u['name'])
+        return r['id']
 
-    def again(self, u, r):
-        """An ended terminal started afresh - the same kind, folder and choices."""
+    def claude_sid(self, r, others=None):
+        """The conversation of Claude Code a terminal holds (1.0.16): the one it
+        was started with - or, when another of its folder was written later
+        while it ran and no other terminal holds that one, that one (a /clear
+        or a /resume inside it moves on to another)."""
+        try:
+            opts = json.loads(r.get('opts') or '{}')
+        except ValueError:
+            opts = {}
+        own = str(opts.get('sid') or '')
+        if r.get('kind') != 'claude':
+            return own
+        try:
+            pw = self.pw_of(r)
+        except Refused:
+            return own
+        if others is None:
+            others = set()
+            for x in self.store.q("SELECT id, opts FROM terms WHERE kind='claude' AND run_as=?", (r['run_as'],)):
+                if x['id'] == r['id']:
+                    continue
+                try:
+                    o = json.loads(x['opts'] or '{}').get('sid')
+                except ValueError:
+                    o = None
+                if o:
+                    others.add(o)
+        start = float(r.get('created') or 0) - 5
+        end = (float(r.get('ended') or 0) or time.time()) + 120
+        for it in conversations(pw, r.get('cwd') or '', most=80):
+            if it['id'] in others or not (start <= it['mtime'] <= end):
+                continue
+            return it['id']
+        return own
+
+    def again(self, u, r, sid=None, extra=None):
+        """An ended terminal started afresh in its own place - its row, its
+        name, its pin - with the same kind, folder and choices. A chat goes on
+        with its own conversation (`sid`, or the one it held)."""
         try:
             opts = json.loads(r['opts'] or '{}')
         except ValueError:
             opts = {}
-        if r['kind'] == 'claude' and not opts.get('resume'):
-            opts['continue'] = True
+        for k in ('resume', 'continue', 'pick', 'sid', 'session_id'):
+            opts.pop(k, None)
+        opts.update(extra or {})
+        if r['kind'] == 'claude':
+            sid = sid or self.claude_sid(r)
+            if sid:
+                opts['resume'] = sid
+            else:
+                opts['continue'] = True
         return self.new(u, r['kind'] or 'shell', r['cwd'], r['title'], opts,
-                        run_as=r['run_as'] if u['role'] == 'admin' else None)
+                        run_as=r['run_as'] if u['role'] == 'admin' else None, tid=r['id'])
+
+    def holding(self, u, pw, sid):
+        """The terminal of the list that holds a conversation of Claude Code -
+        one this person may see - or None."""
+        rows = self.store.q("SELECT * FROM terms WHERE kind='claude' AND run_as=? ORDER BY created DESC",
+                            (pw.pw_name,))
+        mine = [r for r in rows if u['role'] == 'admin' or r['owner'] == u['name']]
+        for r in mine:
+            try:
+                if json.loads(r['opts'] or '{}').get('sid') == sid:
+                    return r
+            except ValueError:
+                pass
+        for r in mine:
+            if self.claude_sid(r) == sid:
+                return r
+        return None
 
     def rename(self, u, r, title):
         title = clean_line(title, 120)
@@ -8068,7 +8163,7 @@ def api_terms_do(c):
     if do == 'kill':
         tm.kill(c.who, r)
     elif do == 'restart':
-        tm.restart(c.who, r)
+        return {'id': tm.restart(c.who, r)}
     elif do == 'again':
         return {'id': tm.again(c.who, r)}
     elif do == 'rename':
@@ -8115,6 +8210,17 @@ def api_history_do(c):
         opts['model'] = str(c.body['model'])
     if c.body.get('mode'):
         opts['mode'] = str(c.body['mode'])
+    # A conversation that has its terminal in the list goes back into it
+    # (1.0.16) - its tile, its name, its pin - opened if it still runs, started
+    # again there if it ended; only one without is given a new terminal.
+    tm = c.daemon.terms
+    held = tm.holding(c.who, pw, tid_src)
+    if held:
+        lv = tm.live().get(held['id'])
+        if lv and not lv['dead']:
+            return {'id': held['id'], 'already': True}
+        extra = {k: opts[k] for k in ('model', 'mode') if k in opts}
+        return {'id': tm.again(c.who, held, sid=tid_src, extra=extra), 'again': True}
     tid = c.daemon.terms.new(c.who, 'claude', cwd, str(c.body.get('title') or '')[:120] or
                              'Claude · %s' % (clean_line(c.body.get('first'), 40) or tid_src[:8]),
                              opts, int(c.body.get('cols') or 160), int(c.body.get('rows') or 48),
@@ -8493,7 +8599,7 @@ def chat_usage(daemon, who, days=30):
     total = zero('all')
     books = {'day': {}, 'model': {}, 'account': {}, 'project': {}, 'hour': {}}
     chats, unpriced = [], set()
-    terms = daemon.store.q('SELECT id, owner, run_as, title, kind, cwd, created, ended FROM terms')
+    terms = daemon.store.q('SELECT id, owner, run_as, title, kind, cwd, created, ended, opts FROM terms')
     for pw in usage_accounts(who):
         top = Path(pw.pw_dir) / '.claude' / 'projects'
         for f in top.glob('*/*.jsonl'):
@@ -8573,6 +8679,12 @@ def _ts_epoch(ts):
 def usage_term(terms, account, ch):
     """The terminal of these pages a chat most likely ran in: Claude Code, the
     same account and folder, open while the chat began."""
+    for t in terms:
+        try:
+            if t.get('run_as') == account and json.loads(t.get('opts') or '{}').get('sid') == ch['id']:
+                return {'id': t['id'], 'title': t.get('title') or ''}
+        except ValueError:
+            pass
     t0 = _ts_epoch(ch['first'])
     best = None
     for t in terms:
