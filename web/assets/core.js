@@ -438,6 +438,10 @@ function iconForWords(words) {
 
 /** Ask before doing something that cannot be taken back. */
 function confirmThen(title, words, buttonWords, go, danger) {
+  /* Over a popup open now, not in its place (1.0.14): "No" goes back to it. */
+  modalOver(function () { confirmModal(title, words, buttonWords, go, danger); });
+}
+function confirmModal(title, words, buttonWords, go, danger) {
   modal(title, function (body) {
     var p = el('p', 'note');
     p.innerHTML = words;
@@ -1100,7 +1104,7 @@ function debounce(fn, ms) {
 var ADMIN = false;           /* set by the page: may this sign-in change things */
 var TAB = '';
 var PEEK = 0;
-function showTab(name) { if (typeof window.optShowTab === 'function') window.optShowTab(name); }
+function showTab(name, sub) { if (typeof window.optShowTab === 'function') window.optShowTab(name, sub); }
 
 /** Ask the daemon, through this page's PHP. A body makes it a POST. */
 /* Every question has a deadline (1.0.66): behind the web address, an answer

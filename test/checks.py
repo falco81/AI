@@ -144,5 +144,11 @@ with open(_tr, 'w') as _f:
 check('an answer of a transcript counted once', ai.usage_file_rows(_tr, os.stat(_tr)) == [
     ('2026-10-30', 'claude-opus-5-5', '/srv/x', 3, 5, 0, 7, '2026-10-30T08:00:00Z')])
 
+ai.CONFIG['claude_classic'] = True
+check('Claude Code drawn into tmux\'s history', ai.Terms(None).claude_script({}).startswith('export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1; '))
+ai.CONFIG['claude_classic'] = False
+check('...or in its own full-screen look', 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN' not in ai.Terms(None).claude_script({}))
+ai.CONFIG['claude_classic'] = True
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

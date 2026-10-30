@@ -3,6 +3,24 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.14
+
+- **The scroll bar moves with the history again**: Claude Code's full-screen look (now its default for many
+  accounts) keeps its history to itself, where the bar beside the terminal could only be a jog wheel standing
+  still. Claude Code is started drawing itself the classic way (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`), so
+  everything it says is in tmux's history: the bar shows where you are, History shows all of it, a finger
+  scrolls it. Settings -> Claude Code -> *Claude Code written into the terminal's history* (on) turns it off;
+  `/tui` in a chat switches that one. Chats already running keep their look until started again.
+- **The time zone is saved**: the Time pane is drawn again every 10 seconds, and a zone chosen in the list
+  drawn before that went into a draft thrown away - the save put in the old one. The draft is refreshed in
+  place now.
+- **A window over a window goes back to the one under it**: choosing a folder from the new terminal dialog,
+  and every question asked twice ("Delete it?"), opens over the dialog; Close or No returns to it as it was.
+- **Where a chat may start, said where it is chosen**: the new terminal dialog says whether the folder of the
+  chats limits it (or that it may start anywhere), with the way to Settings -> Claude Code -> *The folder of
+  the chats*.
+- The banner's link to a new version opens Settings -> Upgrades itself, not only Settings.
+
 ## 1.0.13
 
 - **What the chats used, on the Overview**: every chat with Claude Code of the accounts you may see, with its

@@ -1039,7 +1039,16 @@ function drawNtp(quiet) {
   var real = $('ntp-host');
   if (!real || !NTP.d) return;
   /* What the server has, until something is changed here. */
-  if (!NTP.draft || !PENDING.ntp) NTP.draft = JSON.parse(JSON.stringify(NTP.d.conf));
+  /* Refreshed in place, never replaced (1.0.14): the pane is drawn again every
+     10 s, and a choice made in a field drawn before that - a time zone looked
+     for in a list of 400 - went into the draft thrown away, so the save put
+     in the old one and nothing changed. */
+  if (!NTP.draft) NTP.draft = JSON.parse(JSON.stringify(NTP.d.conf));
+  else if (!PENDING.ntp) {
+    var fresh = JSON.parse(JSON.stringify(NTP.d.conf));
+    Object.keys(NTP.draft).forEach(function (k) { if (!(k in fresh)) delete NTP.draft[k]; });
+    Object.keys(fresh).forEach(function (k) { NTP.draft[k] = fresh[k]; });
+  }
   liveFill(real, function (host) {
   var d = NTP.d;
   var grid = el('div', 'pw-grid');
@@ -1245,7 +1254,7 @@ function ntpForm() {
 }
 function ntpDirty() {
   pendingSet('ntp', {pane: 'time', save: ntpSave, reset: function () {
-    NTP.draft = JSON.parse(JSON.stringify(NTP.d.conf)); drawNtp(false);
+    delete PENDING.ntp; drawNtp(false);
   }});
 }
 function ntpSave() {
@@ -1255,7 +1264,7 @@ function ntpSave() {
            allow: dr.allow, step_s: (dr.makestep || [1, 3])[0], step_n: (dr.makestep || [1, 3])[1],
            minsources: dr.minsources, timezone: dr.timezone};
   return api('ntp', {action: 'save', conf: c}).then(function (r) {
-    toast(r.message, 'good'); NTP.draft = null; setTimeout(loadNtp, 5000); return true;
+    toast(r.message, 'good'); setTimeout(loadNtp, 5000); return true;
   });
 }
 

@@ -3515,3 +3515,5 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .us-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .us-chat .muted{display:flex;gap:8px;align-items:center;margin-top:2px}
 .us-cost{font-weight:600}
+.dir-limit{margin-top:4px}
+.dir-limit a{margin-left:2px}

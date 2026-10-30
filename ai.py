@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.13'
+__version__ = '1.0.14'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -122,6 +122,7 @@ DEFAULTS = {
     'claude_cmd': 'claude',
     'claude_args': '',
     'claude_env': '',
+    'claude_classic': True,
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
     'default_cwd': '',
@@ -217,6 +218,11 @@ SCHEMA = [
     ('claude_env', 'claude', 'text', 'Environment of every terminal',
      'One NAME=value a line, set in every terminal started from here (an API key, a proxy, '
      'DISABLE_AUTOUPDATER=1...). Lines starting with # are ignored.', {'secret': True}),
+    ('claude_classic', 'claude', 'bool', 'Claude Code written into the terminal\'s history',
+     'On: Claude Code draws itself the classic way (CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1), so what it '
+     'says goes into tmux\'s history - the scroll bar beside the terminal shows where you are, History '
+     'shows all of it, a finger scrolls it on a tablet. Off: its full-screen look, which keeps the history '
+     'itself (the bar is then only a jog wheel). /tui in Claude Code switches one chat.', {}),
     ('term_lang', 'claude', 'str', 'Language and characters of the terminals',
      'LANG of every terminal. A UTF-8 one is needed for Claude Code to draw itself.', {}),
     ('default_run_as', 'claude', 'str', 'Runs as, unless the account says otherwise',
@@ -4133,7 +4139,10 @@ class Terms:
             args += ['--', str(opts['prompt']).strip()]
         q = ' '.join(shlex.quote(a) for a in args)
         exe = shlex.quote(cmd)
-        return ('if ! command -v %s >/dev/null 2>&1; then '
+        # Its history in tmux's (1.0.14): the full-screen look keeps it to
+        # itself, where neither the scroll bar nor History can reach it.
+        look = 'export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1; ' if CONFIG.get('claude_classic', True) else ''
+        return (look + 'if ! command -v %s >/dev/null 2>&1; then '
                 'printf "\\n  Claude Code (%s) is not installed for %%s on this server.\\n'
                 '  Install it from Settings - Claude Code, or here:\\n'
                 '    curl -fsSL https://claude.ai/install.sh | bash\\n\\n" "$(id -un)"; '

@@ -868,6 +868,26 @@ function newTermAsk(kind, cwd) {
     dirWrap.appendChild(browse);
     var f = formField('The working directory', dirWrap, 'Where it starts. It is made if it is not there yet and the box below says so.');
     f.classList.add('span-2');
+    /* Where the folders a chat may start in are limited (1.0.14): said here,
+       with the way to the setting - it was not to be found. */
+    var lim = el('div', 'small muted dir-limit');
+    if (root) lim.appendChild(document.createTextNode(txT('Only in') + ' ' + root + ' ' + txT('and the folders under it.') + ' '));
+    else lim.appendChild(document.createTextNode(txT('Anywhere on the server.') + ' '));
+    if (ADMIN) {
+      var toSet = el('a', '', txT(root ? 'Change it' : 'Limit it to one folder'));
+      toSet.href = '#settings/claude';
+      toSet.onclick = function (e) {
+        e.preventDefault(); closeModal(); showTab('settings', 'claude');
+        setTimeout(function () {
+          var item = document.querySelector('.set-item[data-key="chat_root"]');
+          if (item) { item.scrollIntoView({block: 'center'}); item.classList.remove('found'); void item.offsetWidth; item.classList.add('found'); }
+          var box = $('set-chat_root'); if (box && box.focus) box.focus();
+        }, 600);
+      };
+      lim.appendChild(toSet);
+    }
+    noI18n(lim);
+    f.appendChild(lim);
     g.appendChild(f);
     var mk = switchBox(false);
     g.appendChild(formField('Make it if it is not there', mk));
@@ -1069,6 +1089,10 @@ function pickFolder(start, then) {
   var st = {path: start || root || '', d: null};
   var under = function (p) { return !root || p === root || String(p).indexOf(root.replace(/\/+$/, '') + '/') === 0; };
   if (root && !under(st.path)) st.path = root;
+  /* Over the dialog it was asked from (1.0.14): Close goes back to that one. */
+  modalOver(function () { pickFolderModal(root, st, under, then); });
+}
+function pickFolderModal(root, st, under, then) {
   modal(root ? 'Choose a folder in ' + baseName(root) : 'Choose a folder', function (body) {
     var bar = el('div', 'btnrow pick-bar');
     var up = cmdButton('Up', 'up', 'small');

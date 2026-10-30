@@ -1388,6 +1388,18 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Only in':
+        'Jen ve složce',
+    'and the folders under it.':
+        'a ve složkách pod ní.',
+    'Anywhere on the server.':
+        'Kdekoli na serveru.',
+    'Limit it to one folder':
+        'Omezit na jednu složku',
+    "Claude Code written into the terminal's history":
+        'Claude Code zapisuje do historie terminálu',
+    "On: Claude Code draws itself the classic way (CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1), so what it says goes into tmux's history - the scroll bar beside the terminal shows where you are, History shows all of it, a finger scrolls it on a tablet. Off: its full-screen look, which keeps the history itself (the bar is then only a jog wheel). /tui in Claude Code switches one chat.":
+        'Zapnuto: Claude Code se vykresluje klasicky (CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1), takže co píše, jde do historie tmuxu – posuvník vedle terminálu ukazuje, kde jste, Historie ukáže všechno, na tabletu se posouvá prstem. Vypnuto: jeho celoobrazovkový vzhled, který si historii drží sám (posuvník je pak jen kolečko). /tui v Claude Code přepne jeden chat.',
     "From Claude Code's own transcripts of these Linux accounts:":
         'Z vlastních záznamů Claude Code těchto účtů Linuxu:',
     "The cost is an estimate at Anthropic's list prices per token, to compare by - a Claude subscription is not billed by the token.":

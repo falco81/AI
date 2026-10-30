@@ -31,6 +31,11 @@ place; *Back to now* returns to the live screen. **History** in the bar (and
 its colours, in a window of its own that scrolls as any page does - copied or
 downloaded as text.
 
+Claude Code is started drawing itself the classic way
+(`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`, Settings -> Claude Code -> *Claude
+Code written into the terminal's history*), so all it says is in tmux's
+history and the bar shows where you are.
+
 Claude Code in its full-screen look (`/tui fullscreen`, the one that says
 *Jump to bottom (ctrl+End)*) keeps its history itself, on the terminal's
 alternate screen, and tmux has none to show. The bar is then a jog wheel:
