@@ -1,6 +1,9 @@
   /* Hidden for the moment the words are being swapped into the chosen
      language, so English never flashes first (and never longer: the page
      takes the class off itself, whatever happens). */
+/* Links in the page's own blue, visited or not (1.0.11): the browser's purple
+   is unreadable on the dark panels. */
+a,a:visited{color:var(--info)}
   html.i18n-wait body{visibility:hidden}
   :root{
     /* The page's own face, said once so that anything which has to ask for
@@ -862,9 +865,6 @@
     .ctl-layout{display:block;position:relative;padding-left:72px;
       transition:padding-left .18s ease}
     .ctl-layout.nav-pinned{padding-left:266px}
-    /* Out under the pointer, the rail moves the page aside rather than lying
-       over it: what the page says stays readable beside the open menu. */
-    .ctl-layout:has(.ctl-nav.open){padding-left:266px}
     body.app-shell #tab-settings .ctl-layout{flex:1 1 auto;min-height:0}
     /* No padding under this. The save bar is the last thing in it and sticks
        to the bottom; padding here holds the bar that far up, and the rail -
@@ -877,6 +877,7 @@
       border-radius:var(--r);padding:8px 8px 14px;overflow-x:hidden;overflow-y:auto;
       overscroll-behavior:contain;transition:width .18s ease,box-shadow .18s ease}
     .ctl-nav.open,.ctl-nav.pinned{width:252px}
+    .ctl-nav.open:not(.pinned){box-shadow:12px 0 36px rgba(0,0,0,.55)}
     .ctl-nav button[data-pane]{white-space:nowrap}
     .ctl-nav button[data-pane] span{transition:opacity .12s}
     .ctl-nav:not(.open):not(.pinned) .ctl-navtop{justify-content:center}
@@ -1398,6 +1399,11 @@
 
   .offline.warnish{background:var(--warn-bg, rgba(210,153,34,.12));
     border-color:rgba(210,153,34,.45);color:var(--warn)}
+  /* A link in the banner is the banner's colour, never the browser's blue or
+     visited purple - unreadable on its yellow (1.0.11). */
+  .offline a,.offline a:visited{color:inherit;font-weight:600;text-decoration:underline;
+    text-underline-offset:2px}
+  .offline a:hover{text-decoration-thickness:2px}
   .offline{background:var(--crit-bg);border:1px solid rgba(248,81,73,.4);color:var(--crit);
     border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13.5px;font-weight:600}
 

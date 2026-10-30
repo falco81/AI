@@ -3,14 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.11
+
+- **The pinned menu of the settings moves the page aside again**: pinning it moved the Claude Code tab's page
+  instead (the first of the two on the page), so the settings stayed under the menu. Pointed at, the menu lies
+  over the page as otp's does; pinned, the page is beside it - exactly as otp.
+- The banner saying a new version is out is in the banner's own colour, not the browser's visited purple, which
+  could not be read on its yellow; every link of the pages is in their blue, visited or not.
+
 ## 1.0.10
 
 - **A scroll bar for Claude Code full-screen**: Claude Code's full-screen look keeps its history itself, so
   tmux had none and the bar beside the terminal hid itself. It is now a jog wheel there - dragged up goes back,
   down comes on, its ends a page - and a finger on the terminal moves it, as the mouse wheel does.
 - **The rails do not move under the pointer**: the list of terminals slides out with the pin, *New terminal* and
-  every chat's icon exactly where they were; the menu of the settings and of the Claude Code tab moves the page
-  aside instead of lying over it, and what an item of a rail says is shown beside the rail, not over the items.
+  every chat's icon exactly where they were; what an item of a rail says is shown beside the rail, not over the items.
 - **The right button in the Files tab**: on a file or a folder (open, a new Claude Code in it, copy the path,
   a new folder or file in it, download, rename, delete) and on the list (new folder or file, upload, a new
   Claude Code, copy the path, read again); a finger held still does the same on a tablet.

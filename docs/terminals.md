@@ -105,8 +105,8 @@ At the edge of the screen as otp's menu of settings: a strip of icons that
 slides out when pointed at, and stays out once pinned (the pin at its top,
 or the first button of the terminal's bar). Sliding out, nothing in it moves:
 the pin, *New terminal* and every chat's icon stay exactly where they were
-under the pointer. The menu of the settings and of the Claude Code tab moves
-the page aside as it slides out, so nothing on the page is covered. On a phone the list and the
+under the pointer. The menu of the settings and of the Claude Code tab is otp's:
+pointed at it lies over the page, pinned the page moves aside beside it. On a phone the list and the
 terminal take the screen in turn.
 
 ## Nothing ends by closing the browser

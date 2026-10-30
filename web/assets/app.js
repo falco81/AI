@@ -1985,7 +1985,9 @@ function pinRail(on) {
   RAIL.pinned = !!on;
   var nav = $('ctl-nav'), pin = $('ctl-pin');
   nav.classList.toggle('pinned', RAIL.pinned);
-  document.querySelector('.ctl-layout').classList.toggle('nav-pinned', RAIL.pinned);
+  /* The settings' own layout (1.0.11): the first .ctl-layout of the page is
+     the Claude Code tab's, and pinning moved that one aside instead. */
+  nav.closest('.ctl-layout').classList.toggle('nav-pinned', RAIL.pinned);
   pin.setAttribute('aria-pressed', RAIL.pinned ? 'true' : 'false');
   explain(pin, RAIL.pinned ? 'The menu is staying open. Press again to let it hide itself at the edge of the screen.'
     : 'The menu hides itself at the edge of the screen and slides out when you point at it. Press this to keep it open.');
