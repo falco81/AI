@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.26'
+__version__ = '1.0.27'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -8043,11 +8043,161 @@ def need_admin(c):
         raise Refused('only an administrator may do that', 403)
 
 
+# ---- the picture of the sign-in (1.0.27), as otp's (otp.py 1.0.161) -------------
+ART_KEY, LOGO_KEY, ART_DEFAULT = 'signin:art', 'signin:logo', 'browser'
+LOGO_MAX = 512 * 1024
+ART_NAMES = ('browser', 'terminal', 'chat', 'tmux', 'devices', 'spark', 'tablet', 'diff', 'folders',
+             'agents', 'usage', 'keys', 'none', 'custom')
+
+
+def logo_kind(raw):
+    """What sort of picture the bytes are, by their first bytes - never by
+    the name they came with."""
+    if raw.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if raw.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if raw[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return 'image/webp'
+    head = raw[:4096].lstrip(b'\xef\xbb\xbf \t\r\n').lower()
+    if (head.startswith(b'<svg') or head.startswith(b'<?xml') or head.startswith(b'<!--')
+            or head.startswith(b'<!doctype svg')) and b'<svg' in raw[:65536].lower():
+        return 'image/svg+xml'
+    return None
+
+
+def logo_check(raw):
+    if not raw:
+        raise Refused('the file is empty')
+    if len(raw) > LOGO_MAX:
+        raise Refused('the picture is %d KB - at most 512 KB' % (len(raw) // 1024))
+    kind = logo_kind(raw)
+    if not kind:
+        raise Refused('that is not a picture this takes: PNG, JPEG, GIF, WebP or SVG')
+    if kind == 'image/svg+xml':
+        # Shown only as an <img> and sent with a policy that runs nothing, but
+        # an SVG with a script or a link out is turned away all the same.
+        try:
+            text = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            raise Refused('the SVG is not UTF-8 text')
+        low = text.lower()
+        if (re.search(r'<\s*(script|foreignobject|iframe|embed|object)\b', low)
+                or re.search(r'\son[a-z]+\s*=', low) or 'javascript:' in low or '<!entity' in low
+                or re.search(r'(href|src)\s*=\s*["\']\s*(https?:|//|data:text)', low)):
+            raise Refused('the SVG holds a script, an event handler or a link out - '
+                          'save it as a plain picture (or as PNG) and again')
+    return kind
+
+
+def _art_meta(store, k):
+    try:
+        got = json.loads(store.get_meta(k) or 'null')
+    except Exception:                                   # noqa: BLE001
+        return None
+    return got if isinstance(got, dict) else None
+
+
+def logo_read(store):
+    got = _art_meta(store, LOGO_KEY)
+    return got if got and got.get('b64') else None
+
+
+def art_read(store):
+    """Which picture the sign-in shows - a few bytes, read by every page."""
+    got = _art_meta(store, ART_KEY) or {}
+    art = got.get('art') if got.get('art') in ART_NAMES else ART_DEFAULT
+    return {'art': art, 'sha': str(got.get('sha') or '') if art == 'custom' else ''}
+
+
+def art_set(store, art):
+    one = {'art': art, 'sha': ''}
+    if art == 'custom':
+        logo = logo_read(store)
+        if not logo:
+            raise Refused('there is no picture of your own yet - upload one first')
+        one['sha'] = logo.get('sha') or ''
+    store.set_meta(ART_KEY, json.dumps(one))
+    return one
+
+
+def logo_set(store, raw, by, name=''):
+    """A picture of the site's own, kept in the database - in every backup and
+    every export. b'' takes it away (and the drawing ai came with is shown)."""
+    if not raw:
+        store.set_meta(LOGO_KEY, '')
+        if art_read(store)['art'] == 'custom':
+            art_set(store, ART_DEFAULT)
+        return None
+    kind = logo_check(raw)
+    one = {'type': kind, 'b64': base64.b64encode(raw).decode('ascii'),
+           'sha': hashlib.sha256(raw).hexdigest()[:16], 'bytes': len(raw),
+           'name': str(name or '')[:120], 'at': time.time(), 'by': by}
+    store.set_meta(LOGO_KEY, json.dumps(one))
+    return one
+
+
+def art_state(store):
+    logo = logo_read(store)
+    return dict(art_read(store), default=ART_DEFAULT,
+                logo={k: logo.get(k) for k in ('type', 'sha', 'bytes', 'name', 'at', 'by')} if logo else None)
+
+
+@route('GET', '/api/logo', anon=True)
+def api_logo(c):
+    # Anybody: it is the picture on the sign-in. Only the picture.
+    one = logo_read(c.daemon.store)
+    if not one:
+        return {'logo': None}
+    return {'logo': {'type': one.get('type'), 'b64': one.get('b64'), 'sha': one.get('sha')}}
+
+
+@route('GET', '/api/art', admin=True)
+def api_art(c):
+    return {'names': list(ART_NAMES), 'signin': art_state(c.daemon.store)}
+
+
+@route('POST', '/api/art', admin=True)
+def api_art_do(c):
+    """All of the sign-in picture's changes at once, as the save bar sends
+    them: a picture of your own taken away or uploaded, then which is shown."""
+    st, b, who = c.daemon.store, c.body, c.name
+    if str(b.get('action') or 'save') != 'save':
+        raise Refused('save')
+    art = str(b.get('art') or '')
+    if art not in ART_NAMES:
+        raise Refused('no such picture: %s' % art)
+    raw = None
+    if b.get('data'):
+        data = str(b.get('data'))
+        if data.startswith('data:'):
+            data = data.split(',', 1)[-1]
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError):
+            raise Refused('the picture did not arrive whole')
+        logo_check(raw)
+    if b.get('forget') and not raw:
+        logo_set(st, b'', who)
+        st.add_event('settings', '%s took away the picture of their own of the sign-in' % who, 'info', who=who)
+    if raw:
+        one = logo_set(st, raw, who, str(b.get('name') or ''))
+        st.add_event('settings', '%s put a picture of their own on the sign-in (%s, %d KB)' % (
+            who, one['type'].split('/')[1].split('+')[0].upper(), max(1, one['bytes'] // 1024)), 'info', who=who)
+    if art_read(st)['art'] != art or raw:
+        art_set(st, art)
+        st.add_event('settings', '%s picked the picture of the sign-in: %s' % (who, art), 'info', who=who)
+    return {'names': list(ART_NAMES), 'signin': art_state(st), 'message': 'saved - the sign-in shows it'}
+
+
 @route('GET', '/api/health', anon=True)
 def api_health(c):
     d = c.daemon
     return {'ok': True, 'version': __version__, 'lang': CONFIG.get('ui_lang'),
-            'users': len(d.store.users()), 'database': {'ok': True}, 'host': host_name()}
+            'users': len(d.store.users()), 'database': {'ok': True}, 'host': host_name(),
+            'art': art_read(d.store)}
 
 
 @route('POST', '/api/auth/login', anon=True)
@@ -13944,7 +14094,9 @@ def config_export(store, with_secrets=False):
     out = {'kind': 'ai-config', 'version': __version__, 'host': host_name(), 'at': time.time(),
            'settings': settings, 'users': users, 'firewall': store.meta_json('fw:conf', None),
            'access': store.meta_json('fw:access', None), 'mail_ca': mail_ca_pem(store), 'tls': tls,
-           'with_secrets': bool(with_secrets)}
+           'with_secrets': bool(with_secrets),
+           # The picture of the sign-in, and one of the site's own (1.0.27), as otp's.
+           'signin_art': {'art': art_read(store)['art'], 'logo': logo_read(store)}}
     return out
 
 
@@ -13969,6 +14121,17 @@ def config_import(daemon, conf, by, replace=False, ip='127.0.0.1', wait=False):
                                                            not conf.get('with_secrets')):
                 st.drop_setting(k)
     said.append('%d setting(s)' % n)
+    sa = conf.get('signin_art')
+    if isinstance(sa, dict):
+        try:
+            lg = sa.get('logo')
+            if isinstance(lg, dict) and lg.get('b64'):
+                logo_set(st, base64.b64decode(str(lg['b64'])), by, str(lg.get('name') or ''))
+            if sa.get('art') in ART_NAMES:
+                art_set(st, sa['art'])
+            said.append('the picture of the sign-in')
+        except (Refused, ValueError, binascii.Error) as e:
+            said.append('the picture of the sign-in not taken: %s' % e)
     names = []
     for u in conf.get('users') or []:
         name = str(u.get('name') or '')

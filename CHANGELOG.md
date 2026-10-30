@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.27
+
+- **The picture of the sign-in, chosen as otp's**: Settings -> The sign-in page shows every picture the sign-in
+  can carry, drawn for what ai is - a browser, a terminal, a chat, tmux panes, the devices it reaches, the spark,
+  a tablet, a diff, folders, agents side by side, the usage, the keys - and none at all; pick one and Save.
+  *Upload your own* puts the site's own picture there instead (PNG, JPEG, GIF, WebP or SVG up to 512 KB, an
+  SVG with a script or a link out turned away); *Forget it* takes it away again. The choice is in the database,
+  so it is in every backup and in the exported configuration, and the import puts it back.
+
 ## 1.0.26
 
 - **nginx on IPv6 whenever the machine has it**: installed with IPv6 off in the kernel, nginx's file was written

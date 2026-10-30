@@ -1388,6 +1388,60 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'The sign-in page':
+        'Přihlašovací stránka',
+    "The picture above the sign-in of these pages: one of ai's drawings, a picture of your own, or none.":
+        'Obrázek nad přihlášením těchto stránek: jedna z kreseb ai, vlastní obrázek, nebo žádný.',
+    'The picture on the sign-in':
+        'Obrázek na přihlášení',
+    'Upload a picture of your own':
+        'Nahrát vlastní obrázek',
+    'Back to the default':
+        'Zpět na výchozí',
+    'Take my own picture away':
+        'Odebrat vlastní obrázek',
+    'Claude Code in the browser, the server behind it (as ai came)':
+        'Claude Code v prohlížeči, za ním server (jak ai přišlo)',
+    'The terminal, Claude Code at the prompt':
+        'Terminál, Claude Code na příkazové řádce',
+    'A task asked, Claude Code at work on it':
+        'Zadaný úkol, Claude Code na něm pracuje',
+    'Terminals that go on when the browser closes':
+        'Terminály, které běží dál i po zavření prohlížeče',
+    'One server, from the desk, the laptop and the tablet':
+        'Jeden server – z počítače, notebooku i tabletu',
+    'The spark of Claude':
+        'Jiskra Claude',
+    'A chat on the tablet, scrolled by finger':
+        'Chat na tabletu, posouvaný prstem',
+    'A change to the code, line by line':
+        'Změna kódu, řádek po řádku',
+    'The folder of the chats and what is under it':
+        'Složka chatů a co je pod ní',
+    'A task shared out to agents':
+        'Úkol rozdělený agentům',
+    'What the chats used, day by day':
+        'Co chaty spotřebovaly, den po dni',
+    'Signed in, the keys of the server safe':
+        'Přihlášeno, klíče serveru v bezpečí',
+    'No picture':
+        'Žádný obrázek',
+    'A picture of your own':
+        'Vlastní obrázek',
+    'taken away when saved':
+        'po uložení odebrán',
+    'nothing uploaded yet':
+        'zatím nic nenahráno',
+    'only the sign-in':
+        'jen přihlášení',
+    'after saving':
+        'po uložení',
+    'shown':
+        'zobrazený',
+    'the default':
+        'výchozí',
+    'saved - the sign-in shows it':
+        'uloženo – přihlášení ho ukazuje',
     'The server listens on':
         'Server naslouchá na',
     'IPv4, this machine only':

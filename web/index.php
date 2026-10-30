@@ -13,12 +13,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/ai-page.php';
 require_once __DIR__ . '/ai-api.php';
+require_once __DIR__ . '/ai-art.php';
 
 if (isset($_GET['api'])) {
     $what = (string) $_GET['api'];
     $post = $_SERVER['REQUEST_METHOD'] === 'POST';
     if ($what === 'lang' && !$post) {
         ai_serve_lang();
+    }
+    if ($what === 'logo' && !$post) {
+        ai_serve_logo();
     }
     if ($what === 'software' && !$post) {
         /* What the server runs on - and of the pages, what this PHP itself
@@ -115,7 +119,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -126,7 +130,7 @@ if (isset($_GET['api'])) {
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
-        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc',
+        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -199,21 +203,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <?php if (!$me): ?>
 <div class="signin">
   <div class="signbox">
-    <svg class="signart" viewBox="0 0 420 150" role="img" aria-labelledby="sa-title"><title id="sa-title">What this program does</title>
-      <rect class="plate" x=".75" y=".75" width="418.5" height="148.5" rx="14"/>
-      <rect x="26" y="26" width="200" height="98" rx="8" fill="none" stroke="var(--info)" stroke-width="2" opacity=".8"/>
-      <path d="M40 52l10 8-10 8" fill="none" stroke="var(--ok)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect class="logline" x="58" y="57" width="90" height="6" rx="3"/>
-      <rect class="logline good" x="40" y="78" width="120" height="6" rx="3"/>
-      <rect class="logline" x="40" y="92" width="70" height="6" rx="3"/>
-      <rect x="40" y="106" width="10" height="8" rx="1.5" fill="var(--warn)"><animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/></rect>
-      <path class="flow" d="M236 75 H290"/>
-      <rect x="300" y="40" width="94" height="70" rx="10" fill="none" stroke="var(--muted)" stroke-width="2"/>
-      <path d="M318 62h58M318 75h40M318 88h50" stroke="var(--muted)" stroke-width="3" stroke-linecap="round" opacity=".7"/>
-      <text class="lbl" x="26" y="18">CLAUDE CODE</text>
-      <text class="lbl" x="394" y="30" text-anchor="end">THE SERVER</text>
-      <text class="lbl" x="210" y="142" text-anchor="middle">IN THE BROWSER · NOTHING ENDS WHEN IT CLOSES</text>
-    </svg>
+    <?= ai_signin_art(is_array($health['art'] ?? null) ? $health['art'] : []) ?>
     <div class="card">
     <h1 data-no-i18n><?= h($title) ?></h1>
     <p class="lede">Claude Code on <span data-no-i18n><?= h($host) ?></span>. Sign in to go on.</p>
@@ -558,6 +548,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="mailq" data-icon="list" title="Every mail sent - a code to sign in with, a notice, a test - and what became of it: sent, waiting for another try (greylisting, a server away), failed. Sent again or taken away by hand.">Outgoing mail <span class="nav-badge" id="mq-badge" hidden></span></button>
     <div class="ctl-group">Access</div>
     <button type="button" data-pane="people" data-icon="person" title="Who may open these pages, what each of them may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
+    <button type="button" data-pane="signin" data-icon="eye" title="The picture above the sign-in of these pages: one of ai's drawings, a picture of your own, or none.">The sign-in page</button>
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages, and how TLS is spoken.">Certificates and TLS</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.">Firewall and access</button>
     <div class="ctl-group">Server</div>
@@ -587,6 +578,26 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <div class="card full"><div id="sect-claude"></div></div>
   </div>
 
+  <div class="ctl-pane" id="pane-signin" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">The sign-in page</h2>
+      <p class="ctl-lede">What anybody sees before signing in: the picture above the sign-in. One of
+        ai's drawings, a picture of your own (a logo), or none.</p></div>
+    <template id="art-gallery"><?php foreach (AI_ARTS as $a): ?><div data-art="<?= h($a) ?>" data-words="<?= h(AI_ART_WORDS[$a]) ?>"><?= ai_art_svg($a) ?></div><?php endforeach; ?></template>
+    <div class="card full" id="art-card">
+      <h2>The picture on the sign-in</h2>
+      <p class="note small muted">Pick one of these, or a picture of your own (a logo: PNG, JPEG,
+        GIF, WebP or SVG, at most 512 KB). It is kept in the database: it is in every backup and
+        in the exported configuration. A picture of your own stays kept when you pick another one.</p>
+      <div class="art-grid" id="art-grid"></div>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn cmd small" id="art-upload" data-icon="upload">Upload a picture of your own</button>
+        <button class="btn cmd small" id="art-reset" data-icon="undo">Back to the default</button>
+        <button class="btn cmd small" id="art-forget" data-icon="trash" hidden>Take my own picture away</button>
+      </div>
+      <input type="file" id="art-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.svg" hidden>
+      <p class="note small" id="art-said"></p>
+    </div>
+  </div>
   <div class="ctl-pane" id="pane-people" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Accounts</h2>
       <p class="ctl-lede">Who may sign in to these pages. An <b>administrator</b> may do everything,

@@ -2164,6 +2164,7 @@ function showPane(name) {
   if (name === 'osup') loadOsup(); else if (typeof ouPoll === 'function') ouPoll(false);
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
   if (name === 'upgrade') loadUpgrade();
+  if (name === 'signin') loadArt();
   if (name === 'about') { loadAbout(); loadConsoleLogin(); loadSoftware(); }
   markDirtyCount();
 }
@@ -7994,3 +7995,133 @@ $('tf-input').onchange = function () { cfSend($('tf-input').files); $('tf-input'
   host.addEventListener('dragleave', function (e) { e.stopPropagation(); if (--depth <= 0) { depth = 0; host.classList.remove('over'); } });
   host.addEventListener('drop', function (e) { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); depth = 0; host.classList.remove('over'); cfSend(e.dataTransfer.files); });
 }());
+
+/* ---- the picture of the sign-in (1.0.27): exactly otp's (admin.js 1.0.161),
+   one sign-in instead of two. Picked here, kept by the save bar; a picture of
+   one's own read into the page and sent with the save. ---------------------- */
+var ART = {draft: null, last: null};
+function loadArt() {
+  return api('art').then(function (d) {
+    if (!PENDING.art) ART.draft = null;
+    drawArt(d.signin);
+  }).catch(oops);
+}
+function artDraft() {
+  var saved = ART.last || {};
+  if (!ART.draft) ART.draft = {art: saved.art, data: '', name: '', bytes: 0, forget: false};
+  return ART.draft;
+}
+function artChanged() {
+  var dr = ART.draft, saved = ART.last || {};
+  return !!(dr && (dr.art !== saved.art || dr.data || dr.forget));
+}
+function artMark() {
+  if (artChanged()) {
+    pendingSet('art', {pane: 'signin', save: artSave, reset: function () { ART.draft = null; if (ART.last) drawArt(ART.last); }});
+  } else if (PENDING.art) {
+    delete PENDING.art;
+    markDirtyCount();
+  }
+  drawArt(ART.last);
+}
+function artSave() {
+  var dr = ART.draft;
+  if (!dr || !artChanged()) return Promise.resolve(true);
+  return api('art', {action: 'save', art: dr.art, data: dr.data || undefined,
+                     name: dr.name || undefined, forget: dr.forget || undefined}).then(function (d) {
+    ART.draft = null;
+    toast(d.message, 'good');
+    drawArt(d.signin);
+    return true;
+  });
+}
+function drawArt(saved) {
+  if (!saved) return;
+  ART.last = saved;
+  var dr = ART.draft || {art: saved.art};
+  var grid = $('art-grid'), tpl = $('art-gallery');
+  if (!grid || !tpl) return;
+  /* A picture of your own as it will be after the save: a new one, the one
+     kept, or none when it is to be taken away. */
+  var own = dr.data ? {src: dr.data, name: dr.name, bytes: dr.bytes, fresh: true}
+    : (saved.logo && !dr.forget ? {src: '/?api=logo&v=' + encodeURIComponent(saved.logo.sha || ''),
+                                  name: saved.logo.name, bytes: saved.logo.bytes, by: saved.logo.by, at: saved.logo.at} : null);
+  clear(grid);
+  Array.prototype.forEach.call(tpl.content.children, function (src) {
+    var name = src.dataset.art;
+    var picked = dr.art === name, isNow = saved.art === name;
+    var tile = el('button', 'art-tile' + (picked ? ' on' : '') + (picked && !isNow ? ' unsaved' : ''));
+    tile.type = 'button';
+    var pic = el('div', 'art-pic');
+    if (name === 'custom') {
+      if (own) {
+        var img = el('img');
+        img.src = own.src;
+        img.alt = '';
+        pic.appendChild(img);
+      } else {
+        pic.appendChild(el('span', 'muted small', dr.forget ? 'taken away when saved' : 'nothing uploaded yet'));
+        pic.classList.add('art-empty');
+      }
+    } else if (name === 'none') {
+      pic.appendChild(el('span', 'muted small', 'only the sign-in'));
+      pic.classList.add('art-empty');
+    } else {
+      pic.innerHTML = src.innerHTML;  /* our own drawing, from this page's markup */
+      var t = pic.querySelector('title');
+      if (t) t.removeAttribute('id');
+      var sv = pic.querySelector('svg');
+      if (sv) sv.removeAttribute('aria-labelledby');
+    }
+    tile.appendChild(pic);
+    var cap = el('div', 'art-cap');
+    cap.appendChild(el('span', '', src.dataset.words));
+    if (picked && !isNow) cap.appendChild(el('span', 'tag warn', 'after saving'));
+    else if (isNow) cap.appendChild(el('span', 'tag ok', 'shown'));
+    else if (name === saved.default) cap.appendChild(el('span', 'tag', 'the default'));
+    tile.appendChild(cap);
+    if (name === 'custom' && own) {
+      tile.appendChild(noI18n(el('div', 'art-meta mono small muted',
+        (own.name || '') + ' · ' + bytes(own.bytes) + (own.fresh ? '' : ' · ' + (own.by || '?') + ', ' + ago(own.at)))));
+    }
+    tile.disabled = !ADMIN;
+    tile.onclick = function () {
+      if (name === 'custom' && !own) { $('art-file').click(); return; }
+      artDraft().art = name;
+      artMark();
+    };
+    grid.appendChild(tile);
+  });
+  $('art-forget').hidden = !own;
+  $('art-reset').disabled = dr.art === saved.default;
+  $('art-said').textContent = '';
+  if (typeof i18nWalk === 'function') { try { i18nWalk(grid); } catch (e) { } }
+}
+if ($('art-upload')) {
+  $('art-upload').onclick = function () { $('art-file').click(); };
+  $('art-reset').onclick = function () {
+    artDraft().art = (ART.last || {}).default;
+    artMark();
+  };
+  $('art-forget').onclick = function () {
+    var dr = artDraft();
+    if (dr.data) { dr.data = ''; dr.name = ''; dr.bytes = 0; }
+    else dr.forget = true;
+    if (dr.art === 'custom' && !((ART.last || {}).logo && !dr.forget)) dr.art = (ART.last || {}).default;
+    artMark();
+  };
+  $('art-file').onchange = function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    if (file.size > 512 * 1024) { toast(file.name + ' is ' + bytes(file.size) + ' - at most 512 KB', 'bad'); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var dr = artDraft();
+      dr.data = String(reader.result || ''); dr.name = file.name; dr.bytes = file.size;
+      dr.forget = false; dr.art = 'custom';
+      artMark();
+    };
+    reader.readAsDataURL(file);
+  };
+}

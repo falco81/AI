@@ -150,5 +150,15 @@ ai.CONFIG['claude_classic'] = False
 check('...or in its own full-screen look', 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN' not in ai.Terms(None).claude_script({}))
 ai.CONFIG['claude_classic'] = True
 
+check('a PNG of the site\'s own known by its first bytes', ai.logo_kind(b'\x89PNG\r\n\x1a\n....') == 'image/png')
+check('something not a picture not taken for one', not ai.logo_kind(b'hello'))
+try:
+    ai.logo_check(b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+    check('an SVG with a script turned away', False)
+except ai.Refused:
+    check('an SVG with a script turned away', True)
+check('every picture of the sign-in drawn', set(ai.ART_NAMES) == {'browser', 'terminal', 'chat', 'tmux', 'devices',
+      'spark', 'tablet', 'diff', 'folders', 'agents', 'usage', 'keys', 'none', 'custom'})
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
