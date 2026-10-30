@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.30
+
+- **The command line and the console caught up with the pages**: what came on the pages since 1.0.13 is in
+  `ai` and `ai --console` too -
+  `--new` with `--effort` and `--mode` (and the model of any version, in the console from a list);
+  `--edit ID` (`--title`, `--model`, `--effort`, `--mode`, `--cwd`) - a chat's choices changed, it goes on with
+  its conversation; `--forget ID|ended` - ended terminals off the list; `--usage [--days N]` - what the chats
+  used and what it costs, by model, account, folder and chat; `--signin-art [NAME]`, `--signin-logo FILE`,
+  `--signin-logo-forget` - the picture of the sign-in; `--db-ipv4 [only]` - where the database server listens,
+  kept to 127.0.0.1. In the console: Terminals (change a chat, take ended ones off, what the chats used),
+  Settings - The picture of the sign-in page, Data - The database server.
+- **A terminal's last screen in the console** opened over the menus without its own screen; it has one now.
+
 ## 1.0.29
 
 - **The picture chosen for the sign-in shown to everybody**: the page tells a visitor not signed in from

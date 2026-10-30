@@ -163,5 +163,13 @@ check('every picture of the sign-in drawn', set(ai.ART_NAMES) == {'browser', 'te
 _inst = open(os.path.join(HERE, 'install.sh')).read()
 check('install.sh puts in every PHP file of the pages', '/web/*.php' in _inst)
 
+check('big numbers short on the command line', ai.big_num(1234) == '1.2k' and ai.big_num(5) == '5'
+      and ai.big_num(2500000) == '2.5M')
+check('a permission mode checked', ai.cli_mode('acceptEdits') == 'acceptEdits' and ai.cli_mode('default') == '')
+_pa = ai.build_parser().parse_args(['--edit', 'abcd1234', '--effort', 'high', '--mode', 'plan', '--cwd', '/srv'])
+check('--edit takes its choices', (_pa.edit, _pa.effort, _pa.mode, _pa.cwd) == ('abcd1234', 'high', 'plan', '/srv'))
+check('--signin-art alone asks which one', ai.build_parser().parse_args(['--signin-art']).signin_art == '')
+check('every picture has its words in the console', all(n in ai.ART_WORDS_TEXT for n in ai.ART_NAMES))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

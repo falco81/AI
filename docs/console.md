@@ -29,8 +29,17 @@ terminal of the pages (tmux), for a command run over SSH, scp/sftp, or with
 - It opens on the **live log**; Esc goes to the menu. Whatever is typed in a
   live view is a grep; Esc clears it, Esc again goes back.
 - **Terminals**: the list of terminals - Enter on one opens it right here
-  (tmux; Ctrl+b d leaves it running), starts it again or ends it; New Claude
-  Code and New shell ask for the folder and the Linux account.
+  (tmux; Ctrl+b d leaves it running), starts it again, *changes it* (name,
+  folder, model, effort, permissions - the chat starts again, going on with
+  its conversation), ends it or takes an ended one off the list; New Claude
+  Code asks for the folder, the Linux account, the model (any version), the
+  effort and the permission mode, New shell for the folder and the account.
+  *What the chats used* is the Overview's Claude Code part as text: tokens and
+  the cost at list prices, by model, account and folder, and each chat.
+- **Settings**: every setting, and *The picture of the sign-in page* - one of
+  the drawings, none, or a picture of your own uploaded from a file here.
+- **Data**: the copies, the backups, the export - and *The database server*:
+  where it listens, and kept to IPv4 (127.0.0.1 only).
 - **Firewall and access**: how it stands, *Open HTTP and HTTPS*, a port let
   in, a rule taken away, ai's rules on or off, who may reach the pages, and
   Keep / put the old back for a change on trial.
@@ -62,6 +71,13 @@ ai --pages-from 192.168.0.0/16       # who may reach the pages (all = everybody)
 ai --sessions                        # the terminals
 ai --attach ID                       # one of them, here
 ai --new /srv/project --continue     # Claude Code there, its last conversation
+ai --new /srv/chats/x --model claude-opus-5-5 --effort high --mode acceptEdits
+ai --edit ID --model sonnet --effort max   # a chat's choices changed; it goes on with its conversation
+ai --forget ended                    # every ended terminal off the list (or one: --forget ID)
+ai --usage --days 7                  # what the chats used, and what it costs
+ai --signin-art spark                # the picture of the sign-in (no name: which one it is)
+ai --signin-logo /root/logo.svg      # a picture of your own there; --signin-logo-forget
+ai --db-ipv4                         # where the database server listens; --db-ipv4 only: 127.0.0.1
 ai --users                           # the accounts; --add-user, --passwd, --set-role…
 ai --set upgrade_auto=1              # a setting
 ai --osup check                      # the system's updates; --osup upgrade, followed here

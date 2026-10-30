@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.29'
+__version__ = '1.0.30'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -8046,6 +8046,14 @@ def need_admin(c):
 # ---- the picture of the sign-in (1.0.27), as otp's (otp.py 1.0.161) -------------
 ART_KEY, LOGO_KEY, ART_DEFAULT = 'signin:art', 'signin:logo', 'browser'
 LOGO_MAX = 512 * 1024
+ART_WORDS_TEXT = {'browser': 'Claude Code in the browser, the server behind it (as ai came)',
+                  'terminal': 'The terminal, Claude Code at the prompt', 'chat': 'A task asked, Claude Code at work on it',
+                  'tmux': 'Terminals that go on when the browser closes',
+                  'devices': 'One server, from the desk, the laptop and the tablet', 'spark': 'The spark of Claude',
+                  'tablet': 'A chat on the tablet, scrolled by finger', 'diff': 'A change to the code, line by line',
+                  'folders': 'The folder of the chats and what is under it', 'agents': 'A task shared out to agents',
+                  'usage': 'What the chats used, day by day', 'keys': 'Signed in, the keys of the server safe',
+                  'none': 'No picture', 'custom': 'A picture of your own'}
 ART_NAMES = ('browser', 'terminal', 'chat', 'tmux', 'devices', 'spark', 'tablet', 'diff', 'folders',
              'agents', 'usage', 'keys', 'none', 'custom')
 
@@ -16491,6 +16499,18 @@ class ConsoleBack(Exception):
     """Back to the menu."""
 
 
+CONSOLE_MODELS = [('', 'as Claude Code chooses'), ('opus', 'Opus - the newest'), ('sonnet', 'Sonnet - the newest'),
+                  ('haiku', 'Haiku - the newest'), ('fable', 'Fable - the newest'),
+                  ('opusplan', 'Opus to plan, Sonnet to do'), ('claude-fable-5-1', 'Fable 5.1'),
+                  ('claude-opus-5-5', 'Opus 5.5'), ('claude-opus-5', 'Opus 5'), ('claude-opus-4-8', 'Opus 4.8'),
+                  ('claude-sonnet-5-5', 'Sonnet 5.5'), ('claude-sonnet-5', 'Sonnet 5'),
+                  ('claude-haiku-5-5', 'Haiku 5.5'), ('claude-haiku-4-5', 'Haiku 4.5')]
+CONSOLE_MODES = [('', 'ask before changes (default)'), ('acceptEdits', 'accept edits by itself'),
+                 ('plan', 'plan only'), ('auto', 'auto (a classifier decides)'),
+                 ('manual', 'manual (ask for everything)'), ('dontAsk', 'do not ask (deny what is not allowed)'),
+                 ('bypassPermissions', 'never ask (bypass permissions)')]
+
+
 class Console(object):
     def __init__(self, pal):
         self.pal = pal
@@ -17592,7 +17612,27 @@ class Console(object):
             ('1', 'Browse and change (arrows, Enter)', self.settings_tui),
             ('2', 'Change one by its key', by_key),
             ('3', 'All of them as text', lambda: self.act('--settings')),
+            ('4', 'The picture of the sign-in page', self.signin_art),
         ])
+
+    def signin_art(self):
+        """Settings - The sign-in page, on the text screen (1.0.30)."""
+        now = (self.out('--signin-art') or {}).get('art') or ART_DEFAULT
+        opts = [(n, ART_WORDS_TEXT.get(n, n)) for n in ART_NAMES]
+        opts.append(('upload', 'Upload a picture of your own (a file on this server)…'))
+        opts.append(('forget', 'Take the picture of your own away'))
+        r = self.choose('The picture of the sign-in page', opts, 'It shows %s now.' % now,
+                        cur=ART_NAMES.index(now) if now in ART_NAMES else 0)
+        if not r:
+            return
+        if r == 'upload':
+            f = self.ask_one('A picture of your own', 'file', '', help_='PNG, JPEG, GIF, WebP or SVG, 512 KB at most.')
+            if f:
+                self.act('--signin-logo', f)
+        elif r == 'forget':
+            self.act('--signin-logo-forget')
+        elif r != now:
+            self.act('--signin-art', r)
 
     # ---- settings on the text screen: arrows, Enter, a window to change one (1.0.134)
     PANE_TITLES = [('claude', 'Claude Code'), ('access', 'Signing in'), ('upgrade', 'Upgrades'),
@@ -18661,6 +18701,14 @@ class Console(object):
             to = self.ask_one('A test mail', 'to', '', help_='An address the mail goes to - every step is shown.')
             if to:
                 self.act('--mail-test', to)
+        def db4():
+            r = self.choose('The database server', [('status', 'Where it listens'),
+                                                    ('only', 'Keep it to IPv4 (127.0.0.1 only)')])
+            if r == 'status':
+                self.act('--db-ipv4')
+            elif r == 'only' and self.confirm('Only IPv4', 'The database server of this machine listens on 127.0.0.1 alone - nothing '
+                            'over IPv6, nothing from outside - and is started again.', 'Do it'):
+                self.act('--db-ipv4', 'only', '--yes')
         return self.sub('Data: copies of the database, backups, mail', [
             ('1', 'The copies of the database', lambda: self.act('--db-copies')),
             ('2', 'Make a copy now', lambda: self.act('--db-copy')),
@@ -18670,6 +18718,7 @@ class Console(object):
             ('6', 'Export the whole configuration into a file', export),
             ('7', 'Send a test mail', mail),
             ('8', 'Tidy up what has been kept long enough', lambda: self.act('--tidy')),
+            ('9', 'The database server: where it listens, kept to IPv4', db4),
         ])
 
     # ---- 11 the service ---------------------------------------------------------
@@ -18714,6 +18763,15 @@ class Console(object):
         def toggle():
             self.show_ended = not self.show_ended
             self.note('Terminals', 'The ended ones are %s.' % ('listed too' if self.show_ended else 'left out'))
+        def usage():
+            days = self.ask_one('What the chats used', 'days', '30', help_='The last how many days.')
+            if days:
+                self.act('--usage', '--days', days if days.isdigit() else '30')
+
+        def forget():
+            if self.confirm('Ended terminals', 'Every ended terminal is taken off the list - their conversations '
+                            'stay with Claude Code (Conversations).', 'Take them off', danger=True):
+                self.act('--forget', 'ended')
         self.show_ended = getattr(self, 'show_ended', False)
         cols = [('id', lambda t: t.get('id'), 8, None),
                 ('state', lambda t: t.get('state'), 8,
@@ -18729,6 +18787,8 @@ class Console(object):
             ('2', 'New Claude Code', lambda: self.term_new('claude')),
             ('3', 'New shell', lambda: self.term_new('shell')),
             ('4', 'Ended ones in the list too: on or off', toggle),
+            ('5', 'What the chats used, and what it costs', usage),
+            ('6', 'Take every ended one off the list', forget),
         ])
 
     def term_do(self, t):
@@ -18737,8 +18797,11 @@ class Console(object):
         if t.get('state') == 'exited':
             opts.append(('restart', 'Start it again'))
         if t.get('state') == 'ended':
-            opts += [('again', 'Start it again, the same way'), ('screen', 'Its last screen')]
+            opts += [('again', 'Start it again, the same way'), ('screen', 'Its last screen'),
+                     ('forget', 'Take it off the list')]
         else:
+            if t.get('kind', 'claude') == 'claude':
+                opts.append(('edit', 'Change it: name, folder, model, effort, permissions'))
             opts.append(('end', 'End it'))
         opts.append(('show', 'Show it all'))
         what = self.choose(t.get('title') or tid, opts, '%s · %s · %s' % (t.get('state'), t.get('run_as'),
@@ -18753,13 +18816,34 @@ class Console(object):
         elif what == 'again':
             self.act('--again', tid)
         elif what == 'screen':
-            self.show('--screen', tid)
+            self.act('--screen', tid)
         elif what == 'end':
             if self.confirm('End it', 'What runs in "%s" ends now.' % (t.get('title') or tid), 'End it',
                             danger=True):
                 self.act('--end', tid)
         elif what == 'show':
             self.details(t.get('title') or tid, t)
+        elif what == 'forget':
+            self.act('--forget', tid)
+        elif what == 'edit':
+            o = t.get('opts') or {}
+            got = self.form('Change it', [
+                {'key': 'title', 'label': 'name', 'value': t.get('title') or ''},
+                {'key': 'cwd', 'label': 'working directory', 'value': t.get('cwd') or t.get('path') or ''},
+                {'key': 'model', 'label': 'model', 'kind': 'choice', 'value': o.get('model') or '',
+                 'options': CONSOLE_MODELS},
+                {'key': 'effort', 'label': 'effort', 'kind': 'choice', 'value': o.get('effort') or '',
+                 'options': [('', 'as Claude Code chooses')] + [(e, e) for e in CLI_EFFORTS]},
+                {'key': 'mode', 'label': 'permissions', 'kind': 'choice', 'value': o.get('mode') or '',
+                 'options': CONSOLE_MODES}],
+                'Claude Code takes these when it starts: the chat is started again, going on with its conversation.')
+            if not got:
+                return
+            args = ['--edit', tid, '--mode', got.get('mode') or 'default']
+            for k in ('title', 'cwd', 'model', 'effort'):
+                if got.get(k):
+                    args += ['--' + k, got[k]]
+            self.act(*args)
 
     def term_new(self, kind):
         fields = [{'key': 'dir', 'label': 'working directory', 'value': os.getcwd() if os.getcwd() != '/'
@@ -18771,7 +18855,10 @@ class Console(object):
             fields += [{'key': 'how', 'label': 'start with', 'kind': 'choice', 'value': 'new',
                         'options': [('new', 'a new conversation'), ('continue', 'the last conversation of the folder'),
                                     ('pick', 'one of its conversations, chosen')]},
-                       {'key': 'model', 'label': 'model', 'help': 'Empty: as Claude Code chooses; opus, sonnet…'}]
+                       {'key': 'model', 'label': 'model', 'kind': 'choice', 'value': '', 'options': CONSOLE_MODELS},
+                       {'key': 'effort', 'label': 'effort', 'kind': 'choice', 'value': '',
+                        'options': [('', 'as Claude Code chooses')] + [(e, e) for e in CLI_EFFORTS]},
+                       {'key': 'mode', 'label': 'permissions', 'kind': 'choice', 'value': '', 'options': CONSOLE_MODES}]
         got = self.form('New Claude Code' if kind == 'claude' else 'New shell', fields)
         if not got:
             return
@@ -18781,8 +18868,9 @@ class Console(object):
         else:
             if got.get('how') in ('continue', 'pick'):
                 args.append('--' + got['how'])
-            if got.get('model'):
-                args += ['--model', got['model']]
+            for k in ('model', 'effort', 'mode'):
+                if got.get(k):
+                    args += ['--' + k, got[k]]
         out, rc = self.capture(ai_argv() + args + ['--json'])
         try:
             tid = json.loads(out).get('id')
@@ -18975,11 +19063,22 @@ def build_parser():
     g.add_argument('--continue', action='store_true', dest='cont',
                    help='with --new: the last conversation of the folder')
     g.add_argument('--pick', action='store_true', help='with --new: choose one of its conversations')
-    g.add_argument('--model', default='', help='with --new: the model (opus, sonnet…)')
-    g.add_argument('--title', default='', help='with --new: its name')
+    g.add_argument('--model', default='', help='with --new, --edit: the model (opus, sonnet, claude-opus-5-5…)')
+    g.add_argument('--title', default='', help='with --new, --edit: its name')
     g.add_argument('--end', metavar='ID', help='end a terminal')
     g.add_argument('--restart-term', metavar='ID', help='start what ran in a terminal again')
     g.add_argument('--again', metavar='ID', help='an ended terminal started afresh, the same way')
+    g.add_argument('--effort', default='', choices=('',) + CLI_EFFORTS, metavar='|'.join(CLI_EFFORTS),
+                   help='with --new, --edit: how hard Claude Code thinks')
+    g.add_argument('--mode', default='', metavar='MODE',
+                   help='with --new, --edit: the permission mode (%s; default: ask)' % ', '.join(CLI_MODES))
+    g.add_argument('--edit', metavar='ID', help='a chat\'s choices changed (--title, --model, --effort, --mode, '
+                   '--cwd); it is started again, going on with its conversation')
+    g.add_argument('--cwd', default='', metavar='DIR', help='with --edit: its new working directory')
+    g.add_argument('--forget', metavar='ID|ended', help='an ended terminal taken off the list (ended: every one)')
+    g.add_argument('--usage', action='store_true', help='what the chats with Claude Code used, and what it costs '
+                   '(--days)')
+    g.add_argument('--days', type=int, default=30, metavar='N', help='with --usage: the last N days [30]')
     g = p.add_argument_group('ACCOUNTS', 'Who may sign in to the pages.')
     g.add_argument('--users', action='store_true', help='the accounts')
     g.add_argument('--add-user', metavar='NAME', help='an account (--role, --run-as; the password asked)')
@@ -19007,6 +19106,8 @@ def build_parser():
     g.add_argument('--db-copies', action='store_true', help='the copies and the dumps kept (/var/lib/ai/backups, /var/lib/ai/dumps)')
     g.add_argument('--db-restore', '--restore', metavar='FILE', dest='db_restore',
                    help='a copy put back (everything replaced; --yes)')
+    g.add_argument('--db-ipv4', nargs='?', const='status', choices=('status', 'only'), metavar='status|only',
+                   help='where the database server of this machine listens; only: 127.0.0.1, no IPv6')
     g.add_argument('--tidy', action='store_true', help='delete what has been kept long enough (events, sign-ins, copies)')
     g.add_argument('--export-config', metavar='FILE', help='the whole configuration into a file (- for stdout)')
     g.add_argument('--with-secrets', action='store_true', help='with --export-config: the secrets too, locked')
@@ -19038,6 +19139,12 @@ def build_parser():
     g.add_argument('--pages-from', metavar='CIDR,..|all', help='who may reach the pages')
     g.add_argument('--change-keep', choices=('net', 'fw', 'access', 'all'), help='keep a change on trial')
     g.add_argument('--change-back', choices=('net', 'fw', 'access', 'all'), help='put the old back now')
+    g = p.add_argument_group('THE SIGN-IN PAGE', 'The picture above the sign-in, as on Settings - The sign-in page.')
+    g.add_argument('--signin-art', nargs='?', const='', metavar='NAME',
+                   help='the picture shown, or the one to show: %s' % ', '.join(ART_NAMES))
+    g.add_argument('--signin-logo', metavar='FILE', help='a picture of your own shown (PNG, JPEG, GIF, WebP, SVG; '
+                   '512 KB at most)')
+    g.add_argument('--signin-logo-forget', action='store_true', help='the picture of your own taken away')
     g = p.add_argument_group('THE SERVER')
     g.add_argument('--net', action='store_true', help='its network, as NetworkManager has it')
     g.add_argument('--ntp', action='store_true', help='its clock: chrony, the time servers, the zone')
@@ -19333,6 +19440,110 @@ def cli_trial(d, pal, kind, keep):
     return 0
 
 
+def big_num(n):
+    n = int(n or 0)
+    for div, unit in ((1e9, 'G'), (1e6, 'M'), (1e3, 'k')):
+        if n >= div:
+            return '%.1f%s' % (n / div, unit)
+    return str(n)
+
+
+CLI_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+CLI_MODES = ('acceptEdits', 'plan', 'auto', 'manual', 'dontAsk', 'bypassPermissions')
+
+
+def cli_mode(v):
+    if v and v not in CLI_MODES and v != 'default':
+        raise Refused('the permission mode is one of %s' % ', '.join(CLI_MODES))
+    return '' if v == 'default' else v
+
+
+def cli_usage(d, a, pal):
+    u = chat_usage(d, {'name': 'cli', 'role': 'admin'}, a.days)
+    if a.json:
+        say_json(u)
+        return 0
+    t = u['total']
+    tok = lambda r: '%s in, %s out, %s cache' % (big_num(r['input']), big_num(r['output']),
+                                                 big_num(r['cache_write'] + r['cache_read']))
+    print('%s  the last %d days, %s' % (pal.head('what the chats used'), u['days'],
+                                         ', '.join(u.get('accounts') or []) or 'no account with chats'))
+    print('  chats          %d, %d messages' % (t.get('chats') or len(u.get('chats') or []), t['messages']))
+    print('  tokens         %s' % tok(t))
+    print('  at list prices $%.2f%s' % (t['cost'], '  (not priced: %s)' % ', '.join(u['unpriced'])
+                                        if u.get('unpriced') else ''))
+    for name, key in (('by model', 'by_model'), ('by account', 'by_account'), ('by folder', 'by_project')):
+        rows = u.get(key) or []
+        if rows:
+            print('\n' + pal.head(name))
+            print(table([[r['key'] or '-', r['messages'], big_num(r['input'] + r['output']), '$%.2f' % r['cost']]
+                         for r in rows[:a.limit]], ['', 'messages', 'tokens', 'cost']))
+    chats = u.get('chats') or []
+    if chats:
+        print('\n' + pal.head('the chats, the last first'))
+        print(table([[ago(_ts_epoch(c['last'])), (c.get('term') or {}).get('id') or '-', clean_line(c.get('title'), 40),
+                      c.get('messages', 0), big_num(c['input'] + c['output']), '$%.2f' % c['cost']]
+                     for c in chats[:a.limit]], ['last', 'terminal', 'chat', 'messages', 'tokens', 'cost']))
+    return 0
+
+
+def cli_signin(st, a, pal):
+    by = 'the command line'
+    if a.signin_logo_forget:
+        logo_set(st, b'', by)
+        print(pal.ok_line('the picture of your own is taken away'))
+    if a.signin_logo:
+        with open(a.signin_logo, 'rb') as f:
+            raw = f.read(LOGO_MAX + 1)
+        logo_set(st, raw, by, os.path.basename(a.signin_logo))
+        art_set(st, 'custom')
+        print(pal.ok_line('%s is shown on the sign-in now' % a.signin_logo))
+    if a.signin_art:
+        if a.signin_art not in ART_NAMES:
+            raise Refused('the pictures are %s' % ', '.join(ART_NAMES))
+        art_set(st, a.signin_art)
+        print(pal.ok_line('the sign-in shows %s now' % a.signin_art))
+    v = art_state(st)
+    if a.json:
+        say_json(v)
+    elif a.signin_art == '' and not a.signin_logo and not a.signin_logo_forget:
+        print('%s  %s' % (pal.head('the sign-in shows'), art_read(st)['art']))
+        print('  the pictures   %s' % ', '.join(ART_NAMES))
+        lg = logo_read(st)
+        print('  your own       %s' % ('%s, %s bytes%s' % (lg.get('type'), lg.get('bytes') or '?',
+                                                            ' (%s)' % lg['name'] if lg.get('name') else '')
+                                       if lg else 'none uploaded'))
+    if a.signin_art or a.signin_logo or a.signin_logo_forget:
+        st.add_event('settings', '%s changed the picture of the sign-in: %s' % (by, art_read(st)['art']), who=by)
+    return 0
+
+
+def cli_db_ipv4(st, a, pal):
+    db = st.db
+    if a.db_ipv4 == 'only':
+        if not a.yes and sys.stdin.isatty() and input('the database server listens on 127.0.0.1 only and is '
+                                                      'started again - go on? [y/N] ').strip().lower() \
+                not in ('y', 'yes', 'a', 'ano'):
+            return 1
+        said = db_ipv4_only(db.engine)
+        st.add_event('settings', 'the command line kept the database server to IPv4 on this machine: %s'
+                     % '; '.join(said), 'warn', who='the command line')
+        for ln in said:
+            print(pal.ok_line(ln))
+        time.sleep(1.5)
+    where = db_listening(db.engine, db.host, db.port)
+    if a.json:
+        say_json({'engine': db.engine, 'listening': where})
+    elif where is None:
+        print(pal.ok_line('the database (%s) is not a server on this machine - nothing to keep to IPv4' % db.engine))
+    else:
+        six = [w for w in where if w.startswith('[')]
+        print((pal.warn_line if six else pal.ok_line)('%s listens on %s%s' % (
+            db.engine, ', '.join(where) or 'nothing (is it running?)', ' - ai --db-ipv4 only keeps it to IPv4'
+            if six else '')))
+    return 0
+
+
 def cli_terms_new(d, a, pal):
     u = {'name': 'cli', 'role': 'admin', 'run_as': a.run_as or '', 'roots': '[]'}
     opts = {}
@@ -19342,6 +19553,10 @@ def cli_terms_new(d, a, pal):
         opts['pick'] = True
     if a.model:
         opts['model'] = a.model
+    if a.effort:
+        opts['effort'] = a.effort
+    if cli_mode(a.mode):
+        opts['mode'] = cli_mode(a.mode)
     tid = Terms(d.store).new(u, 'shell' if a.shell else 'claude', a.new, a.title, opts,
                              run_as=a.run_as or str(CONFIG.get('default_run_as') or 'root'))
     if a.json:
@@ -19455,6 +19670,36 @@ def cli_main(argv):
             return 0
         if a.new:
             return cli_terms_new(d, a, pal)
+        if a.edit:
+            r = tm.row(a.edit)
+            b = {}
+            for k, v in (('title', a.title), ('model', a.model), ('effort', a.effort), ('cwd', a.cwd)):
+                if v:
+                    b[k] = v
+            if a.mode:
+                b['mode'] = cli_mode(a.mode)
+            if not b:
+                raise Refused('what is to change? --title, --model, --effort, --mode or --cwd')
+            tid = tm.edit(admin, r, b)
+            print(pal.ok_line('%s started again with its new choices - ai --attach %s' % (tid, tid)))
+            return 0
+        if a.forget:
+            if a.forget == 'ended':
+                live = tm.live(True)
+                gone = [t for t in tm.list(admin) if t['state'] == 'ended' and t['id'] not in live]
+                for t in gone:
+                    tm.forget(admin, tm.row(t['id']))
+                print(pal.ok_line('%d ended terminal(s) taken off the list' % len(gone)))
+            else:
+                tm.forget(admin, tm.row(a.forget))
+                print(pal.ok_line('%s taken off the list' % a.forget))
+            return 0
+        if a.usage:
+            return cli_usage(d, a, pal)
+        if a.signin_art is not None or a.signin_logo or a.signin_logo_forget:
+            return cli_signin(st, a, pal)
+        if a.db_ipv4:
+            return cli_db_ipv4(st, a, pal)
         if a.end or a.restart_term or a.again:
             r = tm.row(a.end or a.restart_term or a.again)
             if a.end:
