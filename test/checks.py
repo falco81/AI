@@ -160,5 +160,8 @@ except ai.Refused:
 check('every picture of the sign-in drawn', set(ai.ART_NAMES) == {'browser', 'terminal', 'chat', 'tmux', 'devices',
       'spark', 'tablet', 'diff', 'folders', 'agents', 'usage', 'keys', 'none', 'custom'})
 
+_inst = open(os.path.join(HERE, 'install.sh')).read()
+check('install.sh puts in every PHP file of the pages', '/web/*.php' in _inst)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

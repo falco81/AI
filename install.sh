@@ -513,8 +513,8 @@ php_pool_dir() {
 install_pages() {
     step "The pages"
     run install -d -m 0755 "$WEB_DIR" "$WEB_DIR/assets" "$WEB_DIR/assets/xterm" "$WEB_DIR/lang"
-    run install -m 0644 "$SOURCE_DIR"/web/index.php "$SOURCE_DIR"/web/ai-api.php "$SOURCE_DIR"/web/ai-page.php \
-        "$SOURCE_DIR"/web/healthz.php "$SOURCE_DIR"/web/.user.ini "$WEB_DIR/"
+    # Every PHP file of the pages, not a list of them: one left out is a page that fails (1.0.27's ai-art.php).
+    run install -m 0644 "$SOURCE_DIR"/web/*.php "$SOURCE_DIR"/web/.user.ini "$WEB_DIR/"
     run install -m 0644 "$SOURCE_DIR"/web/assets/*.* "$WEB_DIR/assets/"
     run install -m 0644 "$SOURCE_DIR"/web/assets/xterm/* "$WEB_DIR/assets/xterm/"
     run install -m 0644 "$SOURCE_DIR"/web/lang/*.json "$WEB_DIR/lang/"

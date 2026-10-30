@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.28
+
+- **The pages after the upgrade to 1.0.27**: install.sh put in the PHP files of the pages by a list of names,
+  and 1.0.27's new one (`ai-art.php`, the pictures of the sign-in) was not on it - so after the upgrade the
+  page answered HTTP 500. It now puts in every PHP file there is, and a check makes sure it stays so.
+
 ## 1.0.27
 
 - **The picture of the sign-in, chosen as otp's**: Settings -> The sign-in page shows every picture the sign-in
