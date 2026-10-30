@@ -454,6 +454,24 @@ function termMake(host) {
      with Ctrl or Alt, the arrows, Home/End, Page Up/Down, Insert/Delete,
      F1-F12, with Shift, Ctrl and Alt as a terminal sends them. */
   t.attachCustomKeyEventHandler(function (e) {
+    /* Alt codes, as Windows types them (1.0.23): Alt held, digits on the
+       numeric keypad, the character when Alt is let go - Alt+64 is @. xterm
+       sent each digit as Esc+digit; they are gathered here instead. */
+    if (e.type === 'keydown' && e.altKey && !e.ctrlKey && !e.metaKey && /^Numpad[0-9]$/.test(e.code || '')) {
+      TERM.altDigits = (TERM.altDigits || '') + e.code.slice(6);
+      e.preventDefault();
+      return false;
+    }
+    if (e.type === 'keyup' && e.key === 'Alt' && TERM.altDigits) {
+      var ch = termAltCode(TERM.altDigits);
+      TERM.altDigits = '';
+      if (ch && TERM.ws && TERM.ws.readyState === 1 && !TERM.ro) {
+        TERM.ws.send(new TextEncoder().encode(ch));
+        TERM.altSent = {ch: ch, at: Date.now()};     /* the browser may type it too: once is enough */
+      }
+      return false;
+    }
+    if (e.type === 'keydown' && e.key === 'Alt') TERM.altDigits = '';
     if (e.type !== 'keydown') return true;
     var k = e.key, ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && !e.altKey && !e.shiftKey && (k === 'c' || k === 'C') && t.hasSelection()) {
@@ -479,8 +497,16 @@ function termMake(host) {
     return true;
   });
   t.onData(function (d) {
+    if (TERM.altSent && d === TERM.altSent.ch && Date.now() - TERM.altSent.at < 800) { TERM.altSent = null; return; }
     if (TERM.ws && TERM.ws.readyState === 1 && !TERM.ro) TERM.ws.send(new TextEncoder().encode(termModsUse(d)));
   });
+  /* PuTTY's way (1.0.23): what is selected is copied by itself, the right
+     button pastes. Chosen under the account; the menu is then Ctrl + right button. */
+  t.onSelectionChange(debounce(function () {
+    if (termRightMode() !== 'paste' || !t.hasSelection()) return;
+    var sel = t.getSelection();
+    if (sel && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(sel).catch(function () { });
+  }, 250));
   t.onBinary(function (d) {
     if (!TERM.ws || TERM.ws.readyState !== 1 || TERM.ro) return;
     var b = new Uint8Array(d.length);
@@ -641,6 +667,38 @@ function termRetry(wasOpen) {
   termSay('lost', 'the connection dropped - again in ' + Math.round(wait / 1000) + ' s');
   clearTimeout(TERM.timer);
   TERM.timer = setTimeout(termConnect, wait);
+}
+
+/* The character of an Alt code: Alt+nnn the old DOS code page (437), as
+   Windows has it; Alt+0nnn the Windows one (1252); past 255 Windows takes
+   the rest of 256. */
+var CP437_LOW = '\u0000☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼';
+var CP437_HIGH = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0';
+var CP1252_HIGH = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
+function termAltCode(digits) {
+  var n = parseInt(digits, 10);
+  if (isNaN(n) || n <= 0) return '';
+  if (digits.charAt(0) === '0') {
+    n = n % 256;
+    if (n >= 128 && n < 160) return CP1252_HIGH.charAt(n - 128);
+    return String.fromCharCode(n);
+  }
+  n = n % 256;
+  if (n < 32) return CP437_LOW.charAt(n);
+  if (n === 127) return '⌂';
+  if (n >= 128) return CP437_HIGH.charAt(n - 128);
+  return String.fromCharCode(n);
+}
+function termRightMode() {
+  var want = '';
+  try { want = (typeof prefs === 'function' && prefs().term_right) || ''; } catch (e) { }
+  return want === 'menu' ? 'menu' : 'paste';
+}
+/** The clipboard into the terminal - the right button in PuTTY's way. */
+function termPasteClipboard() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) { toast('this browser lets only Ctrl+V paste', 'warn'); return; }
+  navigator.clipboard.readText().then(function (text) { if (text) termType(text, false); },
+    function () { toast('the browser did not let the page read the clipboard - allow it for this page, or Ctrl+V', 'warn'); });
 }
 
 /** Text into the terminal as though pasted (bracketed), and Enter after it. */

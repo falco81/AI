@@ -263,6 +263,15 @@ function showMe() {
     lsec.appendChild(g);
     lsec.appendChild(el('p', 'small muted', 'The colours of the terminals - for every terminal you open, kept with your account:'));
     lsec.appendChild(termPalettePicker());
+    var rb = selectBox([['paste', 'pastes, as in PuTTY - what is selected is copied by itself; Ctrl + right button: the menu'],
+                        ['menu', 'opens the menu (copy, paste, the chat...)']], termRightMode());
+    rb.onchange = function () { savePrefs({term_right: rb.value}).then(function () { toast('kept', 'good'); }).catch(oops); };
+    var g2 = el('div', 'formgrid');
+    g2.style.marginTop = '12px';
+    var rf = formField('The right mouse button in a terminal', rb);
+    rf.classList.add('span-2');
+    g2.appendChild(rf);
+    lsec.appendChild(g2);
     body.appendChild(lsec);
 
     /* The columns of the tables - exactly otp's (isemon's). */
@@ -7645,6 +7654,12 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
     if (e.shiftKey) return;           /* Shift: the browser's own menu */
     e.preventDefault();
     e.stopPropagation();
+    /* PuTTY's way, unless the account chose the menu (1.0.23): the right
+       button pastes, Ctrl with it opens the menu. */
+    if (termRightMode() === 'paste' && !e.ctrlKey && !e.metaKey && !e.target.closest('.term-sb, .term-live, .term-pure-x')) {
+      termPasteClipboard();
+      return;
+    }
     termCtx(e.clientX, e.clientY);
   }, true);
   /* On a tablet the right button is a finger held still (1.0.9). */
@@ -7654,10 +7669,7 @@ function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
     var sel = TERM.t && TERM.t.hasSelection() ? TERM.t.getSelection() : '';
     var items = [
       {icon: 'copy', words: 'Copy', key: 'Ctrl+Shift+C', disabled: !sel, go: function () { copyText2(sel); }},
-      {icon: 'paste', words: 'Paste', key: 'Ctrl+V', go: function () {
-        if (!navigator.clipboard || !navigator.clipboard.readText) { toast('this browser lets only Ctrl+V paste', 'warn'); return; }
-        navigator.clipboard.readText().then(function (text) { if (text) termType(text, false); }, function () { toast('the browser did not let the page read the clipboard - Ctrl+V does', 'warn'); });
-      }},
+      {icon: 'paste', words: 'Paste', key: termRightMode() === 'paste' ? 'right button' : 'Ctrl+V', go: termPasteClipboard},
       {icon: 'list', words: 'The whole history', go: function () { if (t) termHistory(t); }},
       {icon: 'down', words: 'Back to now', disabled: !TERM.pos.mode, go: function () { termAsk({t: 'live'}); }},
       {icon: 'selectall', words: 'Select everything on the screen', go: function () { if (TERM.t) { TERM.t.selectAll(); TERM.t.focus(); } }},

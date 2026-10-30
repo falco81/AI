@@ -1388,6 +1388,16 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'pastes, as in PuTTY - what is selected is copied by itself; Ctrl + right button: the menu':
+        'vkládá jako v PuTTY – označený text se sám zkopíruje; Ctrl + pravé tlačítko: menu',
+    'opens the menu (copy, paste, the chat...)':
+        'otevře menu (kopírovat, vložit, chat…)',
+    'The right mouse button in a terminal':
+        'Pravé tlačítko myši v terminálu',
+    'right button':
+        'pravé tlačítko',
+    'the browser did not let the page read the clipboard - allow it for this page, or Ctrl+V':
+        'prohlížeč stránce nedovolil číst schránku – povolte to pro tuto stránku, nebo Ctrl+V',
     'Folders used lately':
         'Nedávno použité složky',
     'Back from the whole screen':

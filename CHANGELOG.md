@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.23
+
+- **Alt codes in the terminals**: Alt held and digits on the numeric keypad type their character when Alt is
+  let go, as Windows does - Alt+64 is @, Alt+nnn the old DOS code page (437), Alt+0nnn the Windows one (1252).
+  The digits went to the terminal as Esc and a digit.
+- **The right button pastes, as in PuTTY**: in a terminal the right button puts the clipboard in, and what is
+  selected is copied by itself; Ctrl with the right button (or a finger held still) opens the menu. Under your
+  account (Language and letters) the right button can open the menu instead, as before. The browser asks once
+  whether the page may read the clipboard.
+
 ## 1.0.22
 
 - The headings of the start page (*Folders used lately*, *Going on*, *Ended lately*) have their room above

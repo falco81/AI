@@ -84,7 +84,15 @@ moves, comes back too.
 
 ## The right mouse button
 
-On the terminal: copy what is selected, paste, select or copy the whole
+In a terminal the right button pastes, as in PuTTY, and what is selected is
+copied by itself (the browser asks once whether the page may read the
+clipboard). Ctrl with the right button opens the menu. Under your account
+(Language and letters) the right button can open the menu instead.
+
+Alt codes work as in Windows: hold Alt, type the digits on the numeric
+keypad, let Alt go - Alt+64 is @, Alt+0228 is ä.
+
+The menu, on the terminal: copy what is selected, paste, select or copy the whole
 screen, a file for Claude, the files of the chat, Claude Code's commands, a
 longer text, the whole window, clearing the screen - then what the list
 offers for the chat. Shift with the right button gives the browser's own
