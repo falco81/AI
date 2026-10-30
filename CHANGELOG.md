@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.15
+
+- The ⋯ of a chat in the list of terminals is in the row's bottom right corner: at the top it lay over the
+  chat's name and its state. The state (running, ended, open) is never cut short any more.
+- The figures of the Overview's usage line up: each tile's figure on one line whatever its label wraps to, the
+  tiles across the whole width, every number of the tables in one font with digits of one width.
+
 ## 1.0.14
 
 - **The scroll bar moves with the history again**: Claude Code's full-screen look (now its default for many

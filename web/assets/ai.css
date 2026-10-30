@@ -3288,11 +3288,13 @@ pre.lines.tall{max-height:60vh;overflow:auto}
   margin:8px 4px 2px;display:flex;align-items:center;gap:6px}
 .tl-sec:first-child{margin-top:0}
 .tl-item{position:relative}
-.tl-dots{position:absolute;top:6px;right:6px;width:28px;height:26px;border-radius:7px;border:0;background:var(--panel);
+/* The ⋯ in the bottom right corner (1.0.15): at the top it lay over the
+   chat's name and its state. */
+.tl-meta,.tl-path{padding-right:30px}
+.tl-dots{position:absolute;bottom:5px;right:6px;width:28px;height:24px;border-radius:7px;border:0;background:var(--panel);
   color:var(--tx-dim);display:grid;place-items:center;opacity:0;cursor:pointer}
 .tl-item:hover .tl-dots,.tl-item.on .tl-dots,.tl-dots:focus-visible,.tl-item.menu .tl-dots{opacity:1}
 .tl-dots:hover{color:var(--tx);background:var(--panel2)}
-.tl-item:hover .tl-top .tag,.tl-item.menu .tl-top .tag{visibility:hidden}
 .tl-pin{color:var(--warn);flex:none;display:inline-grid}
 .tl-rename{width:100%;font:inherit;font-weight:600;padding:2px 6px;border-radius:6px;border:1px solid var(--info);
   background:var(--bg);color:var(--tx)}
@@ -3495,11 +3497,13 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .us-head h2{margin:0}
 .us-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .us-note{margin:8px 0 16px;max-width:900px}
-.us-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:0 0 16px}
-.us-tile{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
-.us-tile-l{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx-mut)}
+.us-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 16px}
+/* The figures on one line whatever their label wraps to (1.0.15): the label
+   keeps two lines' room, the figure sits at the bottom. */
+.us-tile{display:flex;flex-direction:column;justify-content:space-between;gap:6px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.us-tile-l{display:flex;align-items:flex-start;min-height:2.6em;line-height:1.3;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx-mut)}
 .us-tile-l svg{color:var(--info);flex:none}
-.us-tile b{font-size:22px;font-weight:700}
+.us-tile b{font-size:22px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
 .us-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin:0 0 16px}
 @media (max-width:560px){.us-two{grid-template-columns:1fr}}
 .us-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;background:var(--panel)}
@@ -3517,3 +3521,9 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .us-cost{font-weight:600}
 .dir-limit{margin-top:4px}
 .dir-limit a{margin-left:2px}
+.tl-top > .tag,.tl-top > .pill{flex:none}
+/* Every figure of the usage tables in one font and size, its digits one width
+   (1.0.15): the muted ones were drawn in another and stood out of line. */
+#ov-usage td.num{font-family:inherit;font-size:13px;font-variant-numeric:tabular-nums;vertical-align:middle}
+#ov-usage td.num.muted{color:var(--tx-dim)}
+#ov-usage td{vertical-align:middle}
