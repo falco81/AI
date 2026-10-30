@@ -3,6 +3,11 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.22
+
+- The headings of the start page (*Folders used lately*, *Going on*, *Ended lately*) have their room above
+  again: a rule of the empty terminal pane took it away and each stood pressed against what was over it.
+
 ## 1.0.21
 
 - On the start page *Folders used lately* stands above *Going on*, next to the box whose folder it sets, with
