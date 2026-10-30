@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.18
+
+- **Every ended terminal off the list at once**: *Take every ended one off the list (n)* on the right button
+  of the list of terminals and of any terminal in it, asked first. The running ones are not touched, and the
+  conversations of Claude Code stay under Conversations. One at a time is still *Take it off the list*.
+- In Conversations the git branch of a conversation stands beside its folder: its tag lay over the folder's
+  name.
+
 ## 1.0.17
 
 - **One tile a conversation in the list**: before 1.0.16 picking a conversation up again started a new terminal

@@ -685,6 +685,7 @@ $('te-hist').onclick = function () { showTab('history'); };
         drawTermList();
       }},
       {icon: 'search', words: 'Find a terminal', go: function () { side.classList.add('open'); $('tl-q').focus(); }},
+      endedCount() ? {icon: 'trash', words: 'Take every ended one off the list (' + endedCount() + ')', danger: true, go: forgetEnded} : null,
       narrow() ? null : {icon: 'pin', words: TLR.pinned ? 'Let the list hide itself' : 'Keep the list open', go: function () { pinSide(!TLR.pinned); }},
       {icon: 'refresh', words: 'Read it again', go: function () { loadTerms(); }}]);
   };
@@ -1887,8 +1888,10 @@ function drawHistory() {
   host.appendChild(listTable(['When', 'Folder', 'What it was about', {words: 'Messages', cls: 'num'}, ''], rows, function (it) {
     var tr = el('tr', 'clickable');
     tr.appendChild(stampCell(it.mtime));
-    var f = noI18n(el('td', 'mono small', it.cwd || '?'));
-    if (it.branch) f.appendChild(el('span', 'tag dim', it.branch));
+    /* The folder and its git branch side by side (1.0.18): the branch's tag lay over the folder's name. */
+    var f = noI18n(el('td', 'hi-folder'));
+    f.appendChild(el('span', 'mono small hi-path', it.cwd || '?'));
+    if (it.branch) { var br = el('span', 'tag dim hi-branch', it.branch); br.title = 'git branch ' + it.branch; f.appendChild(br); }
     tr.appendChild(f);
     var w = el('td', 'hi-words');
     if (it.summary) w.appendChild(noI18n(el('b', '', it.summary)));
@@ -7509,8 +7512,22 @@ function termActions(t, row) {
       confirmThen('End ' + t.title + '?', 'What runs in it is ended on the server - for every window looking at it. Its last screen stays in the list for a while.', 'End it', function () {
         api('terms', {do: 'kill', id: t.id}).then(function () { if (t.id === TL.open) closeTermView(); loadTerms(); }).catch(oops);
       }, true);
-    }}
+    }},
+    endedCount() ? {icon: 'trash', words: 'Take every ended one off the list (' + endedCount() + ')', danger: true, go: forgetEnded} : null
   ];
+}
+/* Every ended terminal off the list at once (1.0.18) - one by one it was a
+   right click each. The running ones are not touched. */
+function endedCount() { return (TL.terms || []).filter(function (x) { return x.state === 'ended'; }).length; }
+function forgetEnded() {
+  var gone = (TL.terms || []).filter(function (x) { return x.state === 'ended'; });
+  if (!gone.length) { toast('no ended terminal in the list'); return; }
+  confirmThen('Take ' + gone.length + ' ended terminal(s) off the list?',
+    'Their last screens go with them. Nothing that runs is touched, and the conversations of Claude Code stay - they are picked up again under Conversations.',
+    'Take them off', function () {
+      Promise.all(gone.map(function (x) { return api('terms', {do: 'forget', id: x.id}).catch(function () { }); }))
+        .then(function () { toast(gone.length + ' taken off the list', 'good'); loadTerms(TL.open, true); });
+    }, true);
 }
 function termMenu(t, x, y, row) { ctxMenu(x, y, termActions(t, row), row); }
 

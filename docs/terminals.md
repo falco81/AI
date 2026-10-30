@@ -90,8 +90,9 @@ the list where there is no row - a new folder or file, upload, a new Claude
 Code, copy the path, read it again.
 
 Anywhere else on the list of terminals: a new Claude Code or shell, picking
-up a conversation, the ended ones shown or not, finding a terminal, the list
-kept open or hiding itself, read again.
+up a conversation, the ended ones shown or not, finding a terminal, every
+ended one taken off the list at once, the list kept open or hiding itself,
+read again.
 
 On a chat in the list (or its ⋯, as on claude.ai): open it, open it in a
 new window, **pin** it (pinned chats stay at the top, kept with your

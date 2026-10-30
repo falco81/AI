@@ -3528,3 +3528,6 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 #ov-usage td.num.muted{color:var(--tx-dim)}
 #ov-usage td{vertical-align:middle}
 .ctx{max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain}
+.hi-folder{white-space:nowrap}
+.hi-folder .hi-path{display:inline-block;vertical-align:middle;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.hi-folder .hi-branch{display:inline-block;vertical-align:middle;margin-left:8px;position:static}

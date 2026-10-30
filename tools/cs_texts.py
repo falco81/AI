@@ -1388,6 +1388,12 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'no ended terminal in the list':
+        'v seznamu není žádný ukončený terminál',
+    'Their last screens go with them. Nothing that runs is touched, and the conversations of Claude Code stay - they are picked up again under Conversations.':
+        'Jejich poslední obrazovky zmizí s nimi. Nic běžícího se nezmění a konverzace Claude Code zůstanou – navážete na ně v Konverzacích.',
+    'Take them off':
+        'Odebrat je',
     'Opus - the newest':
         'Opus – nejnovější',
     'Sonnet - the newest':
@@ -2422,6 +2428,12 @@ STRINGS = {
 }
 
 PATTERNS = {
+    'Take every ended one off the list ({0})':
+        'Odebrat všechny ukončené ze seznamu ({0})',
+    'Take {0} ended terminal(s) off the list?':
+        'Odebrat {0} ukončených terminálů ze seznamu?',
+    '{0} taken off the list':
+        '{0} odebráno ze seznamu',
     'ai {0} on {1}.': 'ai {0} na {1}.',
     '{0} terminal(s) running.': '{0} {0:terminál běží|terminály běží|terminálů běží}.',
     ' A newer version is out: {0} (Settings - Upgrades).': ' Vyšla novější verze: {0} (Nastavení – Upgrady).',
