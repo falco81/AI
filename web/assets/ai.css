@@ -862,6 +862,9 @@
     .ctl-layout{display:block;position:relative;padding-left:72px;
       transition:padding-left .18s ease}
     .ctl-layout.nav-pinned{padding-left:266px}
+    /* Out under the pointer, the rail moves the page aside rather than lying
+       over it: what the page says stays readable beside the open menu. */
+    .ctl-layout:has(.ctl-nav.open){padding-left:266px}
     body.app-shell #tab-settings .ctl-layout{flex:1 1 auto;min-height:0}
     /* No padding under this. The save bar is the last thing in it and sticks
        to the bottom; padding here holds the bar that far up, and the rail -
@@ -874,7 +877,6 @@
       border-radius:var(--r);padding:8px 8px 14px;overflow-x:hidden;overflow-y:auto;
       overscroll-behavior:contain;transition:width .18s ease,box-shadow .18s ease}
     .ctl-nav.open,.ctl-nav.pinned{width:252px}
-    .ctl-nav.open:not(.pinned){box-shadow:12px 0 36px rgba(0,0,0,.55)}
     .ctl-nav button[data-pane]{white-space:nowrap}
     .ctl-nav button[data-pane] span{transition:opacity .12s}
     .ctl-nav:not(.open):not(.pinned) .ctl-navtop{justify-content:center}
@@ -3323,23 +3325,38 @@ pre.lines.tall{max-height:60vh;overflow:auto}
   .term-layout.no-side{padding-left:0}
   .term-layout > .term-main{height:100%}
   .term-side{position:absolute;top:0;bottom:0;left:0;width:58px;z-index:60;transition:width .16s ease,box-shadow .16s;
-    padding:12px 8px}
-  .term-side.open,.term-side.pinned{width:310px;padding:16px}
+    padding:10px 8px}
+  .term-side.open,.term-side.pinned{width:310px}
+  .term-side .tl-filters{flex-wrap:nowrap}
+  .term-side .tl-item{overflow:hidden}
+  .term-side .tl-meta,.term-side .tl-sec{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .term-side .tl-item,.term-side .tl-newbtn,.term-side .tl-filters,.term-side .tl-head h2{white-space:nowrap}
+  .term-side .tl-item > *,.term-side .tl-top > *,.term-side .tl-newbtn > span,.term-side .tl-head h2{transition:opacity .12s}
   .term-side.open:not(.pinned){box-shadow:12px 0 36px rgba(0,0,0,.55)}
-  .term-side:not(.open):not(.pinned) h2 > :not(.right),
+  /* Shut, the rail is the same rail, only narrower: every row keeps its
+     height and every icon its place, and what does not fit is made
+     invisible where it stands - so nothing slides out from under the
+     pointer that opened it (as otp's settings rail). */
+  .term-side:not(.open):not(.pinned) .tl-head h2,
+  .term-side:not(.open):not(.pinned) .tl-newbtn > span,
   .term-side:not(.open):not(.pinned) .tl-filters,
-  .term-side:not(.open):not(.pinned) .tl-sec,
   .term-side:not(.open):not(.pinned) .tl-item > :not(.tl-top),
   .term-side:not(.open):not(.pinned) .tl-top > :not(.tl-icon),
   .term-side:not(.open):not(.pinned) .tl-dots,
-  .term-side:not(.open):not(.pinned) .tl-list > p{display:none}
-  .term-side:not(.open):not(.pinned) h2{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:0}
-  .term-side:not(.open):not(.pinned) h2 .right{display:flex;flex-direction:column;gap:8px;margin:0}
-  .term-side:not(.open):not(.pinned) #tl-new span{display:none}
-  .term-side:not(.open):not(.pinned) .tl-item{padding:8px 0;display:grid;place-items:center}
-  .term-side:not(.open):not(.pinned) .tl-list{scrollbar-width:none}
+  .term-side:not(.open):not(.pinned) .tl-list > p{opacity:0;pointer-events:none}
+  .term-side:not(.open):not(.pinned) .tl-sec{color:transparent;
+    background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat}
+  .term-side:not(.open):not(.pinned) .tl-list{scrollbar-width:none;overflow-x:hidden}
+  .term-side:not(.open):not(.pinned) .tl-list::-webkit-scrollbar{width:0;display:none}
   .term-side .tl-pinbtn{display:grid}
 }
+.tl-head{display:flex;align-items:center;gap:8px;height:34px;margin:0 0 6px;flex:none}
+.tl-head h2{margin:0;font-size:15px;overflow:hidden}
+.tl-newbtn{appearance:none;display:flex;align-items:center;gap:10px;width:100%;flex:none;margin:0 0 8px;
+  padding:8px 11px;border-radius:9px;border:1px solid rgba(88,166,255,.45);background:rgba(88,166,255,.12);
+  color:var(--info);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;overflow:hidden;text-align:left}
+.tl-newbtn:hover{background:rgba(88,166,255,.2)}
+.tl-newbtn svg{flex:none}
 .tl-pinbtn{display:none;appearance:none;place-items:center;width:34px;height:30px;border-radius:8px;
   border:1px solid var(--line);background:var(--panel2);color:var(--tx-dim);cursor:pointer}
 .tl-pinbtn:hover{color:var(--tx)}
@@ -3357,6 +3374,14 @@ pre.lines.tall{max-height:60vh;overflow:auto}
   background:rgba(139,148,158,.55)}
 .term-sb:hover .term-sb-thumb{background:rgba(88,166,255,.75)}
 @media (pointer:coarse){.term-sb{width:22px;right:0}}
+/* Claude Code full-screen keeps its history itself: the bar a jog wheel,
+   with a page up and down at its ends (1.0.10). */
+.term-sb.jog .term-sb-thumb{background:rgba(88,166,255,.5);
+  background-image:repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,255,255,.35) 5px 6px)}
+.term-sb.jog::before,.term-sb.jog::after{position:absolute;left:0;right:0;text-align:center;font-size:9px;
+  line-height:12px;color:var(--tx-mut);pointer-events:none}
+.term-sb.jog::before{content:'\25B2';top:3px}
+.term-sb.jog::after{content:'\25BC';bottom:3px}
 .term-live{position:absolute;right:28px;bottom:12px;z-index:6;display:flex;align-items:center;gap:6px;
   padding:6px 12px;border-radius:999px;border:1px solid rgba(88,166,255,.5);background:#0d2340;color:#cfe3ff;
   font:600 12.5px var(--font,system-ui);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45)}

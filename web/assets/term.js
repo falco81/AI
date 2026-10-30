@@ -28,7 +28,18 @@ function termPosDraw() {
   if (!sb) return;
   var p = TERM.pos, total = p.size + Math.max(1, p.rows || (TERM.t ? TERM.t.rows : 24));
   var shown = Math.max(1, p.rows || (TERM.t ? TERM.t.rows : 24));
-  sb.bar.hidden = !p.size;
+  /* On the alternate screen (Claude Code full-screen) the history is the
+     program's own and where it is is not known here: the bar is a jog
+     wheel then - the thumb in the middle, dragged up or down by as much as
+     the history should move, and back to the middle when let go. */
+  sb.bar.hidden = !p.size && !p.alt;
+  sb.bar.classList.toggle('jog', !!p.alt);
+  if (p.alt) {
+    sb.thumb.style.height = '22%';
+    sb.thumb.style.top = (39 + (sb.jog || 0)) + '%';
+    sb.live.hidden = true;
+    return;
+  }
   var h = Math.max(8, 100 * shown / total);
   var top = 100 * (p.size - p.at) / total;
   sb.thumb.style.height = h + '%';
@@ -62,19 +73,45 @@ function termScrollBar(host) {
     var now = Date.now();
     if (now - sent > 70) { sent = now; termAsk({t: 'scrollto', f: Math.min(1, f)}); }
   };
+  /* The jog wheel: lines moved = the drag in rows of the terminal; a click
+     above or below the thumb a page. */
+  var jogY = 0, jogAcc = 0;
+  var cell = function () { return (TERM.host && TERM.t) ? TERM.host.clientHeight / Math.max(1, TERM.t.rows) : 18; };
   var down = function (e) {
-    dragging = true;
     var y = e.touches ? e.touches[0].clientY : e.clientY;
-    place(y);
     e.preventDefault();
     e.stopPropagation();
+    if (TERM.pos.alt) {
+      var tr = thumb.getBoundingClientRect();
+      if (y < tr.top || y > tr.bottom) {
+        var rows = Math.max(1, (TERM.t ? TERM.t.rows : 24) - 2);
+        termAsk({t: 'scroll', n: y < tr.top ? rows : -rows});
+        return;
+      }
+      dragging = 'jog'; jogY = y; jogAcc = 0; TERM.sb.jogFrom = y;
+      return;
+    }
+    dragging = true;
+    place(y);
   };
   var move = function (e) {
     if (!dragging) return;
-    place(e.touches ? e.touches[0].clientY : e.clientY);
+    var y = e.touches ? e.touches[0].clientY : e.clientY;
+    if (dragging === 'jog') {
+      var r = bar.getBoundingClientRect();
+      TERM.sb.jog = Math.max(-39, Math.min(39, 100 * (y - TERM.sb.jogFrom) / Math.max(1, r.height)));
+      jogAcc += (jogY - y) * 3;
+      jogY = y;
+      var n = Math.trunc(jogAcc / cell());
+      if (n) { jogAcc -= n * cell(); termAsk({t: 'scroll', n: n}); }
+      termPosDraw();
+    } else place(y);
     e.preventDefault();
   };
-  var up = function () { dragging = false; };
+  var up = function () {
+    if (dragging === 'jog') { TERM.sb.jog = 0; termPosDraw(); }
+    dragging = false;
+  };
   bar.addEventListener('mousedown', down);
   bar.addEventListener('touchstart', down, {passive: false});
   window.addEventListener('mousemove', move);

@@ -1386,6 +1386,8 @@ STRINGS = {
         'Zpět z celého okna',
     'Clear the screen':
         'Vymazat obrazovku',
+    'New terminal':
+        'Nový terminál',
     'Open the folder':
         'Otevřít složku',
     'Copy its path':

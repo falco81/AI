@@ -1618,10 +1618,65 @@ function drawFiles(d) {
       if (e.kind === 'dir') loadFiles(full);
       else openFile(full, e);
     };
+    tr.addEventListener('contextmenu', function (ev) { ev.preventDefault(); ev.stopPropagation(); flMenu(e, full, ev.clientX, ev.clientY, tr); });
+    longPress(tr, function (x, y) { flMenu(e, full, x, y, tr); });
     return tr;
   }, 'plain|An empty folder'));
   explainWhatWasDrawn(host);
 }
+/* The right button on a file or a folder (1.0.10): everything that can be
+   done with it, as in the files beside a chat. */
+function flMenu(e, full, x, y, row) {
+  var dir = e.kind === 'dir';
+  var here = FL.path;
+  ctxMenu(x, y, [
+    {head: e.name},
+    dir ? {icon: 'folder', words: 'Open the folder', go: function () { loadFiles(full); }}
+        : {icon: 'eye', words: 'Open it', go: function () { openFile(full, e); }},
+    dir ? {icon: 'terminal', words: 'A new Claude Code in it', go: function () { newTermAsk('claude', full); }} : null,
+    {icon: 'copy', words: 'Copy its path', go: function () { copyText2(full); }},
+    dir ? {icon: 'add', words: 'A new folder in it…', go: function () { flNew('mkdir', full); }} : null,
+    dir ? {icon: 'file', words: 'A new file in it…', go: function () { flNew('touch', full); }} : null,
+    'sep',
+    {icon: 'download', words: dir ? 'Download it as a .zip' : 'Download it', go: function () { download(full); }},
+    {icon: 'edit', words: 'Rename', go: function () {
+      var name = prompt('A new name for ' + e.name, e.name);
+      if (!name || name === e.name) return;
+      filesApi('op', '', {op: 'rename', path: full, name: name}).then(function () { loadFiles(here); }).catch(oops);
+    }},
+    'sep',
+    {icon: 'trash', words: 'Delete', danger: true, go: function () {
+      confirmThen('Take ' + e.name + ' away?', (dir ? 'The folder <b>' + htmlText(e.name) + '</b> and everything in it are' : '<b>' + htmlText(e.name) + '</b> is') + ' deleted from the server. There is no bin.', 'Delete it', function () {
+        filesApi('op', '', {op: 'delete', path: full}).then(function () { loadFiles(here); }).catch(oops);
+      });
+    }}
+  ], row);
+}
+function flNew(what, inside) {
+  var name = prompt(txT(what === 'mkdir' ? 'The name of the new folder' : 'The name of the new file'));
+  if (!name) return;
+  filesApi('op', '', {op: what, path: inside, name: name}).then(function () { loadFiles(FL.path); }).catch(oops);
+}
+/* ...and on the list where there is no row: what can be made in the folder shown. */
+(function () {
+  var host = $('fl-host').closest('.card') || $('fl-host');
+  var here = function (x, y) {
+    ctxMenu(x, y, [{head: FL.path || '/'},
+      {icon: 'add', words: 'A new folder here…', go: function () { flNew('mkdir', FL.path); }},
+      {icon: 'file', words: 'A new file here…', go: function () { flNew('touch', FL.path); }},
+      {icon: 'upload', words: 'Upload files here…', go: function () { $('fl-input').click(); }},
+      {icon: 'terminal', words: 'A new Claude Code here', go: function () { newTermAsk('claude', FL.path); }},
+      {icon: 'copy', words: 'Copy its path', go: function () { copyText2(FL.path); }},
+      'sep',
+      {icon: 'refresh', words: 'Read it again', go: function () { loadFiles(FL.path); }}]);
+  };
+  host.addEventListener('contextmenu', function (ev) {
+    if (ev.target.closest('tr.clickable, button, a, input, select, textarea, label')) return;
+    ev.preventDefault();
+    here(ev.clientX, ev.clientY);
+  });
+  longPress(host, function (x, y, target) { if (!target.closest('tr.clickable, button, a, input, select, textarea, label')) here(x, y); });
+}());
 function download(path) {
   var a = el('a');
   a.href = '/files/get?path=' + encodeURIComponent(path);

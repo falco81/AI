@@ -79,7 +79,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.9'
+__version__ = '1.0.10'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4514,15 +4514,43 @@ VIEWERS_LOCK = threading.Lock()
 
 def term_pos(terms, pw, target):
     rc, so, _se = terms.tmux(pw, ['display-message', '-p', '-t', target,
-                                  '#{history_size}|#{scroll_position}|#{pane_in_mode}|#{pane_height}'], timeout=5)
+                                  '#{history_size}|#{scroll_position}|#{pane_in_mode}|#{pane_height}|'
+                                  '#{alternate_on}|#{mouse_any_flag}'], timeout=5)
     bits = [x.strip() for x in (so or '').strip().split('|')]
     num = lambda i: int(bits[i]) if len(bits) > i and bits[i].lstrip('-').isdigit() else 0
-    return {'size': num(0), 'at': num(1) if num(2) else 0, 'mode': bool(num(2)), 'rows': num(3)}
+    return {'size': num(0), 'at': num(1) if num(2) else 0, 'mode': bool(num(2)), 'rows': num(3),
+            'alt': bool(num(4)) and not num(2), 'mouse': bool(num(5))}
 
 
-def term_scroll(terms, pw, target, msg):
+# Lines one turn of the wheel moves Claude Code's own history by (its
+# full-screen renderer); a scroll of n lines is n / this many turns.
+WHEEL_LINES = 3
+
+
+def term_wheel(terms, pw, target, now, n):
+    """A program on the alternate screen keeps its history itself (Claude Code
+    full-screen, less, vim): tmux has none to move. It is moved as the mouse
+    wheel moves it - wheel events written to the program, in the middle of
+    its screen - or, where it asked for no mouse, by Page Up / Page Down."""
+    if not n:
+        return
+    if now['mouse']:
+        turns = min(400, max(1, (abs(n) + WHEEL_LINES - 1) // WHEEL_LINES))
+        row = max(1, (now['rows'] or 24) // 3)
+        seq = '\x1b[<%d;%d;%dM' % (64 if n > 0 else 65, 10, row)
+        hexes = ['%02x' % b for b in seq.encode()] * turns
+        for i in range(0, len(hexes), 4000):
+            terms.tmux(pw, ['send-keys', '-t', target, '-H'] + hexes[i:i + 4000], timeout=5)
+    else:
+        pages = min(50, max(1, abs(n) // max(1, (now['rows'] or 24) - 2)))
+        terms.tmux(pw, ['send-keys', '-t', target, '-N', str(pages), 'PPage' if n > 0 else 'NPage'], timeout=5)
+
+
+def term_scroll(terms, pw, target, msg, readonly=False):
     """tmux's history moved: `scroll` by lines (more than 0 back, less than 0
-    on), `scrollto` a place (0 the top, 1 the live screen), `live` back to it."""
+    on), `scrollto` a place (0 the top, 1 the live screen), `live` back to it.
+    On the alternate screen the program's own history instead (term_wheel) -
+    which is typing into it, so not for someone only looking."""
     t = msg.get('t')
     now = term_pos(terms, pw, target)
     if t == 'pos':
@@ -4530,6 +4558,14 @@ def term_scroll(terms, pw, target, msg):
 
     def keys(*a):
         terms.tmux(pw, ['send-keys', '-t', target, '-X'] + list(a), timeout=5)
+    if now['alt']:
+        if readonly:
+            return now
+        if t == 'live':
+            terms.tmux(pw, ['send-keys', '-t', target, 'C-End'], timeout=5)
+        elif t == 'scroll':
+            term_wheel(terms, pw, target, now, max(-5000, min(5000, int(msg.get('n') or 0))))
+        return term_pos(terms, pw, target)
     if t == 'live':
         if now['mode']:
             keys('cancel')
@@ -4683,7 +4719,7 @@ def term_bridge(daemon, ws, u, r, cols, rows, readonly=False):
                     # it as the mouse wheel does - in tmux's copy mode, which
                     # the pages leave again at the bottom.
                     try:
-                        got = term_scroll(terms, pw, 'ai-' + r['id'], msg)
+                        got = term_scroll(terms, pw, 'ai-' + r['id'], msg, readonly)
                         ws.send(json.dumps(dict(got, t='pos')))
                     except WsClosed:
                         break

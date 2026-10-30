@@ -666,6 +666,20 @@ function helpAt(over, html, at) {
   /* `at` is the mouse event that opened it, where there was one. */
   at = at || over;
   var wide = box.getBoundingClientRect();
+  /* In a rail that slides out (1.0.10) the panel goes beside the rail, level
+     with the item - never over the items below it, which are what the
+     pointer is on its way to. The rail's width open, not the one it is
+     still growing from. */
+  var rail = over.closest && over.closest('.ctl-nav, .term-side');
+  if (rail && window.innerWidth > 980) {
+    var rr = rail.getBoundingClientRect(), ir = over.getBoundingClientRect();
+    var rx = rr.left + Math.max(rr.width, rail.classList.contains('term-side') ? 310 : 252) + 10;
+    if (rx + wide.width <= window.innerWidth - 8) {
+      box.style.left = Math.round(rx) + 'px';
+      box.style.top = Math.round(Math.max(8, Math.min(ir.top, window.innerHeight - wide.height - 8))) + 'px';
+      return;
+    }
+  }
   /* Where a pointer is, when there is one. A panel of a dozen lines anchored
      to a table row is a panel the size of a card, and wherever it is put it
      lands on something: over the row it covers the row, beside the row it

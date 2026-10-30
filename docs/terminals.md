@@ -31,6 +31,15 @@ place; *Back to now* returns to the live screen. **History** in the bar (and
 its colours, in a window of its own that scrolls as any page does - copied or
 downloaded as text.
 
+Claude Code in its full-screen look (`/tui fullscreen`, the one that says
+*Jump to bottom (ctrl+End)*) keeps its history itself, on the terminal's
+alternate screen, and tmux has none to show. The bar is then a jog wheel:
+its thumb stays in the middle, dragged up goes back, dragged down comes on,
+and a click on the arrows' ends is a page; a finger on the terminal moves it
+too. They are turned into the mouse wheel for Claude Code (or Page Up / Page
+Down for a program that asked for no mouse), so only someone who may type
+into the terminal can do it.
+
 ## Starting a chat
 
 The start of *Terminals* is claude.ai's: write the task in the box, choose the
@@ -70,6 +79,11 @@ menu. tmux's own menu on that button is switched off.
 On a tablet a finger held still on the terminal, a chat, a file or a folder
 is the right button.
 
+In the *Files* tab: on a file or a folder - open it, a new Claude Code in
+it, copy its path, a new folder or file in it, download, rename, delete; on
+the list where there is no row - a new folder or file, upload, a new Claude
+Code, copy the path, read it again.
+
 On a chat in the list (or its ⋯, as on claude.ai): open it, open it in a
 new window, **pin** it (pinned chats stay at the top, kept with your
 account, so they are pinned wherever you sign in), **rename** it in its row
@@ -89,7 +103,10 @@ list are uploaded into the folder shown. The whole server stays under the
 
 At the edge of the screen as otp's menu of settings: a strip of icons that
 slides out when pointed at, and stays out once pinned (the pin at its top,
-or the first button of the terminal's bar). On a phone the list and the
+or the first button of the terminal's bar). Sliding out, nothing in it moves:
+the pin, *New terminal* and every chat's icon stay exactly where they were
+under the pointer. The menu of the settings and of the Claude Code tab moves
+the page aside as it slides out, so nothing on the page is covered. On a phone the list and the
 terminal take the screen in turn.
 
 ## Nothing ends by closing the browser

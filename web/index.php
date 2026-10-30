@@ -342,9 +342,10 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <section class="panel" id="tab-terms">
   <div class="term-layout" id="term-layout">
     <aside class="card term-side" id="term-side">
-      <h2>Terminals <span class="right"><button type="button" class="tl-pinbtn" id="tl-pin" aria-pressed="false"
-          aria-label="Keep this list open"></button><button class="btn small cmd primary" id="tl-new" data-icon="add"
-          title="A new terminal: Claude Code or a shell, in the folder you choose.">New</button></span></h2>
+      <div class="tl-head"><button type="button" class="tl-pinbtn" id="tl-pin" aria-pressed="false"
+          aria-label="Keep this list open"></button><h2>Terminals</h2></div>
+      <button type="button" class="tl-newbtn" id="tl-new" data-icon="add"
+          title="A new terminal: Claude Code or a shell, in the folder you choose.">New terminal</button>
       <div class="btnrow tl-filters" style="margin-bottom:8px">
         <input type="search" id="tl-q" placeholder="find a terminal…" style="flex:1;min-width:120px">
         <select id="tl-show" title="Which terminals the list shows.">
