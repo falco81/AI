@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.26
+
+- **nginx on IPv6 whenever the machine has it**: installed with IPv6 off in the kernel, nginx's file was written
+  without its `[::]` listen lines, and IPv6 switched on later never got them. They are put in (or taken out)
+  after every change under Settings -> Network and when the daemon starts, nginx tested first and reloaded.
+  The firewall needed nothing: its rules are written for IPv4 and IPv6 alike already.
+- **The database server kept to IPv4**: The database shows where a MariaDB or PostgreSQL server on this machine
+  listens, and *Only IPv4 (127.0.0.1)* tells it to listen on 127.0.0.1 alone - nothing over IPv6, nothing from
+  outside - and starts it again (MariaDB: a `bind-address` file of ai's; PostgreSQL: `listen_addresses`).
+
 ## 1.0.25
 
 - **A chat's choices changed while it runs**: *Change it…* on a chat's right button, its ⋯ and under More - its

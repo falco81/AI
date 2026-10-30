@@ -96,3 +96,11 @@ ai --tls-preset intermediate --tls-dh ffdhe2048 --tls-hsts 31536000
 An administrator is told on every page when the PHP running the pages may be
 without the fix for php2shell (CVE-2026-109618, CVE-2026-109619); the pages
 never let PHP parse a request body, so they are guarded either way.
+
+## IPv6
+
+nginx listens on IPv6 whenever the kernel has it: its `[::]` lines are put in
+after every change under Settings -> Network and when the daemon starts. The
+firewall's rules of ai are written for IPv4 and IPv6 alike. A database server
+on this machine can be kept to IPv4 under Settings -> The database -> *Only
+IPv4 (127.0.0.1)*: it then listens on 127.0.0.1 alone.

@@ -1388,6 +1388,20 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'The server listens on':
+        'Server naslouchá na',
+    'IPv4, this machine only':
+        'IPv4, jen tento stroj',
+    'not IPv4 only':
+        'ne jen IPv4',
+    'Only IPv4 (127.0.0.1)':
+        'Jen IPv4 (127.0.0.1)',
+    'The database server on IPv4 only?':
+        'Databázový server jen na IPv4?',
+    'It is told to listen on 127.0.0.1 only - nothing over IPv6, nothing from outside this machine - and started again: these pages wait a few seconds for it.':
+        'Nastaví se, aby naslouchal jen na 127.0.0.1 – nic přes IPv6, nic zvenku – a spustí se znovu: stránky na něj pár sekund počkají.',
+    'the database server listens on 127.0.0.1 only now':
+        'databázový server teď naslouchá jen na 127.0.0.1',
     'Change it…':
         'Upravit…',
     'Change it - model, effort, permissions, folder…':

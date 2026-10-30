@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.25'
+__version__ = '1.0.26'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -5487,6 +5487,39 @@ def nginx_swap(files):
                 write_atomic(p, was[0], mode=was[1])
         raise Refused('nginx does not take it, so everything was put back: %s' % (se or so).strip()[-400:])
     run(['systemctl', 'reload', 'nginx'], timeout=30)
+
+
+def nginx_ipv6_sync():
+    """nginx on IPv6 whenever the kernel has it (1.0.26): installed on a
+    machine with IPv6 off in its kernel, nginx's file was written without the
+    [::] listen lines - and IPv6 switched on later under Network never got
+    them. Put in (or taken out) here, nginx tested and reloaded; a file nginx
+    does not take is put back. True when something was changed."""
+    try:
+        text = NGINX_CONF.read_text()
+    except OSError:
+        return False
+    have6 = os.path.exists('/proc/net/if_inet6')
+    has6 = re.search(r'^[ \t]*listen[ \t]+\[::\]', text, re.M)
+    if have6 and not has6:
+        new = re.sub(r'^([ \t]*)listen([ \t]+)(80|443)\b([^;\n]*);',
+                     lambda m: '%s\n%slisten%s[::]:%s%s;' % (m.group(0), m.group(1), m.group(2), m.group(3), m.group(4)),
+                     text, flags=re.M)
+    elif has6 and not have6:
+        new = re.sub(r'^[ \t]*listen[ \t]+\[::\][^\n]*\n', '', text, flags=re.M)
+    else:
+        return False
+    if new == text:
+        return False
+    write_atomic(NGINX_CONF, new, mode=0o644)
+    rc, so, se = run(['nginx', '-t'], timeout=30)
+    if rc != 0:
+        write_atomic(NGINX_CONF, text, mode=0o644)
+        log('nginx would not take its IPv6 lines, so they were left as they were: %s' % (se or so).strip()[-200:], 'warn')
+        return False
+    run(['systemctl', 'reload', 'nginx'], timeout=30)
+    log('nginx: %s' % ('listening on IPv6 too' if have6 else 'no longer listening on IPv6 (the kernel has none)'))
+    return True
 
 
 def access_change(daemon, a, by):
@@ -13444,6 +13477,60 @@ def _db_files(store):
             'backup_dir': str(BACKUP_DIR), 'dump_dir': str(DUMP_DIR), 'uploads': str(DB_UPLOADS)}
 
 
+def db_listening(engine, host, port):
+    """Where a database server on this machine listens (1.0.26), as ss says:
+    ['127.0.0.1:5432', '[::1]:5432'...], or None for one elsewhere."""
+    if engine not in ('mariadb', 'postgres') or str(host or '').lower() not in ('', 'localhost', '127.0.0.1', '::1'):
+        return None
+    port = int(port or {'mariadb': 3306, 'postgres': 5432}[engine])
+    rc, so, _se = run(['ss', '-Hltn', 'sport = :%d' % port], timeout=10)
+    if rc != 0:
+        return None
+    out = []
+    for line in so.splitlines():
+        bits = line.split()
+        if len(bits) >= 4 and bits[3] not in out:
+            out.append(bits[3])
+    return out
+
+
+def db_ipv4_only(engine):
+    """The database server on this machine told to listen on 127.0.0.1 only -
+    no IPv6, nothing from outside - and started again (1.0.26)."""
+    said = []
+    if engine == 'mariadb':
+        for d in ('/etc/my.cnf.d', '/etc/mysql/mariadb.conf.d', '/etc/mysql/conf.d'):
+            if os.path.isdir(d):
+                path = os.path.join(d, 'zz-ai-ipv4.cnf')
+                write_atomic(path, '# ai: the database server on IPv4, this machine only\n'
+                                   '[mysqld]\nbind-address = 127.0.0.1\n', mode=0o644)
+                said.append(path)
+                break
+        else:
+            raise Refused('no folder for MariaDB\'s settings here (/etc/my.cnf.d, /etc/mysql/mariadb.conf.d)')
+        units = ('mariadb', 'mysql', 'mysqld')
+    elif engine == 'postgres':
+        rc, so, se = run(['runuser', '-u', 'postgres', '--', 'psql', '-Atqc',
+                          "ALTER SYSTEM SET listen_addresses = '127.0.0.1'"], timeout=30)
+        if rc != 0:
+            raise Refused('PostgreSQL would not take it: %s' % (se or so).strip()[-200:])
+        said.append("listen_addresses = '127.0.0.1' (postgresql.auto.conf)")
+        rc, so, _se = run(['systemctl', 'list-units', '--type=service', '--all', '--plain', '--no-legend',
+                           'postgresql*'], timeout=10)
+        units = tuple(l.split()[0].replace('.service', '') for l in so.splitlines() if l.strip()) or ('postgresql',)
+    else:
+        raise Refused('only a MariaDB or PostgreSQL server on this machine')
+    for u in units:
+        rc, _so, _se = run(['systemctl', 'is-active', '--quiet', u], timeout=10)
+        if rc == 0:
+            rc, so, se = run(['systemctl', 'restart', u], timeout=120)
+            if rc != 0:
+                raise Refused('%s would not start again: %s' % (u, (se or so).strip()[-200:]))
+            said.append('%s started again' % u)
+            break
+    return said
+
+
 @route('GET', '/api/db', admin=True)
 def api_db(c):
     st = c.daemon.store
@@ -13453,6 +13540,7 @@ def api_db(c):
     db_tidy_files()
     files = _db_files(st)
     return dict(files, **{'engine': db.engine, 'words': ENGINE_WORDS.get(db.engine), 'where': db.where(),
+                          'listening': db_listening(db.engine, db.host, db.port) if not NO_SYSTEM else None,
                           'version': db.version(), 'size': db.size(), 'free': db_free_inside(db),
                           'counts': st.counts(), 'tables': db_table_sizes(db), 'backups': backups(),
                           'key': str(sealing_key_path()), 'key_there': bool(sealing_key()),
@@ -13494,6 +13582,14 @@ def api_db_do(c):
     st, b, by = c.daemon.store, c.body, c.name
     STORE_NOW['store'] = st
     act = b.get('action')
+    if act == 'ipv4_only':
+        db = st.db
+        said = db_ipv4_only(db.engine)
+        st.add_event('settings', '%s kept the database server to IPv4 on this machine: %s' % (by, '; '.join(said)),
+                     'warn', who=by)
+        time.sleep(1.5)
+        return {'message': 'the database server listens on 127.0.0.1 only now',
+                'listening': db_listening(db.engine, db.host, db.port)}
     if act == 'backup':
         try:
             out = make_backup(st, 'by %s' % by)
@@ -14541,6 +14637,11 @@ def net_job(daemon, got, by):
             if rc != 0:
                 raise Refused('nmcli connection up: %s' % (se or so).strip()[-200:])
             step('%s is up with it - now keep it' % got['con'], pct=100)
+            try:
+                if nginx_ipv6_sync():
+                    step('nginx: its listening put right for IPv6')
+            except Exception as e:                      # noqa: BLE001 - never in the way of the network
+                log('nginx and IPv6: %s' % e, 'warn')
             job['state'] = 'done'
             NET_CACHE['at'] = 0
         except Exception as e:                          # noqa: BLE001
@@ -15806,6 +15907,8 @@ class Daemon:
         versions_ran_note(self.store)
         self.first_account()
         log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, self.store.db.where()))
+        if not NO_SYSTEM:
+            threading.Thread(target=lambda: (time.sleep(5), nginx_ipv6_sync()), name='ai-nginx6', daemon=True).start()
         self.store.add_event('starting and stopping', 'ai %s started on %s' % (__version__, host_name()), 'info')
         try:
             tls_reapply_if_needed(self.store)

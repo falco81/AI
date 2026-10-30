@@ -4554,6 +4554,27 @@ function drawEngine(d) {
     ['Holding', num(c.users || 0) + ' account(s), ' + num(c.events || 0) + ' event(s)'],
     ['Room it takes', bytes(d.size || 0)]
   ]));
+  /* Where the server on this machine listens, and the way to keep it to
+     IPv4 there (1.0.26) - IPv6 switched on stays away from it. */
+  if (d.listening) {
+    var only4 = d.listening.length && d.listening.every(function (a) { return /^127\.0\.0\.1:/.test(a); });
+    var lrow = el('div', 'btnrow db-listen');
+    lrow.appendChild(el('span', 'small', txT('The server listens on') + ' '));
+    lrow.appendChild(noI18n(el('span', 'mono small', d.listening.join(', ') || '–')));
+    lrow.appendChild(el('span', 'tag ' + (only4 ? 'ok' : 'warn'), only4 ? 'IPv4, this machine only' : 'not IPv4 only'));
+    if (!only4) {
+      var b4 = cmdButton('Only IPv4 (127.0.0.1)', 'shield', 'small');
+      b4.onclick = function () {
+        confirmThen('The database server on IPv4 only?', 'It is told to listen on 127.0.0.1 only - nothing over IPv6, nothing from outside this machine - and started again: these pages wait a few seconds for it.', 'Do it', function () {
+          busy(b4, true);
+          api('db', {action: 'ipv4_only'}).then(function (r) { toast(r.message, 'good'); loadDb(); })
+            .catch(oops).then(function () { busy(b4, false); });
+        }, false);
+      };
+      lrow.appendChild(b4);
+    }
+    host.appendChild(lrow);
+  }
   Object.keys(d.drivers || {}).forEach(function (name) {
     var one = d.drivers[name];
     host.appendChild(el('p', 'btnhelp', engineWord(name) + ': '
