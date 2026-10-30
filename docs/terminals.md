@@ -117,6 +117,12 @@ account, so they are pinned wherever you sign in), **rename** it in its row
 (Enter keeps the name, Esc does not), its files, a new Claude Code in its
 folder, the command to attach it on the server, start it again, end it.
 
+## Files only in the folder of the chats
+
+Settings -> Claude Code -> *Files only in the folder of the chats* keeps the
+Files tab, the files of a chat, downloads and uploads in the folder of the
+chats and under it - for every account, administrators too.
+
 ## The files of a chat
 
 *Files* in the terminal's bar opens the chat's own folder beside it - the

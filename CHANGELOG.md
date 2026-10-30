@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.24
+
+- **Files only in the folder of the chats** (Settings -> Claude Code, shown once the folder of the chats is set):
+  on, the Files tab, the files of a chat, downloads and uploads reach that folder and what is under it only -
+  for every account, administrators too; the daemon refuses any other path, and a path from before opens the
+  folder itself.
+- **The Overview in two**: *The server* (the machine, who is signed in, lately) and *Claude Code - the chats*
+  (what the chats used, by day, hour, model, account and folder, and every chat), each its own address -
+  `#overview` and `#overview/claude` - kept on F5.
+
 ## 1.0.23
 
 - **Alt codes in the terminals**: Alt held and digits on the numeric keypad type their character when Alt is

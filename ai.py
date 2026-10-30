@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.23'
+__version__ = '1.0.24'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -128,6 +128,7 @@ DEFAULTS = {
     'default_run_as': 'root',
     'default_cwd': '',
     'chat_root': '',
+    'files_in_chat_root': False,
     'chat_upload_dir': '.ai-uploads',
     'upload_most_mb': 4096,
     'retain_events_days': 180,
@@ -232,6 +233,11 @@ SCHEMA = [
      'A new chat starts in this folder or in one under it, and nowhere else: the folder picker '
      'offers it and what is under it, never the rest of the machine. Empty: anywhere the account '
      'may go.', {}),
+    ('files_in_chat_root', 'claude', 'bool', 'Files only in the folder of the chats',
+     'On: the Files tab, the files of a chat, downloads and uploads reach the folder of the chats and what is '
+     'under it only - for every account, administrators too; the daemon refuses any other path. Off: an '
+     'administrator anywhere, a user in their own folders. Means nothing while the folder of the chats is empty.',
+     {'when': ['chat_root', '*']}),
     ('default_cwd', 'claude', 'str', 'Working directory offered first',
      'The directory a new terminal starts in, unless one is chosen. Empty: the home directory '
      'of the account it runs as.', {}),
@@ -3626,7 +3632,16 @@ def env_lines(text):
 
 def roots_of(u):
     """Where an account may read and write files: anywhere for an administrator;
-    for a user, its own folders, or the home of the account it runs as."""
+    for a user, its own folders, or the home of the account it runs as - and,
+    with Files only in the folder of the chats on (1.0.24), that folder alone
+    for everybody."""
+    if CONFIG.get('files_in_chat_root'):
+        try:
+            root = chat_root_of(linux_user(run_as_of(u)))
+        except Refused:
+            root = chat_root_of(None)
+        if root:
+            return [os.path.realpath(root)]
     if u['role'] == 'admin':
         return ['/']
     try:
@@ -4924,7 +4939,15 @@ def file_entry(path, name):
 
 
 def files_list(u, path, hidden=True):
-    path = path_allowed(u, path or '/')
+    roots = roots_of(u)
+    try:
+        path = path_allowed(u, path or (roots[0] if len(roots) == 1 and CONFIG.get('files_in_chat_root') else '/'))
+    except Refused:
+        # Kept to the folder of the chats (1.0.24): a path from before, outside
+        # it, opens the folder itself rather than an error.
+        if not (CONFIG.get('files_in_chat_root') and roots):
+            raise
+        path = roots[0]
     if not os.path.isdir(path):
         raise Refused('%s is not a folder' % path, 404)
     try:

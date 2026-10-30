@@ -489,6 +489,11 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
 <!-- ===================== Overview ===================== -->
 <section class="panel" id="tab-overview" hidden>
+  <div class="seg ov-seg" id="ov-seg">
+    <button type="button" data-ov="server" class="on">The server</button>
+    <button type="button" data-ov="claude">Claude Code - the chats</button>
+  </div>
+  <div id="ov-server">
   <div class="grid top">
     <div class="card metric info" id="card-terms"><div class="label">Terminals running</div>
       <div class="value" id="m-terms">–</div><div class="sub" id="m-terms-sub">&nbsp;</div></div>
@@ -514,7 +519,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <div class="card"><h2>Signed in now</h2><div id="ov-signed"></div>
       <h2 style="margin-top:16px">Lately</h2><div id="ov-events"></div></div>
   </div>
-  <div class="card full ov-usage" id="ov-usage"></div>
+  </div>
+  <div class="card full ov-usage" id="ov-usage" hidden></div>
 </section>
 
 <!-- ===================== Events ===================== -->

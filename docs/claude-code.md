@@ -23,7 +23,7 @@ account.
 
 ## What the chats used - on the Overview
 
-The Overview tab counts every chat with Claude Code of the Linux accounts you
+The Overview tab's second part, *Claude Code - the chats* (`#overview/claude`), counts every chat with Claude Code of the Linux accounts you
 may see (an administrator: every account with Claude Code's transcripts; a
 user: their own), over 7 days, 30, 90 or a year:
 

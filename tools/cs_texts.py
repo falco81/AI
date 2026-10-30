@@ -1388,6 +1388,14 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'The server':
+        'Server',
+    'Claude Code - the chats':
+        'Claude Code – chaty',
+    'Files only in the folder of the chats':
+        'Soubory jen ve složce chatů',
+    'On: the Files tab, the files of a chat, downloads and uploads reach the folder of the chats and what is under it only - for every account, administrators too; the daemon refuses any other path. Off: an administrator anywhere, a user in their own folders. Means nothing while the folder of the chats is empty.':
+        'Zapnuto: záložka Soubory, soubory chatu, stahování i nahrávání sahají jen do složky chatů a pod ni – pro každý účet, i pro administrátory; démon jinou cestu odmítne. Vypnuto: administrátor kamkoli, uživatel do svých složek. Bez vyplněné složky chatů nemá význam.',
     'pastes, as in PuTTY - what is selected is copied by itself; Ctrl + right button: the menu':
         'vkládá jako v PuTTY – označený text se sám zkopíruje; Ctrl + pravé tlačítko: menu',
     'opens the menu (copy, paste, the chat...)':

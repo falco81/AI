@@ -48,6 +48,7 @@ function writeHash() {
   if (TAB === 'claude' && typeof CC !== 'undefined') want += '/' + CC.pane;
   if (TAB === 'terms' && TL.open) want += '/' + TL.open;
   if (TAB === 'files' && FL.path) want += '/' + encodeURIComponent(FL.path);
+  if (TAB === 'overview' && typeof OV !== 'undefined' && OV.part === 'claude') want += '/claude';
   if (location.hash !== want) try { history.replaceState(null, '', want); } catch (e) { }
 }
 function onTab(name, sub) {
@@ -57,7 +58,7 @@ function onTab(name, sub) {
   if (name === 'files') loadFiles(sub || FL.path || '');
   if (name === 'history') loadHistory();
   if (name === 'claude' && typeof loadCC === 'function') loadCC(sub);
-  if (name === 'overview') loadOverview();
+  if (name === 'overview') loadOverview(sub);
   if (name === 'events') loadEvents();
   if (name === 'settings') { loadSettings(); showPane(sub || PANE); }
 }
@@ -2037,8 +2038,22 @@ function setCard(id, value, sub, tone) {
   $('m-' + id + '-sub').textContent = sub || ' ';
   if (tone) $('card-' + id).className = 'card metric ' + tone;
 }
-function loadOverview() {
-  if (typeof loadUsage === 'function') loadUsage();
+/* Two parts (1.0.24): the server, and Claude Code's chats with all their
+   figures - each its own address, #overview and #overview/claude. */
+var OV = {part: 'server'};
+function ovPart(part) {
+  OV.part = part === 'claude' ? 'claude' : 'server';
+  document.querySelectorAll('#ov-seg button').forEach(function (b) { b.classList.toggle('on', b.dataset.ov === OV.part); });
+  $('ov-server').hidden = OV.part !== 'server';
+  $('ov-usage').hidden = OV.part !== 'claude';
+  writeHash();
+}
+document.querySelectorAll('#ov-seg button').forEach(function (b) {
+  b.onclick = function () { ovPart(b.dataset.ov); loadOverview(); };
+});
+function loadOverview(sub) {
+  if (sub !== undefined) ovPart(sub);
+  if (OV.part === 'claude') { if (typeof loadUsage === 'function') loadUsage(); return; }
   api('overview').then(function (d) {
     var running = d.terms.filter(function (t) { return t.state !== 'ended'; });
     setCard('terms', num(running.length), running.filter(function (t) { return t.kind === 'claude'; }).length + ' Claude Code · ' + running.filter(function (t) { return t.viewers; }).length + ' open now', 'info');
