@@ -1388,6 +1388,28 @@ STRINGS = {
         'Vymazat obrazovku',
     'New terminal':
         'Nový terminál',
+    'Ended lately':
+        'Nedávno ukončené',
+    'all of them':
+        'všechny',
+    'Start it again where it stopped':
+        'Spustit znovu tam, kde skončil',
+    'Classic - as PuTTY':
+        'Klasické – jako PuTTY',
+    'The Linux console':
+        'Konzole Linuxu',
+    "Soft - the pages' own":
+        'Jemné – jako stránky',
+    'Light':
+        'Světlé',
+    'Solarized dark':
+        'Solarized tmavé',
+    'The colours of the terminals - for every terminal you open, kept with your account:':
+        'Barvy terminálů – pro každý terminál, který otevřete, uložené u vašeho účtu:',
+    'Colours of the terminals':
+        'Barvy terminálů',
+    'For every terminal you open, kept with your account.':
+        'Pro každý terminál, který otevřete; uloženo u vašeho účtu.',
     'no ended terminal in the list':
         'v seznamu není žádný ukončený terminál',
     'Their last screens go with them. Nothing that runs is touched, and the conversations of Claude Code stay - they are picked up again under Conversations.':

@@ -201,15 +201,127 @@ function termFont() {
   return Math.max(8, Math.min(32, f || (window.innerWidth < 700 ? 12 : 14)));
 }
 
-function termTheme() {
-  return {
+/* The colours of the terminals (1.0.19). "classic" is PuTTY's - the VGA
+   palette, a full blue for mc's panels; "soft" is the pages' own, lighter
+   one, kept for whoever liked it. Chosen under More, kept with the account. */
+var TERM_PALETTES = {
+  classic: {
+    background: '#000000', foreground: '#bbbbbb', cursor: '#bbbbbb', cursorAccent: '#000000',
+    selectionBackground: 'rgba(88,166,255,.40)',
+    black: '#000000', red: '#bb0000', green: '#00bb00', yellow: '#bbbb00', blue: '#0000bb',
+    magenta: '#bb00bb', cyan: '#00bbbb', white: '#bbbbbb', brightBlack: '#555555',
+    brightRed: '#ff5555', brightGreen: '#55ff55', brightYellow: '#ffff55', brightBlue: '#5555ff',
+    brightMagenta: '#ff55ff', brightCyan: '#55ffff', brightWhite: '#ffffff'
+  },
+  xterm: {
+    background: '#000000', foreground: '#e5e5e5', cursor: '#e5e5e5', cursorAccent: '#000000',
+    selectionBackground: 'rgba(88,166,255,.40)',
+    black: '#000000', red: '#cd0000', green: '#00cd00', yellow: '#cdcd00', blue: '#0000ee',
+    magenta: '#cd00cd', cyan: '#00cdcd', white: '#e5e5e5', brightBlack: '#7f7f7f',
+    brightRed: '#ff0000', brightGreen: '#00ff00', brightYellow: '#ffff00', brightBlue: '#5c5cff',
+    brightMagenta: '#ff00ff', brightCyan: '#00ffff', brightWhite: '#ffffff'
+  },
+  linux: {
+    background: '#000000', foreground: '#aaaaaa', cursor: '#aaaaaa', cursorAccent: '#000000',
+    selectionBackground: 'rgba(88,166,255,.40)',
+    black: '#000000', red: '#aa0000', green: '#00aa00', yellow: '#aa5500', blue: '#0000aa',
+    magenta: '#aa00aa', cyan: '#00aaaa', white: '#aaaaaa', brightBlack: '#555555',
+    brightRed: '#ff5555', brightGreen: '#55ff55', brightYellow: '#ffff55', brightBlue: '#5555ff',
+    brightMagenta: '#ff55ff', brightCyan: '#55ffff', brightWhite: '#ffffff'
+  },
+  tango: {
+    background: '#000000', foreground: '#d3d7cf', cursor: '#d3d7cf', cursorAccent: '#000000',
+    selectionBackground: 'rgba(114,159,207,.40)',
+    black: '#2e3436', red: '#cc0000', green: '#4e9a06', yellow: '#c4a000', blue: '#3465a4',
+    magenta: '#75507b', cyan: '#06989a', white: '#d3d7cf', brightBlack: '#555753',
+    brightRed: '#ef2929', brightGreen: '#8ae234', brightYellow: '#fce94f', brightBlue: '#729fcf',
+    brightMagenta: '#ad7fa8', brightCyan: '#34e2e2', brightWhite: '#eeeeec'
+  },
+  solarized: {
+    background: '#002b36', foreground: '#839496', cursor: '#93a1a1', cursorAccent: '#002b36',
+    selectionBackground: 'rgba(147,161,161,.30)',
+    black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900', blue: '#268bd2',
+    magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5', brightBlack: '#586e75',
+    brightRed: '#cb4b16', brightGreen: '#93a1a1', brightYellow: '#657b83', brightBlue: '#839496',
+    brightMagenta: '#6c71c4', brightCyan: '#93a1a1', brightWhite: '#fdf6e3'
+  },
+  dracula: {
+    background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', cursorAccent: '#282a36',
+    selectionBackground: 'rgba(68,71,90,.85)',
+    black: '#21222c', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9',
+    magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4',
+    brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff',
+    brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff'
+  },
+  light: {
+    background: '#ffffff', foreground: '#1f2328', cursor: '#1f2328', cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(9,105,218,.25)',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#4d2d00', blue: '#0969da',
+    magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781', brightBlack: '#57606a',
+    brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01', brightBlue: '#218bff',
+    brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f'
+  },
+  soft: {
     background: '#0b0f14', foreground: '#e6edf3', cursor: '#e6edf3', cursorAccent: '#0b0f14',
     selectionBackground: 'rgba(88,166,255,.35)',
     black: '#484f58', red: '#ff7b72', green: '#3fb950', yellow: '#d29922', blue: '#58a6ff',
     magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4', brightBlack: '#6e7681',
     brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341', brightBlue: '#79c0ff',
     brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc'
-  };
+  }
+};
+/* Their names, in the order offered. Bold drawn bright where the palette's
+   own terminal does so (PuTTY, xterm, the Linux console). */
+var TERM_PALETTE_NAMES = [['classic', 'Classic - as PuTTY'], ['xterm', 'xterm'], ['linux', 'The Linux console'],
+  ['tango', 'Tango (GNOME)'], ['solarized', 'Solarized dark'], ['dracula', 'Dracula'],
+  ['soft', 'Soft - the pages\' own'], ['light', 'Light']];
+var TERM_BOLD_BRIGHT = {classic: 1, xterm: 1, linux: 1};
+/** The palettes as swatches to choose from: each its 16 colours on its own background. */
+function termPalettePicker(onPick) {
+  var box = el('div', 'pal-pick');
+  var now = termPalette();
+  TERM_PALETTE_NAMES.forEach(function (n) {
+    var th = TERM_PALETTES[n[0]];
+    var b = el('button', 'pal-card' + (n[0] === now ? ' on' : ''));
+    b.type = 'button';
+    var sw = el('div', 'pal-sw');
+    sw.style.background = th.background;
+    var t = el('span', 'pal-txt', 'ls -l');
+    t.style.color = th.foreground;
+    sw.appendChild(t);
+    var dots = el('div', 'pal-dots');
+    ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen',
+     'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'].forEach(function (k) {
+      var d = el('i');
+      d.style.background = th[k];
+      dots.appendChild(d);
+    });
+    sw.appendChild(dots);
+    b.appendChild(sw);
+    b.appendChild(el('span', 'pal-name', n[1]));
+    b.onclick = function () {
+      box.querySelectorAll('.pal-card').forEach(function (x) { x.classList.toggle('on', x === b); });
+      termSetPalette(n[0]);
+      if (onPick) onPick(n[0]);
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
+function termPalette() {
+  var want = '';
+  try { want = (typeof prefs === 'function' && prefs().term_colors) || ''; } catch (e) { }
+  return TERM_PALETTES[want] ? want : 'classic';
+}
+function termTheme() { return TERM_PALETTES[termPalette()]; }
+/** Another palette, on the terminal open now and on every one opened after. */
+function termSetPalette(name) {
+  if (!TERM_PALETTES[name]) return;
+  if (typeof savePrefs === 'function') savePrefs({term_colors: name}).catch(function () { });
+  if (typeof ME !== 'undefined' && ME) { ME.prefs = ME.prefs || {}; ME.prefs.term_colors = name; }
+  var th = TERM_PALETTES[name];
+  if (TERM.t) { TERM.t.options.theme = th; TERM.t.options.drawBoldTextInBrightColors = !!TERM_BOLD_BRIGHT[name]; }
+  document.documentElement.style.setProperty('--term-bg', th.background);
 }
 
 /** A file sent to the daemon as the body itself - never a form (php2shell's
@@ -445,6 +557,11 @@ function termOpen(id, host, onState) {
     termScrollBar(host);
   }
   TERM.t.reset();
+  /* The palette kept with the account - read again, it may have come after the first terminal was made. */
+  TERM.t.options.theme = termTheme();
+  /* Bold in the bright colours, as PuTTY draws it - ls's folders bold blue on black. */
+  TERM.t.options.drawBoldTextInBrightColors = !!TERM_BOLD_BRIGHT[termPalette()];
+  document.documentElement.style.setProperty('--term-bg', termTheme().background);
   termFit();
   termConnect();
   setTimeout(function () { if (TERM.t) TERM.t.focus(); }, 30);

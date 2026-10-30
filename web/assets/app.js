@@ -261,6 +261,8 @@ function showMe() {
     g.appendChild(formField('The language of these pages', lang));
     g.appendChild(formField('Size of the terminal\'s letters', font));
     lsec.appendChild(g);
+    lsec.appendChild(el('p', 'small muted', 'The colours of the terminals - for every terminal you open, kept with your account:'));
+    lsec.appendChild(termPalettePicker());
     body.appendChild(lsec);
 
     /* The columns of the tables - exactly otp's (isemon's). */
@@ -770,28 +772,65 @@ function drawTermEmpty() {
   setTimeout(function () { if (!$('term-empty').hidden && !('ontouchstart' in window)) $('cx-text').focus(); }, 60);
   var host = $('te-recent');
   clear(host);
+  var card = function (t) {
+    var ended = t.state === 'ended';
+    var c = el('button', 'cx-card' + (ended ? ' ended' : ''));
+    c.type = 'button';
+    var top = el('div', 'cx-card-t');
+    top.innerHTML = iconMarkup(t.kind === 'claude' ? 'sparkle' : 'terminal', 14);
+    top.appendChild(noI18n(el('span', '', t.title || t.id)));
+    if (isPinned(t.id)) { var pi = el('span', 'cx-pin'); pi.innerHTML = iconMarkup('pin', 12); top.appendChild(pi); }
+    c.appendChild(top);
+    c.appendChild(noI18n(el('div', 'cx-card-p mono', t.cwd || '')));
+    var foot = el('div', 'cx-card-f');
+    foot.appendChild(el('span', 'tag ' + (t.state === 'running' ? 'ok' : 'dim'), t.state === 'running' ? 'running' : (t.state || '')));
+    var when = ended ? (t.ended || t.created) : (t.started || t.created);
+    if (when) foot.appendChild(el('span', 'muted small', ago(when)));
+    c.appendChild(foot);
+    /* An ended one goes on where it stopped, in its own tile (1.0.19). */
+    c.onclick = ended ? function () {
+      busy(c, true);
+      api('terms', {do: 'again', id: t.id}).then(function (d) { loadTerms(d.id); })
+        .catch(oops).then(function () { busy(c, false); });
+    } : function () { openTerm(t.id); };
+    if (ended) c.title = txT('Start it again where it stopped');
+    c.addEventListener('contextmenu', function (e) { e.preventDefault(); termMenu(t, e.clientX, e.clientY, null); });
+    longPress(c, function (x, y) { termMenu(t, x, y, null); });
+    return c;
+  };
   var live = TL.terms.filter(function (t) { return t.state !== 'ended'; });
   if (live.length) {
     host.appendChild(el('h3', 'cx-h', 'Going on'));
     var grid = el('div', 'cx-cards');
-    live.slice(0, 12).forEach(function (t) {
-      var c = el('button', 'cx-card');
-      c.type = 'button';
-      var top = el('div', 'cx-card-t');
-      top.innerHTML = iconMarkup(t.kind === 'claude' ? 'sparkle' : 'terminal', 14);
-      top.appendChild(noI18n(el('span', '', t.title || t.id)));
-      c.appendChild(top);
-      c.appendChild(noI18n(el('div', 'cx-card-p mono', t.cwd || '')));
-      var foot = el('div', 'cx-card-f');
-      foot.appendChild(el('span', 'tag ' + (t.state === 'running' ? 'ok' : 'dim'), t.state === 'running' ? 'running' : (t.state || '')));
-      if (t.started || t.created) foot.appendChild(el('span', 'muted small', ago(t.started || t.created)));
-      c.appendChild(foot);
-      c.onclick = function () { openTerm(t.id); };
-      c.addEventListener('contextmenu', function (e) { e.preventDefault(); termMenu(t, e.clientX, e.clientY, null); });
-      longPress(c, function (x, y) { termMenu(t, x, y, null); });
-      grid.appendChild(c);
-    });
+    live.slice(0, 12).forEach(function (t) { grid.appendChild(card(t)); });
     host.appendChild(grid);
+  }
+  /* The last few that ended (1.0.19) - the pinned ones first, then the
+     newest; the rest under "with the ended ones" in the list. */
+  var gone = TL.terms.filter(function (t) { return t.state === 'ended'; });
+  if (gone.length) {
+    gone.sort(function (a, b) {
+      var pa = isPinned(a.id) ? 1 : 0, pb = isPinned(b.id) ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return (b.ended || b.created || 0) - (a.ended || a.created || 0);
+    });
+    var hh = el('div', 'cx-hrow');
+    hh.appendChild(el('h3', 'cx-h', 'Ended lately'));
+    if (gone.length > 6) {
+      var all = el('a', 'small', txT('all of them') + ' (' + gone.length + ')');
+      noI18n(all);
+      all.href = '#terms';
+      all.onclick = function (e) {
+        e.preventDefault();
+        $('tl-show').value = 'all'; drawTermList();
+        if (!narrow()) { if (!TLR.pinned) pinSide(true); } else sideShow(true);
+      };
+      hh.appendChild(all);
+    }
+    host.appendChild(hh);
+    var g2 = el('div', 'cx-cards');
+    gone.slice(0, 6).forEach(function (t) { g2.appendChild(card(t)); });
+    host.appendChild(g2);
   }
   var recent = (prefs().recent || []).slice(0, 8);
   if (recent.length) {
@@ -1423,6 +1462,10 @@ $('tb-more').onclick = function () {
     w.appendChild(save);
     g.appendChild(formField('Its name', w));
     body.appendChild(g);
+    var ps = el('div', 'me-sec');
+    ps.appendChild(el('h3', '', 'Colours of the terminals'));
+    ps.appendChild(termPalettePicker());
+    body.appendChild(ps);
   }, [{words: 'End it', cls: 'danger', icon: 'power', go: function () {
         api('terms', {do: 'kill', id: t.id}).then(function () { closeModal(); closeTermView(); loadTerms(); }).catch(oops);
       }},

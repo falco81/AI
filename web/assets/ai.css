@@ -3182,10 +3182,10 @@ body.term-wide .wrap{max-width:none}
 .term-path{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pill.small{padding:2px 9px;font-size:12px}
 .btn.iconly{padding-left:8px;padding-right:8px;min-width:34px;justify-content:center}
-.term-host{position:relative;flex:1 1 auto;min-height:240px;background:#0b0f14;border:1px solid var(--line);
+.term-host{position:relative;flex:1 1 auto;min-height:240px;background:var(--term-bg,#000);border:1px solid var(--line);
   border-radius:10px;padding:6px 4px 4px 8px;overflow:hidden}
 .term-host .xterm{height:100%}
-.term-host .xterm-viewport{background:#0b0f14 !important}
+.term-host .xterm-viewport{background:var(--term-bg,#000) !important}
 .term-drop{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;
   background:rgba(13,17,23,.82);border:2px dashed var(--info);border-radius:10px;color:var(--info);
   font-size:18px;font-weight:600;pointer-events:none}
@@ -3395,7 +3395,7 @@ pre.lines.tall{max-height:60vh;overflow:auto}
   font:600 12.5px var(--font,system-ui);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45)}
 .term-live .muted{color:#8aa4c6;font-weight:500}
 .term-host .xterm{padding-right:16px}
-.term-history{height:min(70vh,900px);background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:6px;overflow:hidden}
+.term-history{height:min(70vh,900px);background:var(--term-bg,#000);border:1px solid var(--line);border-radius:10px;padding:6px;overflow:hidden}
 .term-history .xterm{height:100%}
 .term-history .xterm-viewport{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 /* The folder picker (1.0.9). */
@@ -3531,3 +3531,20 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .hi-folder{white-space:nowrap}
 .hi-folder .hi-path{display:inline-block;vertical-align:middle;max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .hi-folder .hi-branch{display:inline-block;vertical-align:middle;margin-left:8px;position:static}
+.cx-hrow{display:flex;align-items:baseline;gap:10px}
+.cx-hrow .cx-h{margin-bottom:8px}
+.cx-card.ended{opacity:.8}
+.cx-card.ended:hover{opacity:1}
+.cx-card .cx-pin{color:#e3b341;display:inline-flex;margin-left:4px}
+#te-recent .cx-cards{margin-bottom:24px}
+/* The palettes of the terminals, to choose from (1.0.19). */
+.pal-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px}
+.pal-card{appearance:none;display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:10px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--tx);cursor:pointer;font:inherit;text-align:left}
+.pal-card:hover{border-color:rgba(88,166,255,.5)}
+.pal-card.on{border-color:var(--info);box-shadow:0 0 0 1px var(--info) inset}
+.pal-sw{border-radius:7px;padding:8px;display:flex;flex-direction:column;gap:6px;border:1px solid rgba(255,255,255,.08)}
+.pal-txt{font:12px var(--mono,ui-monospace,monospace)}
+.pal-dots{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.pal-dots i{display:block;height:10px;border-radius:2px}
+.pal-name{font-size:12.5px;font-weight:600}

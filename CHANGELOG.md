@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.19
+
+- **The terminals' colours as PuTTY's**: the palette of the terminals was the pages' own, light and soft - mc's
+  blue panels came out pale. The classic VGA palette PuTTY uses is now the default, bold drawn in the bright
+  colours as PuTTY does. Eight to choose from - classic (PuTTY), xterm, the Linux console, Tango, Solarized dark,
+  Dracula, the pages' soft one, light - as swatches under your account (Language and letters) and under More
+  in a terminal, kept with the account.
+- **Ended lately on the start page**: under *Going on*, the last six that ended - the pinned ones first - each
+  started again where it stopped, in its own tile, by a click; *all of them* opens the list with the ended ones.
+  More room between the two.
+
 ## 1.0.18
 
 - **Every ended terminal off the list at once**: *Take every ended one off the list (n)* on the right button
