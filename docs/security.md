@@ -97,14 +97,15 @@ An administrator is told on every page when the PHP running the pages may be
 without the fix for php2shell (CVE-2026-109618, CVE-2026-109619); the pages
 never let PHP parse a request body, so they are guarded either way.
 
-On AlmaLinux / Rocky / RHEL 8 and 9 install.sh puts PHP on the stream
-`php:8.2` (8.2.35 has the fix), on an install and on every upgrade: an older
-PHP, or a newer one without the fix, is moved there with `dnf module reset`,
-`dnf module enable php:8.2` and `dnf distro-sync 'php*'`, and php-fpm is
-restarted. A newer PHP that has the fix is kept.
+On AlmaLinux / Rocky / RHEL 9 install.sh puts PHP on the stream `php:8.3`
+(8.3.36 has the fix) - on EL 8, which has no php:8.3, on `php:8.2` (8.2.35) -
+on an install and on every upgrade: an older PHP, or a newer one without the
+fix, is moved there with `dnf module reset`, `dnf module enable` and
+`dnf distro-sync 'php*'`, and php-fpm is restarted. A newer PHP that has the
+fix is kept.
 
 ```bash
-./install.sh --upgrade --php-stream 8.2   # this stream whatever PHP is there now
+./install.sh --upgrade --php-stream 8.3   # this stream whatever PHP is there now
 ./install.sh --upgrade --no-php-update    # PHP left alone
 ```
 

@@ -42,7 +42,7 @@ DO_UPGRADE=""
 DO_UNINSTALL=""
 REWRITE_NGINX=""
 PHP_UPDATE="yes"
-PHP_STREAM="8.2"
+PHP_STREAM="8.3"
 PHP_STREAM_GIVEN=""
 PHP_MOVED=""
 WITH_CLAUDE=""
@@ -153,7 +153,8 @@ ai $AI_VERSION - Claude Code on this server, in a web browser.
 --claude               install Claude Code for root as well (Anthropic's installer)
 --no-claude            do not offer it
 --port N               the port of the daemon's API on 127.0.0.1 (default 9871)
---php-stream X.Y       the AppStream PHP stream PHP is put on (8.2: 8.2.35 has the php2shell fix);
+--php-stream X.Y       the AppStream PHP stream PHP is put on (8.3: 8.3.36 has the php2shell fix;
+                       where there is no php:8.3, as on EL 8, php:8.2 and its 8.2.35);
                        an older PHP is moved to it on --upgrade too, and a newer one
                        without the fix; a newer fixed one is kept unless this is given
 --no-php-update        leave PHP as it is (it is still checked)
@@ -307,13 +308,14 @@ php_says() {
     if php_fixed; then good "PHP $v has the php2shell fix (CVE-2026-109618, CVE-2026-109619)"
     else warn "PHP $v does NOT have the php2shell fix - ai's page is guarded meanwhile (no multipart, no body parsing)"; fi
 }
-# The PHP stream (1.0.32): on a dnf system with PHP as AppStream modules
-# (EL 8, 9) PHP is put on php:$PHP_STREAM - 8.2 unless told, whose 8.2.35 has
-# the php2shell fix - on an install and on every --upgrade: a PHP older than
+# The PHP stream (1.0.32, 8.3 since 1.0.33): on a dnf system with PHP as
+# AppStream modules (EL 8, 9) PHP is put on php:$PHP_STREAM - 8.3 unless told,
+# whose 8.3.36 has the php2shell fix; EL 8 has no php:8.3, and there it is
+# php:8.2 and its 8.2.35 - on an install and on every --upgrade: a PHP older than
 # the stream is moved to it (reset, enable, distro-sync), and one on it is
 # brought to its newest build; one newer is kept only while it has the fix,
-# and unless --php-stream asks for exactly that stream. ai's pool and the guard stay where they are: the files
-# are the same on every stream.
+# and unless --php-stream asks for exactly that stream. ai's pool and the
+# guard stay where they are: the files are the same on every stream.
 php_minor() { local v; v="$(php_fpm_version)"; [[ -n "$v" ]] && echo "$v" | cut -d. -f1,2; }
 php_stream_fixed() { case "$PHP_STREAM" in 8.2) echo 8.2.35 ;; 8.3) echo 8.3.36 ;; 8.4) echo 8.4.27 ;; 8.5) echo 8.5.12 ;; *) echo "$PHP_STREAM" ;; esac; }
 php_has_stream() {
@@ -326,6 +328,10 @@ php_stream_move() {
     local cur now
     cur="$(php_minor || true)"
     [[ -n "$cur" ]] || return 0
+    if ! php_has_stream && [[ -z "$PHP_STREAM_GIVEN" && "$PHP_STREAM" == "8.3" ]]; then
+        PHP_STREAM=8.2
+        note "there is no stream php:8.3 here (EL 8): php:8.2 instead, 8.2.35 has the fix"
+    fi
     if ! php_has_stream; then
         note "there is no stream php:$PHP_STREAM here (EL 10 has one PHP): PHP $cur is kept"
         return 0

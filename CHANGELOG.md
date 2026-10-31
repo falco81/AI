@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.33
+
+- **PHP on the 8.3 stream, at 8.3.36**: the install and every upgrade put PHP on `php:8.3` now, not `php:8.2`
+  (1.0.32) - 8.3.36 has the php2shell fix. An 8.0, 8.1 or 8.2 is moved up to it, an 8.3 brought to its newest
+  build, a newer PHP without the fix moved to it as well; a newer one with the fix is kept. On EL 8, which has
+  no `php:8.3`, it is `php:8.2` and its 8.2.35. `--php-stream X.Y` still chooses another.
+
 ## 1.0.32
 
 - **PHP on the 8.2 stream, at 8.2.35**: on AlmaLinux / Rocky / RHEL 8 and 9 (PHP as AppStream modules) the
