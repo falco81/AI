@@ -3656,3 +3656,8 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .set-grid > .set-item.memo > label{align-self:stretch}
 .set-item textarea.cell-text{display:block;width:100%;box-sizing:border-box;flex:1 1 auto;min-height:150px;resize:vertical;
   font-size:11.5px;line-height:1.45;white-space:pre;overflow:auto;padding:8px 10px;tab-size:4}
+/* In your DNS: the text as wide as it needs, its copy button in the narrow column right after it (1.0.43) */
+.acme-dns td.dns-txt{width:1%;white-space:nowrap;padding-right:6px}
+.acme-dns td.dns-txt > div{white-space:normal}
+.acme-dns td.dns-btn{width:1%;padding-left:0;padding-right:28px}
+.acme-dns th:empty{padding:0}

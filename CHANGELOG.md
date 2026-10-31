@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.43
+
+- **Automatic certificates -> In your DNS**: the copy buttons flickered at every refresh of the page - they
+  were lined up by measuring the text after it was drawn, so each redraw showed them out of line first (and a
+  redraw merged into the page never lined them up at all). They now have narrow columns of their own right
+  after the record and the value: one under the other, right after the longest text, by the table itself.
+
 ## 1.0.42
 
 - **A setting hanging on one that is greyed out is greyed out too**, on every settings page: with ACME off,
