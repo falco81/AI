@@ -109,6 +109,19 @@ fix is kept.
 ./install.sh --upgrade --no-php-update    # PHP left alone
 ```
 
+## Automatic certificates (ACME)
+
+Settings -> Automatic certificates orders the certificate of the pages from Let's Encrypt (or another
+ACME CA) and renews it by itself. HTTP-01 needs port 80 of the name open to the CA - nginx sends
+`/.well-known/acme-challenge/` to `acme.php`; DNS-01 needs nothing open (RFC 2136, Cloudflare, acme-dns,
+deSEC or by hand). The key: ECDSA P-256/P-384, RSA 2048/3072/4096, or both an RSA and an ECDSA
+certificate. The account's key, the TSIG secret and the API tokens are kept sealed.
+
+```bash
+ai --acme            # how it stands
+ai --acme-order      # order it now, followed here
+```
+
 ## IPv6
 
 nginx listens on IPv6 whenever the kernel has it: its `[::]` lines are put in

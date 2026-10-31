@@ -3,6 +3,32 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.39
+
+**Automatic certificates (ACME), as otp's** - *Settings -> Automatic certificates*, off until switched on:
+- The certificate of the pages ordered from **Let's Encrypt**, its staging, or another ACME CA (step-ca, an
+  internal CA - its directory and its root given), and **renewed by itself** when fewer than 30 days (as set)
+  are left - a CA giving short-lived certificates at a third of their life. Checked once an hour; a failed
+  order is tried again after 6 hours. An account the CA no longer knows is made anew by itself.
+- **HTTP-01**: nginx sends port 80's `/.well-known/acme-challenge/` to `acme.php`, which gives the answer kept
+  in the database (put into nginx's file by itself on an existing install). **DNS-01** for a server the CA
+  cannot reach: RFC 2136 (nsupdate with a TSIG key, kept sealed, in a file only for the moment it runs),
+  Cloudflare, acme-dns, **deSEC.io** (free; its name servers asked straight until both have the record), or
+  by hand (the TXT record shown, the order waiting for *It is in DNS*). *The TXT records go into*: a zone of
+  its own, the name with one CNAME to it in your DNS. *DNS servers for ACME*: public ones to see what the CA sees.
+- **The key of the certificate - every one Let's Encrypt takes**: ECDSA P-256 or P-384, RSA 2048, 3072 or
+  4096 - or **both**, as Let's Encrypt advises: an RSA certificate by default and an ECDSA one nginx offers to
+  the clients that can take it (two `ssl_certificate` pairs). The account at the CA has a key of its own,
+  never the certificate's. Another key asked for orders the certificate anew.
+- The card: what it has now, days left, the key, the last order step by step (*What the last order did*),
+  *Try port 80* (asked as the CA will), *Order it now*, *Look after it* / *Leave it alone*, *Its name...*, and
+  **Back to the one before...** - a certificate of your own replaced by ACME is kept and put back with its key.
+  **In your DNS** lists what the name needs there, with the steps of the way chosen and **Check DNS**.
+- *Certificates and TLS* says who renews the certificate; one uploaded or made self-signed there is kept -
+  ACME does not replace it (asked first). Its TLS settings stay through every renewal.
+- `ai --acme`, `ai --acme-order` (followed); the console: *The server -> The certificate of the pages*.
+- Every order, renewal and failure is an event.
+
 ## 1.0.38
 
 - **Backups to SMB on a machine smbclient sees no interface of**: smbclient stopped with *Could not determine

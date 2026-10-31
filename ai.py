@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.38'
+__version__ = '1.0.39'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -190,6 +190,32 @@ DEFAULTS = {
     'mail_keep_days': 14,
     'code_lang': 'cs',
     'code_mail_fmt': 'html',
+    # certificates by ACME (1.0.39, otp's 1.0.169-1.0.187)
+    'acme': False,
+    'acme_email': '',
+    'acme_ca': 'letsencrypt',
+    'acme_url': '',
+    'acme_ca_pem': '',
+    'acme_node_name': '',
+    'acme_days': 30,
+    'acme_key': 'ec',
+    'acme_challenge': 'http-01',
+    'acme_dns': 'manual',
+    'acme_dns_server': '',
+    'acme_dns_zone': '',
+    'acme_dns_tsig_name': '',
+    'acme_dns_tsig_alg': 'hmac-sha256',
+    'acme_dns_tsig_secret': '',
+    'acme_dns_token': '',
+    'acme_dns_url': '',
+    'acme_dns_user': '',
+    'acme_dns_key': '',
+    'acme_dns_subdomain': '',
+    'acme_desec_domain': '',
+    'acme_desec_token': '',
+    'acme_dns_alias': '',
+    'acme_dns_wait': 30,
+    'acme_resolvers': '',
     # updates and restarts on a schedule (1.0.37, otp's 1.0.164)
     'osup_check': False,
     'osup_check_at': '06:15',
@@ -214,7 +240,8 @@ DEFAULTS = {
     'rbackup_password': '',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
-SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password')
+SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password',
+               'acme_dns_tsig_secret', 'acme_dns_token', 'acme_dns_key', 'acme_desec_token')
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
 # set in /etc/ai/config.json or by its own page (the firewall, the network...).
@@ -326,6 +353,92 @@ SCHEMA = [
      {'when': ['backup_daily', [True]]}),
     ('backup_keep', 'db', 'int', 'Copies kept', 'Of each kind; older ones are taken away.',
      {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
+    # ---- certificates by ACME (1.0.39, as otp's Automatic certificates) ----
+    ('acme', 'acme', 'bool', 'Certificates from an ACME CA',
+     'The certificate of the pages ordered from the CA and renewed by itself - by HTTP-01 port 80 of '
+     'the name must reach this server, by DNS-01 nothing has to be open. Off until switched on.', {}),
+    ('acme_email', 'acme', 'str', 'Mail of the account at the CA',
+     'Where the CA writes when a certificate runs out unrenewed. Empty: none.', {'when': ['acme', [True]]}),
+    ('acme_ca', 'acme', 'choice', 'The CA',
+     'Let\u2019s Encrypt, its staging (certificates browsers do not trust - to try it), or another.',
+     {'choices': [['letsencrypt', 'Let\u2019s Encrypt'],
+                  ['letsencrypt-staging', 'Let\u2019s Encrypt - staging (to try it)'],
+                  ['custom', 'another ACME CA (step-ca, an internal CA...)']], 'when': ['acme', [True]]}),
+    ('acme_url', 'acme', 'str', 'Its ACME directory',
+     'The directory of another ACME CA, https://ca.example.cz/acme/acme/directory.',
+     {'when': ['acme_ca', ['custom']]}),
+    ('acme_ca_pem', 'acme', 'text', 'The CA\u2019s own certificate',
+     'The CA\u2019s root (PEM), where the system does not trust it already.', {'when': ['acme_ca', ['custom']]}),
+    ('acme_node_name', 'acme', 'str', 'The server\u2019s DNS name',
+     'The name the certificate is for. Empty: the name of the certificate it has now, else the full host '
+     'name. Its name\u2026 on the card above changes it too.', {'when': ['acme', [True]]}),
+    ('acme_days', 'acme', 'int', 'Renewed when fewer days are left than',
+     'Let\u2019s Encrypt\u2019s certificates last 90 days; 30 is what it advises.',
+     {'min': 7, 'max': 60, 'when': ['acme', [True]]}),
+    ('acme_key', 'acme', 'choice', 'The key of the certificate',
+     'What Let\u2019s Encrypt takes: RSA of 2048, 3072 or 4096 bits, ECDSA P-256 or P-384. ECDSA is smaller '
+     'and quicker; RSA for old clients. Both: an RSA certificate by default and an ECDSA one to the clients '
+     'that can take it - what Let\u2019s Encrypt advises. The account at the CA has a key of its own.',
+     {'choices': [['ec', 'ECDSA P-256'], ['ec384', 'ECDSA P-384'], ['rsa2048', 'RSA 2048'],
+                  ['rsa3072', 'RSA 3072'], ['rsa4096', 'RSA 4096'],
+                  ['dual', 'both - RSA 2048 by default, ECDSA P-256 to who can take it']],
+      'when': ['acme', [True]]}),
+    ('acme_challenge', 'acme', 'choice', 'How the CA checks the name',
+     'HTTP-01 needs port 80 of the name reachable from the internet (or from the CA, for a CA of your own). '
+     'DNS-01 needs nothing open: the CA reads a TXT record.',
+     {'choices': [['http-01', 'HTTP-01 - the CA asks port 80 of the name'],
+                  ['dns-01', 'DNS-01 - a TXT record in DNS (no port open to the internet)']],
+      'when': ['acme', [True]]}),
+    ('acme_dns', 'acme', 'choice', 'Who puts the TXT record in DNS',
+     'By hand the order waits up to an hour for you; the others renew by themselves.',
+     {'choices': [['manual', 'by hand - the record is shown here, you put it in'],
+                  ['rfc2136', 'RFC 2136 dynamic update with a TSIG key (BIND, PowerDNS, Knot...)'],
+                  ['cloudflare', 'Cloudflare, with an API token'], ['acmedns', 'an acme-dns server'],
+                  ['desec', 'deSEC.io (free), with an API token - a CNAME in your DNS']],
+      'when': ['acme_challenge', ['dns-01']]}),
+    ('acme_dns_server', 'acme', 'str', 'The DNS server taking the updates',
+     'The primary DNS server of the zone, ns1.example.cz or with a port 10.0.0.53:53.',
+     {'when': ['acme_dns', ['rfc2136']]}),
+    ('acme_dns_zone', 'acme', 'str', 'The zone', 'Where the record goes, example.cz. Empty: as the server finds it.',
+     {'when': ['acme_dns', ['rfc2136']]}),
+    ('acme_dns_tsig_name', 'acme', 'str', 'The name of the TSIG key',
+     'As the DNS server knows it, ai-acme.; allowed to update _acme-challenge records only.',
+     {'when': ['acme_dns', ['rfc2136']]}),
+    ('acme_dns_tsig_alg', 'acme', 'choice', 'Its algorithm', 'As the key was made (tsig-keygen makes hmac-sha256).',
+     {'choices': [[a, a] for a in ('hmac-sha256', 'hmac-sha512', 'hmac-sha384', 'hmac-sha224', 'hmac-sha1',
+                                   'hmac-md5')], 'when': ['acme_dns', ['rfc2136']]}),
+    ('acme_dns_tsig_secret', 'acme', 'password', 'The TSIG secret',
+     'The key\u2019s secret (base64). Kept sealed; written to a file only ai reads for the moment nsupdate runs.',
+     {'when': ['acme_dns', ['rfc2136']]}),
+    ('acme_dns_token', 'acme', 'password', 'The Cloudflare API token',
+     'A token with Zone - DNS - Edit for the zone. Kept sealed.', {'when': ['acme_dns', ['cloudflare']]}),
+    ('acme_dns_url', 'acme', 'str', 'The acme-dns server',
+     'https://auth.acme-dns.example.cz; _acme-challenge.NAME is a CNAME to the subdomain below.',
+     {'when': ['acme_dns', ['acmedns']]}),
+    ('acme_dns_user', 'acme', 'str', 'acme-dns user', 'From the registration at acme-dns.',
+     {'when': ['acme_dns', ['acmedns']]}),
+    ('acme_dns_key', 'acme', 'password', 'acme-dns key', 'From the registration at acme-dns. Kept sealed.',
+     {'when': ['acme_dns', ['acmedns']]}),
+    ('acme_dns_subdomain', 'acme', 'str', 'acme-dns subdomain', 'From the registration at acme-dns.',
+     {'when': ['acme_dns', ['acmedns']]}),
+    ('acme_desec_domain', 'acme', 'str', 'The domain at deSEC',
+     'Your domain at deSEC, example.dedyn.io (free) or one of your own whose DNS is there. The records go '
+     'into it; your DNS has a CNAME to it for each name - In your DNS above says which.',
+     {'when': ['acme_dns', ['desec']]}),
+    ('acme_desec_token', 'acme', 'password', 'The deSEC API token',
+     'A token from deSEC (Token management) - one that may change this domain\u2019s records. Kept sealed.',
+     {'when': ['acme_dns', ['desec']]}),
+    ('acme_dns_alias', 'acme', 'str', 'The TXT records go into',
+     'A zone the records go into instead of the name\u2019s own (acme.example.net), each name with a CNAME '
+     'to it in your DNS - In your DNS above says which. Empty: _acme-challenge.NAME itself.',
+     {'when': ['acme_dns', 'acmedns-not']}),
+    ('acme_dns_wait', 'acme', 'int', 'Wait for DNS to carry it (s)',
+     'How long the record is given to reach every DNS server before the CA is asked.',
+     {'min': 0, 'max': 600, 'when': ['acme_challenge', ['dns-01']]}),
+    ('acme_resolvers', 'acme', 'str', 'DNS servers for ACME',
+     'The DNS servers asked for everything on this page: the address of the CA and of the DNS API, Check DNS, '
+     'Try port 80, and whether the TXT record can be seen before the CA is asked - 1.1.1.1, 9.9.9.9 to see '
+     'what the internet sees. Empty: the machine\u2019s own (/etc/resolv.conf).', {'when': ['acme', [True]]}),
     # ---- updates and restarts on a schedule (1.0.37, as otp's 1.0.164) ----
     ('osup_check', 'osup', 'bool', 'Look for updates every day',
      'This server looks what dnf (or apt) has waiting, every day at the time below - for the card '
@@ -5880,12 +5993,12 @@ def _subject(cn, org='', unit='', country='', city=''):
 
 
 def new_key(kind):
-    if kind == 'ec':
+    if kind in ('ec', 'ec384'):
         return _openssl(['genpkey', '-algorithm', 'EC', '-pkeyopt',
-                         'ec_paramgen_curve:P-256']).decode()
+                         'ec_paramgen_curve:%s' % ('P-384' if kind == 'ec384' else 'P-256')]).decode()
     bits = {'rsa2048': 2048, 'rsa3072': 3072, 'rsa4096': 4096}.get(kind)
     if not bits:
-        raise ValueError('the key is ec, rsa2048, rsa3072 or rsa4096')
+        raise ValueError('the key is ec, ec384, rsa2048, rsa3072 or rsa4096')
     return _openssl(['genpkey', '-algorithm', 'RSA', '-pkeyopt',
                      'rsa_keygen_bits:%d' % bits]).decode()
 
@@ -6062,6 +6175,21 @@ def tls_apply(store, prof, by):
         files[KEY_FILE] = key
         block = set_directive(block, 'ssl_certificate', str(CERT_FILE))
         block = set_directive(block, 'ssl_certificate_key', str(KEY_FILE))
+        # A second certificate, ECDSA, beside an RSA one (1.0.39, ACME's "both"):
+        # nginx offers it to the clients that can take it, the RSA one to the rest.
+        block = re.sub(r'\n[ \t]*ssl_certificate(_key)?[ \t]+%s[ \t]*;' % '|'.join(
+            re.escape(str(x)) for x in (CERT_EC_FILE, KEY_EC_FILE)), '', block)
+        ec = prof.get('ecdsa') or {}
+        if ec.get('cert') and ec.get('key'):
+            ek = unseal_secret(ec['key'], 'web:tls')
+            if ek:
+                files[CERT_EC_FILE] = ec['cert'] + (ec.get('chain') or '')
+                files[KEY_EC_FILE] = ek
+                block = re.sub(r'(\n[ \t]*ssl_certificate_key[ \t]+[^;\n]+;)',
+                               lambda m: m.group(1) + '\n    %-25s %s;\n    %-25s %s;' % (
+                                   'ssl_certificate', CERT_EC_FILE, 'ssl_certificate_key', KEY_EC_FILE),
+                               block, count=1)
+                said.append('and an ECDSA one beside it')
         if prof.get('root'):
             files[CA_FILE] = prof['root'] + (prof.get('chain') or '')
             block = set_directive(block, 'ssl_trusted_certificate', str(CA_FILE))
@@ -8210,6 +8338,83 @@ def art_state(store):
     logo = logo_read(store)
     return dict(art_read(store), default=ART_DEFAULT,
                 logo={k: logo.get(k) for k in ('type', 'sha', 'bytes', 'name', 'at', 'by')} if logo else None)
+
+
+# ---- certificates by ACME (1.0.39) ---------------------------------------------------
+@route('GET', '/api/acme/challenge', anon=True)
+def api_acme_challenge(c):
+    """What acme.php gives the CA on port 80 - no account: the CA asks."""
+    got = acme_challenge(c.daemon.store, c.arg('token'))
+    if got is None:
+        raise Refused('no such challenge', 404)
+    return {'auth': got}
+
+
+@route('GET', '/api/acme', admin=True)
+def api_acme(c):
+    return acme_view(c.daemon.store)
+
+
+@route('POST', '/api/acme', admin=True)
+def api_acme_do(c):
+    st, b, by = c.daemon.store, c.body, c.name
+    act = str(b.get('action') or '')
+    try:
+        if act == 'order':
+            if not CONFIG.get('acme'):
+                raise ValueError('certificates by ACME are off - switch them on and save first')
+            name = acme_name_of(st)
+            if not name:
+                raise ValueError('the name of this certificate is not known - give it (Its name\u2026)')
+            # Ordered by hand, ACME looks after it from now on.
+            acme_care_set(st, None, True, by, 'ordered by hand')
+            acme_start(st, [(acme_target(), name)], by)
+            return dict(acme_view(st), message='the certificate of %s is being ordered' % name)
+        if act == 'dns_check':
+            return acme_dns_check(st)
+        if act == 'put_back':
+            acme_put_back(st, None, by)
+            return dict(acme_view(st), message='the certificate from before ACME is back in nginx')
+        if act == 'care':
+            acme_care_set(st, None, bool(b.get('on')), by)
+            return acme_view(st)
+        if act == 'probe':
+            return acme_probe(st)
+        if act == 'name':
+            name = str(b.get('name') or '').strip().lower().rstrip('.')
+            if name and not re.match(r'^(?=.{1,253}\Z)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+'
+                                     r'[a-z]{2,63}\Z', name):
+                raise ValueError('%s is not a full DNS name (like ai.example.cz)' % name[:80])
+            if name:
+                st.set_setting('acme_node_name', name, by)
+            else:
+                st.drop_setting('acme_node_name')
+            config_rebuild(st)
+            st.add_event('settings', '%s: the certificate of the pages is for %s' % (
+                by, name or 'the full host name'), who=by)
+            return acme_view(st)
+        if act in ('manual_done', 'manual_drop'):
+            # The TXT record put in by hand - or the order given up.
+            got = st.meta_json('acme:manual', {}) or {}
+            if not got.get('id'):
+                raise ValueError('no order waits for a TXT record now')
+            if act == 'manual_done':
+                got['done'] = time.time()
+                st.set_meta('acme:manual', json.dumps(got))
+            else:
+                st.x("DELETE FROM meta WHERE k = 'acme:manual'")
+            st.add_event('settings', '%s said the TXT record %s %s' % (
+                by, got.get('rr'), 'is in DNS' if act == 'manual_done' else
+                'will not be put in - the order is given up'), who=by)
+            return acme_view(st)
+        if act == 'forget':
+            st.x("DELETE FROM meta WHERE k = 'acme:account'")
+            st.add_event('settings', '%s forgot the account at the ACME CA - a new one is made at the next '
+                         'order' % by, 'warn', who=by)
+            return acme_view(st)
+    except (ValueError, AcmeError) as e:
+        raise Refused(str(e))
+    raise Refused('no such thing to do')
 
 
 @route('GET', '/api/logo', anon=True)
@@ -11256,6 +11461,41 @@ def setting_value(k, v):
             raise Refused('%s: %s' % (s[3], e))
     if k in ('rbackup_at', 'backup_at', 'osup_check_at', 'osup_auto_at', 'power_auto_at') and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
         raise Refused('%s: HH:MM, as 04:15' % s[3])
+    # ACME's, as otp checks them (1.0.39)
+    if k == 'acme_resolvers' and v:
+        for one in [w for w in re.split(r'[\s,;]+', v) if w]:
+            try:
+                ipaddress.ip_address(one)
+            except ValueError:
+                raise Refused('acme_resolvers: %r is not an address' % one)
+    if k == 'acme_email' and v and \
+            not re.match(r'^[^@\s<>"]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\Z', v):
+        raise Refused('acme_email: a mail address')
+    if k == 'acme_url' and v and not re.match(r'^https://[^\s"<>]+\Z', v):
+        raise Refused('acme_url: an address starting https://')
+    if k == 'acme_dns_url' and v and \
+            not re.match(r'^(https://[^\s"<>]+|http://(127\.0\.0\.1|localhost)(:\d+)?(/[^\s"<>]*)?)\Z', v):
+        raise Refused('acme_dns_url: an address starting https://')
+    if k == 'acme_dns_server' and v and not re.match(r'^[A-Za-z0-9.\-:\[\]]{1,260}\Z', v):
+        raise Refused('acme_dns_server: a name or an address, :port if not 53')
+    if k in ('acme_desec_domain', 'acme_dns_alias') and v and \
+            not re.match(r'^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?\Z', v):
+        raise Refused('%s: a DNS name, like example.dedyn.io' % k)
+    if k == 'acme_desec_token' and v and not v.startswith('\u2022') and \
+            not re.match(r'^[A-Za-z0-9_.-]{20,100}\Z', v):
+        raise Refused('acme_desec_token: the token as deSEC shows it')
+    if k in ('acme_dns_zone', 'acme_dns_tsig_name') and v and \
+            not re.match(r'^[A-Za-z0-9][A-Za-z0-9.\-_]{0,252}\Z', v):
+        raise Refused('%s: a DNS name' % k)
+    if k == 'acme_dns_tsig_secret' and v and not v.startswith('\u2022') and \
+            not re.match(r'^[A-Za-z0-9+/=]{8,512}\Z', v):
+        raise Refused('acme_dns_tsig_secret: the secret in base64, as tsig-keygen makes it')
+    if k in ('acme_dns_user', 'acme_dns_subdomain') and v and not re.match(r'^[A-Za-z0-9-]{1,64}\Z', v):
+        raise Refused('%s: letters, digits and dashes' % k)
+    if k == 'acme_ca_pem' and v.strip() and '-----BEGIN CERTIFICATE-----' not in v:
+        raise Refused('acme_ca_pem: a certificate in PEM, -----BEGIN CERTIFICATE-----')
+    if k == 'acme_node_name' and v and not re.match(r'^[A-Za-z0-9][A-Za-z0-9.-]{0,252}\Z', v):
+        raise Refused('acme_node_name: a DNS name')
     if k == 'notify_to' and v:
         try:
             v = ', '.join(mail_checked(x) for x in re.split(r'[,;\s]+', v) if x)
@@ -11529,6 +11769,1200 @@ def api_machine(c):
                                                   'log': str(LOG_FILE), 'lib': str(LIB_DIR)}}
 
 
+# ---- certificates by ACME: Let's Encrypt and the like (1.0.39, otp's 1.0.169-1.0.187) ----
+# Settings -> Automatic certificates: the certificate of the pages ordered from
+# an ACME CA - Let's Encrypt, its staging, or one of your own (step-ca, an
+# internal CA) - by HTTP-01 or DNS-01, and renewed when fewer than acme_days
+# are left. HTTP-01: nginx sends port 80's /.well-known/acme-challenge/ to
+# acme.php, which asks the daemon for the answer kept in the database. The key
+# of the certificate is what Let's Encrypt takes - RSA 2048, 3072 or 4096,
+# ECDSA P-256 or P-384 - or both an RSA and an ECDSA certificate, nginx
+# offering the ECDSA one to the clients that can take it; the account at the
+# CA has a key of its own (never the certificate's). Signed with openssl; done
+# in a thread of its own.
+ACME_CAS = {'letsencrypt': 'https://acme-v02.api.letsencrypt.org/directory',
+            'letsencrypt-staging': 'https://acme-staging-v02.api.letsencrypt.org/directory'}
+ACME_WORK = {'busy': False, 'at': 0.0, 'says': '', 'target': ''}
+ACME_EVERY = float(os.environ.get('AI_ACME_EVERY') or 3600)
+ACME_RETRY = float(os.environ.get('AI_ACME_RETRY') or 6 * 3600)
+ACME_KEYS = {'ec': 'ECDSA P-256', 'ec384': 'ECDSA P-384', 'rsa2048': 'RSA 2048', 'rsa3072': 'RSA 3072',
+             'rsa4096': 'RSA 4096', 'dual': 'RSA 2048 and ECDSA P-256'}
+CERT_EC_FILE = CERT_DIR / 'ai-ecdsa.pem'
+KEY_EC_FILE = CERT_DIR / 'ai-ecdsa.key'
+
+
+class AcmeError(Exception):
+    pass
+
+
+def _b64u(data):
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
+
+
+def _acme_secret(k):
+    v = CONFIG.get(k) or ''
+    return (unseal_secret(v, 'setting:' + k) or '') if v else ''
+
+
+def _acme_day(ts):
+    try:
+        return time.strftime('%Y-%m-%d', time.localtime(float(ts)))
+    except (TypeError, ValueError):
+        return '?'
+
+
+def acme_directory_url():
+    ca = CONFIG.get('acme_ca') or 'letsencrypt'
+    if ca == 'custom':
+        return str(CONFIG.get('acme_url') or '').strip()
+    return ACME_CAS.get(ca, ACME_CAS['letsencrypt'])
+
+
+def _acme_ctx():
+    ctx = ssl.create_default_context()
+    pem = str(CONFIG.get('acme_ca_pem') or '').strip()
+    if pem and CONFIG.get('acme_ca') == 'custom':
+        ctx.load_verify_locations(cadata=pem)
+    return ctx
+
+
+def _acme_account_gone(kind, said):
+    """The CA's error says the account it was asked with is no more (RFC 8555
+    accountDoesNotExist; Boulder's 'unauthorized' for one deactivated or not found)."""
+    if kind.endswith(':accountDoesNotExist') or kind == 'accountDoesNotExist':
+        return True
+    low = str(said or '').lower()
+    return kind.endswith('unauthorized') and 'account' in low and \
+        any(w in low for w in ('deactivated', 'not valid', 'not found', 'does not exist', 'revoked'))
+
+
+class Acme(object):
+    """One conversation with the CA: the account, its key, the nonces."""
+    def __init__(self, store):
+        self.store = store
+        self.dir_url = acme_directory_url()
+        if not re.match(r'^https://[^\s]+\Z', self.dir_url):
+            raise AcmeError('the ACME directory is an https:// address')
+        self.work = tempfile.mkdtemp(prefix='ai-acme-', dir=str(STATE_DIR))
+        os.chmod(self.work, 0o700)
+        self.nonce = None
+        self.kid = None
+        self.dir = self._get(self.dir_url)[0]
+        self._account()
+
+    def close(self):
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    # -- HTTP ------------------------------------------------------------------------
+    def _req(self, url, data=None, method=None, accept='application/json'):
+        if not str(url).startswith('https://'):
+            raise AcmeError('the CA sent an address that is not https: %s' % url)
+        req = urllib.request.Request(url, data=data, method=method or ('POST' if data else 'GET'),
+                                     headers={'User-Agent': 'ai/%s (acme)' % __version__,
+                                              'Accept': accept})
+        if data is not None:
+            req.add_header('Content-Type', 'application/jose+json')
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=_acme_ctx()) as r:
+                body, headers, status = r.read(1 << 20), r.headers, r.status
+        except urllib.error.HTTPError as e:
+            body, headers, status = e.read(1 << 20), e.headers, e.code
+        except (OSError, ssl.SSLError) as e:
+            raise AcmeError('the CA did not answer (%s): %s' % (
+                urllib.parse.urlsplit(url).hostname, getattr(e, 'reason', e)))
+        if headers.get('Replay-Nonce'):
+            self.nonce = headers['Replay-Nonce']
+        return body, headers, status
+
+    def _get(self, url):
+        body, headers, status = self._req(url)
+        if status >= 400:
+            raise AcmeError('the CA said %d: %s' % (status, body[:200]))
+        return json.loads(body.decode('utf-8')), headers
+
+    # -- signing ---------------------------------------------------------------------
+    def _key_file(self):
+        p = os.path.join(self.work, 'account.pem')
+        if not os.path.exists(p):
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                f.write(self.key_pem)
+        return p
+
+    def _jwk(self):
+        der = _openssl(['pkey', '-in', self._key_file(), '-pubout', '-outform', 'DER'],
+                       what='the account key')
+        point = der[-64:]
+        return {'crv': 'P-256', 'kty': 'EC', 'x': _b64u(point[:32]), 'y': _b64u(point[32:])}
+
+    def thumbprint(self):
+        jwk = self._jwk()
+        return _b64u(hashlib.sha256(json.dumps(
+            {'crv': jwk['crv'], 'kty': jwk['kty'], 'x': jwk['x'], 'y': jwk['y']},
+            separators=(',', ':'), sort_keys=True).encode()).digest())
+
+    def _sign(self, data):
+        der = _openssl(['dgst', '-sha256', '-sign', self._key_file()], data,
+                       what='signing for the CA')
+        # DER SEQUENCE { INTEGER r, INTEGER s } -> r || s, 32 bytes each.
+        i = 2 if der[1] < 0x80 else 3
+
+        def integer(at):
+            n = der[at + 1]
+            v = der[at + 2:at + 2 + n].lstrip(b'\x00')
+            return v.rjust(32, b'\x00'), at + 2 + n
+        r, i = integer(i)
+        s, _ = integer(i)
+        return r + s
+
+    def post(self, url, payload, use_jwk=False):
+        anew = False
+        for attempt in (1, 2, 3):
+            if not self.nonce:
+                self._req(self.dir['newNonce'], method='HEAD')
+            protected = {'alg': 'ES256', 'nonce': self.nonce, 'url': url}
+            if use_jwk or not self.kid:
+                protected['jwk'] = self._jwk()
+            else:
+                protected['kid'] = self.kid
+            p64 = _b64u(json.dumps(protected))
+            b64 = '' if payload is None else _b64u(json.dumps(payload))
+            sig = _b64u(self._sign(('%s.%s' % (p64, b64)).encode('ascii')))
+            self.nonce = None
+            body, headers, status = self._req(url, json.dumps(
+                {'protected': p64, 'payload': b64, 'signature': sig}).encode('utf-8'),
+                accept='application/json' if 'cert' not in url else
+                'application/pem-certificate-chain')
+            if status == 400 and b'badNonce' in body and attempt == 1:
+                continue
+            if status >= 400:
+                try:
+                    err = json.loads(body.decode('utf-8'))
+                    said = err.get('detail') or err.get('type')
+                    kind = str(err.get('type') or '')
+                except (ValueError, AttributeError):
+                    said, kind = body[:200].decode('utf-8', 'replace'), ''
+                # The account kept here gone from the CA: deleted, deactivated,
+                # a CA of the same address started anew - a new one is made and
+                # the request asked again.
+                if self.kid and not use_jwk and not anew and url != self.dir.get('newAccount') and \
+                        _acme_account_gone(kind, said):
+                    anew = True
+                    log('ACME: the CA does not know the account any more (%s) - a new one is made'
+                        % said, 'warn')
+                    self._account(fresh=True)
+                    continue
+                raise AcmeError('the CA refused it: %s' % said)
+            return body, headers
+
+    def post_json(self, url, payload):
+        body, headers = self.post(url, payload)
+        return (json.loads(body.decode('utf-8')) if body else {}), headers
+
+    # -- the account -----------------------------------------------------------------
+    def _account(self, fresh=False):
+        row = {} if fresh else (self.store.meta_json('acme:account', {}) or {})
+        pem = unseal_secret(row.get('key') or '', 'acme') if row.get('key') else ''
+        if row.get('directory') != self.dir_url or not pem:
+            pem = ''
+        if fresh:
+            self.kid = None
+            try:
+                os.unlink(os.path.join(self.work, 'account.pem'))
+            except OSError:
+                pass
+        if not pem:
+            pem = _openssl(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'],
+                           what='the account key').decode()
+            row = {}
+        self.key_pem = pem
+        if row.get('kid'):
+            self.kid = row['kid']
+            return
+        mail = str(CONFIG.get('acme_email') or '').strip()
+        payload = {'termsOfServiceAgreed': True}
+        if mail:
+            payload['contact'] = ['mailto:' + mail]
+        body, headers = self.post(self.dir['newAccount'], payload, use_jwk=True)
+        self.kid = headers.get('Location')
+        if not self.kid:
+            raise AcmeError('the CA made no account')
+        self.store.set_meta('acme:account', json.dumps({
+            'key': seal_secret(pem, 'acme'), 'kid': self.kid, 'directory': self.dir_url,
+            'email': mail, 'at': time.time()}))
+
+    # -- an order --------------------------------------------------------------------
+    def _poll(self, url, done, what, secs=90):
+        end = time.time() + secs
+        while True:
+            got, _ = self.post_json(url, None)
+            st = got.get('status')
+            if st in done:
+                return got
+            if st == 'invalid':
+                errs = [c.get('error', {}).get('detail') for c in got.get('challenges') or []
+                        if c.get('error')] or [got.get('error', {}).get('detail')]
+                raise AcmeError('%s: %s' % (what, '; '.join(e for e in errs if e) or 'invalid'))
+            if time.time() > end:
+                raise AcmeError('%s: the CA has not said in %d s (%s)' % (what, secs, st))
+            time.sleep(2)
+
+    def order(self, names, say, kind='ec'):
+        say('ordered from the CA (%s)' % ACME_KEYS.get(kind, kind))
+        got, headers = self.post_json(self.dir['newOrder'], {
+            'identifiers': [{'type': 'dns', 'value': n} for n in names]})
+        order_url = headers.get('Location')
+        thumb = self.thumbprint()
+        for az in got.get('authorizations') or []:
+            a, _ = self.post_json(az, None)
+            if a.get('status') == 'valid':
+                continue
+            name = a.get('identifier', {}).get('value')
+            how = 'dns-01' if (CONFIG.get('acme_challenge') or 'http-01') == 'dns-01' else 'http-01'
+            ch = [c for c in a.get('challenges') or [] if c.get('type') == how]
+            if not ch:
+                raise AcmeError('the CA offers no %s challenge for %s' % (how.upper(), name))
+            token = ch[0]['token']
+            if not re.match(r'^[A-Za-z0-9_-]{8,256}\Z', token):
+                raise AcmeError('the CA sent a token that is not one')
+            auth = token + '.' + thumb
+            if how == 'dns-01':
+                # A TXT record in DNS: for a server the CA cannot reach -
+                # nothing has to be open to the internet.
+                txt = _b64u(hashlib.sha256(auth.encode()).digest())
+                undo = acme_dns_put(self.store, name, txt, say)
+                try:
+                    say('the CA looks up _acme-challenge.%s' % name)
+                    self.post_json(ch[0]['url'], {})
+                    self._poll(az, ('valid',), 'the CA did not take %s' % name, 180)
+                finally:
+                    try:
+                        undo()
+                    except Exception as e:              # noqa: BLE001
+                        log('ACME: the TXT record of %s was not taken away: %s' % (name, e), 'warn')
+                continue
+            self.store.set_meta('acme:chal:' + token, json.dumps(
+                {'auth': auth, 'at': time.time(), 'name': name}))
+            time.sleep(float(os.environ.get('AI_ACME_SETTLE') or 3))
+            say('the CA looks at http://%s/.well-known/acme-challenge/' % name)
+            try:
+                self.post_json(ch[0]['url'], {})
+                self._poll(az, ('valid',), 'the CA did not take %s' % name)
+            finally:
+                self.store.x('DELETE FROM meta WHERE k = ?', ('acme:chal:' + token,))
+        key, csr = make_csr(names[0], names[1:], kind)
+        der = _openssl(['req', '-in', '/dev/stdin', '-outform', 'DER'], csr.encode(),
+                       what='the request')
+        say('the certificate is made')
+        o, _ = self.post_json(got['finalize'], {'csr': _b64u(der)})
+        if o.get('status') != 'valid':
+            o = self._poll(order_url, ('valid',), 'the order', 120)
+        body, _ = self.post(o['certificate'], None)
+        return key, body.decode('utf-8')
+
+
+# ---- what is ordered, and when ----------------------------------------------------------
+ACME_DNS_NAME_RE = re.compile(r'^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
+
+
+def acme_target():
+    """The one certificate of this server: the pages' (as Certificates and TLS names it)."""
+    return host_name()
+
+
+def acme_name_of(store, target=None):
+    """The DNS name the certificate is for: as set, else the name of the
+    certificate it has now, else the full host name."""
+    name = str(CONFIG.get('acme_node_name') or '').strip().lower()
+    if not name:
+        info = (tls_prof(store) or {}).get('info') or cert_now_info() or {}
+        for n in [info.get('cn')] + list(info.get('san') or []):
+            n = str(n or '').strip().lower()
+            if ACME_DNS_NAME_RE.match(n):
+                name = n
+                break
+    if not name:
+        name = socket.getfqdn().lower()
+    return name
+
+
+def acme_before(store, target=None):
+    """The certificate it had before ACME replaced it, as the page may see it (no key)."""
+    got = store.meta_json('acme:before', {}) or {}
+    if not got.get('cert'):
+        return None
+    info = got.get('info') or {}
+    return {'how': got.get('how'), 'subject': info.get('subject'), 'issuer': info.get('issuer'),
+            'not_after': info.get('not_after'), 'at': got.get('at'),
+            'ran_out': float(info.get('not_after') or 0) < time.time()}
+
+
+def acme_tls_put(store, prof, by):
+    """A profile into nginx now - waiting for a change going on to end."""
+    if not TLS_LOCK.acquire(timeout=900):
+        raise AcmeError('a change of the TLS has been going on for 15 minutes - try again')
+    TLS_STATE.update(state='working', said=[], at=time.time())
+    try:
+        TLS_STATE['said'] = tls_apply(store, prof, by)
+        TLS_STATE['state'] = 'done'
+    except Exception as e:                              # noqa: BLE001
+        TLS_STATE.update(state='failed', said=[str(e)])
+        raise AcmeError('nginx did not take it: %s' % e)
+    finally:
+        TLS_STATE['progress'] = None
+        TLS_LOCK.release()
+
+
+def acme_put_back(store, target, by):
+    """The certificate from before ACME back in place, ACME no longer renewing
+    it; its TLS settings (protocols, ciphers, DH, HSTS) stay as they are now."""
+    got = store.meta_json('acme:before', {}) or {}
+    if not got.get('cert'):
+        raise ValueError('there is no certificate from before ACME for this one')
+    info = got.get('info') or {}
+    if float(info.get('not_after') or 0) < time.time():
+        raise ValueError('the certificate from before ACME ran out on %s - put a new one in on '
+                         'Certificates and TLS' % _acme_day(info.get('not_after')))
+    prof = tls_prof(store) or {}
+    prof.update({k: got.get(k) for k in ('cert', 'chain', 'root', 'key', 'info', 'chain_info',
+                                         'root_info', 'verify', 'how')})
+    for k in ('pending_key', 'csr', 'ecdsa'):
+        prof.pop(k, None)
+    acme_tls_put(store, prof, by)
+    store.set_meta('acme:care', json.dumps({'on': False, 'at': time.time(), 'by': by}))
+    store.x('DELETE FROM meta WHERE k = ?', ('acme:before',))
+    store.add_event('settings', '%s put the certificate from before ACME back (%s, until %s); ACME no '
+                    'longer renews it' % (by, info.get('issuer') or '?', _acme_day(info.get('not_after'))),
+                    'warn', who=by)
+
+
+def acme_care(store, target=None):
+    """Whether ACME looks after the certificate. Said on either page; unsaid:
+    yes for one from the CA, a self-signed one and none at all - never for one
+    uploaded or answered to a request (a CA of your own): switching ACME on
+    does not replace those."""
+    got = store.meta_json('acme:care', None)
+    if isinstance(got, dict) and 'on' in got:
+        return bool(got['on'])
+    prof = tls_prof(store) or {}
+    how = str(prof.get('how') or '')
+    if not prof.get('cert'):
+        return True
+    return how == 'ACME' or how.startswith('self-signed') or bool((prof.get('info') or {}).get('self_signed'))
+
+
+def acme_care_set(store, target, on, by, why=''):
+    was = acme_care(store)
+    store.set_meta('acme:care', json.dumps({'on': bool(on), 'at': time.time(), 'by': by}))
+    if was != bool(on) and CONFIG.get('acme'):
+        store.add_event('settings', '%s: ACME %s the certificate of the pages%s' % (
+            by, 'looks after' if on else 'no longer renews', (' - ' + why) if why else ''),
+            'info' if on else 'warn', who=by)
+
+
+def acme_targets(store):
+    """[(target, name)] ordered here: the pages' certificate, while ACME looks after it."""
+    if not CONFIG.get('acme'):
+        return []
+    t, n = acme_target(), acme_name_of(store)
+    return [(t, n)] if n and acme_care(store) else []
+
+
+def acme_state(store, target=None):
+    return store.meta_json('acme:state', {}) or {}
+
+
+def acme_due(store, target, name):
+    """Why this certificate is to be ordered now, or ''."""
+    st = acme_state(store)
+    if st.get('failed_at') and time.time() - float(st['failed_at']) < ACME_RETRY and \
+            st.get('name') == name:
+        return ''
+    prof = tls_prof(store) or {}
+    info = prof.get('info') or {}
+    if prof.get('how') != 'ACME' or st.get('name') != name:
+        return 'not ordered yet for %s' % name
+    # The key asked for changed (an RSA one wanted, ECDSA had, both...): anew.
+    if st.get('key') and st.get('key') != (CONFIG.get('acme_key') or 'ec'):
+        return 'the key asked for is %s' % ACME_KEYS.get(CONFIG.get('acme_key') or 'ec')
+    left = (float(info.get('not_after') or 0) - time.time()) / 86400
+    days = float(CONFIG.get('acme_days') or 30)
+    # A third of its life at most: a CA giving fewer days than acme_days (short-
+    # lived certificates, a test CA) had every new one due at once.
+    life = (float(info.get('not_after') or 0) - float(info.get('not_before') or 0)) / 86400
+    if info.get('not_before') and life > 0:
+        days = min(days, life / 3)
+    if left < days:
+        return '%d days left' % int(left)
+    return ''
+
+
+def acme_order(store, target, name, by, say=None):
+    """The certificate ordered and put in - both of them, RSA and ECDSA, where
+    asked; the state kept, an event written - and what was done on the way, for
+    the card."""
+    tell = say or (lambda t: None)
+    steps = []
+
+    def say(t):
+        steps.append([round(time.time(), 1), str(t)[:300]])
+        tell(t)
+    if not re.match(r'^(?=.{1,253}\Z)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+'
+                    r'[A-Za-z]{2,63}\Z', name):
+        raise AcmeError('%s is not a name a CA gives a certificate for (a full DNS name)' % name)
+    want = CONFIG.get('acme_key') or 'ec'
+    st = {'name': name, 'at': time.time(), 'by': by, 'ca': acme_directory_url(), 'steps': steps, 'key': want}
+    a = None
+    try:
+        a = Acme(store)
+        kinds = ['rsa2048', 'ec'] if want == 'dual' else [want]
+        made = []
+        for kind in kinds:
+            key, chain = a.order([name], say, kind)
+            made.append(cert_bundle(chain, key))
+        got = made[0]
+        info = got['info']
+        prof = tls_prof(store) or {}
+        if prof.get('cert') and prof.get('how') != 'ACME':
+            # The certificate it had - uploaded, from your own CA - kept to go
+            # back to: ACME switched off or left alone, it is put back with a
+            # click, its key as sealed as it was.
+            keep = {k: prof.get(k) for k in ('cert', 'chain', 'root', 'key', 'info', 'chain_info',
+                                              'root_info', 'verify', 'how')}
+            keep['at'] = time.time()
+            store.set_meta('acme:before', json.dumps(keep))
+        prof.update(cert=got['cert'], chain=got['chain'], root=got['root'],
+                    key=seal_secret(got['key'], 'web:tls'), info=info,
+                    chain_info=got['chain_info'], root_info=got['root_info'],
+                    verify=got['verify'], how='ACME')
+        if len(made) > 1:
+            e = made[1]
+            prof['ecdsa'] = {'cert': e['cert'], 'chain': e['chain'], 'key': seal_secret(e['key'], 'web:tls'),
+                             'info': e['info']}
+        else:
+            prof.pop('ecdsa', None)
+        prof.pop('pending_key', None)
+        prof.pop('csr', None)
+        prof.setdefault('preset', 'standard')
+        prof.setdefault('dh', 'none')
+        say('put into nginx')
+        acme_tls_put(store, prof, by)
+        st.update(ok=True, not_after=info.get('not_after'), issuer=info.get('issuer'),
+                  ordered_at=time.time())
+        st['steps'] = steps[-25:]
+        store.set_meta('acme:state', json.dumps(st))
+        store.add_event('settings', 'a certificate for %s (%s) came from the CA, good until %s'
+                        % (name, ACME_KEYS.get(want, want),
+                           _acme_day(info.get('not_after')) if info.get('not_after') else '?'),
+                        'info', who=by)
+        return st
+    except (AcmeError, ValueError, OSError, Refused) as e:
+        if 'NXDOMAIN' in str(e) and (CONFIG.get('acme_challenge') or '') == 'dns-01':
+            e = AcmeError('%s - the CA does not find the record: In your DNS -> Check DNS, with '
+                          'DNS servers for ACME set to public ones (1.1.1.1), shows where the way '
+                          'to it stops (the CNAME, or the delegation of its zone)' % e)
+        st.update(ok=False, failed_at=time.time(), said=str(e)[:600])
+        old = acme_state(store)
+        for k in ('not_after', 'issuer', 'ordered_at'):
+            if old.get(k):
+                st[k] = old[k]
+        st['steps'] = steps[-25:]
+        store.set_meta('acme:state', json.dumps(st))
+        store.add_event('settings', 'no certificate for %s came from the CA: %s' % (name, e),
+                        'bad', who=by)
+        raise AcmeError(str(e))
+    finally:
+        if a:
+            a.close()
+
+
+def acme_tick(daemon):
+    """Once an hour: what is due, ordered - in a thread of its own."""
+    if not CONFIG.get('acme') or ACME_WORK['busy'] or NO_SYSTEM or \
+            time.time() - ACME_WORK['at'] < ACME_EVERY:
+        return
+    ACME_WORK['at'] = time.time()
+    store = daemon.store
+    due = [(t, n) for t, n in acme_targets(store) if acme_due(store, t, n)]
+    if not due:
+        return
+    acme_start(store, due, 'ai (renewal)')
+
+
+def acme_start(store, which, by):
+    if ACME_WORK['busy']:
+        raise ValueError('a certificate is being ordered already')
+    ACME_WORK.update(busy=True, says='starting')
+
+    def go():
+        _ACME_DNS.on = True
+        try:
+            for t, n in which:
+                ACME_WORK['target'] = t
+                try:
+                    acme_order(store, t, n, by, lambda s: ACME_WORK.update(says=s))
+                except AcmeError as e:
+                    log('ACME: %s' % e, 'warn')
+        finally:
+            ACME_WORK.update(busy=False, says='', target='')
+    threading.Thread(target=go, name='ai-acme', daemon=True).start()
+
+
+def acme_challenge(store, token):
+    """The answer for the CA, or None: what acme.php gives on port 80."""
+    if not re.match(r'^[A-Za-z0-9_-]{8,256}\Z', str(token or '')):
+        return None
+    got = store.meta_json('acme:chal:' + token, {}) or {}
+    if not got.get('auth') or time.time() - float(got.get('at') or 0) > 3600:
+        return None
+    return got['auth']
+
+
+def acme_view(store):
+    t = acme_target()
+    prof = tls_prof(store) or {}
+    info = prof.get('info') or cert_now_info() or {}
+    ec = (prof.get('ecdsa') or {}).get('info') or {}
+    acc = store.meta_json('acme:account', {}) or {}
+    one = {'target': t, 'name': acme_name_of(store), 'state': acme_state(store),
+           'how': prof.get('how') or '', 'subject': info.get('subject'),
+           'issuer': info.get('issuer'), 'not_after': info.get('not_after'),
+           'key': info.get('key'), 'ecdsa': {'key': ec.get('key'), 'not_after': ec.get('not_after')} if ec else None,
+           'care': acme_care(store), 'wanted': True, 'before': acme_before(store),
+           'named': bool(str(CONFIG.get('acme_node_name') or '').strip())}
+    return {'on': bool(CONFIG.get('acme')), 'targets': [one], 'mine': [t] if acme_targets(store) else [],
+            'directory': acme_directory_url(), 'account': {
+                'kid': acc.get('kid'), 'email': acc.get('email'), 'at': acc.get('at')},
+            'work': dict(ACME_WORK), 'node': t, 'key': CONFIG.get('acme_key') or 'ec',
+            'keys': ACME_KEYS,
+            'challenge': CONFIG.get('acme_challenge') or 'http-01',
+            'dns_guide': acme_dns_guide(store),
+            'manual': {k: v for k, v in (store.meta_json('acme:manual', {}) or {}).items()
+                       if k in ('rr', 'txt', 'at', 'done')} or None}
+
+
+def acme_probe(store, target=None):
+    """Whether http://NAME/.well-known/acme-challenge/ reaches ai and is
+    answered - asked from here, straight, as the CA will (from outside it may
+    still be blocked: a firewall in front sees only what reaches it)."""
+    name = acme_name_of(store)
+    if not name:
+        raise ValueError('which certificate? its name is not known')
+    token = 'ai-probe-' + secrets.token_urlsafe(16)
+    want = token + '.' + secrets.token_urlsafe(8)
+    store.set_meta('acme:chal:' + token, json.dumps({'auth': want, 'at': time.time(),
+                                                    'name': name, 'probe': True}))
+    url = 'http://%s/.well-known/acme-challenge/%s' % (name, token)
+    began = time.time()
+    out = {'name': name, 'url': url, 'ok': False}
+    scope = acme_dns_scope()
+    scope.__enter__()
+    try:
+        time.sleep(float(os.environ.get('AI_ACME_SETTLE') or 3))
+        req = urllib.request.Request(url, headers={'User-Agent': 'ai/%s (acme probe)' % __version__})
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=10) as r:
+            body = r.read(4096).decode('utf-8', 'replace').strip()
+        out.update(ok=body == want, status=r.status,
+                   said='answered as the CA wants it' if body == want else
+                   'something answers on port 80, but not ai\'s answer: %r' % body[:80])
+    except urllib.error.HTTPError as e:
+        out['said'] = 'port 80 answers %d - nginx does not send /.well-known/acme-challenge/ to ai' % e.code
+    except (OSError, ValueError) as e:
+        out['said'] = 'port 80 of %s cannot be reached: %s' % (name, getattr(e, 'reason', e))
+    finally:
+        scope.__exit__()
+        store.x('DELETE FROM meta WHERE k = ?', ('acme:chal:' + token,))
+    out['ms'] = int((time.time() - began) * 1000)
+    return out
+
+
+# ---- DNS-01: the TXT record put in DNS ------------------------------------------------
+# For a server the CA cannot reach: _acme-challenge.NAME TXT, put in by
+#   rfc2136    - nsupdate with a TSIG key (BIND, PowerDNS, Knot...), the key in a
+#                file only ai reads for the moment it runs, never on a command line;
+#   cloudflare - its API, with a token that may edit the zone's DNS;
+#   acmedns    - an acme-dns server (_acme-challenge.NAME a CNAME to its subdomain);
+#   desec      - deSEC.io's API, a CNAME to its zone in your DNS;
+#   manual     - shown on the page; the order waits until it is said to be there.
+# Then waited for (acme_dns_wait s) and taken away again once the CA has looked.
+NSUPDATE = os.environ.get('AI_NSUPDATE') or 'nsupdate'
+
+
+def _dns_wait(say, least=0):
+    w = max(int(CONFIG.get('acme_dns_wait') or 0), int(os.environ.get('AI_ACME_DNS_LEAST', least)))
+    if w:
+        say('waiting %d s for DNS to carry it' % w)
+        ACME_WORK['says'] = 'waiting %d s for DNS to carry it (Wait for DNS to carry it)' % w
+        time.sleep(w)
+
+
+def acme_dns_where(name):
+    """(where the TXT record goes, the CNAME your DNS needs or None). The record
+    goes to _acme-challenge.NAME itself, or - with a zone of its own for them
+    (deSEC, acme_dns_alias) - to _acme-challenge.LABEL.ZONE, and
+    _acme-challenge.NAME is a CNAME to it in your DNS, put in once."""
+    name = str(name or '').rstrip('.').lower()
+    own = '_acme-challenge.' + name
+    how = CONFIG.get('acme_dns') or 'manual'
+    if how == 'acmedns':
+        url = str(CONFIG.get('acme_dns_url') or '').strip()
+        host = urllib.parse.urlparse(url).hostname or ''
+        sub = str(CONFIG.get('acme_dns_subdomain') or '').strip()
+        return own, ('%s.%s' % (sub, host) if sub and host else '')
+    zone = str(CONFIG.get('acme_dns_alias') or '').strip().rstrip('.').lower()
+    if how == 'desec':
+        dom = str(CONFIG.get('acme_desec_domain') or '').strip().rstrip('.').lower()
+        if dom and (name == dom or name.endswith('.' + dom)):
+            return own, None                            # its DNS is at deSEC itself
+        if not zone or not (zone == dom or zone.endswith('.' + dom)):
+            zone = dom
+    if not zone or name == zone or name.endswith('.' + zone):
+        return own, None
+    there = '_acme-challenge.%s.%s' % (name.split('.')[0], zone)
+    return there, there
+
+
+def acme_dns_put(store, name, txt, say):
+    """The TXT record put in; returns what takes it away again."""
+    how = CONFIG.get('acme_dns') or 'manual'
+    rr, cname = acme_dns_where(name)
+    if cname and how != 'acmedns':
+        say('the TXT record %s put in DNS (%s; _acme-challenge.%s is a CNAME to it)' % (rr, how, name))
+    else:
+        say('the TXT record %s put in DNS (%s)' % (rr, how))
+    if how == 'rfc2136':
+        undo = _dns_rfc2136(rr, txt)
+    elif how == 'cloudflare':
+        undo = _dns_cloudflare(rr, txt)
+    elif how == 'acmedns':
+        undo = _dns_acmedns(txt)
+    elif how == 'desec':
+        undo = _dns_desec(rr, txt)
+    else:
+        undo = _dns_manual(store, rr, txt, say)
+    if how == 'desec':
+        _desec_seen(rr, txt, say)
+    else:
+        _dns_wait(say)
+        if how != 'manual':
+            acme_txt_seen(name, txt, say)
+    return undo
+
+
+DESEC_NS = ('ns1.desec.io', 'ns2.desec.org')
+
+
+def _desec_seen(rr, txt, say):
+    """deSEC's own name servers asked until both have the record, then a while
+    more: they are anycast, and the CA asks from several places of the world.
+    Asked straight, never through a resolver."""
+    _dns_wait(say)
+    addrs = []
+    for ns in DESEC_NS:
+        try:
+            addrs += [(ns, a) for t, a in dns_ask(ns, 1) if t == 'A'][:1]
+        except OSError:
+            pass
+    if not addrs:
+        say('deSEC\'s name servers not found - waited %d s instead' % 120)
+        _dns_wait(say, 120)
+        return
+    began = time.time()
+    end = began + float(os.environ.get('AI_DESEC_PROPAGATION') or 300)
+    while True:
+        seen = []
+        for ns, a in addrs:
+            try:
+                rc, got = _dns_parse(_dns_ask(a, rr, 16, 3.0))
+                if txt in [v for t, v in got if t == 'TXT']:
+                    seen.append(ns)
+            except OSError:
+                pass
+        if len(seen) == len(addrs):
+            break
+        if time.time() > end:
+            say('%s TXT not on every deSEC name server yet (%s) - the CA is asked anyway'
+                % (rr, ', '.join(seen) or 'none'))
+            return
+        ACME_WORK['says'] = 'waiting for deSEC\'s name servers to have the record - %s so far, %d s' % (
+            ', '.join(seen) or 'none', int(time.time() - began))
+        time.sleep(5)
+    settle = float(os.environ.get('AI_DESEC_SETTLE') or 60)
+    say('%s TXT is on %s after %d s; %d s more for deSEC\'s other places' % (
+        rr, ', '.join(seen), int(time.time() - began), settle))
+    left = settle
+    while left > 0:
+        ACME_WORK['says'] = '%d s more for deSEC\'s other places of the world, then the CA is asked' % left
+        time.sleep(min(5, left))
+        left -= 5
+
+
+def _dns_rfc2136(rr, txt):
+    server = str(CONFIG.get('acme_dns_server') or '').strip()
+    if not server:
+        raise AcmeError('the DNS server for the updates is not set')
+    keyname = str(CONFIG.get('acme_dns_tsig_name') or '').strip()
+    secret = _acme_secret('acme_dns_tsig_secret')
+    alg = CONFIG.get('acme_dns_tsig_alg') or 'hmac-sha256'
+    host, _, port = server.partition(':')
+    zone = str(CONFIG.get('acme_dns_zone') or '').strip()
+
+    def run_it(op):
+        work = tempfile.mkdtemp(prefix='ai-dns-', dir=str(STATE_DIR))
+        os.chmod(work, 0o700)
+        try:
+            args = [NSUPDATE]
+            if keyname:
+                kf = os.path.join(work, 'tsig.key')
+                fd = os.open(kf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, 'w') as f:
+                    f.write('key "%s" {\n  algorithm %s;\n  secret "%s";\n};\n' % (keyname, alg, secret))
+                args += ['-k', kf]
+            script = 'server %s %s\n' % (host, port or '53')
+            if zone:
+                script += 'zone %s\n' % zone
+            script += 'update %s %s 60 TXT "%s"\nsend\n' % (op, rr, txt) if op == 'add' else \
+                'update delete %s TXT "%s"\nsend\n' % (rr, txt)
+            try:
+                got = subprocess.run(args, input=script, capture_output=True, text=True, timeout=60)
+            except FileNotFoundError:
+                raise AcmeError('nsupdate is not on this machine (dnf install bind-utils)')
+            if got.returncode != 0:
+                raise AcmeError('the DNS server did not take the update: %s'
+                                % (got.stderr or got.stdout).strip()[-300:])
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    run_it('add')
+    return lambda: run_it('delete')
+
+
+def _cf(method, path, body=None):
+    tok = _acme_secret('acme_dns_token')
+    if not tok:
+        raise AcmeError('the Cloudflare API token is not set')
+    base = str(os.environ.get('AI_CF_API') or 'https://api.cloudflare.com/client/v4').rstrip('/')
+    req = urllib.request.Request(base + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={'Authorization': 'Bearer ' + tok,
+                                          'Content-Type': 'application/json',
+                                          'User-Agent': 'ai/%s (acme)' % __version__})
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+                                    if base.startswith('https') else None) as r:
+            got = json.loads(r.read(1 << 20).decode())
+    except urllib.error.HTTPError as e:
+        try:
+            got = json.loads(e.read().decode())
+        except ValueError:
+            got = {}
+        raise AcmeError('Cloudflare said %d: %s' % (e.code, '; '.join(
+            x.get('message', '') for x in got.get('errors') or []) or e.reason))
+    except OSError as e:
+        raise AcmeError('Cloudflare did not answer: %s' % getattr(e, 'reason', e))
+    if not got.get('success'):
+        raise AcmeError('Cloudflare said no: %s' % '; '.join(
+            x.get('message', '') for x in got.get('errors') or []))
+    return got.get('result')
+
+
+def _dns_cloudflare(rr, txt):
+    labels = rr.split('.')
+    zone_id = None
+    for i in range(1, len(labels) - 1):
+        z = '.'.join(labels[i:])
+        got = _cf('GET', '/zones?name=' + urllib.parse.quote(z))
+        if got:
+            zone_id = got[0]['id']
+            break
+    if not zone_id:
+        raise AcmeError('Cloudflare has no zone for %s that the token may see' % rr)
+    rec = _cf('POST', '/zones/%s/dns_records' % zone_id,
+              {'type': 'TXT', 'name': rr, 'content': txt, 'ttl': 60})
+    return lambda: _cf('DELETE', '/zones/%s/dns_records/%s' % (zone_id, rec['id']))
+
+
+def _dns_acmedns(txt):
+    url = str(CONFIG.get('acme_dns_url') or '').strip().rstrip('/')
+    if not url:
+        raise AcmeError('the acme-dns server is not set')
+    req = urllib.request.Request(url + '/update', method='POST', data=json.dumps(
+        {'subdomain': str(CONFIG.get('acme_dns_subdomain') or ''), 'txt': txt}).encode(),
+        headers={'X-Api-User': str(CONFIG.get('acme_dns_user') or ''),
+                 'X-Api-Key': _acme_secret('acme_dns_key'),
+                 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+                                    if url.startswith('https') else None) as r:
+            r.read(4096)
+    except urllib.error.HTTPError as e:
+        raise AcmeError('acme-dns said %d: %s' % (e.code, e.read(300).decode('utf-8', 'replace')))
+    except OSError as e:
+        raise AcmeError('acme-dns did not answer: %s' % getattr(e, 'reason', e))
+    return lambda: None             # acme-dns keeps the last two; nothing to take away
+
+
+def _desec(method, path, body=None):
+    """deSEC's API: Authorization: Token; a 429 waited out (it says how long) up to twice."""
+    tok = _acme_secret('acme_desec_token')
+    if not tok:
+        raise AcmeError('the deSEC API token is not set')
+    base = str(os.environ.get('AI_DESEC_API') or 'https://desec.io/api/v1').rstrip('/')
+    for attempt in range(3):
+        req = urllib.request.Request(base + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={'Authorization': 'Token ' + tok,
+                                              'Content-Type': 'application/json',
+                                              'User-Agent': 'ai/%s (acme)' % __version__})
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+                                        if base.startswith('https') else None) as r:
+                raw = r.read(1 << 20)
+                return json.loads(raw.decode()) if raw.strip() else None
+        except urllib.error.HTTPError as e:
+            if e.code == 404 and method == 'GET':
+                return None
+            if e.code == 429 and attempt < 2:
+                try:
+                    pause = float(e.headers.get('Retry-After') or 5)
+                except ValueError:
+                    pause = 5
+                time.sleep(min(max(pause, 1), 60))
+                continue
+            said = e.read(400).decode('utf-8', 'replace')
+            raise AcmeError('deSEC said %d: %s' % (e.code, said.strip() or e.reason))
+        except OSError as e:
+            raise AcmeError('deSEC did not answer: %s' % getattr(e, 'reason', e))
+    raise AcmeError('deSEC asked to wait too long (429)')
+
+
+def _dns_desec(rr, txt):
+    dom = str(CONFIG.get('acme_desec_domain') or '').strip().rstrip('.').lower()
+    if not dom:
+        raise AcmeError('the domain at deSEC is not set')
+    if not rr.endswith('.' + dom):
+        raise AcmeError('%s is not in %s' % (rr, dom))
+    sub = rr[:-len(dom) - 1]
+    path = '/domains/%s/rrsets/' % urllib.parse.quote(dom)
+    info = _desec('GET', '/domains/%s/' % urllib.parse.quote(dom))
+    if info is None:
+        raise AcmeError('deSEC has no domain %s that the token may see' % dom)
+    ttl = max(int(info.get('minimum_ttl') or 3600), 60)
+    one = '"%s"' % txt
+
+    def have():
+        got = _desec('GET', '%s%s/TXT/' % (path, urllib.parse.quote(sub))) or {}
+        return list(got.get('records') or [])
+
+    recs = have()
+    if one not in recs:
+        recs.append(one)
+    _desec('PATCH', path, [{'subname': sub, 'type': 'TXT', 'ttl': ttl, 'records': recs}])
+
+    def undo():
+        left = [x for x in have() if x != one]
+        _desec('PATCH', path, [{'subname': sub, 'type': 'TXT', 'ttl': ttl, 'records': left}])
+    return undo
+
+
+ACME_MANUAL_WAIT = float(os.environ.get('AI_ACME_MANUAL_WAIT') or 3600)
+
+
+def _dns_manual(store, rr, txt, say):
+    """Shown on the page; waited for until somebody says it is in DNS."""
+    ident = secrets.token_hex(6)
+    store.set_meta('acme:manual', json.dumps({'id': ident, 'rr': rr, 'txt': txt, 'at': time.time()}))
+    say('waiting: put %s TXT "%s" in DNS, then say so on the page' % (rr, txt))
+    end = time.time() + ACME_MANUAL_WAIT
+    try:
+        while time.time() < end:
+            got = store.meta_json('acme:manual', {}) or {}
+            if got.get('id') != ident:
+                raise AcmeError('the manual DNS step was given up')
+            if got.get('done'):
+                return lambda: None
+            time.sleep(2)
+        raise AcmeError('nobody said the TXT record was in DNS within an hour')
+    finally:
+        got = store.meta_json('acme:manual', {}) or {}
+        if got.get('id') == ident:
+            store.x("DELETE FROM meta WHERE k = 'acme:manual'")
+
+
+# ---- what goes into your DNS, and whether it is there ----------------------------------
+def acme_resolvers():
+    """The DNS servers ACME asks: its own setting, else the machine's (/etc/resolv.conf)."""
+    out = []
+    for w in re.split(r'[\s,;]+', str(CONFIG.get('acme_resolvers') or '')):
+        try:
+            out.append(str(ipaddress.ip_address(w)))
+        except ValueError:
+            pass
+    return out
+
+
+def _os_resolvers():
+    out = []
+    try:
+        with open('/etc/resolv.conf') as f:
+            for line in f:
+                bits = line.split()
+                if len(bits) >= 2 and bits[0] == 'nameserver':
+                    out.append(bits[1])
+    except OSError:
+        pass
+    return out or ['127.0.0.1']
+
+
+def dns_ask(name, qtype):
+    """One question to ACME's DNS servers: [(type, text)] of the answer - CNAME
+    (5), TXT (16), A (1), AAAA (28), NS (2). [] for a name that is not there;
+    OSError when no resolver answers."""
+    return dns_ask_rc(name, qtype)[1]
+
+
+def dns_ask_rc(name, qtype):
+    """dns_ask, and whether the name is there at all: (rcode, records) - 3 is NXDOMAIN."""
+    last = None
+    for srv in (acme_resolvers() or _os_resolvers())[:3]:
+        try:
+            data = _dns_ask(srv, str(name).rstrip('.'), qtype, 3.0)
+        except OSError as e:
+            last = e
+            continue
+        rcode, out = _dns_parse(data)
+        if rcode in (0, 3):
+            return rcode, out
+        last = OSError(DNS_RCODES.get(rcode, 'rcode %d' % rcode))
+    raise OSError('no DNS server answered (%s)' % (last or 'none'))
+
+
+def _dns_parse(data):
+    """(rcode, [(type, text)]) of one answer."""
+    rcode, recs = _dns_records(data)
+    if rcode:
+        return rcode, []
+    out = []
+    for rtype, _n, at, size in recs:
+        rd = data[at:at + size]
+        if rtype == 5:
+            out.append(('CNAME', _dns_name(data, at)[0].lower()))
+        elif rtype == 16:
+            j, parts = 0, []
+            while j < len(rd):
+                parts.append(rd[j + 1:j + 1 + rd[j]].decode('utf-8', 'replace'))
+                j += 1 + rd[j]
+            out.append(('TXT', ''.join(parts)))
+        elif rtype == 1 and size == 4:
+            out.append(('A', socket.inet_ntop(socket.AF_INET, rd)))
+        elif rtype == 28 and size == 16:
+            out.append(('AAAA', socket.inet_ntop(socket.AF_INET6, rd)))
+        elif rtype == 2:
+            out.append(('NS', _dns_name(data, at)[0].lower()))
+    return 0, out
+
+
+# Names looked up by ACME's DNS servers: in the threads of this page only - the
+# CA, the DNS API, Try port 80 - every other lookup of the daemon as the machine's.
+_ACME_DNS = threading.local()
+_SYS_GETADDRINFO = socket.getaddrinfo
+
+
+def _acme_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if getattr(_ACME_DNS, 'on', False) and host and acme_resolvers():
+        h = host.decode() if isinstance(host, bytes) else str(host)
+        try:
+            ipaddress.ip_address(h.strip('[]'))
+        except ValueError:
+            if h not in ('localhost',):
+                addrs = []
+                for qtype, kind in ((1, 'A'), (28, 'AAAA')):
+                    if family in (0, socket.AF_INET if kind == 'A' else socket.AF_INET6):
+                        try:
+                            addrs += [a for t, a in dns_ask(h, qtype) if t == kind]
+                        except OSError:
+                            pass
+                if not addrs:
+                    raise socket.gaierror(socket.EAI_NONAME, '%s is not known to %s' % (
+                        h, ', '.join(acme_resolvers())))
+                out = []
+                for a in addrs:
+                    out += _SYS_GETADDRINFO(a, port, family, type, proto, flags | socket.AI_NUMERICHOST)
+                return out
+    return _SYS_GETADDRINFO(host, port, family, type, proto, flags)
+
+
+socket.getaddrinfo = _acme_getaddrinfo
+
+
+class acme_dns_scope(object):
+    """with acme_dns_scope(): names looked up by ACME's DNS servers."""
+    def __enter__(self):
+        self.was = getattr(_ACME_DNS, 'on', False)
+        _ACME_DNS.on = True
+
+    def __exit__(self, *a):
+        _ACME_DNS.on = self.was
+
+
+def acme_txt_seen(name, txt, say):
+    """After the wait: whether ACME's DNS servers see the TXT record (through
+    its CNAME) - asked again for up to two minutes; the CA asked either way."""
+    rr = '_acme-challenge.' + name.rstrip('.')
+    end = time.time() + float(os.environ.get('AI_ACME_SEEN_WAIT') or 120)
+    while True:
+        try:
+            got = [v for t, v in dns_ask(rr, 16) if t == 'TXT']
+        except OSError as e:
+            say('DNS could not be asked whether the record is there (%s): the CA is asked anyway'
+                % str(e)[:80])
+            return False
+        if txt in got:
+            say('%s TXT is seen by %s' % (rr, ', '.join(acme_resolvers()) or 'this machine\'s DNS'))
+            return True
+        if time.time() > end:
+            say('%s TXT is not seen yet by %s - the CA is asked anyway' % (
+                rr, ', '.join(acme_resolvers()) or 'this machine\'s DNS'))
+            return False
+        time.sleep(5)
+
+
+def acme_dns_guide(store):
+    """What the certificate needs in your DNS, by how the CA checks it - for the
+    card In your DNS."""
+    rows = []
+    http = (CONFIG.get('acme_challenge') or 'http-01') != 'dns-01'
+    how = CONFIG.get('acme_dns') or 'manual'
+    t = acme_target()
+    name = acme_name_of(store)
+    if not name:
+        rows.append({'target': t, 'name': '', 'type': '', 'record': '', 'value': '',
+                     'why': 'its name is not known yet'})
+    elif http:
+        rows.append({'target': t, 'name': name, 'type': 'A', 'record': name, 'value': node_address() or '',
+                     'why': 'the name points at an address that reaches port 80 of this server', 'check': 'a'})
+    else:
+        rr, cname = acme_dns_where(name)
+        if how == 'desec' and cname:
+            dom = str(CONFIG.get('acme_desec_domain') or '').strip().rstrip('.').lower()
+            if dom and not dom.endswith('.dedyn.io'):
+                # A domain of your own at deSEC: the zone above it must send the
+                # internet there - NS records, once.
+                rows.append({'target': '', 'name': dom, 'type': 'NS', 'record': dom,
+                             'value': 'ns1.desec.io. ns2.desec.org.',
+                             'why': 'once, in the zone above it: %s at deSEC' % dom, 'check': 'ns'})
+        own = '_acme-challenge.' + name
+        if how == 'acmedns' or cname:
+            rows.append({'target': t, 'name': name, 'type': 'CNAME', 'record': own,
+                         'value': (cname or '?') + '.', 'why': 'once, by hand, in your DNS', 'check': 'cname'})
+        elif how == 'manual':
+            rows.append({'target': t, 'name': name, 'type': 'TXT', 'record': rr,
+                         'value': 'shown here at every order', 'why': 'by hand, at every order'})
+        else:
+            rows.append({'target': t, 'name': name, 'type': 'TXT', 'record': rr, 'value': '',
+                         'why': 'nothing to do: ai puts it in and takes it away'})
+    return {'rows': rows, 'challenge': 'http-01' if http else 'dns-01', 'dns': how}
+
+
+def acme_dns_check(store):
+    """Each row of the guide looked up from here, as the CA will."""
+    g = acme_dns_guide(store)
+    for r in g['rows']:
+        if not r.get('check'):
+            continue
+        try:
+            if r['check'] == 'cname':
+                rc, recs = dns_ask_rc(r['record'], 5)
+                got = [x[1] for x in recs if x[0] == 'CNAME']
+                want = r['value'].rstrip('.').lower()
+                r['found'] = got[0] + '.' if got else ''
+                r['ok'] = bool(got) and got[0].rstrip('.') == want
+                r['said'] = 'there' if r['ok'] else (
+                    'it points elsewhere: %s' % r['found'] if got else 'not there yet')
+            elif r['check'] == 'ns':
+                rc, recs = dns_ask_rc(r['record'], 2)
+                got = sorted(x[1] for x in recs if x[0] == 'NS')
+                r['found'] = ' '.join(got)
+                r['ok'] = any(x.rstrip('.').endswith(('desec.io', 'desec.org')) for x in got)
+                r['said'] = 'there' if r['ok'] else (
+                    ('it is served by %s, not deSEC' % r['found']) if got else
+                    'not delegated: the internet does not know %s' % r['record'])
+            else:
+                with acme_dns_scope():
+                    got = sorted({a[4][0] for a in socket.getaddrinfo(
+                        r['record'], 80, proto=socket.IPPROTO_TCP)})
+                r['found'] = ', '.join(got)
+                r['ok'] = bool(got)
+                r['said'] = 'it points at %s' % r['found'] if got else 'not there'
+        except (OSError, socket.gaierror) as e:
+            r.update(ok=False, said='could not be looked up: %s' % str(e)[:120])
+    g['at'] = time.time()
+    g['resolvers'] = acme_resolvers() or ['this machine\'s DNS']
+    g['own_resolvers'] = bool(acme_resolvers())
+    return g
+
+
+# Port 80 answers the CA (HTTP-01): nginx sends /.well-known/acme-challenge/ to
+# acme.php. Put into nginx's file where an older install.sh wrote it without,
+# tested and reloaded; a file nginx does not take is put back.
+ACME_NGINX = '''    # A certificate by ACME (1.0.39): the CA's HTTP-01 challenge answered on
+    # port 80 by acme.php - the answer is in ai's database. Everything else
+    # goes to HTTPS.
+    location ^~ /.well-known/acme-challenge/ {
+        limit_req     zone=ai_all burst=20 nodelay;
+        fastcgi_pass  %s;
+        fastcgi_param SCRIPT_FILENAME %s/acme.php;
+        include       fastcgi_params;
+        fastcgi_read_timeout 10s;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }'''
+
+
+def acme_nginx_sync():
+    try:
+        text = NGINX_CONF.read_text()
+    except OSError:
+        return False
+    if '/.well-known/acme-challenge/' in text:
+        return False
+    m = re.search(r'fastcgi_pass\s+([^;\s]+);', text)
+    web = re.search(r'^\s*root\s+([^;\s]+);', text, re.M)
+    if not m:
+        return False
+    lines = text.split('\n')
+    depth, start, new = 0, None, None
+    for n, line in enumerate(lines):
+        if depth == 0 and re.match(r'^\s*server\s*\{', line):
+            start = n
+        depth += line.count('{') - line.count('}')
+        if depth == 0 and start is not None:
+            block = '\n'.join(lines[start:n + 1])
+            if re.search(r'^\s*listen\s+[^;]*\b80\b', block, re.M) and \
+                    re.search(r'^\s*return\s+301\s+https://\$host\$request_uri;', block, re.M):
+                block = re.sub(r'^[ \t]*return\s+301\s+https://\$host\$request_uri;[ \t]*$',
+                               ACME_NGINX % (m.group(1), web.group(1) if web else '/var/www/ai'),
+                               block, count=1, flags=re.M)
+                new = '\n'.join(lines[:start] + [block] + lines[n + 1:])
+                break
+            start = None
+    if not new or new == text:
+        return False
+    write_atomic(NGINX_CONF, new, mode=0o644)
+    rc, so, se = run(['nginx', '-t'], timeout=30)
+    if rc != 0:
+        write_atomic(NGINX_CONF, text, mode=0o644)
+        log('nginx would not take the ACME location, so it was left as it was: %s'
+            % (se or so).strip()[-200:], 'warn')
+        return False
+    run(['systemctl', 'reload', 'nginx'], timeout=30)
+    log('nginx: port 80 answers an ACME CA (/.well-known/acme-challenge/)')
+    return True
+
+
 TLS_EXPORTS = {
     # format: (the file's ending, its type, the key in it, a password: 'need', 'may' or '')
     'pem': ('.pem', 'application/x-pem-file', False, ''),
@@ -11621,7 +13055,10 @@ def api_web(c):
     view = tls_view(prof)
     if view is not None:
         view['info'] = (prof or {}).get('info') or now
+    st = c.daemon.store
     return {'tls': {me: view}, 'cluster': False, 'may': True, 'presets': TLS_PRESETS, 'dh': DH_WORDS,
+            'acme': {'on': bool(CONFIG.get('acme')), 'care': {me: acme_care(st)}, 'state': {me: acme_state(st)},
+                     'before': {me: acme_before(st)}},
             'vip': {}, 'nodes': [{'name': me, 'me': True, 'host': socket.getfqdn(), 'address': '',
                                   'web': {'cert_now': now, 'state': TLS_STATE['state'] if TLS_STATE['state'] !=
                                           'done' else '', 'current': bool(current) and TLS_STATE['state'] != 'working',
@@ -11641,8 +13078,12 @@ def api_web_do(c):
                               pending_key=pend or '')
             got['key'] = seal_secret(got['key'], 'web:tls')
             prof.update(got)
-            prof.pop('pending_key', None)
-            prof.pop('csr', None)
+            prof['how'] = 'uploaded'
+            for k in ('pending_key', 'csr', 'ecdsa'):
+                prof.pop(k, None)
+            # One put in by hand is kept: ACME does not replace it at its next
+            # renewal - Automatic certificates -> Look after it gives it back.
+            acme_care_set(st, None, False, c.name, 'a certificate was put in by hand')
             tls_apply_later(st, prof, c.name)
             return {'message': 'the certificate of %s is being put in' % (got['info'].get('cn') or '?')}
         if act == 'tls_csr':
@@ -11667,6 +13108,9 @@ def api_web_do(c):
             got = cert_bundle(cert=crt, key=key)
             got['key'] = seal_secret(got['key'], 'web:tls')
             prof.update(got)
+            prof['how'] = 'self-signed'
+            prof.pop('ecdsa', None)
+            acme_care_set(st, None, False, c.name, 'a certificate was put in by hand')
             tls_apply_later(st, prof, c.name)
             return {'message': 'a self-signed certificate for %s is being put in' % b.get('cn')}
         if act == 'tls_policy':
@@ -11686,6 +13130,7 @@ def api_web_do(c):
             return {'pem': read_text(CERT_FILE)}
         if act == 'tls_forget':
             st.x('DELETE FROM meta WHERE k=?', ('web:tls',))
+            acme_care_set(st, None, False, c.name, 'ai lets its TLS go')
             st.add_event('system', '%s let the TLS of the pages go: nginx keeps what it has' % c.name, 'info', who=c.name)
             return {'message': 'ai no longer looks after it - nginx keeps what it has'}
     except ValueError as e:
@@ -16299,6 +17744,10 @@ class Daemon:
                 self.trials.tick()
                 osup_tick(self)
                 try:
+                    acme_tick(self)             # certificates by ACME (1.0.39)
+                except Exception as e:          # noqa: BLE001
+                    log_sparing('acme-tick', 'ACME: %s' % e, 'warn')
+                try:
                     osup_sched_tick(self)       # updates and restarts on a schedule (1.0.37)
                 except Exception as e:          # noqa: BLE001
                     log_sparing('osup-sched', 'the schedule of updates: %s' % e, 'warn')
@@ -16350,7 +17799,8 @@ class Daemon:
         self.first_account()
         log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, self.store.db.where()))
         if not NO_SYSTEM:
-            threading.Thread(target=lambda: (time.sleep(5), nginx_ipv6_sync()), name='ai-nginx6', daemon=True).start()
+            threading.Thread(target=lambda: (time.sleep(5), nginx_ipv6_sync(), acme_nginx_sync()), name='ai-nginx6',
+                             daemon=True).start()
         self.store.add_event('starting and stopping', 'ai %s started on %s' % (__version__, host_name()), 'info')
         try:
             tls_reapply_if_needed(self.store)
@@ -19204,6 +20654,17 @@ class Console(object):
 
     # ---- 7 the server ---------------------------------------------------------------------
     def m_server(self):
+        def cert():
+            r = self.choose('The certificate of the pages', [
+                ('now', 'What nginx has now'), ('acme', 'Certificates by ACME: how it stands'),
+                ('order', 'Order it by ACME now')])
+            if r == 'now':
+                self.act('--cert')
+            elif r == 'acme':
+                self.act('--acme')
+            elif r == 'order':
+                self.live(lambda: self.show_live('--acme-order'))
+
         def keyadd():
             got = self.ask_one('Add a public key for root', 'the key', help_=(
                 'One line of a .pub file: ssh-ed25519 AAAA… you@laptop'), need=True)
@@ -19223,7 +20684,7 @@ class Console(object):
             ('4', 'Update the system now, followed live', lambda: self.show_live('--osup', 'upgrade'), 'plain'),
             ('5', 'SSH keys of root', lambda: self.act('--sshkeys')),
             ('6', 'Add a public key for root', keyadd),
-            ('7', 'The certificate of the pages', lambda: self.act('--cert')),
+            ('7', 'The certificate of the pages, and by ACME', cert),
             ('8', 'Restart the server', lambda: power('reboot')),
             ('9', 'Switch the server off', lambda: power('poweroff')),
         ])
@@ -19431,6 +20892,9 @@ def build_parser():
                    help='the protocols and ciphers: standard (TLS 1.2+1.3, ECDHE), intermediate (Mozilla, with DHE), '
                    'modern (TLS 1.3 only)')
     g.add_argument('--tls-dh', choices=sorted(DH_WORDS), help='the DH parameters')
+    g.add_argument('--acme', action='store_true', help='the certificate by ACME: its name, end, who looks after '
+                   'it, its last order')
+    g.add_argument('--acme-order', action='store_true', help='order the certificate by ACME now, followed here')
     g.add_argument('--tls-hsts', type=int, metavar='SECONDS', help='Strict-Transport-Security (0 = none)')
     g.add_argument('--reboot', action='store_true', help='restart the server (asks, or --yes)')
     g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
@@ -19967,6 +21431,45 @@ def cli_main(argv):
             return 0
         if a.usage:
             return cli_usage(d, a, pal)
+        if a.acme:
+            v = acme_view(st)
+            if a.json:
+                say_json(v)
+                return 0
+            print('%s  %s' % (pal.head('the certificate by ACME'), 'on' if v['on'] else 'off (ai --set acme=1)'))
+            t = v['targets'][0]
+            s_ = t.get('state') or {}
+            left = (float(t['not_after']) - time.time()) / 86400 if t.get('not_after') else None
+            print('  for            %s' % (t.get('name') or '(no name)'))
+            print('  the CA         %s (%s)' % (v['directory'] or '-', v['challenge']))
+            print('  the key        %s' % ACME_KEYS.get(v['key'], v['key']))
+            print('  good for       %s' % ('%.0f days more' % left if left is not None else '-'))
+            print('  issued by      %s' % (t.get('issuer') or '-'))
+            print('  looked after   %s' % ('by ACME' if t.get('care') else 'by hand - ACME leaves it alone'))
+            print('  last order     %s' % ((('ok ' if s_.get('ok') else 'failed ') + _acme_day(s_.get('at')) +
+                                           ('' if s_.get('ok') else ': %s' % (s_.get('said') or '')))
+                                          if s_.get('at') else 'never'))
+            if (v.get('account') or {}).get('kid'):
+                print('  account        %s, made %s' % (v['account'].get('email') or '(no mail)',
+                                                     _acme_day(v['account'].get('at'))))
+            return 0
+        if a.acme_order:
+            if not CONFIG.get('acme'):
+                raise Refused('certificates by ACME are off - ai --set acme=1 (and acme_* ) first')
+            name = acme_name_of(st)
+            if not name:
+                raise Refused('the name of the certificate is not known - ai --set acme_node_name=NAME')
+            # Ordered by hand, ACME looks after it from now on - as on the pages.
+            acme_care_set(st, None, True, 'the command line', 'ordered by hand')
+            print(pal.head('%s: %s' % (acme_target(), name)))
+            _ACME_DNS.on = True
+            try:
+                acme_order(st, acme_target(), name, 'the command line', lambda w: print('  ' + str(w)))
+            except AcmeError as e:
+                print(pal.bad_line(str(e)))
+                return 1
+            print(pal.ok_line('the certificate of %s is made and put into nginx' % name))
+            return 0
         if a.signin_art is not None or a.signin_logo or a.signin_logo_forget:
             return cli_signin(st, a, pal)
         if a.db_ipv4:

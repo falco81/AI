@@ -1830,3 +1830,312 @@ function drawOsup(live) {
   }, live);
 }
 
+
+/* ---- Settings → Automatic certificates (1.0.39, as otp's 1.0.169-1.0.187) --------
+   The card of the certificate: who orders it, what it has now, the last try;
+   port 80 tried as the CA will try it; In your DNS with Check DNS. */
+function nodeGrid() { return el('div', 'pw-grid node-grid'); }
+function nodeCard(n, dot, tag, tagCls) {
+  var c = el('div', 'card ntp-node');
+  var head = el('div', 'pw-head');
+  head.appendChild(el('span', 'dot ' + dot));
+  head.appendChild(noI18n(el('b', '', n.node || n.name)));
+  if (n.me) head.appendChild(el('span', 'tag info', 'this page'));
+  if (tag) head.appendChild(el('span', 'tag ' + (tagCls || 'dim'), tag));
+  c.appendChild(head);
+  return c;
+}
+function nodeBig(c, value, words) {
+  var big = el('div', 'ntp-big');
+  big.appendChild(noI18n(el('span', 'ntp-off', value)));
+  if (words) big.appendChild(el('span', 'muted small', ' ' + words));
+  c.appendChild(big);
+}
+function nodeSaid(got, words) {
+  var p = el('div', 'node-said ' + (got.ok ? 'ok' : 'bad'));
+  p.appendChild(el('span', 'dot ' + (got.ok ? 'ok' : 'bad')));
+  var t = el('div');
+  t.appendChild(el('b', '', got.error ? 'It did not go' : words));
+  if (got.error) t.appendChild(noI18n(el('div', 'small muted', got.error)));
+  t.appendChild(el('div', 'small muted', ago(got.at)));
+  p.appendChild(t);
+  return p;
+}
+var AC = {d: null, probe: {}, poll: null};
+function loadAcme() {
+  api('acme').then(function (d) { AC.d = d; drawAcme(); acPoll(d.work && d.work.busy); }).catch(oops);
+}
+function acPoll(on) {
+  if (on && !AC.poll) AC.poll = setInterval(function () {
+    if (TAB !== 'settings' || PANE !== 'acme') { acPoll(false); return; }
+    api('acme').then(function (d) { AC.d = d; drawAcme(); if (!(d.work && d.work.busy)) acPoll(false); }).catch(function () {});
+  }, 2000);
+  if (!on && AC.poll) { clearInterval(AC.poll); AC.poll = null; }
+}
+function drawAcme() {
+  var real = $('ac-host');
+  if (!real || !AC.d) return;
+  liveLetGo(real);
+  liveFill(real, function (host) {
+    var d = AC.d;
+    if (!d.on) host.appendChild(el('p', 'note', 'Off - switch it on below, choose the CA, and save.'));
+    if (d.work && d.work.busy) {
+      var g = el('div', 'going wide');
+      g.innerHTML = '<div class="bar"><span style="width:60%"></span></div>';
+      /* What is being waited for now. */
+      var w = el('div', 'says');
+      w.appendChild(el('span', '', d.work.says || 'ordering…'));
+      g.appendChild(w);
+      host.appendChild(g);
+    }
+    /* By hand (DNS-01): the record to put in, and the order waiting for it. */
+    if (d.manual) {
+      var mc = el('div', 'card full ac-manual');
+      mc.appendChild(el('h2', '', 'Put this TXT record in DNS'));
+      mc.appendChild(el('p', 'note warn', 'The order waits for it - up to an hour. Put it in, wait until DNS carries it, then say so. Take it away again once the certificate has come.'));
+      mc.appendChild(netFacts([['Name', d.manual.rr, true], ['Type', 'TXT', true], ['Value', d.manual.txt, true], ['TTL', '60', true]]));
+      var mr = el('div', 'btnrow');
+      var cp = cmdButton('Copy the value', 'copy', 'small');
+      cp.onclick = function () { copyText(d.manual.txt); };
+      var dn = cmdButton('It is in DNS', 'check', 'small primary');
+      dn.disabled = !!d.manual.done;
+      dn.onclick = function () { api('acme', {action: 'manual_done'}).then(function (x) { AC.d = x; drawAcme(); acPoll(true); }).catch(oops); };
+      var gv = cmdButton('Give the order up', 'close', 'small');
+      gv.onclick = function () { api('acme', {action: 'manual_drop'}).then(function (x) { AC.d = x; drawAcme(); }).catch(oops); };
+      mr.appendChild(cp); mr.appendChild(dn); mr.appendChild(gv);
+      mc.appendChild(mr);
+      host.appendChild(mc);
+    }
+    var grid = nodeGrid();
+    (d.targets || []).forEach(function (t) {
+      var st = t.state || {};
+      var left = t.not_after ? Math.floor((t.not_after - Date.now() / 1000) / 86400) : null;
+      var acme = t.how === 'ACME';
+      var dot = !acme ? 'dim' : (st.ok === false ? 'warn' : (left !== null && left < 14 ? 'warn' : 'ok'));
+      var c = nodeCard({node: t.target, me: true}, dot,
+        acme ? (st.ok === false ? 'the last try failed' : 'from the CA') : (t.how ? 'not from the CA' : 'no certificate of its own'),
+        acme ? (st.ok === false ? 'warn' : 'ok') : 'dim');
+      /* Who looks after it: ACME, or the certificate put in on Certificates
+         and TLS is kept as it is. */
+      var care = el('span', 'tag ' + (t.care ? 'info' : 'dim'), t.care ? 'ACME renews it' : 'its own certificate is kept');
+      explain(care, t.care ? 'Renewed by ACME before it runs out. A certificate put in by hand on Certificates and TLS takes it out of ACME’s care.'
+        : 'The certificate put in on Certificates and TLS (uploaded, from a request, self-signed) stays: ACME does not replace it. Look after it, or Order it now, gives it to ACME.');
+      c.querySelector('.pw-head').appendChild(care);
+      nodeBig(c, left !== null ? num(left) : '–', left !== null ? 'days left' : '');
+      c.appendChild(netFacts([
+        ['For', t.name || '', true], ['Issued by', t.issuer || '', true],
+        ['Good until', t.not_after ? new Date(t.not_after * 1000).toLocaleDateString(numLang()) : ''],
+        ['Key', t.ecdsa ? (t.key || '?') + ' + ' + (t.ecdsa.key || 'ECDSA') : (t.key || '')],
+        ['Last ordered', st.ordered_at ? ago(st.ordered_at) : 'never']
+      ]));
+      if (st.ok === false && st.said) c.appendChild(nodeSaid({ok: false, error: st.said, at: st.failed_at}, ''));
+      /* What the last order did, step by step. */
+      if ((st.steps || []).length) {
+        var det = el('details', 'acme-steps-done');
+        det.appendChild(el('summary', 'small muted', 'What the last order did'));
+        var t0 = st.steps[0][0];
+        st.steps.forEach(function (x) {
+          var r = el('div', 'si-row small');
+          r.appendChild(noI18n(el('span', 'muted mono', '+' + Math.round(x[0] - t0) + ' s')));
+          r.appendChild(el('span', '', x[1]));
+          det.appendChild(r);
+        });
+        c.appendChild(det);
+      }
+      var pr = AC.probe[t.target];
+      if (pr) c.appendChild(nodeSaid({ok: pr.ok, at: pr.at, error: pr.ok ? '' : pr.said}, 'Port 80 answers as the CA will ask it'));
+      var row = el('div', 'btnrow');
+      var probe = cmdButton('Try port 80', 'play', 'small');
+      probe.hidden = d.challenge === 'dns-01';
+      explain(probe, t.name ? 'http://' + t.name + '/.well-known/acme-challenge/ asked from this server, as the CA will ask it - whether it reaches ai. A firewall in front of the server may still stop the CA from outside.'
+        : 'The name of this certificate is not known yet: give it (Its name…).');
+      probe.disabled = !t.name;
+      probe.onclick = function () {
+        busy(probe, true);
+        api('acme', {action: 'probe', target: t.target}).then(function (x) {
+          busy(probe, false); x.at = Date.now() / 1000; AC.probe[t.target] = x; drawAcme();
+        }).catch(function (e) { busy(probe, false); oops(e); });
+      };
+      var order = cmdButton('Order it now', 'download', 'small primary');
+      order.disabled = !d.on || !t.name || (d.work && d.work.busy);
+      explain(order, !d.on ? 'Switch it on below first.' : (!t.name ? 'Give its name first (Its name…).'
+        : 'Ordered from the CA now and put into nginx. ACME renews it from then on.'));
+      order.onclick = function () {
+        var go = function () {
+          busy(order, true);
+          api('acme', {action: 'order', target: t.target}).then(function (x) { busy(order, false); toast(x.message, 'good'); AC.d = x; drawAcme(); acPoll(true); })
+            .catch(function (e) { busy(order, false); oops(e); });
+        };
+        if (t.how && !acme) {
+          confirmThen('Replace the certificate of the pages?',
+            'It has one put in on Certificates and TLS (' + t.how + (t.issuer ? ', ' + t.issuer.replace(/^CN=/, '').split(',')[0] : '') + '). The one from the CA takes its place once it comes, and ACME renews it from then on. Its TLS settings stay as they are.',
+            'Order it', go, false);
+        } else go();
+      };
+      var cb = cmdButton(t.care ? 'Leave it alone' : 'Look after it', t.care ? 'cancel' : 'refresh', 'small');
+      explain(cb, t.care ? 'ACME stops renewing this one; the certificate it has stays.'
+        : 'ACME renews this one from now on - at the next look (within the hour) if it is not from the CA yet.');
+      cb.onclick = function () {
+        busy(cb, true);
+        api('acme', {action: 'care', target: t.target, on: !t.care}).then(function (x) { AC.d = x; drawAcme(); })
+          .catch(function (e) { busy(cb, false); oops(e); });
+      };
+      var nm = cmdButton('Its name…', 'edit', 'small');
+      explain(nm, 'The DNS name the certificate of the pages is for. Empty: the name of the certificate it has now, else the full host name.');
+      nm.onclick = function () { acmeNameAsk(t); };
+      row.appendChild(probe); row.appendChild(order); row.appendChild(cb); row.appendChild(nm);
+      if (t.before && !t.before.ran_out) row.appendChild(acmePutBackButton(t.target, t.before, function (x) { AC.d = x; drawAcme(); }));
+      c.appendChild(row);
+      grid.appendChild(c);
+    });
+    host.appendChild(grid);
+    if (d.on && d.dns_guide) host.appendChild(acmeDnsGuide(d));
+    setTimeout(function () { acmeNamesInSettings(d); }, 0);
+    if (d.account && d.account.kid) {
+      var a = el('p', 'muted small', 'The account at the CA: ');
+      a.appendChild(noI18n(el('span', 'mono', d.account.kid)));
+      host.appendChild(a);
+    }
+  });
+}
+
+/* The certificate from before ACME: kept when ACME replaced it, put back with
+   its key as it was; ACME then leaves it alone. */
+function acmePutBackButton(target, before, then) {
+  var b = cmdButton('Back to the one before…', 'undo', 'small');
+  var words = (before.issuer || '').replace(/^CN=/, '').split(',')[0];
+  explain(b, 'The certificate it had before ACME replaced it' + (words ? ' - from ' + words : '') + (before.not_after ? ', good until ' + new Date(before.not_after * 1000).toLocaleDateString(numLang()) : '') + '. Put back as it was; ACME no longer renews this one. The TLS settings stay.');
+  b.onclick = function () {
+    confirmThen('Put the certificate from before ACME back?', 'The one from the CA is taken out and the one it had before - ' + (words || before.how || '') + ' - put back into nginx. ACME no longer renews this one (Look after it gives it back).', 'Put it back', function () {
+      busy(b, true);
+      api('acme', {action: 'put_back', target: target}).then(function (x) { toast(x.message, 'good'); then(x); })
+        .catch(function (e) { busy(b, false); oops(e); });
+    }, false);
+  };
+  return b;
+}
+
+/* The name the certificate is for beside its box, when the box is empty. */
+function acmeNamesInSettings(d) {
+  var input = $('set-acme_node_name');
+  var t = (d.targets || [])[0];
+  if (input && t && t.name) input.placeholder = t.name;
+}
+function acmeNameAsk(t) {
+  askInModal('The name of the pages\' certificate',
+    'The full DNS name its certificate is for - it goes into the certificate as its name (CN) and in its alternative names (SAN). The CA gives it only for a name that points at it (HTTP-01) or whose TXT record can be put in (DNS-01).',
+    [{label: 'DNS name', placeholder: 'ai.example.cz', mono: true, value: t.named ? t.name || '' : '',
+      says: 'Empty: the name of the certificate it has now, else the full host name.'}],
+    'Keep it', 'save', function (v, b) {
+      busy(b, true);
+      api('acme', {action: 'name', target: t.target, name: v[0].trim()}).then(function (x) {
+        closeModal(); AC.d = x; drawAcme(); toast('kept', 'good');
+        loadSettings();
+      }).catch(function (e) { busy(b, false); oops(e); });
+    });
+}
+
+/* In your DNS: what the certificate needs there - by the way the CA checks it -
+   the steps of the way chosen, and a check that looks each record up from here. */
+var AC_DNS = {at: 0, rows: null};
+var ACME_DNS_STEPS = {
+  'http-01': ['The name points at the address that reaches port 80 of this server - from the internet, or from your own CA.',
+              'Port 80 is open to it - the firewall in front of the server, and Firewall and access here.',
+              'Try port 80 on the card, then Order it now.'],
+  desec: ['Sign up at desec.io (free) and confirm the mail.',
+          'Add a domain there: a free one - yourname.dedyn.io - or one of your own whose DNS is at deSEC.',
+          'Token management: make a token. Give it below as The deSEC API token, with The domain at deSEC, and save.',
+          'In the DNS of your own domain put the CNAME records below - once; they stay for every renewal.',
+          'Check DNS here, then Order it now. Renewals go by themselves.'],
+  cloudflare: ['A token at Cloudflare (My Profile → API Tokens) with Zone - DNS - Edit for the zone, given below.',
+               'Where the DNS of your domain is not at Cloudflare: a zone that is, as The TXT records go into, and the CNAME records below in your DNS.',
+               'Order it now. Renewals go by themselves.'],
+  rfc2136: ['A TSIG key the DNS server lets update the _acme-challenge records (tsig-keygen), given below with the server and the zone.',
+            'With The TXT records go into: the CNAME records below in your DNS, and the key allowed in that zone.',
+            'Order it now. Renewals go by themselves.'],
+  acmedns: ['Register at the acme-dns server (POST /register) - it gives a user, a key and a subdomain; give them below.',
+            'In your DNS put the CNAME records below - once.',
+            'Check DNS here, then Order it now. Renewals go by themselves.'],
+  manual: ['At every order - renewals too - the TXT record is shown here: put it in your DNS, then say It is in DNS.',
+           'Better: a CNAME once in your DNS to a zone ai can write to (deSEC is free) - then nothing is by hand any more.']
+};
+function acmeDnsGuide(d) {
+  var g = d.dns_guide;
+  var key = g.challenge === 'http-01' ? 'http-01' : g.dns;
+  var card = el('div', 'card full acme-dns');
+  card.appendChild(el('h2', '', 'In your DNS'));
+  card.appendChild(el('p', 'note', g.challenge === 'http-01'
+    ? 'HTTP-01: the CA asks port 80 of the name - so the name points at this server, and port 80 is open to the CA.'
+    : (g.dns === 'manual' ? 'DNS-01 by hand: the CA reads a TXT record you put in at every order.'
+      : 'DNS-01: the CA reads a TXT record ai puts in. What has to be in your DNS for it - once - is below.')));
+  var ol = el('ol', 'acme-steps');
+  (ACME_DNS_STEPS[key] || []).forEach(function (w) { ol.appendChild(el('li', '', w)); });
+  card.appendChild(ol);
+  var checked = AC_DNS.rows && Date.now() / 1000 - AC_DNS.at < 600 ? AC_DNS.rows : null;
+  var rows = (g.rows || []).map(function (r, i) {
+    var c = checked && checked[i] && checked[i].record === r.record ? checked[i] : {};
+    return Object.assign({}, r, {ok: c.ok, said: c.said});
+  });
+  var t = listTable(['Certificate', 'Record', 'Type', 'Points at / value', 'In DNS now'], rows, function (r) {
+    var tr = el('tr');
+    tr.appendChild(r.type === 'NS' ? el('td', '', 'its zone at deSEC') : noI18n(el('td', '', r.target)));
+    var rec = el('td', 'mono small dns-cell');
+    if (r.record) {
+      rec.appendChild(noI18n(el('span', '', r.record)));
+      var cp = iconButton('copy', 'Copy');
+      cp.onclick = function () { copyText(r.record, cp); };
+      rec.appendChild(cp);
+    } else rec.appendChild(el('span', 'muted', r.why || ''));
+    tr.appendChild(rec);
+    tr.appendChild(noI18n(el('td', 'mono small', r.type || '')));
+    var val = el('td', 'mono small dns-cell');
+    if (r.type === 'CNAME' || r.type === 'NS' || (r.type === 'A' && r.value)) {
+      val.appendChild(noI18n(el('span', '', r.value)));
+      var cv = iconButton('copy', 'Copy');
+      cv.onclick = function () { copyText(r.value, cv); };
+      val.appendChild(cv);
+      if (r.type === 'A') val.appendChild(el('div', 'muted', 'or the public address in front of it'));
+    } else val.appendChild(el('span', 'muted', r.type === 'TXT' ? (r.value || r.why) : ''));
+    tr.appendChild(val);
+    var st = el('td', 'small');
+    if (r.check) {
+      if (r.ok === undefined) st.appendChild(el('span', 'muted', 'not checked yet'));
+      else {
+        st.appendChild(el('span', 'tag ' + (r.ok ? 'ok' : 'warn'), r.ok ? 'there' : 'not yet'));
+        if (r.said && !r.ok) st.appendChild(el('div', 'muted', r.said));
+      }
+    } else st.appendChild(el('span', 'muted', r.type === 'TXT' && !r.value ? 'ai puts it in' : '–'));
+    tr.appendChild(st);
+    Array.prototype.forEach.call(tr.querySelectorAll('td.dns-cell'), function (td) {
+      var box = el('div', 'dns-val');
+      while (td.firstChild) box.appendChild(td.firstChild);
+      td.appendChild(box);
+    });
+    return tr;
+  });
+  card.appendChild(t);
+  var row = el('div', 'btnrow');
+  var chk = cmdButton('Check DNS', 'search', 'small');
+  explain(chk, 'Each record looked up from this server now, through its DNS servers - as the CA will look. A record just put in may take a while to show (its TTL).');
+  chk.disabled = !(g.rows || []).some(function (r) { return r.check; });
+  chk.onclick = function () {
+    busy(chk, true);
+    api('acme', {action: 'dns_check'}).then(function (x) {
+      AC_DNS = {at: Date.now() / 1000, rows: x.rows, own: x.own_resolvers};
+      busy(chk, false); drawAcme();
+    }).catch(function (e) { busy(chk, false); oops(e); });
+  };
+  row.appendChild(chk);
+  if (checked && AC_DNS.own === false) {
+    card.appendChild(el('p', 'note warn small', 'Checked with this machine’s DNS servers - inside your network they may see what the internet does not. Set DNS servers for ACME (below) to public ones, 1.1.1.1, 9.9.9.9, to see what the CA sees.'));
+  }
+  if (checked) {
+    var when = el('span', 'muted small');
+    when.appendChild(el('span', '', 'checked'));
+    when.appendChild(document.createTextNode(' '));
+    when.appendChild(el('span', '', ago(AC_DNS.at)));
+    row.appendChild(when);
+  }
+  card.appendChild(row);
+  return card;
+}

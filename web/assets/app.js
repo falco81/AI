@@ -2165,6 +2165,7 @@ function showPane(name) {
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
   if (name === 'upgrade') loadUpgrade();
   if (name === 'signin') loadArt();
+  if (name === 'acme') loadAcme(); else if (typeof acPoll === 'function') acPoll(false);
   if (name === 'about') { loadAbout(); loadConsoleLogin(); loadSoftware(); }
   markDirtyCount();
 }
@@ -3250,6 +3251,19 @@ function certCard(d, target) {
   if (prof && prof.dh && prof.dh !== 'none') chips.appendChild(noI18n(el('span', 'cchip', 'DH ' + prof.dh)));
   if (prof && prof.hsts) chips.appendChild(el('span', 'cchip', 'HSTS ' + Math.round(prof.hsts / 86400) + ' days'));
   if (prof && prof.pending) chips.appendChild(el('span', 'cchip warn', 'a request waits for its certificate'));
+  /* Automatic certificates beside it (1.0.39, as otp's): who renews this one. */
+  var ac = d.acme || {};
+  if (ac.on) {
+    var acare = (ac.care || {})[target];
+    var ach = el('span', 'cchip' + (acare ? '' : ' dim'), acare ? 'renewed by ACME' : 'ACME leaves it alone');
+    explain(ach, acare ? 'Settings → Automatic certificates renews it before it runs out. Uploading one here, or making one self-signed, takes it out of ACME’s care - it is kept as it is.'
+      : 'Kept as it is: Automatic certificates does not replace it (Look after it there gives it to ACME).');
+    ach.style.cursor = 'pointer';
+    ach.onclick = function () { location.hash = '#settings/acme'; };
+    chips.appendChild(ach);
+    var ast = (ac.state || {})[target] || {};
+    if (acare && ast.ok === false && ast.said) chips.appendChild(el('span', 'cchip warn', 'the last order failed'));
+  }
   if (!prof && target !== 'vip') chips.appendChild(el('span', 'cchip dim', 'as install.sh made it'));
   card.appendChild(chips);
   /* Is it in place on the node? */
@@ -3278,18 +3292,30 @@ function certCard(d, target) {
   }
   if (d.may) {
     var tools = el('div', 'cert-tools');
+    /* Put in by hand while ACME renews it: said first - it leaves ACME's
+       care, or ACME would replace it at its next renewal. */
+    var byHand = function (go) {
+      if (!(d.acme && d.acme.on && (d.acme.care || {})[target])) { go(); return; }
+      confirmThen('ACME renews this certificate', 'One put in here by hand takes ' + webTargetWords(target)
+        + ' out of ACME’s care: it is kept as it is, not replaced at the next renewal. Settings → Automatic certificates → Look after it gives it back.', 'Go on', go, false);
+    };
     var up = cmdButton('Upload', 'upload', 'small');
-    up.onclick = function () { certUpload(target, prof); };
+    up.onclick = function () { byHand(function () { certUpload(target, prof); }); };
     tools.appendChild(up);
     var req = cmdButton(prof && prof.pending ? 'The waiting request' : 'Request (CSR)', 'list', 'small');
     req.onclick = function () { certRequest(target, prof); };
     tools.appendChild(req);
     var ss = cmdButton('Self-signed', 'key', 'small');
-    ss.onclick = function () { certSelf(target, d); };
+    ss.onclick = function () { byHand(function () { certSelf(target, d); }); };
     tools.appendChild(ss);
     var pol = cmdButton('TLS settings', 'gear', 'small');
     pol.onclick = function () { certPolicy(target, prof, d); };
+    /* Whoever gave the certificate - ACME too - its protocols, ciphers, DH
+       and HSTS are set here and kept when it is renewed. */
+    explain(pol, 'The protocols, the ciphers, the DH parameters and HSTS of ' + webTargetWords(target) + ' - kept as they are whichever way the certificate came, ACME and its renewals too.');
     tools.appendChild(pol);
+    var bef = (d.acme && d.acme.before || {})[target];
+    if (bef && !bef.ran_out && typeof acmePutBackButton === 'function') tools.appendChild(acmePutBackButton(target, bef, function () { loadWeb(); }));
     /* Download whenever there is a certificate - one ai looks after, or the
        one nginx has from before (1.0.31). */
     if ((prof && prof.cert) || info) {

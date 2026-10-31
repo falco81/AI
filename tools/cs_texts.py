@@ -2649,6 +2649,101 @@ STRINGS = {
         'Všechny aktualizace',
     'On a schedule':
         'Podle plánu',
+    # ---- 1.0.39: automatic certificates (ACME) ----
+    'A token from deSEC (Token management) - one that may change this domain’s records. Kept sealed.':
+        'Token z deSEC (Token management) – takový, který smí měnit záznamy této domény. Uložený zapečetěně.',
+    'A zone the records go into instead of the name’s own (acme.example.net), each name with a CNAME to it in your DNS - In your DNS above says which. Empty: _acme-challenge.NAME itself.':
+        'Zóna, do které záznamy jdou místo zóny samotného jména (acme.example.net), každé jméno s CNAME na ni ve vašem DNS – které, říká Ve vašem DNS výše. Prázdné: přímo _acme-challenge.JMÉNO.',
+    'As the DNS server knows it, ai-acme.; allowed to update _acme-challenge records only.':
+        'Jak ho zná DNS server, ai-acme.; smí měnit jen záznamy _acme-challenge.',
+    'ECDSA P-384':
+        'ECDSA P-384',
+    'RSA 3072':
+        'RSA 3072',
+    'RSA 4096':
+        'RSA 4096',
+    'HTTP-01 needs port 80 of the name reachable from the internet (or from the CA, for a CA of your own). DNS-01 needs nothing open: the CA reads a TXT record.':
+        'HTTP-01 potřebuje port 80 jména dostupný z internetu (nebo z CA, u vlastní CA). DNS-01 nepotřebuje nic otevřeného: CA čte záznam TXT.',
+    'Let’s Encrypt':
+        'Let’s Encrypt',
+    'Let’s Encrypt - staging (to try it)':
+        'Let’s Encrypt – staging (na vyzkoušení)',
+    'Let’s Encrypt, its staging (certificates browsers do not trust - to try it), or another.':
+        'Let’s Encrypt, jeho staging (certifikáty, kterým prohlížeče nevěří – na vyzkoušení), nebo jiná.',
+    'Let’s Encrypt’s certificates last 90 days; 30 is what it advises.':
+        'Certifikáty Let’s Encrypt platí 90 dní; 30 je, co doporučuje.',
+    'The CA’s own certificate':
+        'Vlastní certifikát CA',
+    'The CA’s root (PEM), where the system does not trust it already.':
+        'Kořen CA (PEM), pokud mu systém ještě nedůvěřuje.',
+    'The DNS servers asked for everything on this page: the address of the CA and of the DNS API, Check DNS, Try port 80, and whether the TXT record can be seen before the CA is asked - 1.1.1.1, 9.9.9.9 to see what the internet sees. Empty: the machine’s own (/etc/resolv.conf).':
+        'DNS servery, kterých se ptá vše na této stránce: adresa CA a DNS API, Ověřit DNS, Vyzkoušet port 80 a zda je záznam TXT vidět, než se zeptá CA – 1.1.1.1, 9.9.9.9, aby bylo vidět, co vidí internet. Prázdné: vlastní servery stroje (/etc/resolv.conf).',
+    'The certificate of the pages ordered from the CA and renewed by itself - by HTTP-01 port 80 of the name must reach this server, by DNS-01 nothing has to be open. Off until switched on.':
+        'Certifikát stránek objednaný od CA a obnovovaný sám – u HTTP-01 musí port 80 jména vést na tento server, u DNS-01 nemusí být nic otevřené. Vypnuto, dokud se nezapne.',
+    'The directory of another ACME CA, https://ca.example.cz/acme/acme/directory.':
+        'Adresář jiné ACME CA, https://ca.example.cz/acme/acme/directory.',
+    'The key’s secret (base64). Kept sealed; written to a file only ai reads for the moment nsupdate runs.':
+        'Tajemství klíče (base64). Uložené zapečetěně; zapíše se do souboru, který čte jen ai, jen na dobu běhu nsupdate.',
+    'The name the certificate is for. Empty: the name of the certificate it has now, else the full host name. Its name… on the card above changes it too.':
+        'Jméno, pro které je certifikát. Prázdné: jméno certifikátu, který má teď, jinak plné jméno stroje. Mění ho i Jeho jméno… na kartě výše.',
+    'The primary DNS server of the zone, ns1.example.cz or with a port 10.0.0.53:53.':
+        'Primární DNS server zóny, ns1.example.cz nebo s portem 10.0.0.53:53.',
+    'The server’s DNS name':
+        'DNS jméno serveru',
+    'What Let’s Encrypt takes: RSA of 2048, 3072 or 4096 bits, ECDSA P-256 or P-384. ECDSA is smaller and quicker; RSA for old clients. Both: an RSA certificate by default and an ECDSA one to the clients that can take it - what Let’s Encrypt advises. The account at the CA has a key of its own.':
+        'Co Let’s Encrypt přijímá: RSA 2048, 3072 nebo 4096 bitů, ECDSA P-256 nebo P-384. ECDSA je menší a rychlejší; RSA pro staré klienty. Oba: certifikát RSA výchozí a ECDSA klientům, kteří ho umí – to Let’s Encrypt doporučuje. Účet u CA má vlastní klíč.',
+    'Where the record goes, example.cz. Empty: as the server finds it.':
+        'Kam záznam patří, example.cz. Prázdné: jak ji najde server.',
+    'Your domain at deSEC, example.dedyn.io (free) or one of your own whose DNS is there. The records go into it; your DNS has a CNAME to it for each name - In your DNS above says which.':
+        'Vaše doména u deSEC, example.dedyn.io (zdarma) nebo vlastní, jejíž DNS je tam. Záznamy jdou do ní; váš DNS má na ni pro každé jméno CNAME – které, říká Ve vašem DNS výše.',
+    'both - RSA 2048 by default, ECDSA P-256 to who can take it':
+        'oba – RSA 2048 výchozí, ECDSA P-256 pro ty, kdo ho umí',
+    'https://auth.acme-dns.example.cz; _acme-challenge.NAME is a CNAME to the subdomain below.':
+        'https://auth.acme-dns.example.cz; _acme-challenge.JMÉNO je CNAME na subdoménu níže.',
+    'Automatic certificates':
+        'Automatické certifikáty',
+    'Off - switch it on below, choose the CA, and save.':
+        'Vypnuto – zapněte níže, zvolte CA a uložte.',
+    'no certificate of its own':
+        'žádný vlastní certifikát',
+    'Ordered from the CA now and put into nginx. ACME renews it from then on.':
+        'Objedná se od CA hned a vloží do nginx. Od té doby ho ACME obnovuje.',
+    'Replace the certificate of the pages?':
+        'Nahradit certifikát stránek?',
+    'The DNS name the certificate of the pages is for. Empty: the name of the certificate it has now, else the full host name.':
+        'DNS jméno, pro které je certifikát stránek. Prázdné: jméno certifikátu, který má teď, jinak plné jméno stroje.',
+    'The name of this certificate is not known yet: give it (Its name…).':
+        'Jméno tohoto certifikátu zatím není známé: zadejte ho (Jeho jméno…).',
+    "The name of the pages' certificate":
+        'Jméno certifikátu stránek',
+    'Empty: the name of the certificate it has now, else the full host name.':
+        'Prázdné: jméno certifikátu, který má teď, jinak plné jméno stroje.',
+    'The name points at the address that reaches port 80 of this server - from the internet, or from your own CA.':
+        'Jméno ukazuje na adresu, která vede na port 80 tohoto serveru – z internetu, nebo z vaší vlastní CA.',
+    'Port 80 is open to it - the firewall in front of the server, and Firewall and access here.':
+        'Port 80 je pro ni otevřený – firewall před serverem i Firewall a přístup zde.',
+    'Try port 80 on the card, then Order it now.':
+        'Vyzkoušejte port 80 na kartě, pak Objednat teď.',
+    'HTTP-01: the CA asks port 80 of the name - so the name points at this server, and port 80 is open to the CA.':
+        'HTTP-01: CA se ptá na portu 80 jména – takže jméno ukazuje na tento server a port 80 je pro CA otevřený.',
+    'Each record looked up from this server now, through its DNS servers - as the CA will look. A record just put in may take a while to show (its TTL).':
+        'Každý záznam se teď vyhledá z tohoto serveru přes jeho DNS servery – jak bude hledat CA. Právě vložený záznam se může chvíli neukazovat (jeho TTL).',
+    'Better: a CNAME once in your DNS to a zone ai can write to (deSEC is free) - then nothing is by hand any more.':
+        'Lépe: jednou CNAME ve vašem DNS na zónu, do které ai umí zapisovat (deSEC je zdarma) – pak už není nic ručně.',
+    'DNS-01: the CA reads a TXT record ai puts in. What has to be in your DNS for it - once - is below.':
+        'DNS-01: CA čte záznam TXT, který vloží ai. Co pro to musí být ve vašem DNS – jednou – je níže.',
+    'ai puts it in':
+        'vloží ho ai',
+    'nothing to do: ai puts it in and takes it away':
+        'nic dělat: ai ho vloží a zase odebere',
+    'the name points at an address that reaches port 80 of this server':
+        'jméno ukazuje na adresu, která vede na port 80 tohoto serveru',
+    "The certificate of these pages ordered from Let's Encrypt or another ACME CA and renewed by itself well before it runs out. The CA checks the name by asking it on port 80 (HTTP-01), or by a record in DNS (DNS-01) for a server it cannot see from the internet.":
+        'Certifikát těchto stránek objednaný od Let’s Encrypt nebo jiné ACME CA a obnovovaný sám dlouho předtím, než vyprší. CA ověří jméno dotazem na portu 80 (HTTP-01), nebo záznamem v DNS (DNS-01) u serveru, který z internetu nevidí.',
+    'or the public address in front of it':
+        'nebo veřejná adresa před ním',
+    "The certificates ordered from Let's Encrypt (or another ACME CA) and renewed by themselves.":
+        'Certifikáty objednané od Let’s Encrypt (nebo jiné ACME CA) a obnovované samy.',
 }
 
 PATTERNS = {
@@ -2870,6 +2965,9 @@ PATTERNS = {
     'Remove {0}?':
         'Odebrat {0}?',
     '{0} - keep the password apart from the file': '{0} – heslo uschovejte odděleně od souboru',
+    'The protocols, the ciphers, the DH parameters and HSTS of {0} - kept as they are whichever way the certificate came, ACME and its renewals too.': 'Protokoly, šifry, parametry DH a HSTS {0} – zůstanou, jak jsou, ať certifikát přišel jakkoli, i přes ACME a jeho obnovy.',
+    'One put in here by hand takes {0} out of ACME’s care: it is kept as it is, not replaced at the next renewal. Settings → Automatic certificates → Look after it gives it back.': 'Certifikát vložený zde ručně vyjme {0} z péče ACME: zůstane, jak je, při příští obnově se nenahradí. Nastavení → Automatické certifikáty → Starat se ho vrátí.',
+    'http://{0}/.well-known/acme-challenge/ asked from this server, as the CA will ask it - whether it reaches ai. A firewall in front of the server may still stop the CA from outside.': 'http://{0}/.well-known/acme-challenge/ se zeptá z tohoto serveru, jak se zeptá CA – zda dojde k ai. Firewall před serverem může CA zvenku ještě zastavit.',
 }
 
 RICH = {

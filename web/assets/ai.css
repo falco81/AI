@@ -3627,3 +3627,22 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .cx-keybox .formgrid{margin-top:12px}
 .cx-gen{margin:4px 0 0}
 .cx-pwsays{margin:8px 0 0}
+
+/* Automatic certificates (1.0.39, as otp's): the card, the steps, In your DNS */
+.node-grid{grid-template-columns:repeat(auto-fill,minmax(520px,1fr))}
+.node-grid .ntp-node .btnrow{margin-top:12px}
+.node-said{display:flex;gap:10px;align-items:flex-start;margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.node-said .dot{margin-top:6px;flex:none}
+.node-said.ok{border-color:color-mix(in srgb,var(--ok,#3fb950) 45%,var(--line))}
+.node-said.bad{border-color:color-mix(in srgb,var(--crit,#f85149) 45%,var(--line))}
+@media (max-width:700px){.node-grid{grid-template-columns:1fr}}
+.acme-dns{margin-top:14px}
+.acme-steps{margin:6px 0 12px 18px;padding:0;display:flex;flex-direction:column;gap:4px;color:var(--muted)}
+.acme-dns td{vertical-align:middle}
+.acme-dns .dns-val{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.acme-dns .dns-val > span:first-child{overflow-wrap:anywhere;min-width:0;flex:0 1 auto}
+.acme-dns .dns-val > button{flex:none}
+.acme-dns .dns-val > div{flex-basis:100%}
+.acme-steps-done{margin:6px 0}.acme-steps-done summary{cursor:pointer}
+.acme-steps-done .si-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+.ac-manual{margin-bottom:14px}

@@ -183,5 +183,18 @@ try:
 except ai.Refused:
     check('an unknown form turned away', True)
 
+# ACME (1.0.39)
+check('every key Let\'s Encrypt takes can be asked for', set(c[0] for c in ai.SCHEMA_KEYS['acme_key'][5]['choices'])
+      == set(ai.ACME_KEYS) == {'ec', 'ec384', 'rsa2048', 'rsa3072', 'rsa4096', 'dual'})
+check('an ECDSA P-384 key made', 'BEGIN PRIVATE KEY' in ai.new_key('ec384'))
+check('base64url without padding', ai._b64u(b'\xfb\xff') == '-_8')
+_was = dict(ai.CONFIG)
+ai.CONFIG.update(acme_dns='desec', acme_desec_domain='x.dedyn.io', acme_dns_alias='')
+check('a TXT record of another domain goes to deSEC by a CNAME',
+      ai.acme_dns_where('ai.example.cz') == ('_acme-challenge.ai.x.dedyn.io', '_acme-challenge.ai.x.dedyn.io'))
+check('a name at deSEC itself needs no CNAME', ai.acme_dns_where('ai.x.dedyn.io') == ('_acme-challenge.ai.x.dedyn.io', None))
+ai.CONFIG.clear(); ai.CONFIG.update(_was)
+check('an ACME account gone is known by its error', ai._acme_account_gone('urn:ietf:params:acme:error:accountDoesNotExist', ''))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
