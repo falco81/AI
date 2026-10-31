@@ -43,6 +43,9 @@ DO_UNINSTALL=""
 REWRITE_NGINX=""
 PHP_UPDATE="yes"
 PHP_STREAM="8.3"
+PY="/usr/bin/python3"
+PY_UPDATE="yes"
+PY_GIVEN=""
 PHP_STREAM_GIVEN=""
 PHP_MOVED=""
 WITH_CLAUDE=""
@@ -158,6 +161,10 @@ ai $AI_VERSION - Claude Code on this server, in a web browser.
                        an older PHP is moved to it on --upgrade too, and a newer one
                        without the fix; a newer fixed one is kept unless this is given
 --no-php-update        leave PHP as it is (it is still checked)
+--python PATH          run ai on this Python (3.9 or newer) and no other
+--no-python-update     keep ai on the Python it runs on now
+                       (otherwise: the newest python3.X the system offers - on AlmaLinux 9
+                       3.14, 3.13 or 3.12 - installed beside the system's python3 and used)
 --upgrade              replace the program and the pages, restart; keep the rest
 --rewrite-nginx        write the nginx file afresh (otherwise one there is kept)
 --uninstall            remove the service and the pages; keep the data (asks)
@@ -183,6 +190,8 @@ while [[ $# -gt 0 ]]; do
         --port) API_PORT="${2:?}"; shift 2 ;;
         --php-stream) PHP_STREAM="${2:?}"; PHP_STREAM_GIVEN="yes"; shift 2 ;;
         --no-php-update) PHP_UPDATE=""; shift ;;
+        --python) PY="${2:?}"; PY_GIVEN="yes"; shift 2 ;;
+        --no-python-update) PY_UPDATE=""; shift ;;
         --upgrade) DO_UPGRADE="yes"; shift ;;
         --rewrite-nginx) REWRITE_NGINX="yes"; shift ;;
         --uninstall) DO_UNINSTALL="yes"; shift ;;
@@ -443,9 +452,7 @@ install_packages() {
     fi
     command -v tmux >/dev/null 2>&1 || [[ -n "$DRY_RUN" ]] || fail "tmux is not installed and could not be - the terminals need it"
     command -v python3 >/dev/null 2>&1 || [[ -n "$DRY_RUN" ]] || fail "python3 is not installed"
-    if command -v python3 >/dev/null 2>&1 && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
-        fail "python3 here is $(python3 -V 2>&1 | cut -d' ' -f2): ai needs 3.9 or newer"
-    fi
+    pick_python
     php_says
     php_guard
     if command -v chronyd >/dev/null 2>&1; then
@@ -479,11 +486,12 @@ install_db_drivers() {
         local one mod pkg pipname
         for one in "${want[@]}"; do
             IFS=: read -r mod pkg pipname <<< "$one"
-            if python3 -c "import $mod" 2>/dev/null; then good "$mod is already here"; continue; fi
+            [[ "$PKG" == "dnf" && "$PY" != "/usr/bin/python3" ]] && pkg="$(basename "$PY")-${pkg#python3-}"
+            if "$PY" -c "import $mod" 2>/dev/null; then good "$mod is already here"; continue; fi
             if [[ "$PKG" == "dnf" ]]; then run dnf install -y "$pkg" || true
             elif [[ "$PKG" == "apt" ]]; then run apt-get install -y "${pkg,,}" || true; fi
-            python3 -c "import $mod" 2>/dev/null || run pip3 install $(pip3 install --help 2>/dev/null | grep -q -- --break-system-packages && echo --break-system-packages) "$pipname" || true
-            python3 -c "import $mod" 2>/dev/null && good "$mod installed" || warn "$mod could not be installed"
+            "$PY" -c "import $mod" 2>/dev/null || run py_pip "$pipname" || true
+            "$PY" -c "import $mod" 2>/dev/null && good "$mod installed" || warn "$mod could not be installed"
         done
         local tools=()
         case "$inuse" in
@@ -527,7 +535,12 @@ install_program() {
     run install -m 0644 "$SOURCE_DIR"/deploy/release-keys/*.pub "$LIB_DIR/release-keys/"
     run install -m 0644 "$SOURCE_DIR"/README.md "$SOURCE_DIR"/INSTALL.md "$SOURCE_DIR"/CHANGELOG.md "$LIB_DIR/"
     [[ -d "$SOURCE_DIR/docs" ]] && run install -m 0644 "$SOURCE_DIR"/docs/*.md "$LIB_DIR/docs/"
-    run ln -sfn "$LIB_DIR/ai.py" "$BIN_LINK"
+    # The command `ai` runs the Python chosen above (1.0.34), not whatever
+    # python3 is first on the PATH: a small script where the link was.
+    [[ -L "$BIN_LINK" ]] && run rm -f "$BIN_LINK"
+    printf '#!/bin/sh\n# ai, on the Python install.sh chose for it (%s)\nexec %s %s/ai.py "$@"\n' \
+        "$(py_ver "$PY" || echo '?')" "$PY" "$LIB_DIR" | write_file "$BIN_LINK" 0755
+    printf '%s\n' "$PY" | write_file "$LIB_DIR/python" 0644
     run install -d -m 0755 "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_FILE" ]]; then
         local port="${API_PORT:-9871}"
@@ -543,7 +556,7 @@ PY
     fi
     run install -d -m 0711 "$STATE_DIR"
     run install -d -m 0750 "$LOG_DIR"
-    write_file "$UNIT_FILE" 0644 < "$SOURCE_DIR/deploy/ai.service"
+    sed "s#^ExecStart=/usr/bin/python3 #ExecStart=$PY #" "$SOURCE_DIR/deploy/ai.service" | write_file "$UNIT_FILE" 0644
     write_file "$LOGROTATE_FILE" 0644 < "$SOURCE_DIR/deploy/ai.logrotate"
     run systemctl daemon-reload
     good "$LIB_DIR, $BIN_LINK, $UNIT_FILE"
@@ -760,24 +773,94 @@ install_claude() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# The Python ai runs on (1.0.34)
+# ---------------------------------------------------------------------------
+# The system's own python3 stays what it is - dnf itself runs on it (3.9 on
+# AlmaLinux 9). ai runs on the newest python3.X the repositories have, put in
+# beside it: AlmaLinux 9 has python3.11 and python3.12 in AppStream, the later
+# 9.x releases 3.13 and 3.14 too. A candidate is taken only when it starts ai
+# itself (--version) and has what ai needs (ssl, sqlite3, termios); one that
+# does not is passed over. The choice is kept in $LIB_DIR/python, so an
+# upgrade with --no-python-update stays on it; ai.service and the command
+# `ai` both run it.
+py_ok() {
+    local p="$1"
+    [[ -x "$p" ]] || return 1
+    "$p" -c 'import sys, ssl, sqlite3, termios, ctypes, json; sys.exit(sys.version_info < (3, 9))' 2>/dev/null || return 1
+    "$p" -I "$SOURCE_DIR/ai.py" --version >/dev/null 2>&1
+}
+py_ver() { "$1" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null; }
+pick_python() {
+    local had="" v cand avail
+    had="$(cat "$LIB_DIR/python" 2>/dev/null || true)"
+    if [[ -n "$PY_GIVEN" ]]; then
+        py_ok "$PY" || [[ -n "$DRY_RUN" ]] || fail "$PY does not run ai (it needs Python 3.9 or newer with ssl and sqlite3)"
+        good "ai runs on $PY ($(py_ver "$PY"))"
+        return 0
+    fi
+    PY="/usr/bin/python3"
+    if [[ -z "$PY_UPDATE" ]]; then
+        [[ -n "$had" ]] && py_ok "$had" && PY="$had"
+        note "ai stays on $PY ($(py_ver "$PY"))"
+    elif [[ "$PKG" == "dnf" ]]; then
+        avail="$(dnf -q list --available 'python3.1[0-9]' 2>/dev/null | awk '{print $1}' || true)"
+        for v in 3.19 3.18 3.17 3.16 3.15 3.14 3.13 3.12 3.11 3.10; do
+            cand="/usr/bin/python$v"
+            if [[ ! -x "$cand" ]]; then
+                grep -q "^python$v\\." <<< "$avail" || continue
+                say "Python $v is there to be had: installing it beside the system's python3"
+                run dnf install -y "python$v" || { warn "python$v could not be installed"; continue; }
+                [[ -n "$DRY_RUN" ]] && { PY="$cand"; break; }
+            fi
+            if py_ok "$cand"; then PY="$cand"; break; fi
+            warn "$cand is here but does not run ai - passed over"
+        done
+    elif [[ "$PKG" == "apt" ]]; then
+        # Debian and Ubuntu keep one python3, and it is new already.
+        :
+    fi
+    if [[ -z "$DRY_RUN" ]] && ! py_ok "$PY"; then
+        fail "$PY here is $(py_ver "$PY" || echo '?'): ai needs Python 3.9 or newer with ssl and sqlite3"
+    fi
+    if [[ -n "$had" && "$had" != "$PY" ]]; then
+        good "ai moves from $had ($(py_ver "$had" || echo gone)) to $PY ($(py_ver "$PY"))"
+    else
+        good "ai runs on $PY ($(py_ver "$PY" || echo '?'))"
+    fi
+    # The Python without pip of its own gets one, for what its distribution
+    # does not package for it (a database driver, colorama).
+    if [[ "$PY" != "/usr/bin/python3" && "$PKG" == "dnf" ]] && ! "$PY" -m pip --version >/dev/null 2>&1; then
+        run dnf install -y "$(basename "$PY")-pip" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+py_pkg() {              # the distribution's package of a module, for $PY: python3.12-PyMySQL
+    local name="$1"
+    if [[ "$PY" == "/usr/bin/python3" || "$PKG" != "dnf" ]]; then echo "python3-$name"; else echo "$(basename "$PY")-$name"; fi
+}
+py_pip() {              # pip for $PY, past PEP 668 where the system has it
+    "$PY" -m pip install --quiet $("$PY" -m pip install --help 2>/dev/null | grep -q -- --break-system-packages && echo --break-system-packages) "$@"
+}
+
 install_colour() {      # colorama: the command line in colour, as otp's
     # Nothing needs it - without it ai writes the same escape sequences
     # itself - so it is offered and never insisted on.
-    if python3 -c 'import colorama' 2>/dev/null; then
+    if "$PY" -c 'import colorama' 2>/dev/null; then
         good "python3-colorama is here - the command line is in colour"
         return 0
     fi
     if [[ "$PKG" == "dnf" ]]; then
-        run dnf install -y python3-colorama >/dev/null 2>&1 || true
+        run dnf install -y "$(py_pkg colorama)" >/dev/null 2>&1 || true
     elif [[ "$PKG" == "apt" ]]; then
         run apt-get install -y python3-colorama >/dev/null 2>&1 || true
     fi
     # Not in the distribution's own repositories (on RHEL 9 it is EPEL's):
     # pip, where there is one, for the system Python.
-    if ! python3 -c 'import colorama' 2>/dev/null && python3 -m pip --version >/dev/null 2>&1; then
-        run python3 -m pip install --quiet colorama >/dev/null 2>&1 || true
+    if ! "$PY" -c 'import colorama' 2>/dev/null && "$PY" -m pip --version >/dev/null 2>&1; then
+        run py_pip colorama >/dev/null 2>&1 || true
     fi
-    if [[ -n "$DRY_RUN" ]] || python3 -c 'import colorama' 2>/dev/null; then
+    if [[ -n "$DRY_RUN" ]] || "$PY" -c 'import colorama' 2>/dev/null; then
         good "python3-colorama installed - the command line is in colour"
     else
         note "python3-colorama is not available; colour is written by hand instead,"

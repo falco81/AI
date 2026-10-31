@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.34
+
+- **ai on the newest Python there is**: the install and every upgrade - from the pages too - look for the
+  newest `python3.X` the repositories offer (on AlmaLinux 9 python3.14, 3.13 or 3.12, whichever its 9.x has),
+  put it in beside the system's own python3 (which stays: dnf runs on it) and move ai onto it - ai.service and
+  the command `ai` both. A Python is taken only when it starts ai and has ssl, sqlite3 and termios; one that
+  does not is passed over, and with none newer ai stays where it is. The database driver and colorama are put
+  in for that Python (its own package, or pip). The choice is kept in /usr/local/lib/ai/python;
+  `--python PATH` chooses one, `--no-python-update` keeps the one in use. Settings -> About shows which runs.
+  ai is checked on Python 3.11, 3.12, 3.13 and 3.14.
+
 ## 1.0.33
 
 - **PHP on the 8.3 stream, at 8.3.36**: the install and every upgrade put PHP on `php:8.3` now, not `php:8.2`

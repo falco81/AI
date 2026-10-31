@@ -18,7 +18,9 @@ To see what it would do without doing it: `sudo ./install.sh --dry-run`.
 ## What it needs
 
 - AlmaLinux / Rocky / RHEL 9 or 10, or Debian 12 / Ubuntu 24.04.
-- Python 3.9 or newer (the system's), tmux, nginx and PHP-FPM 8.x - all
+- Python 3.9 or newer - install.sh puts the newest python3.X the system offers beside its own
+  python3 and runs ai on it (on AlmaLinux 9: 3.14, 3.13 or 3.12; `--python PATH` chooses one,
+  `--no-python-update` keeps the one in use), tmux, nginx and PHP-FPM 8.x - all
   installed by install.sh. PHP is brought onto a release fixed for php2shell,
   as otp's installer does, and guarded meanwhile.
 - Claude Code for each Linux account the terminals run as (root's by default):
