@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.41
+
+- **Automatic certificates exactly as upsmon's (4.1.7)**: the page's script is upsmon's own - the card (its tags,
+  *For*, *Issued by*, *Keys*, *Good until*, *Last ordered*, *Ordered by*), the order going on, the TXT record by
+  hand, *Back to the one before*, *Its name...*, *In your DNS* with its steps and *Check DNS*; the pane's words and
+  the menu button too. Every setting has upsmon's name, help (with its `code` marks) and choices, in its order;
+  *The CA's own certificate* is a box in its place in the grid, as upsmon's, not a whole row.
+
 ## 1.0.40
 
 **Automatic certificates: the keys as upsmon's (4.1.6, 4.1.7)** - every key Let's Encrypt accepts

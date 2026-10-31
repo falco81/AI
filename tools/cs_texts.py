@@ -2765,6 +2765,17 @@ STRINGS = {
         'RSA 3072 (RS256)',
     'RSA 4096 (RS256)':
         'RSA 4096 (RS256)',
+    # ---- 1.0.41: ACME as upsmon's ----
+    'The name of the certificate':
+        'Jméno certifikátu',
+    "The certificate of this server ordered from Let's Encrypt or another ACME CA and renewed by itself well before it runs out. The CA checks the name by asking it on port 80 (HTTP-01), or by a record in DNS (DNS-01) for a server it cannot see from the internet.":
+        "Certifikát tohoto serveru objednaný u Let's Encrypt nebo jiné ACME CA a sám obnovovaný dlouho před vypršením. CA ověří jméno dotazem na portu 80 (HTTP-01), nebo záznamem v DNS (DNS-01) u serveru, který z internetu nevidí.",
+    'The certificate of this server ordered from the CA and renewed by itself - by HTTP-01 (port 80 of the name must reach this server) or DNS-01. Off until switched on.':
+        'Certifikát tohoto serveru objednaný od CA a obnovovaný sám – přes HTTP-01 (port 80 jména musí vést na tento server) nebo DNS-01. Vypnuto, dokud se nezapne.',
+    'The name the certificate is for. Empty: the name of the certificate it has now, else the full host name of this machine.':
+        'Jméno, pro které je certifikát. Prázdné: jméno certifikátu, který má teď, jinak plné jméno tohoto stroje.',
+    "The certificate ordered from Let's Encrypt (or another ACME CA) and renewed by itself.":
+        'Certifikát objednaný od Let’s Encrypt (nebo jiné ACME CA) a obnovovaný sám.',
 }
 
 PATTERNS = {
@@ -2989,6 +3000,7 @@ PATTERNS = {
     'The protocols, the ciphers, the DH parameters and HSTS of {0} - kept as they are whichever way the certificate came, ACME and its renewals too.': 'Protokoly, šifry, parametry DH a HSTS {0} – zůstanou, jak jsou, ať certifikát přišel jakkoli, i přes ACME a jeho obnovy.',
     'One put in here by hand takes {0} out of ACME’s care: it is kept as it is, not replaced at the next renewal. Settings → Automatic certificates → Look after it gives it back.': 'Certifikát vložený zde ručně vyjme {0} z péče ACME: zůstane, jak je, při příští obnově se nenahradí. Nastavení → Automatické certifikáty → Starat se ho vrátí.',
     'http://{0}/.well-known/acme-challenge/ asked from this server, as the CA will ask it - whether it reaches ai. A firewall in front of the server may still stop the CA from outside.': 'http://{0}/.well-known/acme-challenge/ se zeptá z tohoto serveru, jak se zeptá CA – zda dojde k ai. Firewall před serverem může CA zvenku ještě zastavit.',
+    'http://{0}/.well-known/acme-challenge/ asked from this node, as the CA will ask it - whether it reaches ai. A firewall in front of the servers may still stop the CA from outside.': 'http://{0}/.well-known/acme-challenge/ dotázáno z tohoto uzlu, jak se zeptá CA – zda dojde k ai. Firewall před servery může CA zvenčí přesto zastavit.',
 }
 
 RICH = {

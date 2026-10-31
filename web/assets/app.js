@@ -2650,6 +2650,13 @@ function settingItemBare(s) {
     input.min = s.min;
     input.max = s.max;
     input.value = s.value;
+  } else if (s.cell) {
+    /* Several lines, in its place in the grid as one box (the CA's PEM, as
+       upsmon's): not a whole row of its own. */
+    input = el('textarea', 'mono cell-text');
+    input.spellcheck = false;
+    input.value = s.value === null || s.value === undefined ? '' : String(s.value);
+    input.rows = 1;
   } else if (TALL[s.key] || s.tall) {
     item.classList.add('tall');
     input = el('textarea');

@@ -1878,12 +1878,16 @@ function drawAcme() {
   liveLetGo(real);
   liveFill(real, function (host) {
     var d = AC.d;
-    if (!d.on) host.appendChild(el('p', 'note', 'Off - switch it on below, choose the CA, and save.'));
+    if (!d.on) host.appendChild(el('p', 'note', 'Off - switch it on below, say which certificates and the CA, and save.'));
     if (d.work && d.work.busy) {
       var g = el('div', 'going wide');
       g.innerHTML = '<div class="bar"><span style="width:60%"></span></div>';
-      /* What is being waited for now. */
+      /* Which certificate, and what is being waited for now (1.0.176). */
       var w = el('div', 'says');
+      if (d.work.target) {
+        w.appendChild(el('b', '', d.work.target === 'vip' ? 'the VIP address' : d.work.target));
+        w.appendChild(document.createTextNode(': '));
+      }
       w.appendChild(el('span', '', d.work.says || 'ordering…'));
       g.appendChild(w);
       host.appendChild(g);
@@ -1912,23 +1916,26 @@ function drawAcme() {
       var left = t.not_after ? Math.floor((t.not_after - Date.now() / 1000) / 86400) : null;
       var acme = t.how === 'ACME';
       var dot = !acme ? 'dim' : (st.ok === false ? 'warn' : (left !== null && left < 14 ? 'warn' : 'ok'));
-      var c = nodeCard({node: t.target, me: true}, dot,
-        acme ? (st.ok === false ? 'the last try failed' : 'from the CA') : (t.how ? 'not from the CA' : 'no certificate of its own'),
+      var c = nodeCard({node: t.target === 'vip' ? 'the VIP address' : t.target, me: t.target === d.node}, dot,
+        acme ? (st.ok === false ? 'the last try failed' : 'from the CA') : (t.how ? 'not from the CA' : 'no certificate'),
         acme ? (st.ok === false ? 'warn' : 'ok') : 'dim');
-      /* Who looks after it: ACME, or the certificate put in on Certificates
-         and TLS is kept as it is. */
-      var care = el('span', 'tag ' + (t.care ? 'info' : 'dim'), t.care ? 'ACME renews it' : 'its own certificate is kept');
-      explain(care, t.care ? 'Renewed by ACME before it runs out. A certificate put in by hand on Certificates and TLS takes it out of ACME’s care.'
-        : 'The certificate put in on Certificates and TLS (uploaded, from a request, self-signed) stays: ACME does not replace it. Look after it, or Order it now, gives it to ACME.');
-      c.querySelector('.pw-head').appendChild(care);
+      /* Who looks after it (1.0.170): ACME, or the certificate put in on
+         Certificates and TLS is kept as it is. */
+      var care = el('span', 'tag ' + (t.care && t.wanted ? 'info' : 'dim'),
+        !t.wanted ? 'not asked for' : (t.care ? 'ACME renews it' : 'its own certificate is kept'));
+      explain(care, !t.wanted ? 'For (Settings below) does not take this one in.'
+        : (t.care ? 'Renewed by ACME before it runs out. A certificate put in by hand on Certificates and TLS takes it out of ACME’s care.'
+          : 'The certificate put in on Certificates and TLS (uploaded, from a request, self-signed) stays: ACME does not replace it. Look after it, or Order it now, gives it to ACME.'));
+      c.querySelector('.pw-head') ? c.querySelector('.pw-head').appendChild(care) : c.appendChild(care);
       nodeBig(c, left !== null ? num(left) : '–', left !== null ? 'days left' : '');
       c.appendChild(netFacts([
         ['For', t.name || '', true], ['Issued by', t.issuer || '', true], ['Keys', t.keys || '', true],
         ['Good until', t.not_after ? new Date(t.not_after * 1000).toLocaleDateString(numLang()) : ''],
-        ['Last ordered', st.ordered_at ? ago(st.ordered_at) : 'never']
+        ['Last ordered', st.ordered_at ? ago(st.ordered_at) : 'never'],
+        ['Ordered by', t.target === 'vip' ? 'the first node by name' : t.target]
       ]));
       if (st.ok === false && st.said) c.appendChild(nodeSaid({ok: false, error: st.said, at: st.failed_at}, ''));
-      /* What the last order did, step by step. */
+      /* What the last order did, step by step (1.0.175). */
       if ((st.steps || []).length) {
         var det = el('details', 'acme-steps-done');
         det.appendChild(el('summary', 'small muted', 'What the last order did'));
@@ -1946,8 +1953,8 @@ function drawAcme() {
       var row = el('div', 'btnrow');
       var probe = cmdButton('Try port 80', 'play', 'small');
       probe.hidden = d.challenge === 'dns-01';
-      explain(probe, t.name ? 'http://' + t.name + '/.well-known/acme-challenge/ asked from this server, as the CA will ask it - whether it reaches ai. A firewall in front of the server may still stop the CA from outside.'
-        : 'The name of this certificate is not known yet: give it (Its name…).');
+      explain(probe, t.name ? 'http://' + t.name + '/.well-known/acme-challenge/ asked from this node, as the CA will ask it - whether it reaches ai. A firewall in front of the servers may still stop the CA from outside.'
+        : 'The name of this certificate is not known yet: give it in Settings below (This node’s DNS name, on that node) - or wait until that node says its own full name.');
       probe.disabled = !t.name;
       probe.onclick = function () {
         busy(probe, true);
@@ -1958,7 +1965,7 @@ function drawAcme() {
       var order = cmdButton('Order it now', 'download', 'small primary');
       order.disabled = !d.on || !t.name || (d.work && d.work.busy);
       explain(order, !d.on ? 'Switch it on below first.' : (!t.name ? 'Give its name first (Its name…).'
-        : 'Ordered from the CA now and put into nginx. ACME renews it from then on.'));
+        : 'Ordered from the CA now - from this node for any of them: the CA’s question and the certificate are kept in the database, and ' + (t.target === 'vip' ? 'every node' : t.target) + ' puts it in. ACME renews it from then on.'));
       order.onclick = function () {
         var go = function () {
           busy(order, true);
@@ -1966,12 +1973,13 @@ function drawAcme() {
             .catch(function (e) { busy(order, false); oops(e); });
         };
         if (t.how && !acme) {
-          confirmThen('Replace the certificate of the pages?',
+          confirmThen('Replace the certificate of ' + (t.target === 'vip' ? 'the VIP address' : t.target) + '?',
             'It has one put in on Certificates and TLS (' + t.how + (t.issuer ? ', ' + t.issuer.replace(/^CN=/, '').split(',')[0] : '') + '). The one from the CA takes its place once it comes, and ACME renews it from then on. Its TLS settings stay as they are.',
             'Order it', go, false);
         } else go();
       };
       var cb = cmdButton(t.care ? 'Leave it alone' : 'Look after it', t.care ? 'cancel' : 'refresh', 'small');
+      cb.disabled = !t.wanted;
       explain(cb, t.care ? 'ACME stops renewing this one; the certificate it has stays.'
         : 'ACME renews this one from now on - at the next look (within the hour) if it is not from the CA yet.');
       cb.onclick = function () {
@@ -1979,8 +1987,11 @@ function drawAcme() {
         api('acme', {action: 'care', target: t.target, on: !t.care}).then(function (x) { AC.d = x; drawAcme(); })
           .catch(function (e) { busy(cb, false); oops(e); });
       };
+      /* Every certificate's name from here (1.0.170) - the other node's and
+         the VIP address's too. */
       var nm = cmdButton('Its name…', 'edit', 'small');
-      explain(nm, 'The DNS name the certificate of the pages is for. Empty: the name of the certificate it has now, else the full host name.');
+      explain(nm, t.target === 'vip' ? 'The DNS name of the VIP address - the one people type. It is the VIP address’s own (Settings → High availability) and its certificate is for it.'
+        : 'The DNS name the certificate of ' + t.target + ' is for. Empty: the full host name of ' + t.target + '.');
       nm.onclick = function () { acmeNameAsk(t); };
       row.appendChild(probe); row.appendChild(order); row.appendChild(cb); row.appendChild(nm);
       if (t.before && !t.before.ran_out) row.appendChild(acmePutBackButton(t.target, t.before, function (x) { AC.d = x; drawAcme(); }));
@@ -1999,14 +2010,14 @@ function drawAcme() {
   });
 }
 
-/* The certificate from before ACME: kept when ACME replaced it, put back with
-   its key as it was; ACME then leaves it alone. */
+/* The certificate from before ACME (1.0.172): kept when ACME replaced it,
+   put back with its key as it was; ACME then leaves it alone. */
 function acmePutBackButton(target, before, then) {
   var b = cmdButton('Back to the one before…', 'undo', 'small');
   var words = (before.issuer || '').replace(/^CN=/, '').split(',')[0];
   explain(b, 'The certificate it had before ACME replaced it' + (words ? ' - from ' + words : '') + (before.not_after ? ', good until ' + new Date(before.not_after * 1000).toLocaleDateString(numLang()) : '') + '. Put back as it was; ACME no longer renews this one. The TLS settings stay.');
   b.onclick = function () {
-    confirmThen('Put the certificate from before ACME back?', 'The one from the CA is taken out and the one it had before - ' + (words || before.how || '') + ' - put back into nginx. ACME no longer renews this one (Look after it gives it back).', 'Put it back', function () {
+    confirmThen('Put the certificate from before ACME back?', 'The one from the CA is taken out and the one it had before - ' + (words || before.how || '') + ' - put back, on every node that serves it. ACME no longer renews this one (Look after it gives it back).', 'Put it back', function () {
       busy(b, true);
       api('acme', {action: 'put_back', target: target}).then(function (x) { toast(x.message, 'good'); then(x); })
         .catch(function (e) { busy(b, false); oops(e); });
@@ -2015,33 +2026,71 @@ function acmePutBackButton(target, before, then) {
   return b;
 }
 
-/* The name the certificate is for beside its box, when the box is empty. */
+/* The names of the certificates beside their box (1.0.170): what each node's
+   certificate is for now when its box is empty, and the VIP address's name -
+   it is the VIP address's own (High availability), changed from here too. */
 function acmeNamesInSettings(d) {
+  var item = document.querySelector('.set-item[data-key="acme_node_name"]');
+  if (!item) return;
+  var now = {};
+  (d.targets || []).forEach(function (t) { now[t.target] = t.name || ''; });
   var input = $('set-acme_node_name');
-  var t = (d.targets || [])[0];
-  if (input && t && t.name) input.placeholder = t.name;
+  if (input && now[d.node]) input.placeholder = now[d.node];
+  Array.prototype.forEach.call(item.querySelectorAll('.node-other[data-node]'), function (row) {
+    /* An empty one says the name it stands for, in the place of "(empty)"
+       (1.0.172): the words did not fit in a narrow box. */
+    var n = row.dataset.node;
+    var empty = row.querySelector('.node-empty');
+    if (empty && now[n]) {
+      var v = noI18n(el('span', 'mono small muted', now[n]));
+      v.title = 'none of its own: the name of its certificate, else its full host name';
+      row.replaceChild(v, empty);
+      var note = row.querySelector('span.muted:not(.mono)');
+      if (note) note.textContent = 'by itself';
+    }
+  });
+  var vip = (d.targets || []).filter(function (t) { return t.target === 'vip'; })[0];
+  var box = item.querySelector('.node-others');
+  var vr = item.querySelector('.node-other.vip');
+  if (vr) vr.remove();
+  if (!vip) return;
+  if (!box) {
+    box = el('div', 'node-others small');
+    (item.querySelector('.set-tail') || item).appendChild(box);
+  }
+  vr = el('div', 'node-other vip');
+  vr.appendChild(el('span', 'tag dim', 'VIP'));
+  vr.appendChild(vip.name ? noI18n(el('span', 'mono small', vip.name)) : el('span', 'node-empty small', '(empty)'));
+  vr.appendChild(el('span', 'muted', 'High availability'));
+  if (ADMIN) {
+    var eb = iconButton('edit', 'Change the name of the VIP address');
+    eb.onclick = function () { acmeNameAsk({target: 'vip', name: vip.name}); };
+    vr.appendChild(eb);
+  }
+  box.appendChild(vr);
 }
 function acmeNameAsk(t) {
-  askInModal('The name of the pages\' certificate',
+  askInModal(t.target === 'vip' ? 'The name of the VIP address' : 'The name of ' + t.target,
     'The full DNS name its certificate is for - it goes into the certificate as its name (CN) and in its alternative names (SAN). The CA gives it only for a name that points at it (HTTP-01) or whose TXT record can be put in (DNS-01).',
-    [{label: 'DNS name', placeholder: 'ai.example.cz', mono: true, value: t.named ? t.name || '' : '',
-      says: 'Empty: the name of the certificate it has now, else the full host name.'}],
+    [{label: 'DNS name', placeholder: t.target === 'vip' ? 'ai.example.cz' : t.target + '.example.cz', mono: true, value: t.name || '',
+      says: t.target === 'vip' ? 'Empty: the VIP address has no name.' : 'Empty: its full host name, as ' + t.target + ' says it.'}],
     'Keep it', 'save', function (v, b) {
       busy(b, true);
       api('acme', {action: 'name', target: t.target, name: v[0].trim()}).then(function (x) {
         closeModal(); AC.d = x; drawAcme(); toast('kept', 'good');
-        loadSettings();
+        if (t.target !== 'vip') loadSettings();
       }).catch(function (e) { busy(b, false); oops(e); });
     });
 }
 
-/* In your DNS: what the certificate needs there - by the way the CA checks it -
-   the steps of the way chosen, and a check that looks each record up from here. */
+/* In your DNS (1.0.170): what each certificate asked for needs there - by the
+   way the CA checks it - the steps of the way chosen, and a check that looks
+   each record up from this node. */
 var AC_DNS = {at: 0, rows: null};
 var ACME_DNS_STEPS = {
-  'http-01': ['The name points at the address that reaches port 80 of this server - from the internet, or from your own CA.',
-              'Port 80 is open to it - the firewall in front of the server, and Firewall and access here.',
-              'Try port 80 on the card, then Order it now.'],
+  'http-01': ['Each name points at the address that reaches port 80 of its node (or of the VIP address) - from the internet, or from your own CA.',
+              'Port 80 is open to it - the firewall in front of the servers, and Firewall and access here.',
+              'Try port 80 on each card, then Order it now.'],
   desec: ['Sign up at desec.io (free) and confirm the mail.',
           'Add a domain there: a free one - yourname.dedyn.io - or one of your own whose DNS is at deSEC.',
           'Token management: make a token. Give it below as The deSEC API token, with The domain at deSEC, and save.',
@@ -2063,9 +2112,10 @@ function acmeDnsGuide(d) {
   var g = d.dns_guide;
   var key = g.challenge === 'http-01' ? 'http-01' : g.dns;
   var card = el('div', 'card full acme-dns');
-  card.appendChild(el('h2', '', 'In your DNS'));
+  var h = el('h2', '', 'In your DNS');
+  card.appendChild(h);
   card.appendChild(el('p', 'note', g.challenge === 'http-01'
-    ? 'HTTP-01: the CA asks port 80 of the name - so the name points at this server, and port 80 is open to the CA.'
+    ? 'HTTP-01: the CA asks port 80 of each name - so each name points at the node, or the VIP address, and port 80 is open to the CA.'
     : (g.dns === 'manual' ? 'DNS-01 by hand: the CA reads a TXT record you put in at every order.'
       : 'DNS-01: the CA reads a TXT record ai puts in. What has to be in your DNS for it - once - is below.')));
   var ol = el('ol', 'acme-steps');
@@ -2078,7 +2128,7 @@ function acmeDnsGuide(d) {
   });
   var t = listTable(['Certificate', 'Record', 'Type', 'Points at / value', 'In DNS now'], rows, function (r) {
     var tr = el('tr');
-    tr.appendChild(r.type === 'NS' ? el('td', '', 'its zone at deSEC') : noI18n(el('td', '', r.target)));
+    tr.appendChild(r.target === 'vip' ? el('td', '', 'the VIP address') : (r.type === 'NS' ? el('td', '', 'its zone at deSEC') : noI18n(el('td', '', r.target))));
     var rec = el('td', 'mono small dns-cell');
     if (r.record) {
       rec.appendChild(noI18n(el('span', '', r.record)));
@@ -2088,9 +2138,9 @@ function acmeDnsGuide(d) {
     } else rec.appendChild(el('span', 'muted', r.why || ''));
     tr.appendChild(rec);
     tr.appendChild(noI18n(el('td', 'mono small', r.type || '')));
-    var val = el('td', 'small dns-cell');
+    var val = el('td', 'mono small dns-cell');
     if (r.type === 'CNAME' || r.type === 'NS' || (r.type === 'A' && r.value)) {
-      val.appendChild(noI18n(el('span', 'mono', r.value)));
+      val.appendChild(noI18n(el('span', '', r.value)));
       var cv = iconButton('copy', 'Copy');
       cv.onclick = function () { copyText(r.value, cv); };
       val.appendChild(cv);
@@ -2101,11 +2151,13 @@ function acmeDnsGuide(d) {
     if (r.check) {
       if (r.ok === undefined) st.appendChild(el('span', 'muted', 'not checked yet'));
       else {
-        st.appendChild(el('span', 'tag ' + (r.ok ? 'ok' : 'warn'), r.ok ? 'there' : 'not yet'));
+        var tag = el('span', 'tag ' + (r.ok ? 'ok' : 'warn'), r.ok ? 'there' : 'not yet');
+        st.appendChild(tag);
         if (r.said && !r.ok) st.appendChild(el('div', 'muted', r.said));
       }
     } else st.appendChild(el('span', 'muted', r.type === 'TXT' && !r.value ? 'ai puts it in' : '–'));
     tr.appendChild(st);
+    /* The text and its button in one box: the button at the column's edge. */
     Array.prototype.forEach.call(tr.querySelectorAll('td.dns-cell'), function (td) {
       var box = el('div', 'dns-val');
       while (td.firstChild) box.appendChild(td.firstChild);
@@ -2114,9 +2166,22 @@ function acmeDnsGuide(d) {
     return tr;
   });
   card.appendChild(t);
+  /* The copy buttons right after the text, one under the other: the text of
+     a column as wide as its longest (1.0.172). */
+  setTimeout(function () {
+    [1, 3].forEach(function (col) {
+      var spans = Array.prototype.map.call(t.querySelectorAll('tbody tr'), function (tr) {
+        var td = tr.children[col];
+        return td && td.querySelector('.dns-val > span:first-child');
+      }).filter(Boolean);
+      var w = 0;
+      spans.forEach(function (sp) { sp.style.width = ''; w = Math.max(w, sp.getBoundingClientRect().width); });
+      spans.forEach(function (sp) { sp.style.width = Math.ceil(w) + 'px'; });
+    });
+  }, 0);
   var row = el('div', 'btnrow');
   var chk = cmdButton('Check DNS', 'search', 'small');
-  explain(chk, 'Each record looked up from this server now, through its DNS servers - as the CA will look. A record just put in may take a while to show (its TTL).');
+  explain(chk, 'Each record looked up from this node now, through its DNS servers - as the CA will look. A record just put in may take a while to show (its TTL).');
   chk.disabled = !(g.rows || []).some(function (r) { return r.check; });
   chk.onclick = function () {
     busy(chk, true);

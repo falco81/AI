@@ -3650,3 +3650,4 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .acme-steps-done .si-row{align-items:flex-start}
 .acme-steps-done .si-row .mono{flex:0 0 56px;white-space:nowrap;overflow-wrap:normal}
 .acme-steps-done .si-row span:last-child{flex:1;min-width:0;text-align:left;overflow-wrap:anywhere}
+.set-item textarea.cell-text{resize:vertical;min-height:0;height:38px;line-height:20px;padding-top:8px;padding-bottom:8px;white-space:pre;overflow:hidden}

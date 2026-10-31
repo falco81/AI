@@ -552,7 +552,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="people" data-icon="person" title="Who may open these pages, what each of them may do, which Linux account their terminals run as, and who is signed in right now.">Accounts</button>
     <button type="button" data-pane="signin" data-icon="eye" title="The picture above the sign-in of these pages: one of ai's drawings, a picture of your own, or none.">The sign-in page</button>
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages, and how TLS is spoken.">Certificates and TLS</button>
-    <button type="button" data-pane="acme" data-icon="lock" title="The certificates ordered from Let's Encrypt (or another ACME CA) and renewed by themselves.">Automatic certificates</button>
+    <button type="button" data-pane="acme" data-icon="lock" title="The certificate ordered from Let's Encrypt (or another ACME CA) and renewed by itself.">Automatic certificates</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.">Firewall and access</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
@@ -733,9 +733,9 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
   <div class="ctl-pane" id="pane-acme" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Automatic certificates</h2>
-      <p class="ctl-lede">The certificate of these pages ordered from Let's Encrypt or another ACME CA and renewed
-        by itself well before it runs out. The CA checks the name by asking it on port 80 (HTTP-01), or by a
-        record in DNS (DNS-01) for a server it cannot see from the internet.</p></div>
+      <p class="ctl-lede">The certificate of this server ordered from Let's Encrypt or another ACME CA and
+        renewed by itself well before it runs out. The CA checks the name by asking it on port 80 (HTTP-01), or by
+        a record in DNS (DNS-01) for a server it cannot see from the internet.</p></div>
     <div id="ac-host"></div>
     <div class="card full"><h2>Settings</h2><div id="sect-acme"></div></div>
   </div>
