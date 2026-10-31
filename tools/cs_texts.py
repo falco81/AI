@@ -2801,6 +2801,15 @@ STRINGS = {
     'not reached': 'nedosaženo',
     'being tried': 'zkouší se',
     'the node': 'uzel',
+    # ---- 1.0.48: the proxy for the updates only ----
+    'An HTTP proxy for the updates only: the new versions of ai and the system updates (dnf, apt). Nothing else ai does goes through it - the terminals, Claude Code, mail, the SMS gateway, ACME, the backups and the database work as they do without it.':
+        'HTTP proxy jen pro aktualizace: nové verze ai a aktualizace systému (dnf, apt). Nic jiného, co ai dělá, přes ni nejde – terminály, Claude Code, pošta, SMS brána, ACME, zálohy i databáze fungují stejně jako bez ní.',
+    'Where the server may fetch its updates only through an HTTP proxy: the new versions of ai and the system updates (dnf, apt) go through it. Nothing else does - the terminals and Claude Code, mail, the SMS gateway, ACME, the backups and the database work as they do without it.':
+        'Kde server smí stahovat aktualizace jen přes HTTP proxy: nové verze ai a aktualizace systému (dnf, apt) jdou přes ni. Nic jiného – terminály a Claude Code, pošta, SMS brána, ACME, zálohy i databáze fungují stejně jako bez ní.',
+    'An HTTP proxy for the updates only - the new versions of ai and the system updates.':
+        'HTTP proxy jen pro aktualizace – nové verze ai a aktualizace systému.',
+    'An address asked from this node the way ai asks for its updates: through the proxy as it is saved, or straight where none is set or the address is in the list. Each step is shown. Empty: where the new versions are looked for.':
+        'Adresa dotázaná z tohoto uzlu tak, jak ai hledá své aktualizace: přes proxy, jak je uložená, nebo přímo, když žádná není nebo je adresa v seznamu. Ukáže se každý krok. Prázdné: kde se hledají nové verze.',
 }
 
 PATTERNS = {

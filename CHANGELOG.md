@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.48
+
+- **The proxy is for the updates only** (Settings -> Proxy): the new versions of ai (looked for and fetched) and
+  the system updates (dnf, apt) go through it, nothing else. The SMS gateway, ACME's CA and its DNS APIs go
+  straight again, as before 1.0.47 - a proxy that is down or refuses can no longer stop anything ai does but
+  its updates. *The SMS gateway through it too* is gone; the page and *Try it* say what the proxy is for.
+
 ## 1.0.47
 
 **Settings -> Proxy, as otp's** (off until switched on): an HTTP proxy, with a user name and a password kept

@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.47'
+__version__ = '1.0.48'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -197,7 +197,6 @@ DEFAULTS = {
     'proxy_password': '',
     'proxy_no': 'localhost, 127.0.0.1, ::1',
     'proxy_os': True,
-    'proxy_sms': True,
     # certificates by ACME (1.0.39, otp's 1.0.169-1.0.187)
     'acme': False,
     'acme_email': '',
@@ -368,8 +367,9 @@ SCHEMA = [
      {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
     # ---- going out through a proxy (1.0.47, as otp's 1.0.166) ----
     ('proxy', 'proxy', 'bool', 'Go out through a proxy',
-     'An HTTP proxy for what ai asks of the web: the new versions, the SMS gateway, the ACME CA, the '
-     'system updates. Mail and the database never use it.', {}),
+     'An HTTP proxy for the updates only: the new versions of ai and the system updates (dnf, apt). '
+     'Nothing else ai does goes through it - the terminals, Claude Code, mail, the SMS gateway, ACME, '
+     'the backups and the database work as they do without it.', {}),
     ('proxy_url', 'proxy', 'str', 'The proxy', '<code>http://proxy.example.cz:3128</code>',
      {'when': ['proxy', [True]]}),
     ('proxy_user', 'proxy', 'str', 'User name at the proxy', 'Where the proxy asks for one. Empty: none.',
@@ -381,8 +381,6 @@ SCHEMA = [
      'under it, <code>10.0.0.0/8</code> a net.', {'when': ['proxy', [True]]}),
     ('proxy_os', 'proxy', 'bool', 'The system updates through it too',
      'dnf or apt fetch the updates of System \u2192 Updates through it.', {'when': ['proxy', [True]]}),
-    ('proxy_sms', 'proxy', 'bool', 'The SMS gateway through it too', 'The HTTP SMS gateway asked through it.',
-     {'when': ['proxy', [True]]}),
     # ---- certificates by ACME (1.0.39; the words, the keys and the order as upsmon 4.1.7's) ----
     ('acme', 'acme', 'bool', 'Certificates from an ACME CA',
      'The certificate of this server ordered from the CA and renewed by itself - by HTTP-01 (port 80 of the name must reach this server) or DNS-01. Off until switched on.',
@@ -2495,7 +2493,7 @@ def _tel_open(req, timeout=20.0):
                                              (' ' + _tel_hidden(body)[:300]) if body else '',
                                              timeout), 'debug')
     try:
-        r = url_open(req, timeout=timeout, context=_tel_ssl()
+        r = urllib.request.urlopen(req, timeout=timeout, context=_tel_ssl()
                                    if req.full_url.startswith('https') else None)
         if not loud:
             return r
@@ -2955,7 +2953,7 @@ def sms_send(to, text):
             if k.strip():
                 req.add_header(k.strip(), fill(v.strip(), 'raw'))
     try:
-        with url_open(req, timeout=15, purpose='sms') as r:
+        with urllib.request.urlopen(req, timeout=15) as r:
             said = r.read(4000).decode('utf-8', 'replace')
             status = r.status
     except urllib.error.HTTPError as e:
@@ -7925,15 +7923,14 @@ def changelog_between(version, here):
 
 
 # ---- going out through a proxy (1.0.47, as otp's 1.0.166) ---------------------------
-# Settings → Proxy: what ai asks of the web itself - the new versions, the SMS
-# gateway, the ACME CA and the DNS APIs - and, handed to the update's job in a
-# file only root reads (never on a command line), dnf or apt fetching the
-# system updates. Mail and the database never go through it.
+# Settings → Proxy, for the updates only (1.0.48): the new versions of ai
+# (looked for, fetched) and, handed to the update's job in a file only root
+# reads (never on a command line), dnf or apt fetching the system updates.
+# Nothing else ai does goes through it: the terminals and Claude Code, mail,
+# the SMS gateway, ACME, the backups and the database work as without it.
 def proxy_on(purpose='web'):
     if not CONFIG.get('proxy') or not str(CONFIG.get('proxy_url') or '').strip():
         return False
-    if purpose == 'sms':
-        return bool(CONFIG.get('proxy_sms', 1))
     if purpose == 'os':
         return bool(CONFIG.get('proxy_os', 1))
     return True
@@ -12253,7 +12250,7 @@ class Acme(object):
         if data is not None:
             req.add_header('Content-Type', 'application/jose+json')
         try:
-            with url_open(req, timeout=30, context=_acme_ctx()) as r:
+            with urllib.request.urlopen(req, timeout=30, context=_acme_ctx()) as r:
                 body, headers, status = r.read(1 << 20), r.headers, r.status
         except urllib.error.HTTPError as e:
             body, headers, status = e.read(1 << 20), e.headers, e.code
@@ -12979,7 +12976,7 @@ def _cf(method, path, body=None):
                                           'Content-Type': 'application/json',
                                           'User-Agent': 'ai/%s (acme)' % __version__})
     try:
-        with url_open(req, timeout=30, context=ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
                                     if base.startswith('https') else None) as r:
             got = json.loads(r.read(1 << 20).decode())
     except urllib.error.HTTPError as e:
@@ -13023,7 +13020,7 @@ def _dns_acmedns(txt):
                  'X-Api-Key': _acme_secret('acme_dns_key'),
                  'Content-Type': 'application/json'})
     try:
-        with url_open(req, timeout=30, context=ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
                                     if url.startswith('https') else None) as r:
             r.read(4096)
     except urllib.error.HTTPError as e:
@@ -13046,7 +13043,7 @@ def _desec(method, path, body=None):
                                               'Content-Type': 'application/json',
                                               'User-Agent': 'ai/%s (acme)' % __version__})
         try:
-            with url_open(req, timeout=30, context=ssl.create_default_context()
+            with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
                                         if base.startswith('https') else None) as r:
                 raw = r.read(1 << 20)
                 return json.loads(raw.decode()) if raw.strip() else None
