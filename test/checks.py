@@ -193,7 +193,7 @@ check('the second certificate goes with its own first one only',
       ai.tls_alt({'cert': 'A', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A')}}) is not None and
       ai.tls_alt({'cert': 'B', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A')}}) is None)
 check('the page never sees the second key', 'key' not in (ai.tls_view({'cert': 'A', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A'), 'info': {}}}) or {}).get('alt', {}))
-check("an ECDSA P-384 key made"', 'BEGIN PRIVATE KEY' in ai.new_key('ec384'))
+check('an ECDSA P-384 key made', 'BEGIN PRIVATE KEY' in ai.new_key('ec384'))
 check('base64url without padding', ai._b64u(b'\xfb\xff') == '-_8')
 _was = dict(ai.CONFIG)
 ai.CONFIG.update(acme_dns='desec', acme_desec_domain='x.dedyn.io', acme_dns_alias='')
