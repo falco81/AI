@@ -3062,6 +3062,8 @@ button.mebtn { cursor: pointer; }
 .net-job.done{border-color:rgba(63,185,80,.45)}
 .pw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:16px}
 .pw-head{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:15px}
+.pw-head{flex-wrap:wrap}
+.pw-head2{margin-top:-4px}
 .pw-node .btnrow{margin-top:14px}
 #net-host .msect{margin-top:14px}
 #net-host .net-nodes + .card{margin-top:0}

@@ -3,6 +3,11 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.35
+
+- **System updates: the restart on a line of its own**: *restart after the update* (or *restart needed*) stood
+  beside the server's name and its other tags and ran out of the card; it is on its own line under them now.
+
 ## 1.0.34
 
 - **ai on the newest Python there is**: the install and every upgrade - from the pages too - look for the

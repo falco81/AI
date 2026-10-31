@@ -1661,9 +1661,12 @@ function drawOsup(live) {
       var ck = n.check || {};
       if (ck.state === 'running') hd.appendChild(el('span', 'tag info', 'looking…'));
       else if (ck.checked && ck.state === 'done') hd.appendChild(el('span', 'tag ' + (ck.count ? 'warn' : 'good'), ck.count ? num(ck.count) + ' waiting' : 'up to date'));
-      if (n.reboot) hd.appendChild(el('span', 'tag warn', 'restart needed'));
-      else if (ck.reboot_after && ck.count) hd.appendChild(el('span', 'tag info', 'restart after the update'));
       c.appendChild(hd);
+      /* The restart on a line of its own under the name (1.0.35): beside the
+         others it ran out of the card. */
+      var rs = n.reboot ? el('span', 'tag warn', 'restart needed')
+        : (ck.reboot_after && ck.count ? el('span', 'tag info', 'restart after the update') : null);
+      if (rs) { var hd2 = el('div', 'pw-head pw-head2'); hd2.appendChild(rs); c.appendChild(hd2); }
       c.appendChild(netFacts([
         ['Updates waiting', ck.checked ? num(ck.count || 0) : 'not looked yet'],
         ['Of them security', ck.security !== undefined && ck.security !== null ? num(ck.security) : ''],
