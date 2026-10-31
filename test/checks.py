@@ -171,5 +171,17 @@ check('--edit takes its choices', (_pa.edit, _pa.effort, _pa.mode, _pa.cwd) == (
 check('--signin-art alone asks which one', ai.build_parser().parse_args(['--signin-art']).signin_art == '')
 check('every picture has its words in the console', all(n in ai.ART_WORDS_TEXT for n in ai.ART_NAMES))
 
+check('every form of the certificate known', set(ai.TLS_EXPORTS) == {'pem', 'crt', 'der', 'p7b', 'pem_key', 'key', 'pfx'})
+try:
+    ai.tls_export({'cert': 'x'}, 'pfx', '')
+    check('a .pfx without a password turned away', False)
+except ai.Refused:
+    check('a .pfx without a password turned away', True)
+try:
+    ai.tls_export({}, 'zip')
+    check('an unknown form turned away', False)
+except ai.Refused:
+    check('an unknown form turned away', True)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.30'
+__version__ = '1.0.31'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -5871,7 +5871,7 @@ def tls_view(prof):
     if not prof:
         return None
     out = {k: v for k, v in prof.items() if k not in ('key', 'pending_key')}
-    out['has_key'] = bool(prof.get('key'))
+    out['has_key'] = bool(prof.get('key')) or KEY_FILE.is_file()
     out['pending'] = bool(prof.get('pending_key'))
     return out
 
@@ -11470,6 +11470,85 @@ def api_machine(c):
                                                   'log': str(LOG_FILE), 'lib': str(LIB_DIR)}}
 
 
+TLS_EXPORTS = {
+    # format: (the file's ending, its type, the key in it, a password: 'need', 'may' or '')
+    'pem': ('.pem', 'application/x-pem-file', False, ''),
+    'crt': ('.crt', 'application/x-x509-ca-cert', False, ''),
+    'der': ('.cer', 'application/pkix-cert', False, ''),
+    'p7b': ('.p7b', 'application/x-pkcs7-certificates', False, ''),
+    'pem_key': ('.pem', 'application/x-pem-file', True, 'may'),
+    'key': ('.key', 'application/x-pem-file', True, 'may'),
+    'pfx': ('.pfx', 'application/x-pkcs12', True, 'need'),
+}
+
+
+def tls_export(prof, fmt, password='', legacy=False, chain=True):
+    """The certificate of the pages in the form asked (1.0.31): PEM, CRT,
+    DER, PKCS#7 - or with its private key, as PEM (the key locked with a
+    password when given) or PKCS#12 (.pfx, always locked; AES-256, or 3DES
+    and SHA-1 for an older Windows). {'name', 'type', 'b64', 'key'}."""
+    if fmt not in TLS_EXPORTS:
+        raise Refused('the forms are %s' % ', '.join(TLS_EXPORTS))
+    end, kind, with_key, pw_rule = TLS_EXPORTS[fmt]
+    if password and len(password) < 8:
+        raise Refused('a password of 8 characters at least')
+    if pw_rule == 'need' and not password:
+        raise Refused('a .pfx is always locked: give it a password')
+    prof = prof or {}
+    pem = prof.get('cert') or read_text(CERT_FILE) or ''
+    certs = PEM_CERT.findall(pem)
+    if prof.get('cert'):
+        certs = PEM_CERT.findall(prof['cert']) + PEM_CERT.findall(prof.get('chain') or '')
+    if not certs:
+        raise Refused('there is no certificate of the pages here')
+    leaf, rest = certs[0].strip() + '\n', ''.join(c.strip() + '\n' for c in certs[1:]) if chain else ''
+    key = ''
+    if with_key:
+        key = unseal_secret(prof['key'], 'web:tls') if prof.get('key') else ''
+        if not key:
+            try:
+                key = KEY_FILE.read_text()
+            except OSError:
+                key = ''
+        if not PEM_KEY.search(key or ''):
+            raise Refused('the private key of the certificate is not here to be given out')
+    env = {'AI_PW': password}
+    host = (cert_info(leaf).get('subject') or '').split('CN=')[-1].split(',')[0].strip() or host_name()
+    base = re.sub(r'[^A-Za-z0-9._-]+', '-', host.replace('*', 'wildcard')).strip('-') or 'ai'
+    if fmt in ('pem', 'crt'):
+        data = (leaf + rest).encode()
+    elif fmt == 'der':
+        data = _openssl(['x509', '-outform', 'DER'], leaf.encode(), what='the certificate')
+    elif fmt == 'p7b':
+        with tempfile.TemporaryDirectory(prefix='ai-tls-') as tmp:
+            f = os.path.join(tmp, 'all.pem')
+            write_atomic(f, leaf + rest, mode=0o600)
+            data = _openssl(['crl2pkcs7', '-nocrl', '-certfile', f], what='PKCS#7')
+    else:
+        if password and fmt in ('pem_key', 'key'):
+            key = _openssl(['pkey', '-aes256', '-passout', 'env:AI_PW'], key.encode(), env=env,
+                           what='the key').decode()
+        if fmt == 'key':
+            data = key.encode()
+        elif fmt == 'pem_key':
+            data = (leaf + rest + key.strip() + '\n').encode()
+        else:
+            with tempfile.TemporaryDirectory(prefix='ai-tls-') as tmp:
+                kf, cf, chf = (os.path.join(tmp, n) for n in ('k.pem', 'c.pem', 'ch.pem'))
+                write_atomic(kf, key, mode=0o600)
+                write_atomic(cf, leaf, mode=0o600)
+                args = ['pkcs12', '-export', '-inkey', kf, '-in', cf, '-name', host, '-passout', 'env:AI_PW']
+                if rest:
+                    write_atomic(chf, rest, mode=0o600)
+                    args += ['-certfile', chf]
+                args += ['-keypbe', 'PBE-SHA1-3DES', '-certpbe', 'PBE-SHA1-3DES', '-macalg', 'sha1'] if legacy \
+                    else ['-keypbe', 'AES-256-CBC', '-certpbe', 'AES-256-CBC', '-macalg', 'sha256']
+                data = _openssl(args, env=env, what='PKCS#12')
+    name = base + ('.key' if fmt == 'key' else '-with-key.pem' if fmt == 'pem_key' else end)
+    return {'name': name, 'type': kind, 'b64': base64.b64encode(data).decode('ascii'), 'key': with_key,
+            'bytes': len(data)}
+
+
 @route('GET', '/api/web', admin=True)
 def api_web(c):
     prof = tls_prof(c.daemon.store)
@@ -11535,6 +11614,13 @@ def api_web_do(c):
             prof.update(tls_policy_checked(b))
             tls_apply_later(st, prof, c.name)
             return {'message': 'the TLS settings are being put in'}
+        if act == 'tls_export':
+            out = tls_export(prof, str(b.get('format') or ''), str(b.get('password') or ''),
+                             bool(b.get('legacy')), bool(b.get('chain', True)))
+            if out['key']:
+                st.add_event('system', '%s downloaded the certificate of the pages WITH its private key (%s)'
+                             % (c.name, out['name']), 'warn', who=c.name)
+            return out
         if act == 'tls_pem':
             if prof.get('cert'):
                 return {'pem': prof['cert'] + (prof.get('chain') or '')}

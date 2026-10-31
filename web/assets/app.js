@@ -3290,15 +3290,15 @@ function certCard(d, target) {
     var pol = cmdButton('TLS settings', 'gear', 'small');
     pol.onclick = function () { certPolicy(target, prof, d); };
     tools.appendChild(pol);
-    if (prof && prof.cert) {
+    /* Download whenever there is a certificate - one ai looks after, or the
+       one nginx has from before (1.0.31). */
+    if ((prof && prof.cert) || info) {
       var dl = cmdButton('Download', 'download', 'small');
-      dl.title = 'The certificate and its chain, as PEM - without the key';
-      dl.onclick = function () {
-        api('web', {action: 'tls_pem', target: target}).then(function (x) {
-          saveFile((target === 'vip' ? 'web-address' : target) + '.pem', x.pem);
-        }).catch(oops);
-      };
+      dl.title = 'The certificate in the form you choose - PEM, CRT, DER, PKCS#7, or with its private key (PEM, PFX)';
+      dl.onclick = function () { certExportAsk(target, prof); };
       tools.appendChild(dl);
+    }
+    if (prof && prof.cert) {
       var fg = cmdButton('Let go', 'forget', 'small danger-soft');
       fg.title = 'ai stops looking after it (nginx keeps what it has)';
       fg.onclick = function () {
@@ -8125,3 +8125,114 @@ if ($('art-upload')) {
     reader.readAsDataURL(file);
   };
 }
+
+
+/* Download the certificate (1.0.31): a window to choose its form - the
+   certificate alone (PEM, CRT, DER, PKCS#7) or with its private key (PEM,
+   the key alone, PFX) - and, with the key, the password that locks it. */
+var CERT_FORMATS = [
+  {k: 'pem', group: 'cert', name: 'PEM', ext: '.pem', says: 'Text, Base64. nginx, Apache, HAProxy, Linux.'},
+  {k: 'crt', group: 'cert', name: 'CRT', ext: '.crt', says: 'The same PEM text, the ending Windows and browsers open with a double click.'},
+  {k: 'der', group: 'cert', name: 'DER', ext: '.cer', says: 'Binary, the certificate alone. Java, Windows, network devices.'},
+  {k: 'p7b', group: 'cert', name: 'PKCS#7', ext: '.p7b', says: 'The certificate with its chain in one file. Windows, IIS, Tomcat.'},
+  {k: 'pfx', group: 'key', name: 'PFX / PKCS#12', ext: '.pfx', says: 'The certificate, its chain and its private key, locked with a password. Windows, IIS, Azure, Exchange.'},
+  {k: 'pem_key', group: 'key', name: 'PEM with the key', ext: '.pem', says: 'The certificate, its chain and its private key in one text file - the key locked when a password is given.'},
+  {k: 'key', group: 'key', name: 'The private key', ext: '.key', says: 'Only the private key, PEM - locked with AES-256 when a password is given.'}
+];
+function certExportAsk(target, prof) {
+  var st = {fmt: 'pem', chain: true, legacy: false};
+  var hasKey = !prof || prof.has_key !== false;
+  modal('Download the certificate', function (body) {
+    body.appendChild(el('p', 'note', 'Choose the form the other side wants. The private key is given out only in the forms of the second row - whoever has it can be this server.'));
+    var boxes = {};
+    [['cert', 'The certificate only', 'nothing secret in it'], ['key', 'With the private key', 'secret - keep it safe']].forEach(function (g) {
+      var head = el('div', 'cx-head');
+      head.appendChild(el('b', '', g[1]));
+      head.appendChild(el('span', 'muted small', g[2]));
+      body.appendChild(head);
+      var grid = el('div', 'cx-grid' + (g[0] === 'key' ? ' cx-keyed' : ''));
+      CERT_FORMATS.filter(function (f) { return f.group === g[0]; }).forEach(function (f) {
+        var card = el('button', 'cx-card');
+        card.type = 'button';
+        var top = el('div', 'cx-top');
+        top.innerHTML = iconMarkup(f.group === 'key' ? 'key' : 'file');
+        top.appendChild(el('b', '', f.name));
+        top.appendChild(el('span', 'cx-ext', f.ext));
+        card.appendChild(top);
+        card.appendChild(el('div', 'cx-says', f.says));
+        if (f.group === 'key' && !hasKey) { card.disabled = true; card.title = 'the private key is not kept here'; }
+        card.onclick = function () { st.fmt = f.k; paint(); };
+        boxes[f.k] = card;
+        grid.appendChild(card);
+      });
+      body.appendChild(grid);
+    });
+    var opts = el('div', 'cx-opts');
+    var chainSw = switchBox(true);
+    chainSw._input.onchange = function () { st.chain = chainSw._input.checked; };
+    var chainRow = el('label', 'cx-opt');
+    chainRow.appendChild(chainSw);
+    chainRow.appendChild(el('span', '', 'The chain too (the certificates of the authority that issued it)'));
+    opts.appendChild(chainRow);
+    body.appendChild(opts);
+    var keyBox = el('div', 'cx-keybox');
+    keyBox.appendChild(el('p', 'note warn', 'This file holds the private key of the pages. Anybody who has it, and the password, can pose as this server. Download it only for a server of your own, and give the password apart from the file.'));
+    var p1 = secretBox('', '8 characters at least', 'mono'), p2 = secretBox('', 'the same again', 'mono');
+    var grid2 = el('div', 'formgrid');
+    var f1 = formField('Password', p1), f2 = formField('The password again', p2);
+    grid2.appendChild(f1); grid2.appendChild(f2);
+    keyBox.appendChild(grid2);
+    var pwSays = el('p', 'muted small cx-pwsays');
+    keyBox.appendChild(pwSays);
+    var legSw = switchBox(false);
+    legSw._input.onchange = function () { st.legacy = legSw._input.checked; };
+    var legRow = el('label', 'cx-opt');
+    legRow.appendChild(legSw);
+    legRow.appendChild(el('span', '', 'For an older Windows (Server 2016 and before): 3DES and SHA-1 instead of AES-256'));
+    keyBox.appendChild(legRow);
+    body.appendChild(keyBox);
+    var gen = el('button', 'btn cmd small cx-gen', 'Make a strong password');
+    gen.type = 'button';
+    setButtonIcon(gen, 'key', 'Make a strong password');
+    gen.onclick = function () {
+      var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', out = '', r = new Uint32Array(20);
+      crypto.getRandomValues(r);
+      for (var i = 0; i < 20; i++) out += abc.charAt(r[i] % abc.length);
+      p1.value = out; p2.value = out;
+      if (p1._show) p1._show(true);
+      if (p2._show) p2._show(true);
+      if (navigator.clipboard) navigator.clipboard.writeText(out).then(function () { toast('the password is on the clipboard too', 'good'); }, function () {});
+    };
+    keyBox.insertBefore(gen, pwSays);
+    function paint() {
+      Object.keys(boxes).forEach(function (k) { boxes[k].classList.toggle('on', k === st.fmt); });
+      var f = CERT_FORMATS.filter(function (x) { return x.k === st.fmt; })[0];
+      keyBox.hidden = f.group !== 'key';
+      chainRow.hidden = st.fmt === 'der' || st.fmt === 'key';
+      legRow.hidden = st.fmt !== 'pfx';
+      pwSays.textContent = st.fmt === 'pfx' ? 'A .pfx is always locked: the password is needed to open it.'
+        : 'Optional: without one the key is in the file as it is - readable by whoever has the file.';
+    }
+    MODAL_BODY_CX = {st: st, p1: p1, p2: p2};
+    paint();
+  }, [
+    {words: 'Cancel', close: true},
+    {words: 'Download', cls: 'primary', icon: 'download', go: function (button) {
+      var m = MODAL_BODY_CX, f = m.st.fmt, keyed = f === 'pfx' || f === 'pem_key' || f === 'key';
+      var pw = keyed ? m.p1.value : '';
+      if (keyed) {
+        if (f === 'pfx' && !pw) { toast('a .pfx needs a password', 'bad'); return; }
+        if (pw && pw.length < 8) { toast('a password of 8 characters at least', 'bad'); return; }
+        if (pw !== m.p2.value) { toast('the two passwords are not the same', 'bad'); return; }
+      }
+      busy(button, true);
+      api('web', {action: 'tls_export', target: target, format: f, password: pw, legacy: m.st.legacy, chain: m.st.chain}).then(function (x) {
+        var raw = atob(x.b64), bytes = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        saveFile(x.name, bytes, x.type);
+        closeModal();
+        toast(x.key ? x.name + ' - keep the password apart from the file' : x.name, 'good');
+      }).catch(oops).then(function () { busy(button, false); });
+    }}], 'wide');
+}
+var MODAL_BODY_CX = null;

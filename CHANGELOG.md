@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.31
+
+- **Downloading the certificate, in the form wanted**: *Download* under Settings -> Certificates and TLS opens a
+  window to choose it - the certificate alone as PEM, CRT, DER or PKCS#7 (.p7b), or with its private key:
+  PFX / PKCS#12 (always locked with a password; AES-256, or 3DES and SHA-1 for an older Windows), PEM with the
+  key, or the key alone (both locked with AES-256 when a password is given). The chain goes along unless
+  switched off; *Make a strong password* makes one and puts it on the clipboard. A download with the key is
+  written in the events, as a warning. It is there for the certificate nginx had before ai looked after it too.
+
 ## 1.0.30
 
 - **The command line and the console caught up with the pages**: what came on the pages since 1.0.13 is in

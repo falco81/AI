@@ -2563,6 +2563,71 @@ STRINGS = {
         'celá historie je zkopírovaná',
     'Back to now':
         'Zpět na teď',
+    # ---- 1.0.31: downloading the certificate ----
+    'Download the certificate':
+        'Stáhnout certifikát',
+    'Choose the form the other side wants. The private key is given out only in the forms of the second row - whoever has it can be this server.':
+        'Zvolte formát, který chce druhá strana. Privátní klíč se vydává jen ve formátech druhé řady – kdo ho má, může se vydávat za tento server.',
+    'The certificate only':
+        'Jen certifikát',
+    'nothing secret in it':
+        'nic tajného v něm není',
+    'With the private key':
+        'S privátním klíčem',
+    'secret - keep it safe':
+        'tajné – dobře ho uschovejte',
+    'Text, Base64. nginx, Apache, HAProxy, Linux.':
+        'Text, Base64. nginx, Apache, HAProxy, Linux.',
+    'The same PEM text, the ending Windows and browsers open with a double click.':
+        'Stejný text PEM s příponou, kterou Windows a prohlížeče otevřou dvojklikem.',
+    'Binary, the certificate alone. Java, Windows, network devices.':
+        'Binární, jen certifikát. Java, Windows, síťová zařízení.',
+    'The certificate with its chain in one file. Windows, IIS, Tomcat.':
+        'Certifikát s řetězcem v jednom souboru. Windows, IIS, Tomcat.',
+    'The certificate, its chain and its private key, locked with a password. Windows, IIS, Azure, Exchange.':
+        'Certifikát, jeho řetězec a privátní klíč, zamčené heslem. Windows, IIS, Azure, Exchange.',
+    'PEM with the key':
+        'PEM s klíčem',
+    'The certificate, its chain and its private key in one text file - the key locked when a password is given.':
+        'Certifikát, řetězec a privátní klíč v jednom textovém souboru – klíč zamčený, pokud zadáte heslo.',
+    'The private key':
+        'Privátní klíč',
+    'Only the private key, PEM - locked with AES-256 when a password is given.':
+        'Jen privátní klíč, PEM – zamčený AES-256, pokud zadáte heslo.',
+    'the private key is not kept here':
+        'privátní klíč tu uložený není',
+    'The chain too (the certificates of the authority that issued it)':
+        'I řetězec (certifikáty autority, která ho vydala)',
+    'This file holds the private key of the pages. Anybody who has it, and the password, can pose as this server. Download it only for a server of your own, and give the password apart from the file.':
+        'Tento soubor obsahuje privátní klíč stránek. Kdo ho má i s heslem, může se vydávat za tento server. Stahujte ho jen pro vlastní server a heslo předávejte odděleně od souboru.',
+    '8 characters at least':
+        'alespoň 8 znaků',
+    'The password again':
+        'Heslo znovu',
+    'For an older Windows (Server 2016 and before): 3DES and SHA-1 instead of AES-256':
+        'Pro starší Windows (Server 2016 a starší): 3DES a SHA-1 místo AES-256',
+    'Make a strong password':
+        'Vytvořit silné heslo',
+    'the password is on the clipboard too':
+        'heslo je i ve schránce',
+    'A .pfx is always locked: the password is needed to open it.':
+        'Soubor .pfx je vždy zamčený: k otevření je potřeba heslo.',
+    'Optional: without one the key is in the file as it is - readable by whoever has the file.':
+        'Nepovinné: bez hesla je klíč v souboru tak, jak je – čitelný pro každého, kdo soubor má.',
+    'a .pfx needs a password':
+        'soubor .pfx potřebuje heslo',
+    'a password of 8 characters at least':
+        'heslo alespoň 8 znaků',
+    'the two passwords are not the same':
+        'hesla nejsou stejná',
+    'The certificate in the form you choose - PEM, CRT, DER, PKCS#7, or with its private key (PEM, PFX)':
+        'Certifikát ve formátu, který zvolíte – PEM, CRT, DER, PKCS#7, nebo s privátním klíčem (PEM, PFX)',
+    'a .pfx is always locked: give it a password':
+        'soubor .pfx je vždy zamčený: zadejte heslo',
+    'the private key of the certificate is not here to be given out':
+        'privátní klíč certifikátu tu není k vydání',
+    'there is no certificate of the pages here':
+        'certifikát stránek tu není',
 }
 
 PATTERNS = {
@@ -2783,6 +2848,7 @@ PATTERNS = {
         'Odebrat tržiště {0}?',
     'Remove {0}?':
         'Odebrat {0}?',
+    '{0} - keep the password apart from the file': '{0} – heslo uschovejte odděleně od souboru',
 }
 
 RICH = {
