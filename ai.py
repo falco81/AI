@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.36'
+__version__ = '1.0.37'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -190,6 +190,20 @@ DEFAULTS = {
     'mail_keep_days': 14,
     'code_lang': 'cs',
     'code_mail_fmt': 'html',
+    # updates and restarts on a schedule (1.0.37, otp's 1.0.164)
+    'osup_check': False,
+    'osup_check_at': '06:15',
+    'osup_auto': False,
+    'osup_auto_what': 'security',
+    'osup_auto_every': 'weekly',
+    'osup_auto_day': '7',
+    'osup_auto_at': '04:45',
+    'osup_auto_reboot': 'auto',
+    'power_auto': False,
+    'power_auto_every': 'weekly',
+    'power_auto_day': '7',
+    'power_auto_at': '05:40',
+    'power_auto_needed': True,
     # backups to other machines (otp's)
     'rbackup': False,
     'rbackup_at': '04:15',
@@ -312,6 +326,42 @@ SCHEMA = [
      {'when': ['backup_daily', [True]]}),
     ('backup_keep', 'db', 'int', 'Copies kept', 'Of each kind; older ones are taken away.',
      {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
+    # ---- updates and restarts on a schedule (1.0.37, as otp's 1.0.164) ----
+    ('osup_check', 'osup', 'bool', 'Look for updates every day',
+     'This server looks what dnf (or apt) has waiting, every day at the time below - for the card '
+     'above. Nothing is put in.', {}),
+    ('osup_check_at', 'osup', 'str', 'At', 'When, as HH:MM on this machine\'s clock.',
+     {'when': ['osup_check', [True]]}),
+    ('osup_auto', 'osup', 'bool', 'Updates on a schedule',
+     'The updates put in by themselves in the window below, as by hand - the terminals go on running '
+     'meanwhile. Off until switched on.', {}),
+    ('osup_auto_what', 'osup', 'choice', 'Which',
+     'Only the security updates (dnf --security, unattended-upgrade on apt), or every update.',
+     {'choices': [['security', 'only the security updates'], ['all', 'every update']],
+      'when': ['osup_auto', [True]]}),
+    ('osup_auto_every', 'osup', 'choice', 'How often', 'A day, a week or a month.',
+     {'choices': [['daily', 'every day'], ['weekly', 'every week, on the day below'],
+                  ['monthly', 'on the first of every month']], 'when': ['osup_auto', [True]]}),
+    ('osup_auto_day', 'osup', 'choice', 'On the day', 'The day a weekly update goes.',
+     {'choices': [['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday'], ['7', 'Sunday']], 'when': ['osup_auto_every', ['weekly']]}),
+    ('osup_auto_at', 'osup', 'str', 'At', 'When, as HH:MM - a quiet hour, away from the backups.',
+     {'when': ['osup_auto', [True]]}),
+    ('osup_auto_reboot', 'osup', 'choice', 'After the update',
+     'A restart the update needs - made by itself, or offered on the page.',
+     {'choices': [['auto', 'restarted by itself where an update needs it'],
+                  ['ask', 'a restart offered on the page']], 'when': ['osup_auto', [True]]}),
+    ('power_auto', 'power', 'bool', 'A restart on a schedule',
+     'The server restarted in the window below. Every terminal ends with it. Off until switched on.', {}),
+    ('power_auto_every', 'power', 'choice', 'How often', 'A week or a month.',
+     {'choices': [['weekly', 'every week, on the day below'], ['monthly', 'on the first of every month']],
+      'when': ['power_auto', [True]]}),
+    ('power_auto_day', 'power', 'choice', 'On the day', 'The day a weekly restart goes.',
+     {'choices': [['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday'], ['7', 'Sunday']], 'when': ['power_auto_every', ['weekly']]}),
+    ('power_auto_at', 'power', 'str', 'At', 'When, as HH:MM on this machine\'s clock.',
+     {'when': ['power_auto', [True]]}),
+    ('power_auto_needed', 'power', 'bool', 'Only when one is needed',
+     'Only when an update left the server waiting for a restart; off: every time.',
+     {'when': ['power_auto', [True]]}),
     ('rbackup', 'backup', 'bool', 'Backups to the destinations on a schedule',
      'A backup is made and sent to every destination switched on, at the time below. Back up now '
      'sends one whenever wanted.', {}),
@@ -11195,7 +11245,7 @@ def setting_value(k, v):
             mail_checked(v)
         except ValueError as e:
             raise Refused('%s: %s' % (s[3], e))
-    if k in ('rbackup_at', 'backup_at') and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
+    if k in ('rbackup_at', 'backup_at', 'osup_check_at', 'osup_auto_at', 'power_auto_at') and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
         raise Refused('%s: HH:MM, as 04:15' % s[3])
     if k == 'notify_to' and v:
         try:
@@ -15582,13 +15632,20 @@ def osup_do(daemon, b, who):
         plan = store.meta_json('osup:plan', {}) or {}
         if plan.get('state') == 'running':
             raise Refused('an update is going on already')
+        security = bool(b.get('security'))
         plan = {'id': secrets.token_hex(6), 'order': [node_name()], 'reboot': 'auto' if b.get('reboot') == 'auto' else 'ask',
-                'by': who, 'at': time.time(), 'state': 'running', 'from': node_name()}
+                'by': who, 'at': time.time(), 'state': 'running', 'from': node_name(), 'security': security}
         store.set_meta_json('osup:plan', plan)
         store.set_meta_json('osup:row', {'plan': plan['id'], 'state': 'waiting', 'at': time.time()})
-        os_call(m.osup_launch, plan['id'], 'upgrade')
-        store.add_event('system', '%s started the update of the system%s' % (
-            who, ', restarted by itself when it needs it' if plan['reboot'] == 'auto' else ''), 'warn', who=who)
+        try:
+            os_call(m.osup_launch, plan['id'], 'upgrade', security)
+        except Refused:
+            plan['state'] = 'failed'
+            store.set_meta_json('osup:plan', plan)
+            raise
+        store.add_event('system', '%s started the update of the system%s%s' % (
+            who, ' (only the security updates)' if security else '',
+            ', restarted by itself when it needs it' if plan['reboot'] == 'auto' else ''), 'warn', who=who)
         return {'message': 'the update starts', 'plan': plan}
     if act == 'cancel':
         plan = store.meta_json('osup:plan', {}) or {}
@@ -15648,6 +15705,76 @@ def osup_tick(daemon):
         row['rebooted'] = True
         daemon.store.set_meta_json('osup:row', row)
         power_ask(daemon, 'reboot', 'the update of the system')
+
+
+# -- on a schedule (1.0.37, as otp's 1.0.164) ----------------------------------------------
+# Updates in a window of their own - only the security ones, or all - as by
+# hand, restarted where needed; a look for updates every day; and a restart
+# of the server in a window. Each once a day at most (the day is kept); a run
+# that cannot start (something going on) is said in the events, not tried
+# over and over.
+def _due(every, day, at, now=None):
+    """(due now, the id of this window) for a schedule of HH:MM on a day."""
+    n = datetime.fromtimestamp(now or time.time())
+    try:
+        hh, mm = (int(x) for x in str(at or '04:45').split(':', 1))
+    except ValueError:
+        hh, mm = 4, 45
+    if every == 'weekly' and n.isoweekday() != int(day or 7):
+        return False, ''
+    if every == 'monthly' and n.day != 1:
+        return False, ''
+    return (n.hour, n.minute) >= (hh, mm), n.strftime('%Y-%m-%d')
+
+
+def osup_settling(store):
+    """An update going on, or a look for updates - which restart is needed is
+    not known yet."""
+    if (store.meta_json('osup:plan', {}) or {}).get('state') == 'running':
+        return True
+    st = osup_state()
+    return st.get('state') == 'running'
+
+
+def osup_sched_tick(daemon):
+    if NO_SYSTEM:
+        return
+    store = daemon.store
+    by = 'ai (on a schedule)'
+    if CONFIG.get('osup_check'):
+        due, day = _due('daily', '', CONFIG.get('osup_check_at'))
+        if due and store.get_meta('osup:check:day') != day and not osup_settling(store):
+            store.set_meta('osup:check:day', day)
+            try:
+                osup_do(daemon, {'action': 'check'}, by)
+            except Refused as e:
+                log('the daily look for updates: %s' % e, 'warn')
+    if CONFIG.get('osup_auto'):
+        due, day = _due(CONFIG.get('osup_auto_every') or 'weekly', CONFIG.get('osup_auto_day'),
+                        CONFIG.get('osup_auto_at'))
+        # A look for updates going on is waited for, not taken as a failure.
+        if due and store.get_meta('osup:auto:day') != day and not osup_settling(store):
+            store.set_meta('osup:auto:day', day)
+            try:
+                osup_do(daemon, {'action': 'start', 'reboot': CONFIG.get('osup_auto_reboot') or 'auto',
+                                 'security': (CONFIG.get('osup_auto_what') or 'security') == 'security'}, by)
+            except Refused as e:
+                store.add_event('settings', 'the update of the system on a schedule did not start: %s' % e, 'bad')
+    if CONFIG.get('power_auto'):
+        due, day = _due(CONFIG.get('power_auto_every') or 'weekly', CONFIG.get('power_auto_day'),
+                        CONFIG.get('power_auto_at'))
+        # Not while an update or a look for updates is still going on: whether
+        # a restart is needed is known only after it.
+        if due and store.get_meta('power:auto:day') != day and not osup_settling(store):
+            store.set_meta('power:auto:day', day)
+            if CONFIG.get('power_auto_needed', True) and not osup_view(daemon)['nodes'][0].get('reboot'):
+                store.add_event('settings', 'the restart on a schedule: the server does not need one', 'info')
+                return
+            try:
+                power_ask(daemon, 'reboot', by)
+                store.add_event('settings', 'the restart on a schedule: the server is restarted', 'warn')
+            except Refused as e:
+                store.add_event('settings', 'the restart on a schedule did not start: %s' % e, 'bad')
 
 
 # ---- the routes of these panes ---------------------------------------------------------------------------
@@ -16162,6 +16289,10 @@ class Daemon:
             try:
                 self.trials.tick()
                 osup_tick(self)
+                try:
+                    osup_sched_tick(self)       # updates and restarts on a schedule (1.0.37)
+                except Exception as e:          # noqa: BLE001
+                    log_sparing('osup-sched', 'the schedule of updates: %s' % e, 'warn')
                 if n % 4 == 0:
                     config_rebuild(self.store)          # a setting changed on the command line
                     self.auth.tidy()

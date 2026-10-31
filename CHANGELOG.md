@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.37
+
+**Updates and restarts on a schedule, as otp's (1.0.164)**
+- *System updates -> On a schedule* (off until switched on): a look for updates every day at a set time -
+  for the card, nothing put in - and the updates put in by themselves in a window: only the security ones
+  (`dnf --security`, `unattended-upgrade` on apt) or all of them, every day, week or month, restarted by
+  itself where needed or the restart offered.
+- *Restart and power off -> On a schedule*: the server restarted in a window, every week or month - only when
+  an update left it waiting for a restart, or every time. Not while an update or a look for updates is going
+  on: it waits for it.
+- Each once in its window; one that cannot start is said in the events, not tried over and over.
+- An update by hand can be the security updates only, too (*Which*).
+
 ## 1.0.36
 
 - **System updates after a restart made by itself**: the server was restarted as asked (*Restart by itself when

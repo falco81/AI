@@ -991,6 +991,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         <button class="btn cmd" id="pw-ai" data-icon="refresh">Restart ai</button>
         <button class="btn cmd" id="pw-web" data-icon="refresh">Restart nginx and PHP</button>
       </div></div>
+    <div class="card full"><h2>On a schedule</h2><div id="sect-power"></div></div>
   </div>
   <div class="ctl-pane" id="pane-osup" hidden>
     <div class="ctl-head"><h2 class="ctl-title">System updates</h2>
@@ -998,6 +999,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         of its own on the server - closing the page or restarting ai does not stop it - and what it says
         shows here as it goes. A restart an update needs is offered when it is done, or made by itself.</p></div>
     <div id="ou-host"></div>
+    <div class="card full"><h2>On a schedule</h2><div id="sect-osup"></div></div>
   </div>
   <div class="ctl-pane" id="pane-sshkeys" hidden>
     <div class="ctl-head"><h2 class="ctl-title">SSH keys of root</h2>

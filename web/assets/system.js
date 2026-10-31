@@ -1717,6 +1717,15 @@ function drawOsup(live) {
           + ' a restart after this update: ' + after.map(function (n) { return (n.check.reboot_why || []).join(', '); }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).join('; ') + '.');
         uc.appendChild(an);
       }
+      /* Only the security updates, as otp's (1.0.37). */
+      var seg2 = el('div', 'seg');
+      [['all', 'Every update'], ['security', 'Only the security updates']].forEach(function (o) {
+        var b = el('button', (OU.what || 'all') === o[0] ? 'on' : '', o[1]);
+        b.type = 'button';
+        b.onclick = function () { OU.what = o[0]; drawOsup(); };
+        seg2.appendChild(b);
+      });
+      uc.appendChild(formField('Which', seg2));
       uc.appendChild(formField('After the update', segb));
       var row2 = el('div', 'btnrow');
       var start = cmdButton(d.cluster ? 'Update them, one at a time' : 'Update it now', 'download', 'primary');
@@ -1725,7 +1734,7 @@ function drawOsup(live) {
         confirmThen(d.cluster ? 'Update the nodes' : 'Update this server', 'Every package of the system is updated' + (d.cluster ? ', on ' + htmlText(nodes.map(function (n) { return n.name; }).join(' and then ')) + ', each out of service while it is.' : '.')
           + ((OU.reboot || d.reboot_choice) === 'auto' ? '<br><br>A node that needs it is <b>restarted by itself</b>.' : '<br><br>A restart it needs is offered when it is done.'),
           'Update', function () {
-            api('osup', {action: 'start', reboot: OU.reboot || (d.reboot_choice === 'auto' ? 'auto' : 'ask')}).then(function (x) { toast(x.message, 'good'); OU.node = ''; ouAsked(); loadOsup(); }).catch(oops);
+            api('osup', {action: 'start', reboot: OU.reboot || (d.reboot_choice === 'auto' ? 'auto' : 'ask'), security: OU.what === 'security'}).then(function (x) { toast(x.message, 'good'); OU.node = ''; ouAsked(); loadOsup(); }).catch(oops);
           }, false);
       };
       var lookAll = cmdButton(d.cluster ? 'Look on every node' : 'Look again', 'search', '');

@@ -2628,6 +2628,27 @@ STRINGS = {
         'privátní klíč certifikátu tu není k vydání',
     'there is no certificate of the pages here':
         'certifikát stránek tu není',
+    # ---- 1.0.37: updates and restarts on a schedule ----
+    'This server looks what dnf (or apt) has waiting, every day at the time below - for the card above. Nothing is put in.':
+        'Server každý den v čase níže zjistí, co má dnf (nebo apt) připraveno – pro kartu výše. Nic se neinstaluje.',
+    'The updates put in by themselves in the window below, as by hand - the terminals go on running meanwhile. Off until switched on.':
+        'Aktualizace se nainstalují samy v okně níže, stejně jako ručně – terminály mezitím běží dál. Vypnuto, dokud se nezapne.',
+    'When, as HH:MM - a quiet hour, away from the backups.':
+        'Kdy, jako HH:MM – v klidnou hodinu, mimo zálohy.',
+    'A restart the update needs - made by itself, or offered on the page.':
+        'Restart, který aktualizace potřebuje – provede se sám, nebo se nabídne na stránce.',
+    'The server restarted in the window below. Every terminal ends with it. Off until switched on.':
+        'Server se restartuje v okně níže. Skončí s tím každý terminál. Vypnuto, dokud se nezapne.',
+    'Only when one is needed':
+        'Jen když je potřeba',
+    'Only when an update left the server waiting for a restart; off: every time.':
+        'Jen když aktualizace nechala server čekat na restart; vypnuto: pokaždé.',
+    'Only the security updates':
+        'Jen bezpečnostní',
+    'Every update':
+        'Všechny aktualizace',
+    'On a schedule':
+        'Podle plánu',
 }
 
 PATTERNS = {

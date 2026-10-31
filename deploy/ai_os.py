@@ -549,13 +549,13 @@ def osup_running():
         os.close(fd)
 
 
-def osup_launch(ident, kind):
+def osup_launch(ident, kind, security=False):
     if osup_running():
         raise Refused('an update or a look for updates is going on already')
     if not osup_pm():
         raise Refused('neither dnf nor apt-get is on this machine')
     me = os.path.abspath(__file__)
-    argv = [sys.executable, '-I', me, '--os-job', ident, kind]
+    argv = [sys.executable, '-I', me, '--os-job', ident, kind] + (['security'] if security else [])
     if (shutil.which('systemd-run') and not NO_SERVICES and os.path.isdir('/run/systemd/system')):
         got = subprocess.run(['systemd-run', '--unit', 'ai-os-%s-%s' % (kind, ident[:12]),
                               '--collect', '--quiet', '--property', 'TimeoutStopSec=30min'] + argv,
@@ -600,7 +600,7 @@ def reboot_now(pm, env, say=None):
     return os.path.exists('/var/run/reboot-required')
 
 
-def osup_job(ident, kind):
+def osup_job(ident, kind, security=False):
     """The work itself, as root, in a process of its own."""
     import fcntl
     fd = os.open(OSUP_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -715,10 +715,21 @@ def osup_job(ident, kind):
                     state['pct'] = max(state['pct'], min(97, 10 + int(87 * seen['done'] /
                                                                       seen['total'])))
             state['phase'] = 'asking for what is new'
+            # Only the security updates where asked (1.0.37, as otp's 1.0.164):
+            # dnf's own --security, unattended-upgrade on apt (it takes the
+            # security sources only, as Debian and Ubuntu set it up).
+            state['security_only'] = bool(security)
             if pm == 'fake':
-                stream([OSUP_PM, 'upgrade'], count)
+                stream([OSUP_PM, 'upgrade'] + (['security'] if security else []), count)
             elif pm == 'dnf':
-                stream(['dnf', '-y', '--refresh', 'upgrade'], count)
+                stream(['dnf', '-y', '--refresh', 'upgrade'] + (['--security'] if security else []), count)
+            elif security:
+                if not shutil.which('unattended-upgrade'):
+                    raise Refused('only the security updates: unattended-upgrade is not on this '
+                                  'machine (apt install unattended-upgrades)')
+                stream(['apt-get', 'update'])
+                state['pct'] = max(state['pct'], 5)
+                stream(['unattended-upgrade', '-v'], count)
             else:
                 stream(['apt-get', 'update'])
                 state['pct'] = max(state['pct'], 5)
@@ -743,7 +754,8 @@ def osup_job(ident, kind):
 
 def main(argv):
     if len(argv) >= 3 and argv[0] == '--os-job':
-        return osup_job(re.sub(r'[^A-Za-z0-9]', '', argv[1])[:40], argv[2] if argv[2] in ('check', 'upgrade') else 'check')
+        return osup_job(re.sub(r'[^A-Za-z0-9]', '', argv[1])[:40], argv[2] if argv[2] in ('check', 'upgrade') else 'check',
+                        argv[3:4] == ['security'])
     print(__doc__)
     return 2
 
