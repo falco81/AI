@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.38
+
+- **Backups to SMB on a machine smbclient sees no interface of**: smbclient stopped with *Could not determine
+  network interfaces, you must use a interfaces config line* (an address with a /32 mask, IPv6 alone, no
+  network interface it takes). It is asked again with the loopback as its interface list - a list only its
+  NetBIOS broadcasts use, never the connection to the server - and goes on.
+
 ## 1.0.37
 
 **Updates and restarts on a schedule, as otp's (1.0.164)**

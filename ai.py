@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.37'
+__version__ = '1.0.38'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -6934,6 +6934,15 @@ class RbSmb(object):
         got = subprocess.run(self.args + ['-c', '; '.join(cmds)], capture_output=True, text=True,
                              timeout=timeout, cwd=self.d, start_new_session=True)
         text = (got.stdout or '') + (got.stderr or '')
+        # smbclient that finds no interface of the machine it takes (1.0.38) -
+        # an address with a /32 mask, IPv6 alone, no smb.conf - stops with
+        # "Could not determine network interfaces". The list is only for
+        # NetBIOS broadcasts, never for the connection to the server: given
+        # as the loopback, it goes on. Kept for the rest of this session.
+        if 'Could not determine network interfaces' in text and \
+                not any(a.startswith('--option=interfaces=') for a in self.args):
+            self.args.append('--option=interfaces=127.0.0.1/8')
+            return self._run(cmds, ignore, timeout)
         bad = [x for x in text.splitlines() if 'NT_STATUS_' in x and
                not any(i in x for i in ignore)]
         if got.returncode != 0 or bad:
