@@ -1923,9 +1923,8 @@ function drawAcme() {
       c.querySelector('.pw-head').appendChild(care);
       nodeBig(c, left !== null ? num(left) : '–', left !== null ? 'days left' : '');
       c.appendChild(netFacts([
-        ['For', t.name || '', true], ['Issued by', t.issuer || '', true],
+        ['For', t.name || '', true], ['Issued by', t.issuer || '', true], ['Keys', t.keys || '', true],
         ['Good until', t.not_after ? new Date(t.not_after * 1000).toLocaleDateString(numLang()) : ''],
-        ['Key', t.ecdsa ? (t.key || '?') + ' + ' + (t.ecdsa.key || 'ECDSA') : (t.key || '')],
         ['Last ordered', st.ordered_at ? ago(st.ordered_at) : 'never']
       ]));
       if (st.ok === false && st.said) c.appendChild(nodeSaid({ok: false, error: st.said, at: st.failed_at}, ''));
@@ -1994,6 +1993,7 @@ function drawAcme() {
     if (d.account && d.account.kid) {
       var a = el('p', 'muted small', 'The account at the CA: ');
       a.appendChild(noI18n(el('span', 'mono', d.account.kid)));
+      if (d.account.key) a.appendChild(noI18n(el('span', '', ' · ' + d.account.key)));
       host.appendChild(a);
     }
   });
@@ -2088,9 +2088,9 @@ function acmeDnsGuide(d) {
     } else rec.appendChild(el('span', 'muted', r.why || ''));
     tr.appendChild(rec);
     tr.appendChild(noI18n(el('td', 'mono small', r.type || '')));
-    var val = el('td', 'mono small dns-cell');
+    var val = el('td', 'small dns-cell');
     if (r.type === 'CNAME' || r.type === 'NS' || (r.type === 'A' && r.value)) {
-      val.appendChild(noI18n(el('span', '', r.value)));
+      val.appendChild(noI18n(el('span', 'mono', r.value)));
       var cv = iconButton('copy', 'Copy');
       cv.onclick = function () { copyText(r.value, cv); };
       val.appendChild(cv);

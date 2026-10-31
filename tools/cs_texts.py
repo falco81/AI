@@ -2744,6 +2744,27 @@ STRINGS = {
         'nebo veřejná adresa před ním',
     "The certificates ordered from Let's Encrypt (or another ACME CA) and renewed by themselves.":
         'Certifikáty objednané od Let’s Encrypt (nebo jiné ACME CA) a obnovované samy.',
+    # ---- 1.0.40: ACME keys as upsmon 4.1.6 ----
+    'Let’s Encrypt takes RSA keys of 2048, 3072 or 4096 bits and ECDSA keys on P-256 or P-384. Both - what Let’s Encrypt advises - orders two certificates for the name: RSA served by default, the much smaller ECDSA one to the clients that say they take it.':
+        'Let’s Encrypt přijímá klíče RSA o 2048, 3072 nebo 4096 bitech a klíče ECDSA na křivkách P-256 nebo P-384. Oba – jak Let’s Encrypt doporučuje – objedná pro jméno dva certifikáty: RSA se podává standardně, mnohem menší ECDSA klientům, kteří řeknou, že ho umí.',
+    'Both: RSA 2048 + ECDSA P-256 (advised)':
+        'Oba: RSA 2048 + ECDSA P-256 (doporučeno)',
+    'Both: RSA 4096 + ECDSA P-384':
+        'Oba: RSA 4096 + ECDSA P-384',
+    'The key of the ACME account':
+        'Klíč účtu ACME',
+    'The key the account with the CA signs with - never one of a certificate. RSA 2048, 3072, 4096 or ECDSA P-256, P-384. A change makes a new account at the next order.':
+        'Klíč, kterým se podepisuje účet u CA – nikdy ne klíč certifikátu. RSA 2048, 3072, 4096 nebo ECDSA P-256, P-384. Změna při příští objednávce založí nový účet.',
+    'ECDSA P-256 (ES256)':
+        'ECDSA P-256 (ES256)',
+    'ECDSA P-384 (ES384)':
+        'ECDSA P-384 (ES384)',
+    'RSA 2048 (RS256)':
+        'RSA 2048 (RS256)',
+    'RSA 3072 (RS256)':
+        'RSA 3072 (RS256)',
+    'RSA 4096 (RS256)':
+        'RSA 4096 (RS256)',
 }
 
 PATTERNS = {

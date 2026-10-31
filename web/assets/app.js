@@ -3223,7 +3223,7 @@ function certCard(d, target) {
     b.appendChild(bar);
     var facts = [['Issued by', noI18n(el('span', '', info.self_signed ? 'itself (self-signed)' : (info.issuer || '').replace(/^CN=/, '')))],
                  ['Valid until', info.not_after ? stamp(info.not_after) : '–'],
-                 ['Key', info.key || '–']];
+                 ['Key', (info.key || '–') + (prof && prof.alt && prof.alt.info && prof.alt.info.key ? ' + ' + prof.alt.info.key + ' (a second certificate beside it)' : '')]];
     if (info.san && info.san.length) facts.push(['Names', noI18n(el('span', '', info.san.join(', ')))]);
     if (prof) {
       facts.push(['Chain', prof.chain_info ? (prof.chain_info.length + ' between it and the root') : '–']);

@@ -3646,3 +3646,7 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .acme-steps-done{margin:6px 0}.acme-steps-done summary{cursor:pointer}
 .acme-steps-done .si-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
 .ac-manual{margin-bottom:14px}
+/* What the last order did: the time one narrow column, the words left beside it (upsmon 4.1.7) */
+.acme-steps-done .si-row{align-items:flex-start}
+.acme-steps-done .si-row .mono{flex:0 0 56px;white-space:nowrap;overflow-wrap:normal}
+.acme-steps-done .si-row span:last-child{flex:1;min-width:0;text-align:left;overflow-wrap:anywhere}

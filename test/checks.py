@@ -185,8 +185,15 @@ except ai.Refused:
 
 # ACME (1.0.39)
 check('every key Let\'s Encrypt takes can be asked for', set(c[0] for c in ai.SCHEMA_KEYS['acme_key'][5]['choices'])
-      == set(ai.ACME_KEYS) == {'ec', 'ec384', 'rsa2048', 'rsa3072', 'rsa4096', 'dual'})
-check('an ECDSA P-384 key made', 'BEGIN PRIVATE KEY' in ai.new_key('ec384'))
+      == set(ai.ACME_CERT_KEYS) == {'dual', 'dual-strong', 'ec', 'ec384', 'rsa2048', 'rsa3072', 'rsa4096'})
+check('the account\'s key any Let\'s Encrypt takes', set(c[0] for c in ai.SCHEMA_KEYS['acme_account_key'][5]['choices'])
+      == set(ai.KEY_WORDS))
+check('both is what is ordered unless said', ai.DEFAULTS['acme_key'] == 'dual')
+check('the second certificate goes with its own first one only',
+      ai.tls_alt({'cert': 'A', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A')}}) is not None and
+      ai.tls_alt({'cert': 'B', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A')}}) is None)
+check('the page never sees the second key', 'key' not in (ai.tls_view({'cert': 'A', 'alt': {'cert': 'x', 'key': 'k', 'for': ai.tls_alt_for('A'), 'info': {}}}) or {}).get('alt', {}))
+check("an ECDSA P-384 key made"', 'BEGIN PRIVATE KEY' in ai.new_key('ec384'))
 check('base64url without padding', ai._b64u(b'\xfb\xff') == '-_8')
 _was = dict(ai.CONFIG)
 ai.CONFIG.update(acme_dns='desec', acme_desec_domain='x.dedyn.io', acme_dns_alias='')

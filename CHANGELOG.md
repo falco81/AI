@@ -3,6 +3,22 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.40
+
+**Automatic certificates: the keys as upsmon's (4.1.6, 4.1.7)** - every key Let's Encrypt accepts
+(https://letsencrypt.org/docs/integration-guide/):
+- **The certificate's key:** RSA 2048, 3072, 4096 or ECDSA P-256, P-384 - and, the new default, **both**: two
+  certificates for the name, RSA served by default and the much smaller ECDSA one to the clients that take it
+  (*Both: RSA 2048 + ECDSA P-256 (advised)*, or *Both: RSA 4096 + ECDSA P-384*). The second order only signs:
+  the name is already proven. nginx gets two `ssl_certificate` / `ssl_certificate_key` pairs (`ai.pem` and
+  `ai-ecdsa.pem`); a certificate put in another way on Certificates and TLS drops the ECDSA one.
+- **The account's key** (new setting): ECDSA P-256 (ES256), P-384 (ES384) or RSA 2048, 3072, 4096 (RS256) -
+  never a certificate's key. A change makes a new account at the next order.
+- The keys show on the ACME card (*Keys*), on the certificate (*Key*) and beside the account; the order's
+  steps say which keys were made. *What the last order did*: the time one narrow column, the words beside it.
+- A key chosen before is kept; one never chosen is *both* from the next renewal - *Order it now* for it at once.
+- The second certificate's key never reaches the page.
+
 ## 1.0.39
 
 **Automatic certificates (ACME), as otp's** - *Settings -> Automatic certificates*, off until switched on:

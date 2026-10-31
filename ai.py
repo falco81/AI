@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.39'
+__version__ = '1.0.40'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -198,7 +198,8 @@ DEFAULTS = {
     'acme_ca_pem': '',
     'acme_node_name': '',
     'acme_days': 30,
-    'acme_key': 'ec',
+    'acme_key': 'dual',
+    'acme_account_key': 'ec',
     'acme_challenge': 'http-01',
     'acme_dns': 'manual',
     'acme_dns_server': '',
@@ -376,13 +377,17 @@ SCHEMA = [
      'Let\u2019s Encrypt\u2019s certificates last 90 days; 30 is what it advises.',
      {'min': 7, 'max': 60, 'when': ['acme', [True]]}),
     ('acme_key', 'acme', 'choice', 'The key of the certificate',
-     'What Let\u2019s Encrypt takes: RSA of 2048, 3072 or 4096 bits, ECDSA P-256 or P-384. ECDSA is smaller '
-     'and quicker; RSA for old clients. Both: an RSA certificate by default and an ECDSA one to the clients '
-     'that can take it - what Let\u2019s Encrypt advises. The account at the CA has a key of its own.',
-     {'choices': [['ec', 'ECDSA P-256'], ['ec384', 'ECDSA P-384'], ['rsa2048', 'RSA 2048'],
-                  ['rsa3072', 'RSA 3072'], ['rsa4096', 'RSA 4096'],
-                  ['dual', 'both - RSA 2048 by default, ECDSA P-256 to who can take it']],
-      'when': ['acme', [True]]}),
+     'Let\u2019s Encrypt takes RSA keys of 2048, 3072 or 4096 bits and ECDSA keys on P-256 or P-384. Both - what '
+     'Let\u2019s Encrypt advises - orders two certificates for the name: RSA served by default, the much smaller '
+     'ECDSA one to the clients that say they take it.',
+     {'choices': [['dual', 'Both: RSA 2048 + ECDSA P-256 (advised)'], ['dual-strong', 'Both: RSA 4096 + ECDSA P-384'],
+                  ['ec', 'ECDSA P-256'], ['ec384', 'ECDSA P-384'], ['rsa2048', 'RSA 2048'], ['rsa3072', 'RSA 3072'],
+                  ['rsa4096', 'RSA 4096']], 'when': ['acme', [True]]}),
+    ('acme_account_key', 'acme', 'choice', 'The key of the ACME account',
+     'The key the account with the CA signs with - never one of a certificate. RSA 2048, 3072, 4096 or ECDSA '
+     'P-256, P-384. A change makes a new account at the next order.',
+     {'choices': [['ec', 'ECDSA P-256 (ES256)'], ['ec384', 'ECDSA P-384 (ES384)'], ['rsa2048', 'RSA 2048 (RS256)'],
+                  ['rsa3072', 'RSA 3072 (RS256)'], ['rsa4096', 'RSA 4096 (RS256)']], 'when': ['acme', [True]]}),
     ('acme_challenge', 'acme', 'choice', 'How the CA checks the name',
      'HTTP-01 needs port 80 of the name reachable from the internet (or from the CA, for a CA of your own). '
      'DNS-01 needs nothing open: the CA reads a TXT record.',
@@ -6033,7 +6038,10 @@ def tls_view(prof):
     """A profile as the pages may see it: no key."""
     if not prof:
         return None
-    out = {k: v for k, v in prof.items() if k not in ('key', 'pending_key')}
+    out = {k: v for k, v in prof.items() if k not in ('key', 'pending_key', 'alt')}
+    alt = tls_alt(prof)
+    if alt:
+        out['alt'] = {'info': alt.get('info') or {}}         # its key never leaves the daemon
     out['has_key'] = bool(prof.get('key')) or KEY_FILE.is_file()
     out['pending'] = bool(prof.get('pending_key'))
     return out
@@ -6179,7 +6187,7 @@ def tls_apply(store, prof, by):
         # nginx offers it to the clients that can take it, the RSA one to the rest.
         block = re.sub(r'\n[ \t]*ssl_certificate(_key)?[ \t]+%s[ \t]*;' % '|'.join(
             re.escape(str(x)) for x in (CERT_EC_FILE, KEY_EC_FILE)), '', block)
-        ec = prof.get('ecdsa') or {}
+        ec = tls_alt(prof) or {}
         if ec.get('cert') and ec.get('key'):
             ek = unseal_secret(ec['key'], 'web:tls')
             if ek:
@@ -11785,10 +11793,32 @@ ACME_CAS = {'letsencrypt': 'https://acme-v02.api.letsencrypt.org/directory',
 ACME_WORK = {'busy': False, 'at': 0.0, 'says': '', 'target': ''}
 ACME_EVERY = float(os.environ.get('AI_ACME_EVERY') or 3600)
 ACME_RETRY = float(os.environ.get('AI_ACME_RETRY') or 6 * 3600)
-ACME_KEYS = {'ec': 'ECDSA P-256', 'ec384': 'ECDSA P-384', 'rsa2048': 'RSA 2048', 'rsa3072': 'RSA 3072',
-             'rsa4096': 'RSA 4096', 'dual': 'RSA 2048 and ECDSA P-256'}
+# The keys Let's Encrypt takes (as upsmon's 4.1.6): RSA of 2048, 3072, 4096
+# bits, ECDSA on P-256 or P-384 - for the account and for a certificate alike.
+KEY_WORDS = {'ec': 'ECDSA P-256', 'ec384': 'ECDSA P-384', 'rsa2048': 'RSA 2048',
+             'rsa3072': 'RSA 3072', 'rsa4096': 'RSA 4096'}
+# A certificate's choice: one key, or two certificates - RSA served by
+# default, ECDSA to the clients that take it (what Let's Encrypt advises).
+ACME_CERT_KEYS = {'dual': ('rsa2048', 'ec'), 'dual-strong': ('rsa4096', 'ec384'),
+                  'ec': ('ec',), 'ec384': ('ec384',), 'rsa2048': ('rsa2048',),
+                  'rsa3072': ('rsa3072',), 'rsa4096': ('rsa4096',)}
 CERT_EC_FILE = CERT_DIR / 'ai-ecdsa.pem'
 KEY_EC_FILE = CERT_DIR / 'ai-ecdsa.key'
+
+
+def tls_alt_for(cert):
+    """What ties the ECDSA certificate to its RSA one: a certificate put in
+    another way leaves the second one out."""
+    m = PEM_CERT.search(str(cert or ''))
+    return hashlib.sha256((m.group(0) if m else str(cert or '')).strip().encode()).hexdigest()[:32]
+
+
+def tls_alt(prof):
+    a = (prof or {}).get('alt') or {}
+    if a.get('cert') and a.get('key') and (prof or {}).get('cert') and \
+            a.get('for') == tls_alt_for(prof['cert']):
+        return a
+    return None
 
 
 class AcmeError(Exception):
@@ -11891,28 +11921,57 @@ class Acme(object):
                 f.write(self.key_pem)
         return p
 
+    def _alg(self):
+        """(JWS alg, digest, bytes of r and s) of the account key."""
+        kind = getattr(self, 'akind', 'ec')
+        if kind == 'ec384':
+            return 'ES384', '-sha384', 48
+        if kind.startswith('rsa'):
+            return 'RS256', '-sha256', 0
+        return 'ES256', '-sha256', 32
+
     def _jwk(self):
-        der = _openssl(['pkey', '-in', self._key_file(), '-pubout', '-outform', 'DER'],
-                       what='the account key')
-        point = der[-64:]
-        return {'crv': 'P-256', 'kty': 'EC', 'x': _b64u(point[:32]), 'y': _b64u(point[32:])}
+        if getattr(self, '_jwk_done', None):
+            return self._jwk_done
+        alg, _, size = self._alg()
+        if alg == 'RS256':
+            txt = _openssl(['pkey', '-in', self._key_file(), '-noout', '-text_pub'],
+                           what='the account key').decode()
+            m = re.search(r'(?s)Modulus:\s*\n(.*?)\n\S', txt)
+            e = re.search(r'Exponent:\s*(\d+)', txt)
+            if not m or not e:
+                raise AcmeError('the RSA account key does not read')
+            n = bytes.fromhex(re.sub(r'[^0-9a-fA-F]', '', m.group(1))).lstrip(b'\x00')
+            ev = int(e.group(1))
+            jwk = {'e': _b64u(ev.to_bytes((ev.bit_length() + 7) // 8, 'big')), 'kty': 'RSA',
+                   'n': _b64u(n)}
+        else:
+            der = _openssl(['pkey', '-in', self._key_file(), '-pubout', '-outform', 'DER'],
+                           what='the account key')
+            point = der[-2 * size:]
+            jwk = {'crv': 'P-384' if size == 48 else 'P-256', 'kty': 'EC',
+                   'x': _b64u(point[:size]), 'y': _b64u(point[size:])}
+        self._jwk_done = jwk
+        return jwk
 
     def thumbprint(self):
-        jwk = self._jwk()
+        # RFC 7638: the required members only, sorted - the JWK holds just those.
         return _b64u(hashlib.sha256(json.dumps(
-            {'crv': jwk['crv'], 'kty': jwk['kty'], 'x': jwk['x'], 'y': jwk['y']},
-            separators=(',', ':'), sort_keys=True).encode()).digest())
+            self._jwk(), separators=(',', ':'), sort_keys=True).encode()).digest())
 
     def _sign(self, data):
-        der = _openssl(['dgst', '-sha256', '-sign', self._key_file()], data,
+        alg, digest, size = self._alg()
+        der = _openssl(['dgst', digest, '-sign', self._key_file()], data,
                        what='signing for the CA')
-        # DER SEQUENCE { INTEGER r, INTEGER s } -> r || s, 32 bytes each.
+        if alg == 'RS256':
+            return der                       # PKCS#1 v1.5, as JWS wants it
+        # DER SEQUENCE { INTEGER r, INTEGER s } -> r || s, `size` bytes each.
         i = 2 if der[1] < 0x80 else 3
 
         def integer(at):
             n = der[at + 1]
             v = der[at + 2:at + 2 + n].lstrip(b'\x00')
-            return v.rjust(32, b'\x00'), at + 2 + n
+            return v.rjust(size, b'\x00'), at + 2 + n
         r, i = integer(i)
         s, _ = integer(i)
         return r + s
@@ -11922,7 +11981,7 @@ class Acme(object):
         for attempt in (1, 2, 3):
             if not self.nonce:
                 self._req(self.dir['newNonce'], method='HEAD')
-            protected = {'alg': 'ES256', 'nonce': self.nonce, 'url': url}
+            protected = {'alg': self._alg()[0], 'nonce': self.nonce, 'url': url}
             if use_jwk or not self.kid:
                 protected['jwk'] = self._jwk()
             else:
@@ -11965,7 +12024,12 @@ class Acme(object):
     def _account(self, fresh=False):
         row = {} if fresh else (self.store.meta_json('acme:account', {}) or {})
         pem = unseal_secret(row.get('key') or '', 'acme') if row.get('key') else ''
-        if row.get('directory') != self.dir_url or not pem:
+        # The kind of key asked for: another one than the account has makes a
+        # new account with a key of that kind.
+        self.akind = str(CONFIG.get('acme_account_key') or 'ec')
+        if self.akind not in KEY_WORDS:
+            self.akind = 'ec'
+        if row.get('directory') != self.dir_url or not pem or (row.get('kind') or 'ec') != self.akind:
             pem = ''
         if fresh:
             self.kid = None
@@ -11974,9 +12038,14 @@ class Acme(object):
             except OSError:
                 pass
         if not pem:
-            pem = _openssl(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'],
-                           what='the account key').decode()
+            pem = new_key(self.akind)
             row = {}
+            self.kid = None
+            self._jwk_done = None
+            try:
+                os.unlink(os.path.join(self.work, 'account.pem'))
+            except OSError:
+                pass
         self.key_pem = pem
         if row.get('kid'):
             self.kid = row['kid']
@@ -11991,7 +12060,7 @@ class Acme(object):
             raise AcmeError('the CA made no account')
         self.store.set_meta('acme:account', json.dumps({
             'key': seal_secret(pem, 'acme'), 'kid': self.kid, 'directory': self.dir_url,
-            'email': mail, 'at': time.time()}))
+            'email': mail, 'at': time.time(), 'kind': self.akind}))
 
     # -- an order --------------------------------------------------------------------
     def _poll(self, url, done, what, secs=90):
@@ -12009,8 +12078,8 @@ class Acme(object):
                 raise AcmeError('%s: the CA has not said in %d s (%s)' % (what, secs, st))
             time.sleep(2)
 
-    def order(self, names, say, kind='ec'):
-        say('ordered from the CA (%s)' % ACME_KEYS.get(kind, kind))
+    def order(self, names, say, key_kind=None):
+        say('ordered from the CA')
         got, headers = self.post_json(self.dir['newOrder'], {
             'identifiers': [{'type': 'dns', 'value': n} for n in names]})
         order_url = headers.get('Location')
@@ -12020,15 +12089,15 @@ class Acme(object):
             if a.get('status') == 'valid':
                 continue
             name = a.get('identifier', {}).get('value')
-            how = 'dns-01' if (CONFIG.get('acme_challenge') or 'http-01') == 'dns-01' else 'http-01'
-            ch = [c for c in a.get('challenges') or [] if c.get('type') == how]
+            kind = 'dns-01' if (CONFIG.get('acme_challenge') or 'http-01') == 'dns-01' else 'http-01'
+            ch = [c for c in a.get('challenges') or [] if c.get('type') == kind]
             if not ch:
-                raise AcmeError('the CA offers no %s challenge for %s' % (how.upper(), name))
+                raise AcmeError('the CA offers no %s challenge for %s' % (kind.upper(), name))
             token = ch[0]['token']
             if not re.match(r'^[A-Za-z0-9_-]{8,256}\Z', token):
                 raise AcmeError('the CA sent a token that is not one')
             auth = token + '.' + thumb
-            if how == 'dns-01':
+            if kind == 'dns-01':
                 # A TXT record in DNS: for a server the CA cannot reach -
                 # nothing has to be open to the internet.
                 txt = _b64u(hashlib.sha256(auth.encode()).digest())
@@ -12052,7 +12121,7 @@ class Acme(object):
                 self._poll(az, ('valid',), 'the CA did not take %s' % name)
             finally:
                 self.store.x('DELETE FROM meta WHERE k = ?', ('acme:chal:' + token,))
-        key, csr = make_csr(names[0], names[1:], kind)
+        key, csr = make_csr(names[0], names[1:], key_kind or 'ec')
         der = _openssl(['req', '-in', '/dev/stdin', '-outform', 'DER'], csr.encode(),
                        what='the request')
         say('the certificate is made')
@@ -12128,7 +12197,7 @@ def acme_put_back(store, target, by):
     prof = tls_prof(store) or {}
     prof.update({k: got.get(k) for k in ('cert', 'chain', 'root', 'key', 'info', 'chain_info',
                                          'root_info', 'verify', 'how')})
-    for k in ('pending_key', 'csr', 'ecdsa'):
+    for k in ('pending_key', 'csr', 'alt'):
         prof.pop(k, None)
     acme_tls_put(store, prof, by)
     store.set_meta('acme:care', json.dumps({'on': False, 'at': time.time(), 'by': by}))
@@ -12184,9 +12253,6 @@ def acme_due(store, target, name):
     info = prof.get('info') or {}
     if prof.get('how') != 'ACME' or st.get('name') != name:
         return 'not ordered yet for %s' % name
-    # The key asked for changed (an RSA one wanted, ECDSA had, both...): anew.
-    if st.get('key') and st.get('key') != (CONFIG.get('acme_key') or 'ec'):
-        return 'the key asked for is %s' % ACME_KEYS.get(CONFIG.get('acme_key') or 'ec')
     left = (float(info.get('not_after') or 0) - time.time()) / 86400
     days = float(CONFIG.get('acme_days') or 30)
     # A third of its life at most: a CA giving fewer days than acme_days (short-
@@ -12212,18 +12278,25 @@ def acme_order(store, target, name, by, say=None):
     if not re.match(r'^(?=.{1,253}\Z)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+'
                     r'[A-Za-z]{2,63}\Z', name):
         raise AcmeError('%s is not a name a CA gives a certificate for (a full DNS name)' % name)
-    want = CONFIG.get('acme_key') or 'ec'
-    st = {'name': name, 'at': time.time(), 'by': by, 'ca': acme_directory_url(), 'steps': steps, 'key': want}
+    st = {'name': name, 'at': time.time(), 'by': by, 'ca': acme_directory_url(), 'steps': steps}
     a = None
     try:
         a = Acme(store)
-        kinds = ['rsa2048', 'ec'] if want == 'dual' else [want]
-        made = []
-        for kind in kinds:
-            key, chain = a.order([name], say, kind)
-            made.append(cert_bundle(chain, key))
-        got = made[0]
+        choice = str(CONFIG.get('acme_key') or 'dual')
+        kinds = ACME_CERT_KEYS.get(choice) or ('ec',)
+        say('the key%s: %s' % ('s' if len(kinds) > 1 else '', ' + '.join(KEY_WORDS[k] for k in kinds)))
+        key, chain = a.order([name], say, kinds[0])
+        got = cert_bundle(chain, key)
         info = got['info']
+        alt = None
+        if len(kinds) > 1:
+            # The second certificate: the name is already proven, so the CA
+            # only signs - nginx offers it to the clients that take it.
+            say('a second certificate, with a %s key' % KEY_WORDS[kinds[1]])
+            k2, c2 = a.order([name], say, kinds[1])
+            g2 = cert_bundle(c2, k2)
+            alt = {'cert': g2['cert'], 'chain': g2['chain'], 'key': seal_secret(g2['key'], 'web:tls'),
+                   'info': g2['info'], 'for': tls_alt_for(got['cert'])}
         prof = tls_prof(store) or {}
         if prof.get('cert') and prof.get('how') != 'ACME':
             # The certificate it had - uploaded, from your own CA - kept to go
@@ -12237,12 +12310,10 @@ def acme_order(store, target, name, by, say=None):
                     key=seal_secret(got['key'], 'web:tls'), info=info,
                     chain_info=got['chain_info'], root_info=got['root_info'],
                     verify=got['verify'], how='ACME')
-        if len(made) > 1:
-            e = made[1]
-            prof['ecdsa'] = {'cert': e['cert'], 'chain': e['chain'], 'key': seal_secret(e['key'], 'web:tls'),
-                             'info': e['info']}
+        if alt:
+            prof['alt'] = alt
         else:
-            prof.pop('ecdsa', None)
+            prof.pop('alt', None)
         prof.pop('pending_key', None)
         prof.pop('csr', None)
         prof.setdefault('preset', 'standard')
@@ -12250,11 +12321,11 @@ def acme_order(store, target, name, by, say=None):
         say('put into nginx')
         acme_tls_put(store, prof, by)
         st.update(ok=True, not_after=info.get('not_after'), issuer=info.get('issuer'),
-                  ordered_at=time.time())
+                  ordered_at=time.time(), keys=' + '.join(KEY_WORDS[k] for k in kinds))
         st['steps'] = steps[-25:]
         store.set_meta('acme:state', json.dumps(st))
         store.add_event('settings', 'a certificate for %s (%s) came from the CA, good until %s'
-                        % (name, ACME_KEYS.get(want, want),
+                        % (name, ' + '.join(KEY_WORDS[k] for k in kinds),
                            _acme_day(info.get('not_after')) if info.get('not_after') else '?'),
                         'info', who=by)
         return st
@@ -12324,19 +12395,19 @@ def acme_view(store):
     t = acme_target()
     prof = tls_prof(store) or {}
     info = prof.get('info') or cert_now_info() or {}
-    ec = (prof.get('ecdsa') or {}).get('info') or {}
     acc = store.meta_json('acme:account', {}) or {}
     one = {'target': t, 'name': acme_name_of(store), 'state': acme_state(store),
            'how': prof.get('how') or '', 'subject': info.get('subject'),
            'issuer': info.get('issuer'), 'not_after': info.get('not_after'),
-           'key': info.get('key'), 'ecdsa': {'key': ec.get('key'), 'not_after': ec.get('not_after')} if ec else None,
+           'keys': ' + '.join(x for x in [info.get('key') or '',
+                                          ((tls_alt(prof) or {}).get('info') or {}).get('key') or ''] if x),
            'care': acme_care(store), 'wanted': True, 'before': acme_before(store),
            'named': bool(str(CONFIG.get('acme_node_name') or '').strip())}
     return {'on': bool(CONFIG.get('acme')), 'targets': [one], 'mine': [t] if acme_targets(store) else [],
             'directory': acme_directory_url(), 'account': {
-                'kid': acc.get('kid'), 'email': acc.get('email'), 'at': acc.get('at')},
-            'work': dict(ACME_WORK), 'node': t, 'key': CONFIG.get('acme_key') or 'ec',
-            'keys': ACME_KEYS,
+                'kid': acc.get('kid'), 'email': acc.get('email'), 'at': acc.get('at'),
+                'key': KEY_WORDS.get(acc.get('kind') or 'ec', '') if acc.get('kid') else ''},
+            'work': dict(ACME_WORK), 'node': t,
             'challenge': CONFIG.get('acme_challenge') or 'http-01',
             'dns_guide': acme_dns_guide(store),
             'manual': {k: v for k, v in (store.meta_json('acme:manual', {}) or {}).items()
@@ -13079,7 +13150,7 @@ def api_web_do(c):
             got['key'] = seal_secret(got['key'], 'web:tls')
             prof.update(got)
             prof['how'] = 'uploaded'
-            for k in ('pending_key', 'csr', 'ecdsa'):
+            for k in ('pending_key', 'csr', 'alt'):
                 prof.pop(k, None)
             # One put in by hand is kept: ACME does not replace it at its next
             # renewal - Automatic certificates -> Look after it gives it back.
@@ -13109,7 +13180,7 @@ def api_web_do(c):
             got['key'] = seal_secret(got['key'], 'web:tls')
             prof.update(got)
             prof['how'] = 'self-signed'
-            prof.pop('ecdsa', None)
+            prof.pop('alt', None)
             acme_care_set(st, None, False, c.name, 'a certificate was put in by hand')
             tls_apply_later(st, prof, c.name)
             return {'message': 'a self-signed certificate for %s is being put in' % b.get('cn')}
@@ -21442,7 +21513,7 @@ def cli_main(argv):
             left = (float(t['not_after']) - time.time()) / 86400 if t.get('not_after') else None
             print('  for            %s' % (t.get('name') or '(no name)'))
             print('  the CA         %s (%s)' % (v['directory'] or '-', v['challenge']))
-            print('  the key        %s' % ACME_KEYS.get(v['key'], v['key']))
+            print('  the keys       %s' % (t.get('keys') or '-'))
             print('  good for       %s' % ('%.0f days more' % left if left is not None else '-'))
             print('  issued by      %s' % (t.get('issuer') or '-'))
             print('  looked after   %s' % ('by ACME' if t.get('care') else 'by hand - ACME leaves it alone'))
@@ -21450,8 +21521,8 @@ def cli_main(argv):
                                            ('' if s_.get('ok') else ': %s' % (s_.get('said') or '')))
                                           if s_.get('at') else 'never'))
             if (v.get('account') or {}).get('kid'):
-                print('  account        %s, made %s' % (v['account'].get('email') or '(no mail)',
-                                                     _acme_day(v['account'].get('at'))))
+                print('  account        %s, made %s, %s' % (v['account'].get('email') or '(no mail)',
+                                                         _acme_day(v['account'].get('at')), v['account'].get('key')))
             return 0
         if a.acme_order:
             if not CONFIG.get('acme'):
