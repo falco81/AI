@@ -119,7 +119,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -130,7 +130,7 @@ if (isset($_GET['api'])) {
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
-        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme',
+        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'proxy' => '/api/proxy',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -557,6 +557,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
+    <button type="button" data-pane="proxy" data-icon="globe" title="An HTTP proxy for what ai asks of the web - the new versions, the SMS gateway, the system updates.">Proxy</button>
     <button type="button" data-pane="time" data-icon="clock" title="The clock: chrony, its time servers, how far off it is - codes from the app are worked out from it.">Time</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
     <div class="ctl-group">Data</div>
@@ -731,6 +732,14 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     </div>
   </div>
 
+  <div class="ctl-pane" id="pane-proxy" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Proxy</h2>
+      <p class="ctl-lede">Where the server may reach the web only through an HTTP proxy: the new versions,
+        the SMS gateway, the ACME CA and the system updates (dnf, apt) go through it. Mail and the database
+        never do.</p></div>
+    <div class="card full"><h2>Settings</h2><div id="sect-proxy"></div></div>
+    <div id="px-host"></div>
+  </div>
   <div class="ctl-pane" id="pane-acme" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Automatic certificates</h2>
       <p class="ctl-lede">The certificate of this server ordered from Let's Encrypt or another ACME CA and

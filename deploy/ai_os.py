@@ -533,6 +533,44 @@ def osup_pm():
     return ''
 
 
+# The proxy dnf and apt go through (1.0.47, as otp's): handed over by the
+# daemon before the job starts, kept here for it, readable by root only,
+# never on a command line.
+OSUP_PROXY = os.environ.get('AI_OSUP_PROXY', '/run/ai-osup-proxy.json')
+
+
+def osup_proxy_keep(url='', no=''):
+    url = str(url or '').strip()
+    if url and not re.match(r'^https?://[^\s]+\Z', url):
+        raise Refused('the proxy is not an http:// address')
+    no = ','.join(w for w in re.split(r'[\s,;]+', re.sub(r'[^A-Za-z0-9.*:/\[\],;\s_-]', '', str(no or ''))) if w)
+    if not url:
+        try:
+            os.unlink(OSUP_PROXY)
+        except OSError:
+            pass
+        return
+    fd = os.open(OSUP_PROXY + '.new', os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        os.fchmod(f.fileno(), 0o600)
+        f.write(json.dumps({'url': url, 'no': no}))
+    os.replace(OSUP_PROXY + '.new', OSUP_PROXY)
+
+
+def osup_proxy_env(env):
+    try:
+        with open(OSUP_PROXY) as f:
+            got = json.loads(f.read() or '{}')
+    except (OSError, ValueError):
+        got = {}
+    if got.get('url'):
+        for k in ('http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY'):
+            env[k] = got['url']
+        if got.get('no'):
+            env['no_proxy'] = env['NO_PROXY'] = got['no']
+    return env
+
+
 def osup_running():
     import fcntl
     try:
@@ -628,6 +666,7 @@ def osup_job(ident, kind, security=False):
 
     env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
            'DEBIAN_FRONTEND': 'noninteractive', 'HOME': '/root'}
+    osup_proxy_env(env)
 
     def stream(cmd, on_line=None, ok=(0,)):
         say('$ ' + ' '.join(cmd))

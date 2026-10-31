@@ -225,5 +225,16 @@ ai.maintenance_settle(_ms)
 check('one taken out by hand stays out', ai.maintenance_row(_ms).get('on') is True)
 ai.UPGRADE_DIR = _was_dir
 
+# the proxy (1.0.47)
+_pw = dict(ai.CONFIG)
+ai.CONFIG.update(proxy=True, proxy_url='http://px.example.cz:3128', proxy_user='', proxy_no='localhost, .example.cz, 10.0.0.0/8',
+                 proxy_os=False, proxy_sms=True)
+check('the proxy used for the web', ai.proxy_full() == 'http://px.example.cz:3128')
+check('not for the system updates when said so', ai.proxy_full('os') == '')
+check('a name under a domain of the list straight', ai.proxy_skips('a.example.cz') and not ai.proxy_skips('github.com'))
+check('an address in a net of the list straight', ai.proxy_skips('10.1.2.3') and not ai.proxy_skips('192.0.2.1'))
+ai.CONFIG.clear(); ai.CONFIG.update(_pw)
+check('no proxy unless switched on', ai.proxy_full() == '')
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

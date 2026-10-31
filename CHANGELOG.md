@@ -3,6 +3,20 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.47
+
+**Settings -> Proxy, as otp's** (off until switched on): an HTTP proxy, with a user name and a password kept
+sealed, for what ai asks of the web - the new versions, the SMS gateway, the ACME CA and its DNS APIs - and for
+dnf or apt fetching the system updates (handed to the update's job in a file only root reads, never on a
+command line). Names, domains and nets reached straight are listed (`.example.cz`, `10.0.0.0/8`); the system
+updates and the SMS gateway can each be left out of it. Mail and the database never go through it, nor does
+what the environment of the service says.
+- **Try it**: an address asked the way ai asks the web - through the proxy, or straight where none is set or
+  the address is in the list - and the way it went drawn: this server, the proxy, the address, each link green
+  or red, then every step with its time (the name looked up, the connection, the tunnel, TLS and the
+  certificate, the answer).
+- `ai --proxy-test [URL]`; the menu has it under *Server*, after Network, as otp's.
+
 ## 1.0.46
 
 **Upgrades and maintenance, as otp 1.0.197 (without high availability)**

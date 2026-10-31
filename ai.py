@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.46'
+__version__ = '1.0.47'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -190,6 +190,14 @@ DEFAULTS = {
     'mail_keep_days': 14,
     'code_lang': 'cs',
     'code_mail_fmt': 'html',
+    # going out through a proxy (1.0.47, otp's 1.0.166)
+    'proxy': False,
+    'proxy_url': '',
+    'proxy_user': '',
+    'proxy_password': '',
+    'proxy_no': 'localhost, 127.0.0.1, ::1',
+    'proxy_os': True,
+    'proxy_sms': True,
     # certificates by ACME (1.0.39, otp's 1.0.169-1.0.187)
     'acme': False,
     'acme_email': '',
@@ -241,7 +249,7 @@ DEFAULTS = {
     'rbackup_password': '',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
-SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password',
+SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password', 'proxy_password',
                'acme_dns_tsig_secret', 'acme_dns_token', 'acme_dns_key', 'acme_desec_token')
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
@@ -358,6 +366,23 @@ SCHEMA = [
      {'when': ['backup_daily', [True]]}),
     ('backup_keep', 'db', 'int', 'Copies kept', 'Of each kind; older ones are taken away.',
      {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
+    # ---- going out through a proxy (1.0.47, as otp's 1.0.166) ----
+    ('proxy', 'proxy', 'bool', 'Go out through a proxy',
+     'An HTTP proxy for what ai asks of the web: the new versions, the SMS gateway, the ACME CA, the '
+     'system updates. Mail and the database never use it.', {}),
+    ('proxy_url', 'proxy', 'str', 'The proxy', '<code>http://proxy.example.cz:3128</code>',
+     {'when': ['proxy', [True]]}),
+    ('proxy_user', 'proxy', 'str', 'User name at the proxy', 'Where the proxy asks for one. Empty: none.',
+     {'when': ['proxy', [True]]}),
+    ('proxy_password', 'proxy', 'password', 'Password at the proxy', 'Kept sealed, like the other passwords.',
+     {'when': ['proxy', [True]]}),
+    ('proxy_no', 'proxy', 'str', 'Straight, not through the proxy',
+     'Names and addresses reached without it, separated by commas: <code>.example.cz</code> is every name '
+     'under it, <code>10.0.0.0/8</code> a net.', {'when': ['proxy', [True]]}),
+    ('proxy_os', 'proxy', 'bool', 'The system updates through it too',
+     'dnf or apt fetch the updates of System \u2192 Updates through it.', {'when': ['proxy', [True]]}),
+    ('proxy_sms', 'proxy', 'bool', 'The SMS gateway through it too', 'The HTTP SMS gateway asked through it.',
+     {'when': ['proxy', [True]]}),
     # ---- certificates by ACME (1.0.39; the words, the keys and the order as upsmon 4.1.7's) ----
     ('acme', 'acme', 'bool', 'Certificates from an ACME CA',
      'The certificate of this server ordered from the CA and renewed by itself - by HTTP-01 (port 80 of the name must reach this server) or DNS-01. Off until switched on.',
@@ -2470,7 +2495,7 @@ def _tel_open(req, timeout=20.0):
                                              (' ' + _tel_hidden(body)[:300]) if body else '',
                                              timeout), 'debug')
     try:
-        r = urllib.request.urlopen(req, timeout=timeout, context=_tel_ssl()
+        r = url_open(req, timeout=timeout, context=_tel_ssl()
                                    if req.full_url.startswith('https') else None)
         if not loud:
             return r
@@ -2930,7 +2955,7 @@ def sms_send(to, text):
             if k.strip():
                 req.add_header(k.strip(), fill(v.strip(), 'raw'))
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with url_open(req, timeout=15, purpose='sms') as r:
             said = r.read(4000).decode('utf-8', 'replace')
             status = r.status
     except urllib.error.HTTPError as e:
@@ -7790,7 +7815,7 @@ def _online_get(url, limit=4 * 1024 * 1024, accept='*/*', timeout=30):
         raise Refused('only https:// addresses are asked: %s' % url)
     req = urllib.request.Request(url, headers={'User-Agent': 'ai/%s (+upgrade check)' % __version__,
                                                'Accept': accept})
-    with urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context()) as r:
+    with url_open(req, timeout=timeout, context=ssl.create_default_context()) as r:
         final = r.geturl()
         if not str(final).startswith('https://'):
             raise Refused('it was sent on to an address that is not https: %s' % final)
@@ -7897,6 +7922,231 @@ def changelog_between(version, here):
         if ver_tuple(version) < ver_tuple(v) <= ver_tuple(here):
             lost.append({'version': v, 'text': changelog_entry(text, v)})
     return {'from': 'here', 'entry': changelog_entry(text, version), 'lost': lost, 'here': here}
+
+
+# ---- going out through a proxy (1.0.47, as otp's 1.0.166) ---------------------------
+# Settings → Proxy: what ai asks of the web itself - the new versions, the SMS
+# gateway, the ACME CA and the DNS APIs - and, handed to the update's job in a
+# file only root reads (never on a command line), dnf or apt fetching the
+# system updates. Mail and the database never go through it.
+def proxy_on(purpose='web'):
+    if not CONFIG.get('proxy') or not str(CONFIG.get('proxy_url') or '').strip():
+        return False
+    if purpose == 'sms':
+        return bool(CONFIG.get('proxy_sms', 1))
+    if purpose == 'os':
+        return bool(CONFIG.get('proxy_os', 1))
+    return True
+
+
+def proxy_full(purpose='web'):
+    """The proxy's address with its user and password in it, for urllib, dnf
+    and apt - '' where none is to be used. Never logged, never shown."""
+    if not proxy_on(purpose):
+        return ''
+    url = str(CONFIG.get('proxy_url') or '').strip().rstrip('/')
+    user = str(CONFIG.get('proxy_user') or '').strip()
+    if not user:
+        return url
+    pw = unseal_secret(CONFIG.get('proxy_password') or '', 'setting:proxy_password') or ''
+    scheme, _, rest = url.partition('://')
+    return '%s://%s:%s@%s' % (scheme, urllib.parse.quote(user, safe=''),
+                              urllib.parse.quote(pw, safe=''), rest)
+
+
+def proxy_no_list():
+    return [w.strip().lower() for w in re.split(r'[\s,;]+', str(CONFIG.get('proxy_no') or ''))
+            if w.strip()]
+
+
+def proxy_skips(host):
+    """Whether this host is reached straight, as proxy_no says."""
+    host = str(host or '').strip('[]').lower()
+    if not host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    for one in proxy_no_list():
+        if one == '*':
+            return True
+        if ip is not None and ('/' in one or re.match(r'^[0-9a-f.:]+\Z', one)):
+            try:
+                if ip in ipaddress.ip_network(one.strip('[]'), strict=False):
+                    return True
+            except ValueError:
+                pass
+            continue
+        one = one.lstrip('*')
+        if one.startswith('.'):
+            if host.endswith(one) or host == one[1:]:
+                return True
+        elif host == one:
+            return True
+    return False
+
+
+class _ProxyOnly(urllib.request.ProxyHandler):
+    """ProxyHandler without its look at no_proxy in the environment: only
+    proxy_no says what goes straight."""
+    def proxy_open(self, req, proxy, type):
+        proxy_type, user, password, hostport = urllib.request._parse_proxy(proxy)
+        if user and password:
+            creds = base64.b64encode(('%s:%s' % (urllib.parse.unquote(user),
+                                                 urllib.parse.unquote(password))).encode())
+            req.add_header('Proxy-authorization', 'Basic ' + creds.decode('ascii'))
+        req.set_proxy(urllib.parse.unquote(hostport), proxy_type or req.type)
+        return None
+
+
+def url_open(req, timeout=30, context=None, purpose='web'):
+    """urllib.request.urlopen, through the proxy where one is set and the host
+    is not one reached straight; never through what the environment says."""
+    if not isinstance(req, urllib.request.Request):
+        req = urllib.request.Request(req)
+    proxy = proxy_full(purpose)
+    host = urllib.parse.urlsplit(req.full_url).hostname or ''
+    handlers = [_ProxyOnly(
+        {'http': proxy, 'https': proxy} if proxy and not proxy_skips(host) else {})]
+    if context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    return urllib.request.build_opener(*handlers).open(req, timeout=timeout)
+
+
+def proxy_try(url=''):
+    """Settings → Proxy → Try it: an address asked the way ai asks
+    the web - through the proxy where one is set and the address is not one
+    reached straight, else straight - one step at a time: the name looked up,
+    the connection, the tunnel through the proxy, TLS and the certificate,
+    the answer. Always tried; each step with how long it took."""
+    url = str(url or '').strip() or str(CONFIG.get('upgrade_url') or '') or 'https://github.com/'
+    if not re.match(r'^https?://[^\s/]+[^\s]*\Z', url):
+        raise ValueError('an address starting https:// (or http://)')
+    u = urllib.parse.urlsplit(url)
+    host = u.hostname or ''
+    tls_on = u.scheme == 'https'
+    port = u.port or (443 if tls_on else 80)
+    via, why = '', ''
+    if not proxy_on():
+        why = 'no proxy is set' if not CONFIG.get('proxy') else 'the proxy has no address'
+    elif proxy_skips(host):
+        why = '%s is in the list reached straight' % host
+    else:
+        via = proxy_full()
+    px = urllib.parse.urlsplit(via) if via else None
+    out = {'url': url, 'host': host, 'port': port, 'mode': 'proxy' if via else 'direct',
+           'why_direct': why, 'node': node_name(), 'steps': [], 'ok': False,
+           'proxy': '%s:%d' % (px.hostname, px.port or 3128) if px else '',
+           'proxy_auth': bool(px and px.username)}
+    began = time.time()
+    sock = [None]
+
+    def step(what, fn):
+        t0 = time.time()
+        try:
+            said = fn() or ''
+        except Exception as e:                          # noqa: BLE001
+            out['steps'].append({'what': what, 'ok': False, 'ms': int((time.time() - t0) * 1000),
+                                 'said': str(getattr(e, 'reason', '') or e)[:300]})
+            raise
+        out['steps'].append({'what': what, 'ok': True, 'ms': int((time.time() - t0) * 1000),
+                             'said': said})
+
+    def resolve(name, p):
+        got = socket.getaddrinfo(name, p, 0, socket.SOCK_STREAM)
+        addrs = []
+        for g in got:
+            if g[4][0] not in addrs:
+                addrs.append(g[4][0])
+        out.setdefault('addrs', {})[name] = addrs
+        return ', '.join(addrs[:4])
+
+    def connect(name, p):
+        sock[0] = socket.create_connection((name, p), timeout=10)
+        sock[0].settimeout(15)
+        peer = sock[0].getpeername()
+        return '%s port %d' % (peer[0], peer[1])
+
+    def read_head():
+        data = b''
+        while b'\r\n\r\n' not in data and len(data) < 65536:
+            chunk = sock[0].recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        line = data.split(b'\r\n', 1)[0].decode('latin-1', 'replace')
+        m = re.match(r'^HTTP/\d(?:\.\d)?\s+(\d{3})\s*(.*)$', line)
+        if not m:
+            raise ValueError('no HTTP answer: %r' % line[:80])
+        return int(m.group(1)), m.group(2).strip(), data
+
+    def auth_header():
+        if not (px and px.username):
+            return ''
+        creds = '%s:%s' % (urllib.parse.unquote(px.username), urllib.parse.unquote(px.password or ''))
+        return 'Proxy-Authorization: Basic %s\r\n' % base64.b64encode(creds.encode()).decode()
+
+    try:
+        if via:
+            step('the proxy looked up (%s)' % px.hostname, lambda: resolve(px.hostname, px.port or 3128))
+            step('connected to the proxy', lambda: connect(px.hostname, px.port or 3128))
+            if tls_on:
+                def tunnel():
+                    sock[0].sendall(('CONNECT %s:%d HTTP/1.1\r\nHost: %s:%d\r\n%s'
+                                     'User-Agent: ai/%s (+proxy check)\r\n\r\n' % (
+                                         host, port, host, port, auth_header(), __version__)).encode())
+                    code, words, _ = read_head()
+                    if code == 407:
+                        raise ValueError('the proxy asks for a user name and a password (407) - '
+                                         'they are %s' % ('wrong' if px.username else 'missing'))
+                    if code != 200:
+                        raise ValueError('the proxy said %d %s' % (code, words))
+                    return '%d %s%s' % (code, words, ' - with the user name and password'
+                                        if px.username else '')
+                step('a tunnel through the proxy to %s:%d' % (host, port), tunnel)
+        else:
+            step('%s looked up' % host, lambda: resolve(host, port))
+            step('connected to %s' % host, lambda: connect(host, port))
+        if tls_on:
+            def handshake():
+                ctx = ssl.create_default_context()
+                sock[0] = ctx.wrap_socket(sock[0], server_hostname=host)
+                c = sock[0].getpeercert() or {}
+                subj = dict(x[0] for x in c.get('subject', ()) if x)
+                iss = dict(x[0] for x in c.get('issuer', ()) if x)
+                out['tls'] = {'version': sock[0].version(), 'cipher': (sock[0].cipher() or [''])[0],
+                              'subject': subj.get('commonName', ''),
+                              'issuer': iss.get('organizationName') or iss.get('commonName', ''),
+                              'until': c.get('notAfter', '')}
+                return '%s, %s - %s, by %s' % (out['tls']['version'], out['tls']['cipher'],
+                                               out['tls']['subject'], out['tls']['issuer'])
+            step('TLS, the certificate of %s checked' % host, handshake)
+
+        def ask():
+            path = (u.path or '/') + ('?' + u.query if u.query else '')
+            target = url if (via and not tls_on) else path
+            sock[0].sendall(('HEAD %s HTTP/1.1\r\nHost: %s\r\n%sUser-Agent: ai/%s (+proxy check)'
+                             '\r\nConnection: close\r\n\r\n' % (
+                                 target, u.netloc.split('@')[-1],
+                                 auth_header() if (via and not tls_on) else '', __version__)).encode())
+            code, words, _ = read_head()
+            out['status'] = code
+            if code == 407:
+                raise ValueError('the proxy asks for a user name and a password (407)')
+            return '%d %s' % (code, words)
+        step('asked for %s' % (u.path or '/'), ask)
+        out['ok'] = True
+    except Exception:                                   # noqa: BLE001
+        pass
+    finally:
+        try:
+            if sock[0]:
+                sock[0].close()
+        except OSError:
+            pass
+    out['ms'] = int((time.time() - began) * 1000)
+    return out
 
 
 # ---- maintenance (1.0.46, as otp's) --------------------------------------------------
@@ -8402,6 +8652,41 @@ def art_state(store):
                 logo={k: logo.get(k) for k in ('type', 'sha', 'bytes', 'name', 'at', 'by')} if logo else None)
 
 
+# ---- going out through a proxy (1.0.47) --------------------------------------------------
+# Try it, as otp asks it of every node: started, then its result asked for -
+# here the one server, in a thread of its own.
+PROXY_TRIES = {}
+
+
+@route('POST', '/api/proxy', admin=True)
+def api_proxy_do(c):
+    b = c.body
+    act = str(b.get('action') or '')
+    if act == 'try':
+        url = str(b.get('url') or '').strip()
+        if url and not re.match(r'^https?://[^\s/]+[^\s]*\Z', url):
+            raise Refused('an address starting https:// (or http://)')
+        ident = secrets.token_hex(6)
+        PROXY_TRIES[ident] = {'at': time.time(), 'nodes': {}}
+        for k in [k for k, v in PROXY_TRIES.items() if time.time() - v['at'] > 600]:
+            PROXY_TRIES.pop(k, None)
+
+        def go():
+            try:
+                got = proxy_try(url)
+            except Exception as e:                      # noqa: BLE001
+                got = {'ok': False, 'error': str(e)}
+            PROXY_TRIES[ident]['nodes'][node_name()] = got
+        threading.Thread(target=go, name='ai-proxy-try', daemon=True).start()
+        c.daemon.store.add_event('settings', '%s tried the way out to %s' % (
+            c.name, url or 'where the new versions are looked for'), 'info', who=c.name)
+        return {'id': ident, 'nodes': [node_name()]}
+    if act == 'result':
+        got = PROXY_TRIES.get(str(b.get('id') or '')) or {}
+        return {'nodes': got.get('nodes') or {}}
+    raise Refused('no such thing to do')
+
+
 # ---- certificates by ACME (1.0.39) ---------------------------------------------------
 @route('GET', '/api/acme/challenge', anon=True)
 def api_acme_challenge(c):
@@ -8759,7 +9044,7 @@ def status_view(c):
         problems.append('the certificate of the pages runs out %s' % cert.get('until'))
     terms = d.terms.list(c.who, ended=False)
     return {
-        'version': __version__, 'host': host_name(), 'site': CONFIG.get('site_name') or '',
+        'version': __version__, 'host': host_name(), 'node': node_name(), 'site': CONFIG.get('site_name') or '',
         'who': user_view(c.who), 'problems': problems, 'trials': d.trials.view() if c.who['role'] == 'admin' else [],
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
@@ -11529,6 +11814,16 @@ def setting_value(k, v):
             mail_checked(v)
         except ValueError as e:
             raise Refused('%s: %s' % (s[3], e))
+    if k == 'proxy_url' and v and \
+            not re.match(r'^https?://[A-Za-z0-9.\-]+(?::\d{1,5})?/?\Z|^https?://\[[0-9a-fA-F:]+\]'
+                         r'(?::\d{1,5})?/?\Z', v):
+        raise Refused('proxy_url: http://host:port - the user name and the password go in the fields below, '
+                      'not in the address')
+    if k == 'proxy_user' and re.search(r'[\s:@/]', v):
+        raise Refused('proxy_user: no spaces, no : @ or /')
+    if k == 'proxy_no' and v and \
+            not re.match(r'^[A-Za-z0-9.*:/\[\]_-]+([\s,;]+[A-Za-z0-9.*:/\[\]_-]+)*[\s,;]*\Z', v):
+        raise Refused('proxy_no: names, .domains and addresses, separated by commas')
     if k in ('rbackup_at', 'backup_at', 'osup_check_at', 'osup_auto_at', 'power_auto_at') and not re.match(r'^([01]?\d|2[0-3]):[0-5]\d\Z', v):
         raise Refused('%s: HH:MM, as 04:15' % s[3])
     # ACME's, as otp checks them (1.0.39)
@@ -11958,7 +12253,7 @@ class Acme(object):
         if data is not None:
             req.add_header('Content-Type', 'application/jose+json')
         try:
-            with urllib.request.urlopen(req, timeout=30, context=_acme_ctx()) as r:
+            with url_open(req, timeout=30, context=_acme_ctx()) as r:
                 body, headers, status = r.read(1 << 20), r.headers, r.status
         except urllib.error.HTTPError as e:
             body, headers, status = e.read(1 << 20), e.headers, e.code
@@ -12684,7 +12979,7 @@ def _cf(method, path, body=None):
                                           'Content-Type': 'application/json',
                                           'User-Agent': 'ai/%s (acme)' % __version__})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+        with url_open(req, timeout=30, context=ssl.create_default_context()
                                     if base.startswith('https') else None) as r:
             got = json.loads(r.read(1 << 20).decode())
     except urllib.error.HTTPError as e:
@@ -12728,7 +13023,7 @@ def _dns_acmedns(txt):
                  'X-Api-Key': _acme_secret('acme_dns_key'),
                  'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+        with url_open(req, timeout=30, context=ssl.create_default_context()
                                     if url.startswith('https') else None) as r:
             r.read(4096)
     except urllib.error.HTTPError as e:
@@ -12751,7 +13046,7 @@ def _desec(method, path, body=None):
                                               'Content-Type': 'application/json',
                                               'User-Agent': 'ai/%s (acme)' % __version__})
         try:
-            with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
+            with url_open(req, timeout=30, context=ssl.create_default_context()
                                         if base.startswith('https') else None) as r:
                 raw = r.read(1 << 20)
                 return json.loads(raw.decode()) if raw.strip() else None
@@ -17220,6 +17515,9 @@ def osup_do(daemon, b, who):
     act = str(b.get('action') or '')
     if NO_SYSTEM and act in ('check', 'start', 'reboot'):
         raise Refused('this is a test machine: nothing is changed')
+    if act in ('check', 'start') and hasattr(m, 'osup_proxy_keep'):
+        # dnf and apt through Settings → Proxy (1.0.47)
+        os_call(m.osup_proxy_keep, proxy_full('os'), ','.join(proxy_no_list()))
     if act == 'check':
         os_call(m.osup_launch, secrets.token_hex(6), 'check')
         return {'message': 'looking for updates on %s' % node_name()}
@@ -21057,6 +21355,9 @@ def build_parser():
                    help='the protocols and ciphers: standard (TLS 1.2+1.3, ECDHE), intermediate (Mozilla, with DHE), '
                    'modern (TLS 1.3 only)')
     g.add_argument('--tls-dh', choices=sorted(DH_WORDS), help='the DH parameters')
+    g.add_argument('--proxy-test', metavar='URL', nargs='?', const='',
+                   help='an address asked the way ai asks the web - through Settings -> Proxy or straight - '
+                        'each step shown (empty: where new versions are looked for)')
     g.add_argument('--acme', action='store_true', help='the certificate by ACME: its name, end, who looks after '
                    'it, its last order')
     g.add_argument('--acme-order', action='store_true', help='order the certificate by ACME now, followed here')
@@ -21599,6 +21900,20 @@ def cli_main(argv):
             return 0
         if a.usage:
             return cli_usage(d, a, pal)
+        if a.proxy_test is not None:
+            got = proxy_try(a.proxy_test)
+            if a.json:
+                say_json(got)
+                return 0 if got.get('ok') else 1
+            print('%s  %s %s' % (pal.head('the way to %s' % got['url']),
+                                 'through the proxy %s' % got['proxy'] if got['mode'] == 'proxy' else 'straight',
+                                 '(%s)' % got['why_direct'] if got.get('why_direct') else ''))
+            for step in got['steps']:
+                print((pal.ok_line if step['ok'] else pal.bad_line)('%s - %d ms%s' % (
+                    step['what'], step['ms'], (': ' + step['said']) if step.get('said') else '')))
+            print((pal.ok_line if got['ok'] else pal.bad_line)(
+                'reached, HTTP %s, %d ms' % (got.get('status'), got['ms']) if got['ok'] else 'not reached'))
+            return 0 if got['ok'] else 1
         if a.maintenance:
             if a.maintenance != 'status':
                 maintenance_set(st, a.maintenance == 'on', a.why or 'by hand', 'the command line')

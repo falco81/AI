@@ -2167,6 +2167,7 @@ function showPane(name) {
   if (name === 'upgrade') loadUpgrade();
   if (name === 'signin') loadArt();
   if (name === 'acme') loadAcme(); else if (typeof acPoll === 'function') acPoll(false);
+  if (name === 'proxy' && typeof drawProxy === 'function') drawProxy();
   if (name === 'about') { loadAbout(); loadConsoleLogin(); loadSoftware(); }
   markDirtyCount();
 }

@@ -2785,6 +2785,22 @@ STRINGS = {
         'Toto je jediný server: dokud je v údržbě, nepřihlásí se nikdo kromě administrátora a nový terminál spustí jen administrátor. Běžící terminály pokračují a jeho stránky fungují dál; jeho /healthz vrací 503.',
     'Once a day (and when Look now is pressed) the address below is asked for ai-X.Y.Z.tar.gz packages; a newer one than runs here is offered on this page - put in with one click, after its signature has been checked like any package sent by hand. Nothing is put in by itself, unless the switch below says so.':
         'Jednou denně (a po stisknutí Zkontrolovat teď) se na adrese níže hledají balíčky ai-X.Y.Z.tar.gz; novější, než jaký tu běží, se nabídne na této stránce – nainstaluje se jedním kliknutím poté, co se ověří jeho podpis jako u každého ručně nahraného balíčku. Samo se nic neinstaluje, pokud to neříká přepínač níže.',
+    # ---- 1.0.47: proxy ----
+    'dnf or apt fetch the updates of System → Updates through it.':
+        'dnf nebo apt přes ni stahují aktualizace ze Systém → Aktualizace.',
+    'An HTTP proxy for what ai asks of the web: the new versions, the SMS gateway, the ACME CA, the system updates. Mail and the database never use it.':
+        'HTTP proxy pro to, co ai chce z webu: nové verze, SMS brána, ACME CA, aktualizace systému. Pošta a databáze ji nikdy nepoužívají.',
+    'Where the server may reach the web only through an HTTP proxy: the new versions, the SMS gateway, the ACME CA and the system updates (dnf, apt) go through it. Mail and the database never do.':
+        'Kde server smí na web jen přes HTTP proxy: nové verze, SMS brána, ACME CA a aktualizace systému (dnf, apt) jdou přes ni. Pošta a databáze nikdy.',
+    'An HTTP proxy for what ai asks of the web - the new versions, the SMS gateway, the system updates.':
+        'HTTP proxy pro to, co ai chce z webu – nové verze, SMS brána, aktualizace systému.',
+    'connected to the proxy': 'připojeno k proxy',
+    'the proxy': 'proxy',
+    'the proxy · with a password': 'proxy · s heslem',
+    'through the proxy': 'přes proxy',
+    'not reached': 'nedosaženo',
+    'being tried': 'zkouší se',
+    'the node': 'uzel',
 }
 
 PATTERNS = {
@@ -3010,6 +3026,13 @@ PATTERNS = {
     'One put in here by hand takes {0} out of ACME’s care: it is kept as it is, not replaced at the next renewal. Settings → Automatic certificates → Look after it gives it back.': 'Certifikát vložený zde ručně vyjme {0} z péče ACME: zůstane, jak je, při příští obnově se nenahradí. Nastavení → Automatické certifikáty → Starat se ho vrátí.',
     'http://{0}/.well-known/acme-challenge/ asked from this server, as the CA will ask it - whether it reaches ai. A firewall in front of the server may still stop the CA from outside.': 'http://{0}/.well-known/acme-challenge/ se zeptá z tohoto serveru, jak se zeptá CA – zda dojde k ai. Firewall před serverem může CA zvenku ještě zastavit.',
     'http://{0}/.well-known/acme-challenge/ asked from this node, as the CA will ask it - whether it reaches ai. A firewall in front of the servers may still stop the CA from outside.': 'http://{0}/.well-known/acme-challenge/ dotázáno z tohoto uzlu, jak se zeptá CA – zda dojde k ai. Firewall před servery může CA zvenčí přesto zastavit.',
+    'Reached straight - HTTP {0}, {1} ms': 'Dosaženo přímo – HTTP {0}, {1} ms',
+    'Reached through the proxy - HTTP {0}, {1} ms': 'Dosaženo přes proxy – HTTP {0}, {1} ms',
+    'TLS, the certificate of {0} checked': 'TLS, certifikát {0} ověřen',
+    'a tunnel through the proxy to {0}': 'tunel přes proxy na {0}',
+    'asked for {0}': 'dotaz na {0}',
+    'connected to {0}': 'připojeno k {0}',
+    'straight because {0}': 'přímo, protože {0}',
 }
 
 RICH = {
@@ -3035,4 +3058,8 @@ RICH = {
         'Vrátit <b>tento</b> soubor bez stahování a nového nahrávání: všechno v živé databázi se nahradí tím, co je v tomto souboru. Nejdřív se ukáže, co v něm je, a zeptá se vás, a než se cokoli změní, udělá se kopie toho, co se nahrazuje.',
     'Off: nothing on these pages offers going back to an older version. On: Settings → Upgrades shows <i>Going back to an older version</i> - only the versions it is safe to go back to, each with what changed in it. On the server, root can always: ai --downgrade.':
         'Vypnuto: nic na těchto stránkách nenabízí návrat na starší verzi. Zapnuto: Nastavení → Aktualizace ukáže <i>Návrat na starší verzi</i> – jen verze, na které se lze bezpečně vrátit, u každé co se v ní změnilo. Na serveru to root může vždy: ai --downgrade.',
+    'Names and addresses reached without it, separated by commas: <code>.example.cz</code> is every name under it, <code>10.0.0.0/8</code> a net.':
+        'Názvy a adresy dostupné bez ní, oddělené čárkami: <code>.example.cz</code> je každý název pod ní, <code>10.0.0.0/8</code> síť.',
+    '<code>http://proxy.example.cz:3128</code>':
+        '<code>http://proxy.example.cz:3128</code>',
 }
