@@ -3,6 +3,11 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.45
+
+- **Automatic certificates -> In your DNS**: room between the columns - the table no longer packed them against
+  each other; each copy button still right after its text.
+
 ## 1.0.44
 
 - **Automatic certificates -> In your DNS**: the table stretched across a wide screen and left wide gaps between

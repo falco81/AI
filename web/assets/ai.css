@@ -3657,10 +3657,12 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .set-item textarea.cell-text{display:block;width:100%;box-sizing:border-box;flex:1 1 auto;min-height:150px;resize:vertical;
   font-size:11.5px;line-height:1.45;white-space:pre;overflow:auto;padding:8px 10px;tab-size:4}
 /* In your DNS: the table as wide as what is in it - each text as wide as it
-   needs and its copy button right after it, one under the other (1.0.44) */
+   needs and its copy button right after it, one under the other (1.0.44);
+   room between the columns (1.0.45) */
 .acme-dns table{width:auto;max-width:100%}
-.acme-dns td.dns-txt{white-space:nowrap;padding-right:4px}
+.acme-dns th,.acme-dns td{padding-left:14px;padding-right:14px}
+.acme-dns td.dns-txt{white-space:nowrap;padding-right:8px}
 .acme-dns td.dns-txt > div{white-space:normal}
-.acme-dns td.dns-btn{padding-left:0;padding-right:28px}
+.acme-dns td.dns-btn{padding-left:0;padding-right:40px}
 .acme-dns th:empty{padding:0}
-.acme-dns td:first-child,.acme-dns th:first-child{padding-right:24px}
+.acme-dns td:first-child,.acme-dns th:first-child{padding-left:10px;padding-right:40px}
