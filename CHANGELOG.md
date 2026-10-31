@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.32
+
+- **PHP on the 8.2 stream, at 8.2.35**: on AlmaLinux / Rocky / RHEL 8 and 9 (PHP as AppStream modules) the
+  install and every upgrade - from the pages as well - put PHP on `php:8.2`, whose 8.2.35 has the php2shell
+  fix (CVE-2026-109618, CVE-2026-109619): an older PHP (8.0, 8.1) is moved there, and so is a newer one that
+  does not have the fix yet (an 8.3 short of 8.3.36); an 8.2 is brought to its newest build. The stream is
+  reset and enabled, every PHP package moved with `dnf distro-sync`, php-fpm restarted, and the version
+  reached is said. A newer PHP that has the fix is kept; `install.sh --upgrade --php-stream 8.2` moves even
+  that, `--php-stream 8.3` puts another stream instead, `--no-php-update` leaves PHP alone. ai's PHP pool and
+  the guard against php2shell stay as they were.
+
 ## 1.0.31
 
 - **Downloading the certificate, in the form wanted**: *Download* under Settings -> Certificates and TLS opens a

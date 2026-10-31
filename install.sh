@@ -42,7 +42,9 @@ DO_UPGRADE=""
 DO_UNINSTALL=""
 REWRITE_NGINX=""
 PHP_UPDATE="yes"
-PHP_STREAM="8.3"
+PHP_STREAM="8.2"
+PHP_STREAM_GIVEN=""
+PHP_MOVED=""
 WITH_CLAUDE=""
 WITH_DB=""
 NO_DB_RESTART=""
@@ -151,7 +153,9 @@ ai $AI_VERSION - Claude Code on this server, in a web browser.
 --claude               install Claude Code for root as well (Anthropic's installer)
 --no-claude            do not offer it
 --port N               the port of the daemon's API on 127.0.0.1 (default 9871)
---php-stream X.Y       the AppStream PHP stream for a machine with no PHP yet (8.3)
+--php-stream X.Y       the AppStream PHP stream PHP is put on (8.2: 8.2.35 has the php2shell fix);
+                       an older PHP is moved to it on --upgrade too, and a newer one
+                       without the fix; a newer fixed one is kept unless this is given
 --no-php-update        leave PHP as it is (it is still checked)
 --upgrade              replace the program and the pages, restart; keep the rest
 --rewrite-nginx        write the nginx file afresh (otherwise one there is kept)
@@ -176,7 +180,7 @@ while [[ $# -gt 0 ]]; do
         --claude) WITH_CLAUDE="yes"; shift ;;
         --no-claude) WITH_CLAUDE="no"; shift ;;
         --port) API_PORT="${2:?}"; shift 2 ;;
-        --php-stream) PHP_STREAM="${2:?}"; shift 2 ;;
+        --php-stream) PHP_STREAM="${2:?}"; PHP_STREAM_GIVEN="yes"; shift 2 ;;
         --no-php-update) PHP_UPDATE=""; shift ;;
         --upgrade) DO_UPGRADE="yes"; shift ;;
         --rewrite-nginx) REWRITE_NGINX="yes"; shift ;;
@@ -303,6 +307,56 @@ php_says() {
     if php_fixed; then good "PHP $v has the php2shell fix (CVE-2026-109618, CVE-2026-109619)"
     else warn "PHP $v does NOT have the php2shell fix - ai's page is guarded meanwhile (no multipart, no body parsing)"; fi
 }
+# The PHP stream (1.0.32): on a dnf system with PHP as AppStream modules
+# (EL 8, 9) PHP is put on php:$PHP_STREAM - 8.2 unless told, whose 8.2.35 has
+# the php2shell fix - on an install and on every --upgrade: a PHP older than
+# the stream is moved to it (reset, enable, distro-sync), and one on it is
+# brought to its newest build; one newer is kept only while it has the fix,
+# and unless --php-stream asks for exactly that stream. ai's pool and the guard stay where they are: the files
+# are the same on every stream.
+php_minor() { local v; v="$(php_fpm_version)"; [[ -n "$v" ]] && echo "$v" | cut -d. -f1,2; }
+php_stream_fixed() { case "$PHP_STREAM" in 8.2) echo 8.2.35 ;; 8.3) echo 8.3.36 ;; 8.4) echo 8.4.27 ;; 8.5) echo 8.5.12 ;; *) echo "$PHP_STREAM" ;; esac; }
+php_has_stream() {
+    local streams
+    streams="$(dnf -q module list php 2>/dev/null || true)"
+    grep -qE "^php +${PHP_STREAM//./\\.}( |$)" <<< "$streams"
+}
+php_stream_move() {
+    [[ "$PKG" == "dnf" && -n "$PHP_UPDATE" ]] || return 0
+    local cur now
+    cur="$(php_minor || true)"
+    [[ -n "$cur" ]] || return 0
+    if ! php_has_stream; then
+        note "there is no stream php:$PHP_STREAM here (EL 10 has one PHP): PHP $cur is kept"
+        return 0
+    fi
+    now="$(dnf -q module list --enabled php 2>/dev/null || true)"
+    now="$(awk '/^php /{print $2; exit}' <<< "$now")"
+    if [[ "$cur" == "$PHP_STREAM" ]]; then
+        if [[ -n "$now" && "$now" != "$PHP_STREAM" ]]; then
+            run dnf module reset -y php || true
+            run dnf module enable -y "php:$PHP_STREAM" || true
+        fi
+        if ! ver_ge "$(php_fpm_version)" "$(php_stream_fixed)"; then
+            say "PHP $(php_fpm_version) on php:$PHP_STREAM: brought up to its newest build"
+            run dnf upgrade -y --refresh 'php*' || warn "dnf could not update PHP"
+            PHP_MOVED=yes
+        fi
+        return 0
+    fi
+    # A newer PHP stays only while it has the fix: one without it (an 8.3
+    # whose stream has no 8.3.36 here) goes to php:$PHP_STREAM as well.
+    if ver_ge "$cur" "$PHP_STREAM" && [[ -z "$PHP_STREAM_GIVEN" ]] && php_fixed; then
+        note "PHP $(php_fpm_version) is newer than php:$PHP_STREAM and fixed: kept (--php-stream $PHP_STREAM moves it there)"
+        return 0
+    fi
+    say "PHP $cur is moved to the stream php:$PHP_STREAM"
+    run dnf module reset -y php || true
+    run dnf module enable -y "php:$PHP_STREAM" || { warn "php:$PHP_STREAM could not be enabled - PHP $cur is kept"; return 0; }
+    # Every PHP package there is goes over to the stream, its extensions too.
+    run dnf distro-sync -y --refresh 'php*' || warn "dnf could not move every PHP package to php:$PHP_STREAM"
+    PHP_MOVED=yes
+}
 php_guard() {
     local dir
     for dir in /etc/php.d /etc/php/*/fpm/conf.d /etc/php/*/cli/conf.d; do
@@ -344,9 +398,23 @@ install_packages() {
                 run dnf module enable -y "php:$PHP_STREAM"
             fi
             run dnf install -y php-fpm php-cli php-common
-        elif [[ -n "$PHP_UPDATE" ]] && ! php_fixed; then
-            say "PHP is installed but not fixed: updating the packages that are there"
-            run dnf upgrade -y --refresh 'php*' || true
+        else
+            php_stream_move
+            if [[ -n "$PHP_UPDATE" ]] && ! php_fixed; then
+                say "PHP is installed but not fixed: updating the packages that are there"
+                run dnf upgrade -y --refresh 'php*' || true
+                PHP_MOVED=yes
+            fi
+        fi
+        if [[ -n "$PHP_MOVED" && -z "$DRY_RUN" ]]; then
+            for unit in $(php_fpm_units); do run systemctl try-restart "$unit" || true; done
+            local pv
+            pv="$(php_fpm_version)"
+            if [[ "$(php_minor)" == "$PHP_STREAM" ]] && ver_ge "$pv" "$(php_stream_fixed)"; then
+                good "PHP $pv on php:$PHP_STREAM"
+            elif [[ "$(php_minor)" == "$PHP_STREAM" ]]; then
+                warn "PHP $pv on php:$PHP_STREAM - not $(php_stream_fixed) yet: the repositories have no newer build"
+            fi
         fi
     elif [[ "$PKG" == "apt" ]]; then
         want+=(openssh-client smbclient ncurses-term procps iproute2 php-fpm php-cli)
