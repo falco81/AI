@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.35'
+__version__ = '1.0.36'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -15480,6 +15480,17 @@ def osup_state():
         return {}
 
 
+def boot_time():
+    """When this machine started, from the kernel (/proc/stat btime)."""
+    for line in (read_text('/proc/stat') or '').splitlines():
+        if line.startswith('btime '):
+            try:
+                return float(line.split()[1])
+            except ValueError:
+                break
+    return 0.0
+
+
 def osup_view(daemon):
     store = daemon.store
     plan = store.meta_json('osup:plan', {}) or {}
@@ -15500,14 +15511,20 @@ def osup_view(daemon):
         row = {'state': {'running': 'updating'}.get(st.get('state'), st.get('state')), 'plan': plan.get('id'),
                'pct': st.get('pct'), 'phase': st.get('phase'), 'said': st.get('said') or '',
                'at': st.get('at'), 'lines': st.get('lines') or [], 'began': st.get('began'),
-               'reboot': bool(st.get('reboot')), 'rebooted': row.get('rebooted', False)}
+               'reboot': bool(st.get('reboot')), 'rebooted': row.get('rebooted', False),
+               'looked_after': row.get('looked_after', False)}
         if row['state'] in ('done', 'failed') and plan.get('state') == 'running':
             plan['state'] = row['state']
             store.set_meta_json('osup:plan', plan)
             store.add_event('system', 'the update of the system ended: %s' % row['state'],
                             'info' if row['state'] == 'done' else 'bad', who=plan.get('by'))
             if row['state'] == 'done':
-                store.set_meta_json('osup:check', dict(check, count=0, packages=[], reboot_now=row['reboot']))
+                # Nothing waits any more: the security ones and the restart
+                # "after the update" went with it (1.0.36); a restart the
+                # update left is said by reboot_now, from when it was known.
+                store.set_meta_json('osup:check', dict(check, count=0, packages=[], security=0, reboot_after=False,
+                                                       reboot_why=[], reboot_now=row['reboot'],
+                                                       reboot_at=time.time()))
                 check = store.meta_json('osup:check', {})
         store.set_meta_json('osup:row', row)
     if plan.get('state') == 'running' and time.time() - float(row.get('at') or plan.get('at') or 0) > 3600:
@@ -15524,6 +15541,16 @@ def osup_view(daemon):
                 check = part
             else:
                 row = part
+    # A restart wanted before the machine last started is done (1.0.36): it
+    # was said for ever after the restart the update made by itself.
+    boot = boot_time() if not NO_SYSTEM else 0.0
+    if boot and check.get('reboot_now') and \
+            float(check.get('reboot_at') or check.get('checked') or 0) < boot:
+        check = dict(check, reboot_now=False)
+        store.set_meta_json('osup:check', check)
+    if boot and row.get('reboot') and not row.get('rebooted') and float(row.get('at') or 0) < boot:
+        row = dict(row, rebooted=True)
+        store.set_meta_json('osup:row', row)
     seen = store.get_meta('osup:seen')
     hidden = bool(plan) and seen == plan.get('id') and plan.get('state') != 'running'
     started = daemon.started
@@ -15531,6 +15558,7 @@ def osup_view(daemon):
         bool(check.get('reboot_now') and check.get('state') == 'done')
     pw = power_view(daemon)
     return {'plan': {} if hidden else plan, 'now': time.time(), 'cluster': False, 'helper': True,
+            'reboot_choice': plan.get('reboot') or 'ask',
             'power': pw['plan'] if pw['busy'] else {},
             'nodes': [node_of(daemon, row=row if row.get('plan') == plan.get('id') else {}, check=check,
                               reboot=reboot, started=started)]}
@@ -15596,8 +15624,25 @@ def osup_do(daemon, b, who):
 
 def osup_tick(daemon):
     """A restart the update asked for by itself (Restart by itself when needed)."""
+    if NO_SYSTEM:
+        return
+    # What the update's job wrote is read in here too (1.0.36), not only when
+    # the pane is looked at: the restart came only while somebody had it open.
+    osup_view(daemon)
     plan = daemon.store.meta_json('osup:plan', {}) or {}
     row = daemon.store.meta_json('osup:row', {}) or {}
+    # Back after the restart the update wanted: looked again once, so what
+    # waits and what it needs are said as they are now, not as before.
+    if row.get('reboot') and row.get('rebooted') and row.get('plan') == plan.get('id') and \
+            not row.get('looked_after') and float(row.get('at') or 0) < boot_time() and \
+            time.time() - daemon.started > 60:
+        row['looked_after'] = True
+        daemon.store.set_meta_json('osup:row', row)
+        try:
+            os_call(aios().osup_launch, secrets.token_hex(6), 'check')
+        except Refused as e:
+            log_sparing('osup', 'the look for updates after the restart: %s' % e, 'warn')
+        return
     if plan.get('reboot') == 'auto' and plan.get('state') == 'done' and row.get('reboot') and \
             not row.get('rebooted') and row.get('plan') == plan.get('id'):
         row['rebooted'] = True

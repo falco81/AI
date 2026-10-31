@@ -1582,7 +1582,7 @@ function skDrop(row) {
    What each node has waiting, the update one node at a time - out of service,
    dnf or apt, back in service - with its output as it comes, and the restart
    it needs offered at the end. */
-var OU = {d: null, poll: null, node: '', hide: false, reboot: 'ask', asked: 0};
+var OU = {d: null, poll: null, node: '', hide: false, reboot: '', asked: 0};
 try { OU.hide = localStorage.getItem('ai-ou-hide') === '1'; } catch (e) { /* only a convenience */ }
 var OU_STATE = {waiting: ['waits its turn', 'dim'], draining: ['out of service', 'warn'],
                 updating: ['updating', 'info'], rebooting: ['restarting', 'warn'],
@@ -1703,7 +1703,10 @@ function drawOsup(live) {
         : 'dnf (or apt) updates every package. The terminals go on running meanwhile; a restart it needs is offered at the end.'));
       var segb = el('div', 'seg');
       [['ask', 'Ask me when a restart is needed'], ['auto', 'Restart by itself when needed' + (d.cluster ? ', one at a time' : '')]].forEach(function (o) {
-        var b = el('button', OU.reboot === o[0] ? 'on' : '', o[1]);
+        /* The choice of the last update until another is clicked (1.0.36):
+           a page loaded again showed "Ask me" whatever was chosen. */
+        var chosen = OU.reboot || (d.reboot_choice === 'auto' ? 'auto' : 'ask');
+        var b = el('button', chosen === o[0] ? 'on' : '', o[1]);
         b.type = 'button';
         b.onclick = function () { OU.reboot = o[0]; drawOsup(); };
         segb.appendChild(b);
@@ -1720,9 +1723,9 @@ function drawOsup(live) {
       start.disabled = !d.helper || nodes.some(function (n) { return !n.alive; }) || !!(d.power && d.power.id);
       start.onclick = function () {
         confirmThen(d.cluster ? 'Update the nodes' : 'Update this server', 'Every package of the system is updated' + (d.cluster ? ', on ' + htmlText(nodes.map(function (n) { return n.name; }).join(' and then ')) + ', each out of service while it is.' : '.')
-          + (OU.reboot === 'auto' ? '<br><br>A node that needs it is <b>restarted by itself</b>.' : '<br><br>A restart it needs is offered when it is done.'),
+          + ((OU.reboot || d.reboot_choice) === 'auto' ? '<br><br>A node that needs it is <b>restarted by itself</b>.' : '<br><br>A restart it needs is offered when it is done.'),
           'Update', function () {
-            api('osup', {action: 'start', reboot: OU.reboot}).then(function (x) { toast(x.message, 'good'); OU.node = ''; ouAsked(); loadOsup(); }).catch(oops);
+            api('osup', {action: 'start', reboot: OU.reboot || (d.reboot_choice === 'auto' ? 'auto' : 'ask')}).then(function (x) { toast(x.message, 'good'); OU.node = ''; ouAsked(); loadOsup(); }).catch(oops);
           }, false);
       };
       var lookAll = cmdButton(d.cluster ? 'Look on every node' : 'Look again', 'search', '');

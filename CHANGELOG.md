@@ -3,6 +3,18 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.36
+
+- **System updates after a restart made by itself**: the server was restarted as asked (*Restart by itself when
+  needed*), but the pane went on saying *ai needs a restart* - what the update had wanted was never let go.
+  A restart wanted before the machine last started is taken as done now, and once it is back ai looks for
+  updates again by itself, so the pane says how it stands after the restart.
+- The update's end cleared only the count: *of them security* and *restart after the update* stayed as they
+  were before it. They go with the rest now.
+- The restart after the update came only while somebody had the pane open (what the update's job wrote was
+  read in only then); the daemon reads it every 15 seconds now.
+- *After the update* shows the choice of the last update when the page is loaded again, not always *Ask me*.
+
 ## 1.0.35
 
 - **System updates: the restart on a line of its own**: *restart after the update* (or *restart needed*) stood
