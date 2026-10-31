@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.49
+
+- **Settings -> Proxy: each use switched on by itself**, all off at first (the proxy itself too) - with none on,
+  nothing ai does goes through it. The uses: *The updates of ai*, *The system updates* (dnf, apt), *ACME - the
+  CA*, *ACME - the DNS APIs* (Cloudflare, acme-dns, deSEC), *The SMS gateway (HTTP)*, *The SMS router
+  (Teltonika)*, *The terminals and Claude Code* (HTTPS_PROXY, HTTP_PROXY, NO_PROXY in the new claude and shell
+  terminals) and *Installing and updating Claude Code*. A use that is off goes straight, never through what the
+  environment of the service says. Mail (SMTP), the backups (FTP, SFTP, SMB), NTP and the database are not HTTP
+  and always go straight. *Try it* asks through the proxy as saved, whichever uses are on.
+
 ## 1.0.48
 
 - **The proxy is for the updates only** (Settings -> Proxy): the new versions of ai (looked for and fetched) and

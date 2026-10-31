@@ -2810,6 +2810,35 @@ STRINGS = {
         'HTTP proxy jen pro aktualizace – nové verze ai a aktualizace systému.',
     'An address asked from this node the way ai asks for its updates: through the proxy as it is saved, or straight where none is set or the address is in the list. Each step is shown. Empty: where the new versions are looked for.':
         'Adresa dotázaná z tohoto uzlu tak, jak ai hledá své aktualizace: přes proxy, jak je uložená, nebo přímo, když žádná není nebo je adresa v seznamu. Ukáže se každý krok. Prázdné: kde se hledají nové verze.',
+    # ---- 1.0.49: the proxy for each use by itself ----
+    'An HTTP proxy, used only for what is switched on below - each use by itself, all off at first: with none switched on nothing goes through it. Mail (SMTP), the backups (FTP, SFTP, SMB), the time (NTP) and the database are not HTTP and always go straight.':
+        'HTTP proxy, použitá jen pro to, co je níže zapnuté – každé použití zvlášť, na začátku vše vypnuté: když není zapnuté nic, nejde přes ni nic. Pošta (SMTP), zálohy (FTP, SFTP, SMB), čas (NTP) a databáze nejsou HTTP a jdou vždy přímo.',
+    'Where the server may go out through an HTTP proxy: each use is switched on by itself - the updates of ai and of the system, ACME, the SMS gateways, the terminals and Claude Code. All are off at first; with none on, nothing goes through it.':
+        'Kudy smí server ven přes HTTP proxy: každé použití se zapíná zvlášť – aktualizace ai a systému, ACME, SMS brány, terminály a Claude Code. Na začátku je vše vypnuté; když není zapnuté nic, nejde přes ni nic.',
+    'An HTTP proxy - each use switched on by itself, all off at first.':
+        'HTTP proxy – každé použití zapínané zvlášť, na začátku vše vypnuté.',
+    'An address asked from this node through the proxy as it is saved (whichever uses are switched on), or straight where none is set or the address is in the list. Each step is shown. Empty: where the new versions are looked for.':
+        'Adresa dotázaná z tohoto uzlu přes proxy, jak je uložená (ať jsou zapnutá kterákoli použití), nebo přímo, když žádná není nebo je adresa v seznamu. Ukáže se každý krok. Prázdné: kde se hledají nové verze.',
+    'The updates of ai': 'Aktualizace ai',
+    'Looking for a new version of ai and fetching it (Upgrades and maintenance).':
+        'Hledání nové verze ai a její stažení (Aktualizace a údržba).',
+    'The system updates': 'Aktualizace systému',
+    'ACME - the CA': 'ACME – certifikační autorita',
+    'Ordering and renewing the certificate: the CA\u2019s API (Let\u2019s Encrypt or another). The CA still checks HTTP-01 on port 80 of the name itself, not through it.':
+        'Objednání a obnova certifikátu: API autority (Let\u2019s Encrypt nebo jiné). Ověření HTTP-01 na portu 80 dělá autorita sama, ne přes proxy.',
+    'ACME - the DNS APIs': 'ACME – DNS API',
+    'DNS-01 written by API: Cloudflare, acme-dns, deSEC.': 'DNS-01 zapisované přes API: Cloudflare, acme-dns, deSEC.',
+    'The SMS gateway (HTTP)': 'SMS brána (HTTP)',
+    'Text messages sent by the HTTP gateway.': 'SMS odesílané přes HTTP bránu.',
+    'The SMS router (Teltonika)': 'SMS router (Teltonika)',
+    'Text messages sent by the Teltonika router - mostly in the LAN, so seldom wanted.':
+        'SMS odesílané přes router Teltonika – většinou v LAN, takže zřídka potřeba.',
+    'The terminals and Claude Code': 'Terminály a Claude Code',
+    'HTTPS_PROXY, HTTP_PROXY and NO_PROXY set in the new terminals (claude and shell): Claude Code reaching Anthropic, and whatever runs in them - git, curl, npm, pip. Each user sees the proxy\u2019s address there, with its user and password if one is set. Terminals already running keep what they had.':
+        'HTTPS_PROXY, HTTP_PROXY a NO_PROXY nastavené v nových terminálech (claude i shell): Claude Code při spojení s Anthropic a vše, co v nich běží – git, curl, npm, pip. Každý uživatel tam vidí adresu proxy, včetně jména a hesla, je-li nastavené. Terminály, které už běží, si ponechají, co měly.',
+    'Installing and updating Claude Code': 'Instalace a aktualizace Claude Code',
+    'The same variables for the install, npm install, update and doctor of Settings \u2192 Claude Code.':
+        'Tytéž proměnné pro instalaci, npm instalaci, aktualizaci a doctor v Nastavení \u2192 Claude Code.',
 }
 
 PATTERNS = {

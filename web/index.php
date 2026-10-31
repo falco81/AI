@@ -557,7 +557,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
-    <button type="button" data-pane="proxy" data-icon="globe" title="An HTTP proxy for the updates only - the new versions of ai and the system updates.">Proxy</button>
+    <button type="button" data-pane="proxy" data-icon="globe" title="An HTTP proxy - each use switched on by itself, all off at first.">Proxy</button>
     <button type="button" data-pane="time" data-icon="clock" title="The clock: chrony, its time servers, how far off it is - codes from the app are worked out from it.">Time</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
     <div class="ctl-group">Data</div>
@@ -734,9 +734,9 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
   <div class="ctl-pane" id="pane-proxy" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Proxy</h2>
-      <p class="ctl-lede">Where the server may fetch its updates only through an HTTP proxy: the new versions
-        of ai and the system updates (dnf, apt) go through it. Nothing else does - the terminals and Claude Code,
-        mail, the SMS gateway, ACME, the backups and the database work as they do without it.</p></div>
+      <p class="ctl-lede">Where the server may go out through an HTTP proxy: each use is switched on by itself
+        - the updates of ai and of the system, ACME, the SMS gateways, the terminals and Claude Code. All are off at
+        first; with none on, nothing goes through it.</p></div>
     <div class="card full"><h2>Settings</h2><div id="sect-proxy"></div></div>
     <div id="px-host"></div>
   </div>

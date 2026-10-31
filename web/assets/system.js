@@ -2202,7 +2202,7 @@ function drawProxy() {
   clear(host);
   var c = el('div', 'card full');
   c.appendChild(el('h2', '', 'Try it'));
-  c.appendChild(el('p', 'note', 'An address asked from this node the way ai asks for its updates: through the proxy as it is saved, or straight where none is set or the address is in the list. Each step is shown. Empty: where the new versions are looked for.'));
+  c.appendChild(el('p', 'note', 'An address asked from this node through the proxy as it is saved (whichever uses are switched on), or straight where none is set or the address is in the list. Each step is shown. Empty: where the new versions are looked for.'));
   var row = el('div', 'btnrow');
   var url = el('input');
   url.type = 'text';

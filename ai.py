@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.48'
+__version__ = '1.0.49'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -196,7 +196,15 @@ DEFAULTS = {
     'proxy_user': '',
     'proxy_password': '',
     'proxy_no': 'localhost, 127.0.0.1, ::1',
-    'proxy_os': True,
+    # each use switched on by itself (1.0.49) - all off: nothing goes through it
+    'proxy_upgrade': False,
+    'proxy_os': False,
+    'proxy_acme': False,
+    'proxy_acme_dns': False,
+    'proxy_sms': False,
+    'proxy_sms_tel': False,
+    'proxy_terms': False,
+    'proxy_claude_install': False,
     # certificates by ACME (1.0.39, otp's 1.0.169-1.0.187)
     'acme': False,
     'acme_email': '',
@@ -367,9 +375,9 @@ SCHEMA = [
      {'min': 1, 'max': 365, 'when': ['backup_daily', [True]]}),
     # ---- going out through a proxy (1.0.47, as otp's 1.0.166) ----
     ('proxy', 'proxy', 'bool', 'Go out through a proxy',
-     'An HTTP proxy for the updates only: the new versions of ai and the system updates (dnf, apt). '
-     'Nothing else ai does goes through it - the terminals, Claude Code, mail, the SMS gateway, ACME, '
-     'the backups and the database work as they do without it.', {}),
+     'An HTTP proxy, used only for what is switched on below - each use by itself, all off at first: '
+     'with none switched on nothing goes through it. Mail (SMTP), the backups (FTP, SFTP, SMB), the time '
+     '(NTP) and the database are not HTTP and always go straight.', {}),
     ('proxy_url', 'proxy', 'str', 'The proxy', '<code>http://proxy.example.cz:3128</code>',
      {'when': ['proxy', [True]]}),
     ('proxy_user', 'proxy', 'str', 'User name at the proxy', 'Where the proxy asks for one. Empty: none.',
@@ -379,8 +387,27 @@ SCHEMA = [
     ('proxy_no', 'proxy', 'str', 'Straight, not through the proxy',
      'Names and addresses reached without it, separated by commas: <code>.example.cz</code> is every name '
      'under it, <code>10.0.0.0/8</code> a net.', {'when': ['proxy', [True]]}),
-    ('proxy_os', 'proxy', 'bool', 'The system updates through it too',
+    ('proxy_upgrade', 'proxy', 'bool', 'The updates of ai',
+     'Looking for a new version of ai and fetching it (Upgrades and maintenance).', {'when': ['proxy', [True]]}),
+    ('proxy_os', 'proxy', 'bool', 'The system updates',
      'dnf or apt fetch the updates of System \u2192 Updates through it.', {'when': ['proxy', [True]]}),
+    ('proxy_acme', 'proxy', 'bool', 'ACME - the CA',
+     'Ordering and renewing the certificate: the CA\u2019s API (Let\u2019s Encrypt or another). The CA '
+     'still checks HTTP-01 on port 80 of the name itself, not through it.', {'when': ['proxy', [True]]}),
+    ('proxy_acme_dns', 'proxy', 'bool', 'ACME - the DNS APIs',
+     'DNS-01 written by API: Cloudflare, acme-dns, deSEC.', {'when': ['proxy', [True]]}),
+    ('proxy_sms', 'proxy', 'bool', 'The SMS gateway (HTTP)',
+     'Text messages sent by the HTTP gateway.', {'when': ['proxy', [True]]}),
+    ('proxy_sms_tel', 'proxy', 'bool', 'The SMS router (Teltonika)',
+     'Text messages sent by the Teltonika router - mostly in the LAN, so seldom wanted.', {'when': ['proxy', [True]]}),
+    ('proxy_terms', 'proxy', 'bool', 'The terminals and Claude Code',
+     'HTTPS_PROXY, HTTP_PROXY and NO_PROXY set in the new terminals (claude and shell): Claude Code '
+     'reaching Anthropic, and whatever runs in them - git, curl, npm, pip. Each user sees the proxy\u2019s '
+     'address there, with its user and password if one is set. Terminals already running keep what they had.',
+     {'when': ['proxy', [True]]}),
+    ('proxy_claude_install', 'proxy', 'bool', 'Installing and updating Claude Code',
+     'The same variables for the install, npm install, update and doctor of Settings \u2192 Claude Code.',
+     {'when': ['proxy', [True]]}),
     # ---- certificates by ACME (1.0.39; the words, the keys and the order as upsmon 4.1.7's) ----
     ('acme', 'acme', 'bool', 'Certificates from an ACME CA',
      'The certificate of this server ordered from the CA and renewed by itself - by HTTP-01 (port 80 of the name must reach this server) or DNS-01. Off until switched on.',
@@ -2493,8 +2520,8 @@ def _tel_open(req, timeout=20.0):
                                              (' ' + _tel_hidden(body)[:300]) if body else '',
                                              timeout), 'debug')
     try:
-        r = urllib.request.urlopen(req, timeout=timeout, context=_tel_ssl()
-                                   if req.full_url.startswith('https') else None)
+        r = url_open(req, timeout=timeout, context=_tel_ssl()
+                     if req.full_url.startswith('https') else None, purpose='sms_tel')
         if not loud:
             return r
         with r:
@@ -2953,7 +2980,7 @@ def sms_send(to, text):
             if k.strip():
                 req.add_header(k.strip(), fill(v.strip(), 'raw'))
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with url_open(req, timeout=15, purpose='sms') as r:
             said = r.read(4000).decode('utf-8', 'replace')
             status = r.status
     except urllib.error.HTTPError as e:
@@ -4392,7 +4419,8 @@ class Terms:
                 '    curl -fsSL https://claude.ai/install.sh | bash\\n\\n" "$(id -un)"; '
                 'exec "${SHELL:-/bin/bash}" -l; fi; exec %s %s' % (exe, cmd.replace('"', ''), exe, q))
 
-    def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None, tid=None):
+    def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None, tid=None,
+            proxy_use=''):
         if (u or {}).get('role') != 'admin' and maintenance_now(self.store).get('on'):
             raise Refused('this server is in maintenance - no new terminal now (the ones running go on)', 503)
         """A terminal started - a new one, or (`tid`) an ended one of the list
@@ -4442,6 +4470,8 @@ class Terms:
             self.tmux(pw, ['kill-session', '-t', name])
         env = env_lines(CONFIG.get('claude_env'))
         env.update({'AI_TERMINAL': tid, 'LANG': str(CONFIG.get('term_lang') or 'C.UTF-8')})
+        # through the proxy (1.0.49): the terminals where Settings → Proxy says so
+        env.update(proxy_env(proxy_use or ('terms' if kind in ('claude', 'shell') else '')))
         shell = pw.pw_shell if pw.pw_shell and os.path.exists(pw.pw_shell) and \
             not pw.pw_shell.endswith(('nologin', 'false')) else '/bin/bash'
         if kind == 'claude':
@@ -7813,7 +7843,7 @@ def _online_get(url, limit=4 * 1024 * 1024, accept='*/*', timeout=30):
         raise Refused('only https:// addresses are asked: %s' % url)
     req = urllib.request.Request(url, headers={'User-Agent': 'ai/%s (+upgrade check)' % __version__,
                                                'Accept': accept})
-    with url_open(req, timeout=timeout, context=ssl.create_default_context()) as r:
+    with url_open(req, timeout=timeout, context=ssl.create_default_context(), purpose='upgrade') as r:
         final = r.geturl()
         if not str(final).startswith('https://'):
             raise Refused('it was sent on to an address that is not https: %s' % final)
@@ -7923,20 +7953,36 @@ def changelog_between(version, here):
 
 
 # ---- going out through a proxy (1.0.47, as otp's 1.0.166) ---------------------------
-# Settings → Proxy, for the updates only (1.0.48): the new versions of ai
-# (looked for, fetched) and, handed to the update's job in a file only root
-# reads (never on a command line), dnf or apt fetching the system updates.
-# Nothing else ai does goes through it: the terminals and Claude Code, mail,
-# the SMS gateway, ACME, the backups and the database work as without it.
-def proxy_on(purpose='web'):
+# Settings → Proxy (1.0.49): each use switched on by itself, all off at first -
+# with none on, nothing ai does goes through it. dnf or apt get it in a file
+# only root reads (never on a command line); the terminals in their environment.
+# Mail, the backups, NTP and the database are not HTTP: always straight.
+PROXY_USES = {'upgrade': 'proxy_upgrade', 'os': 'proxy_os', 'acme': 'proxy_acme',
+              'acme_dns': 'proxy_acme_dns', 'sms': 'proxy_sms', 'sms_tel': 'proxy_sms_tel',
+              'terms': 'proxy_terms', 'claude_install': 'proxy_claude_install'}
+
+
+def proxy_on(purpose='try'):
+    """Whether this use goes through the proxy; 'try' (Settings → Proxy →
+    Try it) asks of the proxy itself, whichever uses are on."""
     if not CONFIG.get('proxy') or not str(CONFIG.get('proxy_url') or '').strip():
         return False
-    if purpose == 'os':
-        return bool(CONFIG.get('proxy_os', 1))
-    return True
+    if purpose == 'try':
+        return True
+    return bool(CONFIG.get(PROXY_USES.get(purpose, ''), False))
 
 
-def proxy_full(purpose='web'):
+def proxy_env(purpose):
+    """HTTPS_PROXY and the rest, for what runs in a terminal - {} when off."""
+    full = proxy_full(purpose)
+    if not full:
+        return {}
+    no = ','.join(proxy_no_list())
+    return {'HTTPS_PROXY': full, 'HTTP_PROXY': full, 'https_proxy': full, 'http_proxy': full,
+            'NO_PROXY': no, 'no_proxy': no}
+
+
+def proxy_full(purpose='try'):
     """The proxy's address with its user and password in it, for urllib, dnf
     and apt - '' where none is to be used. Never logged, never shown."""
     if not proxy_on(purpose):
@@ -7997,12 +8043,12 @@ class _ProxyOnly(urllib.request.ProxyHandler):
         return None
 
 
-def url_open(req, timeout=30, context=None, purpose='web'):
-    """urllib.request.urlopen, through the proxy where one is set and the host
-    is not one reached straight; never through what the environment says."""
+def url_open(req, timeout=30, context=None, purpose=''):
+    """urllib.request.urlopen, through the proxy where this use of it is on and
+    the host is not one reached straight; never through what the environment says."""
     if not isinstance(req, urllib.request.Request):
         req = urllib.request.Request(req)
-    proxy = proxy_full(purpose)
+    proxy = proxy_full(purpose) if purpose else ''
     host = urllib.parse.urlsplit(req.full_url).hostname or ''
     handlers = [_ProxyOnly(
         {'http': proxy, 'https': proxy} if proxy and not proxy_skips(host) else {})]
@@ -9226,7 +9272,8 @@ def api_claude_do(c):
         raise Refused('only an administrator installs or updates Claude Code', 403)
     script, words = scripts[do]
     full = '%s; rc=$?; echo; echo "== done ($rc) - press Enter to close"; read -r _' % script
-    tid = c.daemon.terms.new(c.who, 'command', pw.pw_dir, words, {'command': full}, run_as=pw.pw_name)
+    tid = c.daemon.terms.new(c.who, 'command', pw.pw_dir, words, {'command': full}, run_as=pw.pw_name,
+                             proxy_use='claude_install')
     return {'id': tid}
 
 
@@ -12250,7 +12297,7 @@ class Acme(object):
         if data is not None:
             req.add_header('Content-Type', 'application/jose+json')
         try:
-            with urllib.request.urlopen(req, timeout=30, context=_acme_ctx()) as r:
+            with url_open(req, timeout=30, context=_acme_ctx(), purpose='acme') as r:
                 body, headers, status = r.read(1 << 20), r.headers, r.status
         except urllib.error.HTTPError as e:
             body, headers, status = e.read(1 << 20), e.headers, e.code
@@ -12976,8 +13023,8 @@ def _cf(method, path, body=None):
                                           'Content-Type': 'application/json',
                                           'User-Agent': 'ai/%s (acme)' % __version__})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
-                                    if base.startswith('https') else None) as r:
+        with url_open(req, timeout=30, context=ssl.create_default_context()
+                      if base.startswith('https') else None, purpose='acme_dns') as r:
             got = json.loads(r.read(1 << 20).decode())
     except urllib.error.HTTPError as e:
         try:
@@ -13020,8 +13067,8 @@ def _dns_acmedns(txt):
                  'X-Api-Key': _acme_secret('acme_dns_key'),
                  'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
-                                    if url.startswith('https') else None) as r:
+        with url_open(req, timeout=30, context=ssl.create_default_context()
+                      if url.startswith('https') else None, purpose='acme_dns') as r:
             r.read(4096)
     except urllib.error.HTTPError as e:
         raise AcmeError('acme-dns said %d: %s' % (e.code, e.read(300).decode('utf-8', 'replace')))
@@ -13043,8 +13090,8 @@ def _desec(method, path, body=None):
                                               'Content-Type': 'application/json',
                                               'User-Agent': 'ai/%s (acme)' % __version__})
         try:
-            with urllib.request.urlopen(req, timeout=30, context=ssl.create_default_context()
-                                        if base.startswith('https') else None) as r:
+            with url_open(req, timeout=30, context=ssl.create_default_context()
+                          if base.startswith('https') else None, purpose='acme_dns') as r:
                 raw = r.read(1 << 20)
                 return json.loads(raw.decode()) if raw.strip() else None
         except urllib.error.HTTPError as e:
