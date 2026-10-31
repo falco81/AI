@@ -3650,4 +3650,9 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .acme-steps-done .si-row{align-items:flex-start}
 .acme-steps-done .si-row .mono{flex:0 0 56px;white-space:nowrap;overflow-wrap:normal}
 .acme-steps-done .si-row span:last-child{flex:1;min-width:0;text-align:left;overflow-wrap:anywhere}
-.set-item textarea.cell-text{resize:vertical;min-height:0;height:38px;line-height:20px;padding-top:8px;padding-bottom:8px;white-space:pre;overflow:hidden}
+/* The CA's own certificate (1.0.42): a memo two columns wide and two settings
+   tall, the settings beside it stacked as usual - a whole PEM in view */
+.set-grid > .set-item.memo{grid-row:span 6;display:flex;flex-direction:column;gap:7px}
+.set-grid > .set-item.memo > label{align-self:stretch}
+.set-item textarea.cell-text{display:block;width:100%;box-sizing:border-box;flex:1 1 auto;min-height:150px;resize:vertical;
+  font-size:11.5px;line-height:1.45;white-space:pre;overflow:auto;padding:8px 10px;tab-size:4}

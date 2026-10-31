@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.42
+
+- **A setting hanging on one that is greyed out is greyed out too**, on every settings page: with ACME off,
+  *The TXT records go into* (and *Wait for DNS to carry it*, the deSEC fields...) stayed open, because the
+  choice they hang on would have let them. It says why from the setting further up ("Not in use while
+  Certificates from an ACME CA is off").
+- **The CA's own certificate** is a memo two columns wide and two settings tall, a whole PEM in view in a
+  small monospaced font (resizable), the settings beside it stacked as usual.
+
 ## 1.0.41
 
 - **Automatic certificates exactly as upsmon's (4.1.7)**: the page's script is upsmon's own - the card (its tags,

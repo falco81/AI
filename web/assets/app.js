@@ -2655,8 +2655,10 @@ function settingItemBare(s) {
        upsmon's): not a whole row of its own. */
     input = el('textarea', 'mono cell-text');
     input.spellcheck = false;
+    input.placeholder = '-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----';
     input.value = s.value === null || s.value === undefined ? '' : String(s.value);
-    input.rows = 1;
+    input.rows = 6;
+    item.classList.add('wide', 'memo');
   } else if (TALL[s.key] || s.tall) {
     item.classList.add('tall');
     input = el('textarea');
@@ -2768,25 +2770,38 @@ function askThen(title, words, buttonWords, danger) {
 function applyOnlyWhen() {
   applySubs();
   var rules = (SETTINGS && SETTINGS.only_when) || {};
-  Object.keys(rules).forEach(function (key) {
-    var item = document.querySelector('.set-item[data-key="' + key + '"]');
-    var master = $('set-' + rules[key][0]);
-    if (!item || !master) return;
+  /* Why a setting is not in use, or '' (1.0.42): its own condition first, then
+     the one it hangs on - a setting depending on one that is itself greyed out
+     is greyed out too (The TXT records go into stayed open with ACME off, its
+     master's own value being one that would let it). */
+  var memo = {};
+  function why(key, depth) {
+    if (memo[key] !== undefined) return memo[key];
+    var rule = rules[key];
+    var master = rule && $('set-' + rule[0]);
+    if (!rule || !master || depth > 8) return (memo[key] = '');
     var now = master._get ? String(master._get()) : String(master.value);
-    var want = rules[key][1];
+    var want = rule[1];
     var live = Array.isArray(want) ? want.indexOf(now) >= 0
       : (want === '*' ? !!now.trim() : (want.slice(-4) === '-not' ? now !== want.slice(0, -4) : now === want));
-    item.classList.toggle('asleep', !live);
+    var other = settingByKey(rule[0]) || {};
+    if (!live) {
+      return (memo[key] = want === '*' ? 'Not in use until ' + other.name + ' is filled in.'
+        : (isBool(other) ? 'Not in use while ' + other.name + ' is off.'
+           : 'Not in use while ' + other.name + ' is “' + ((other.choice_words || {})[now] || now || '–') + '”.'));
+    }
+    return (memo[key] = why(rule[0], (depth || 0) + 1));
+  }
+  Object.keys(rules).forEach(function (key) {
+    var item = document.querySelector('.set-item[data-key="' + key + '"]');
+    if (!item || !$('set-' + rules[key][0])) return;
+    var said = why(key, 0);
+    item.classList.toggle('asleep', !!said);
     var says = item.querySelector('.asleep-why');
     // Written again on every pass (1.0.61): it went on naming the choice it
     // was first put in for.
     if (says) says.remove();
-    if (!live) {
-      var other = settingByKey(rules[key][0]) || {};
-      (item.querySelector('.set-tail') || item).appendChild(el('div', 'says asleep-why', want === '*' ? 'Not in use until ' + other.name + ' is filled in.'
-        : (isBool(other) ? 'Not in use while ' + other.name + ' is off.'
-           : 'Not in use while ' + other.name + ' is “' + ((other.choice_words || {})[now] || now || '–') + '”.')));
-    }
+    if (said) (item.querySelector('.set-tail') || item).appendChild(el('div', 'says asleep-why', said));
   });
 }
 $('set-save').onclick = function () {
