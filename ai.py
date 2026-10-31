@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.45'
+__version__ = '1.0.46'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -307,14 +307,18 @@ SCHEMA = [
      'unless it is kept within this time - pressed Keep it, from the old address or the new.',
      {'min': 30, 'max': 3600}),
     ('retain_events_days', 'db', 'int', 'Keep the events (days)', '', {'min': 7, 'max': 3650}),
+    ('upgrade_check', 'upgrade', 'bool', 'Look for a new version every day',
+     'Once a day (and when Look now is pressed) the address below is asked for ai-X.Y.Z.tar.gz packages; a '
+     'newer one than runs here is offered on this page - put in with one click, after its signature has been '
+     'checked like any package sent by hand. Nothing is put in by itself, unless the switch below says so.', {}),
     ('upgrade_url', 'upgrade', 'str', 'Where new versions are looked for',
-     'A GitHub folder (https://github.com/OWNER/REPO/tree/BRANCH/FOLDER), a web page or a '
-     'folder listing with ai-X.Y.Z.tar.gz links, or one package\'s address. HTTPS only.', {}),
+     'A GitHub folder (<code>https://github.com/OWNER/REPO/tree/BRANCH/FOLDER</code>), a web page or folder '
+     'listing that links to the packages, or one package\'s own address. HTTPS only; a proxy is taken from '
+     'https_proxy in the service\'s environment.', {}),
     ('upgrade_downgrade', 'upgrade', 'bool', 'Offer going back to an older version',
-     'Going back to an older version on these pages - only to one that is safe on this database. Off: the '
-     'card is not shown, and ai --downgrade alone does it.', {}),
-    ('upgrade_check', 'upgrade', 'bool', 'Look once a day',
-     'Whether there is a newer version - it is only said, unless the next switch is on too.', {}),
+     'Off: nothing on these pages offers going back to an older version. On: Settings \u2192 Upgrades shows '
+     '<i>Going back to an older version</i> - only the versions it is safe to go back to, each with what '
+     'changed in it. On the server, root can always: ai --downgrade.', {}),
     ('upgrade_auto', 'upgrade', 'bool', 'Put a newer version in by itself',
      'Once a day, at the hour below: a newer signed version found there is fetched, checked and '
      'put in. The terminals go on running; the pages reconnect after a few seconds.', {}),
@@ -4366,6 +4370,8 @@ class Terms:
                 'exec "${SHELL:-/bin/bash}" -l; fi; exec %s %s' % (exe, cmd.replace('"', ''), exe, q))
 
     def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None, tid=None):
+        if (u or {}).get('role') != 'admin' and maintenance_now(self.store).get('on'):
+            raise Refused('this server is in maintenance - no new terminal now (the ones running go on)', 503)
         """A terminal started - a new one, or (`tid`) an ended one of the list
         started again in its own place: its row, its name, its pin."""
         opts = dict(opts or {})
@@ -7893,6 +7899,60 @@ def changelog_between(version, here):
     return {'from': 'here', 'entry': changelog_entry(text, version), 'lost': lost, 'here': here}
 
 
+# ---- maintenance (1.0.46, as otp's) --------------------------------------------------
+# This server taken out of service: its /healthz says 503 "maintenance HOST", so a
+# monitor or a load balancer leaves it alone; nobody but an administrator signs
+# in, and no new terminal is started but an administrator's. The terminals that
+# run go on running, and these pages go on working. An upgrade from these pages
+# takes it out first and brings it back once the new version runs (or the
+# upgrade failed); by hand: here, or ai --maintenance on|off.
+MAINT_CACHE = {'at': 0.0, 'row': None}
+MAINT_BY_UPGRADE = 'the upgrade'
+
+
+def maintenance_row(store, name=None):
+    got = store.meta_json('maint:' + (name or node_name()), None)
+    return got if isinstance(got, dict) else {'on': False}
+
+
+def maintenance_now(store):
+    """This server's maintenance, read at most every two seconds."""
+    now = time.time()
+    if now - MAINT_CACHE['at'] > 2:
+        MAINT_CACHE['at'] = now
+        try:
+            MAINT_CACHE['row'] = maintenance_row(store)
+        except Exception:                               # noqa: BLE001
+            pass                                        # the last one known stands
+    return MAINT_CACHE['row'] or {'on': False}
+
+
+def maintenance_set(store, on, why='', by='', name=None):
+    name = name or node_name()
+    row = {'on': bool(on), 'why': str(why or '')[:200], 'by': str(by or '')[:100], 'at': time.time()}
+    store.set_meta('maint:' + name, json.dumps(row))
+    MAINT_CACHE['at'] = 0
+    store.add_event('starting and stopping', '%s: %s%s' % (
+        name, 'in maintenance' if on else 'back in service',
+        (' - ' + why) if why and on else ''), 'warn' if on else 'info', who=by or None)
+    return row
+
+
+def maintenance_settle(store):
+    """Back in service once the upgrade that took it out is over: the new
+    version runs, or the upgrade failed."""
+    m = maintenance_row(store)
+    if not m.get('on') or m.get('by') != MAINT_BY_UPGRADE:
+        return
+    try:
+        st = json.loads(read_text(UPGRADE_DIR / 'status.json') or '{}')
+    except ValueError:
+        st = {}
+    if st.get('state') == 'running' and time.time() - float(st.get('at') or 0) < 1800:
+        return
+    maintenance_set(store, False, 'the upgrade is over', MAINT_BY_UPGRADE)
+
+
 class Upgrades:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -8024,9 +8084,10 @@ class Upgrades:
         except Refused:
             helper = False
         lines = (read_text(UPGRADE_DIR / 'last.log', 400000) or '').splitlines()
+        maintenance_settle(self.store)
         return {'version': __version__, 'node': node_name(),
                 'nodes': [{'name': node_name(), 'me': True, 'alive': True, 'version': __version__,
-                           'at': time.time(), 'maintenance': {}}],
+                           'at': time.time(), 'maintenance': maintenance_row(self.store)}],
                 'web': {'check': bool(CONFIG.get('upgrade_check')), 'online': o},
                 'package': ({k: v for k, v in h.items() if k != 'path'} if h else None),
                 'ready': bool(h) and not not_ready, 'not_ready': not_ready,
@@ -8107,6 +8168,10 @@ class Upgrades:
                     make_backup(self.store, 'before going back to %s, by %s' % (info['version'], by))
                 except Exception as e:                  # noqa: BLE001
                     log('a copy before going back could not be made: %s' % e, 'warn')
+            # Out of service first, as otp takes a node out: back once the new
+            # version runs, or the upgrade failed (maintenance_settle).
+            if not maintenance_row(self.store).get('on'):
+                maintenance_set(self.store, True, 'upgrade to %s' % info['version'], MAINT_BY_UPGRADE)
             self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)%s' % (
                 by, info['version'], info.get('signed_by'), ' - going back from %s' % __version__
                 if info.get('older') else ''), 'warn', who=by)
@@ -8466,6 +8531,7 @@ def api_health(c):
     d = c.daemon
     return {'ok': True, 'version': __version__, 'lang': CONFIG.get('ui_lang'),
             'users': len(d.store.users()), 'database': {'ok': True}, 'host': host_name(),
+            'node': node_name(), 'maintenance': bool(maintenance_now(d.store).get('on')),
             'art': art_read(d.store)}
 
 
@@ -8474,6 +8540,12 @@ def api_login(c):
     token = c.daemon.auth.login(c.body.get('name'), c.body.get('password'), c.ip, c.body.get('agent') or '')
     name = str(c.body.get('name') or '').strip()
     u = c.daemon.store.user(name)
+    m = maintenance_now(c.daemon.store)
+    if m.get('on') and (u or {}).get('role') != 'admin':
+        # In maintenance (1.0.46): administrators only.
+        c.daemon.auth.logout(token)
+        raise Refused('this server is in maintenance%s - only an administrator may sign in now'
+                      % (' (%s)' % m['why'] if m.get('why') else ''), 503)
     stage = mfa_stage(c.daemon.store, name) if CONFIG.get('admin_2fa') else ''
     return {'token': token, 'who': None if stage else user_view(u), 'mfa': stage}
 
@@ -8692,6 +8764,7 @@ def status_view(c):
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
         'upgrade_state': st.get('state') if st else '', 'started': d.started, 'now': time.time(),
+        'maintenance': maintenance_now(d.store),
         'php': php_state() if c.who['role'] == 'admin' else None,
         'mailq': mailq_counted(d.store) if c.who['role'] == 'admin' else {},
         'chat_root': status_chat_root(c.who),
@@ -16194,6 +16267,13 @@ def api_upgrade_do(c):
                           'changed by itself')
         elif act == 'hide':
             c.daemon.store.set_meta('upgrade:hidden', str(up.status().get('at')))
+        elif act == 'maintenance':
+            name = str(b.get('node') or node_name())
+            if name != node_name():
+                raise Refused('there is no server %s here' % name)
+            on = bool(b.get('on'))
+            maintenance_set(c.daemon.store, on, str(b.get('why') or 'by hand'), c.name, name)
+            msg = '%s: maintenance %s' % (name, 'on' if on else 'off')
         elif act == 'downgrade_list':
             return {'downgrade': up.downgrade_list()}
         elif act == 'downgrade_changelog':
@@ -17805,6 +17885,10 @@ class Daemon:
                 self.trials.tick()
                 osup_tick(self)
                 try:
+                    maintenance_settle(self.store)
+                except Exception:                # noqa: BLE001
+                    pass
+                try:
                     acme_tick(self)             # certificates by ACME (1.0.39)
                 except Exception as e:          # noqa: BLE001
                     log_sparing('acme-tick', 'ACME: %s' % e, 'warn')
@@ -17857,6 +17941,10 @@ class Daemon:
         srv = Server(('127.0.0.1', port), Handler)
         self.write_token()
         versions_ran_note(self.store)
+        try:
+            maintenance_settle(self.store)      # back in service after an upgrade (1.0.46)
+        except Exception as e:                  # noqa: BLE001
+            log('maintenance: %s' % e, 'warn')
         self.first_account()
         log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, self.store.db.where()))
         if not NO_SYSTEM:
@@ -20410,6 +20498,21 @@ class Console(object):
     # ---- 9 backups --------------------------------------------------------------
     # ---- 10 upgrades ------------------------------------------------------------
     def m_upgrades(self):
+        def maint():
+            m = (self.out('--maintenance', 'status') or {})
+            on = bool(m.get('on'))
+            r = self.choose('Maintenance', [
+                ('off', 'In service'),
+                ('on', 'In maintenance - /healthz 503, administrators only; the terminals go on')],
+                'It is %s now.' % ('IN MAINTENANCE' + (' - ' + m['why'] if m.get('why') else '') if on else 'in service'),
+                cur=1 if on else 0)
+            if r == 'on' and not on:
+                why = self.ask_one('Maintenance', 'why', '', help_='For the events.', need=False)
+                if why is not None:
+                    self.act('--maintenance', 'on', '--why', why or 'by hand')
+            elif r == 'off' and on:
+                self.act('--maintenance', 'off')
+
         def online():
             self.working('working…  looking for a new version')
             row = self.out('--upgrade-check') or {}
@@ -20463,6 +20566,7 @@ class Console(object):
             ('4', 'Upgrade from a package file', install),
             ('5', 'Older versions, and whether each may be gone back to', lambda: self.act('--downgrade-check')),
             ('6', 'Go back to an older version', back),
+            ('7', 'Maintenance: out of service, or back', maint),
         ])
 
     # ---- 0 data: the database, backups, mail ------------------------------------
@@ -20959,7 +21063,10 @@ def build_parser():
     g.add_argument('--tls-hsts', type=int, metavar='SECONDS', help='Strict-Transport-Security (0 = none)')
     g.add_argument('--reboot', action='store_true', help='restart the server (asks, or --yes)')
     g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
-    g = p.add_argument_group('UPGRADES')
+    g = p.add_argument_group('MAINTENANCE AND UPGRADES')
+    g.add_argument('--maintenance', choices=('on', 'off', 'status'), metavar='on|off|status',
+                   help='this server out of service (/healthz 503, administrators only) or back')
+    g.add_argument('--why', default='', help='with --maintenance on: why, for the events')
     g.add_argument('--upgrade-check', action='store_true', help='whether a newer version is out')
     g.add_argument('--downgrade', metavar='VERSION', help='back to an older version at upgrade_url - only a safe one')
     g.add_argument('--upgrade-online', nargs='?', const='newest', metavar='VERSION',
@@ -21492,6 +21599,18 @@ def cli_main(argv):
             return 0
         if a.usage:
             return cli_usage(d, a, pal)
+        if a.maintenance:
+            if a.maintenance != 'status':
+                maintenance_set(st, a.maintenance == 'on', a.why or 'by hand', 'the command line')
+            m = maintenance_row(st)
+            if a.json:
+                say_json(m)
+            else:
+                print((pal.warn_line if m.get('on') else pal.ok_line)('%s: %s' % (
+                    node_name(), ('IN MAINTENANCE' + (' - %s' % m['why'] if m.get('why') else '') +
+                                  (' (%s, %s)' % (m.get('by') or '?', when(m.get('at'))) if m.get('at') else ''))
+                    if m.get('on') else 'in service')))
+            return 0
         if a.acme:
             v = acme_view(st)
             if a.json:

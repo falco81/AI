@@ -554,17 +554,17 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages, and how TLS is spoken.">Certificates and TLS</button>
     <button type="button" data-pane="acme" data-icon="lock" title="The certificate ordered from Let's Encrypt (or another ACME CA) and renewed by itself.">Automatic certificates</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.">Firewall and access</button>
+    <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
     <button type="button" data-pane="time" data-icon="clock" title="The clock: chrony, its time servers, how far off it is - codes from the app are worked out from it.">Time</button>
     <button type="button" data-pane="power" data-icon="power" title="Restart or switch off the server, or only its services.">Restart and power off</button>
-    <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages updated, its output shown as it goes; a restart offered when one is needed.">System updates</button>
-    <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Data</div>
     <button type="button" data-pane="db" data-icon="db" title="Which database everything lives in, how big it is, copies of it, and how long things are kept.">The database</button>
     <button type="button" data-pane="backup" data-icon="archive" title="Backups of everything to another machine - FTP, FTPS, SFTP, SCP, SMB or a folder - locked with a password, on a schedule, and putting one back.">Backups</button>
     <button type="button" data-pane="carry" data-icon="download" title="Everything that makes this installation what it is, as one file to carry to another machine.">Export and import</button>
-    <div class="ctl-group">Updates</div>
+    <div class="ctl-group">Monitoring and updates</div>
+    <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages updated, its output shown as it goes; a restart offered when one is needed.">System updates</button>
     <button type="button" data-pane="upgrade" data-icon="up" title="A new version, put in from here: from the web or a package sent, or back to an older one.">Upgrades</button>
     <button type="button" data-pane="about" data-icon="info" title="Version, what is running, the language, the log.">About</button>
   </nav>
@@ -1020,14 +1020,16 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
   <div class="ctl-pane" id="pane-upgrade" hidden>
     <div class="ctl-head"><h2 class="ctl-title">Upgrades and maintenance</h2>
-      <p class="ctl-lede">A new version put in from here: send the package, or take it from the web,
-        and this server is upgraded - checked first, then its own install.sh --upgrade, as by hand.
-        The terminals go on running; these pages come back after a few seconds. The command line
+      <p class="ctl-lede">A new version put in from here: send the package, and this server is upgraded
+        - taken out of service first, so a monitor or a load balancer leaves it alone, and brought back
+        only once it answers again. The terminals go on running. The command line
         (install.sh --upgrade) works as it always has.</p></div>
     <div class="card full">
-      <h2>This server</h2>
-      <p class="note">The version it runs and how it is. An upgrade does not stop the terminals: tmux is
-        not the daemon's, and the daemon finds them again when it starts.</p>
+      <h2>The nodes</h2>
+      <p class="note">A server in maintenance starts no new terminal and lets in only administrators, and its
+        /healthz says 503, so a monitor or a load balancer leaves it alone; these pages go on working, and so
+        do the terminals that run. With a single server, maintenance means nobody but an administrator can
+        sign in.</p>
       <div id="up-nodes"></div>
     </div>
     <div class="card full admin-only" id="up-web-card">
@@ -1078,17 +1080,23 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       <h2>What root said last <span class="mono small muted" id="up-log-node" data-no-i18n></span></h2>
       <p class="note"><span>The output of install.sh, the last time this server was upgraded from these pages.</span>
         <span class="mono" data-no-i18n>/var/lib/ai/upgrade/last.log</span></p>
-      <div class="seg" id="up-log-nodes" hidden style="margin-bottom:10px"></div>
-      <pre class="lines" id="up-log">–</pre>
+      <!-- Folded until asked for (1.0.46, as otp's 1.0.196): a long log pushed the rest down. -->
+      <details class="fold" id="up-log-fold">
+        <summary>the output</summary>
+        <div class="seg" id="up-log-nodes" hidden style="margin:10px 0"></div>
+        <pre class="lines" id="up-log">–</pre>
+      </details>
     </div>
     <div class="card full">
       <h2>On the command line</h2>
       <p class="note">The same, by hand, as root:</p>
-      <pre class="lines">ai --upgrade-check              # what is at the address, and whether it is newer
+      <pre class="lines">ai --maintenance on --why "upgrade"      # out of service
+ai --upgrade-check              # what is at the address, and whether it is newer
 ai --upgrade-online             # the newest: fetched, checked, put in
 ai --downgrade X.Y.Z            # back to an older one - only a safe one
 tar xzf ai-X.Y.Z.tar.gz && cd ai-X.Y.Z
 ./install.sh --upgrade
+ai --maintenance off            # back in service (if it was put out by hand)
 ai --upgrade-status             # an upgrade started on these pages</pre>
     </div>
   </div>

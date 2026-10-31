@@ -3656,13 +3656,19 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .set-grid > .set-item.memo > label{align-self:stretch}
 .set-item textarea.cell-text{display:block;width:100%;box-sizing:border-box;flex:1 1 auto;min-height:150px;resize:vertical;
   font-size:11.5px;line-height:1.45;white-space:pre;overflow:auto;padding:8px 10px;tab-size:4}
-/* In your DNS: the table as wide as what is in it - each text as wide as it
-   needs and its copy button right after it, one under the other (1.0.44);
-   room between the columns (1.0.45) */
-.acme-dns table{width:auto;max-width:100%}
-.acme-dns th,.acme-dns td{padding-left:14px;padding-right:14px}
-.acme-dns td.dns-txt{white-space:nowrap;padding-right:8px}
-.acme-dns td.dns-txt > div{white-space:normal}
-.acme-dns td.dns-btn{padding-left:0;padding-right:40px}
+/* In your DNS (1.0.46): the whole width, every column a fixed share of it - the
+   same between a reload and Check DNS (its last column's words changed and the
+   columns were shared out anew, the copy buttons jumping); each copy button in
+   a narrow column of its own right after its text, one under the other */
+.acme-dns table{width:100%;table-layout:fixed}
+.acme-dns th:nth-child(1){width:15%}
+.acme-dns th:nth-child(2){width:20%}
+.acme-dns th:nth-child(3){width:6%}
+.acme-dns th:nth-child(4){width:12%}
+.acme-dns th:nth-child(5){width:22%}
+.acme-dns th:nth-child(6){width:6%}
+.acme-dns th:nth-child(7){width:19%}
+.acme-dns th,.acme-dns td{padding-left:12px;padding-right:12px}
+.acme-dns td.dns-txt{overflow-wrap:anywhere;padding-right:6px}
+.acme-dns td.dns-btn{padding-left:0;padding-right:0}
 .acme-dns th:empty{padding:0}
-.acme-dns td:first-child,.acme-dns th:first-child{padding-left:10px;padding-right:40px}

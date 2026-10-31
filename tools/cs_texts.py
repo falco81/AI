@@ -2776,6 +2776,15 @@ STRINGS = {
         'Jméno, pro které je certifikát. Prázdné: jméno certifikátu, který má teď, jinak plné jméno tohoto stroje.',
     "The certificate ordered from Let's Encrypt (or another ACME CA) and renewed by itself.":
         'Certifikát objednaný od Let’s Encrypt (nebo jiné ACME CA) a obnovovaný sám.',
+    # ---- 1.0.46: maintenance ----
+    'A server in maintenance starts no new terminal and lets in only administrators, and its /healthz says 503, so a monitor or a load balancer leaves it alone; these pages go on working, and so do the terminals that run. With a single server, maintenance means nobody but an administrator can sign in.':
+        'Server v údržbě nespustí žádný nový terminál a pustí dovnitř jen administrátory a jeho /healthz vrací 503, takže ho monitoring i load balancer nechají být; tyto stránky fungují dál a běžící terminály také. S jediným serverem údržba znamená, že se nepřihlásí nikdo kromě administrátora.',
+    'A new version put in from here: send the package, and this server is upgraded - taken out of service first, so a monitor or a load balancer leaves it alone, and brought back only once it answers again. The terminals go on running. The command line (install.sh --upgrade) works as it always has.':
+        'Nová verze se nasadí odsud: pošlete balíček a server se aktualizuje – nejdřív se vyřadí z provozu, takže ho monitoring i load balancer nechají být, a vrátí se teprve, až zase odpovídá. Terminály běží dál. Příkazová řádka (install.sh --upgrade) funguje jako vždy.',
+    "This is the only server: while it is in maintenance nobody but an administrator can sign in, and no new terminal is started but an administrator's. The terminals that run go on, and its pages go on working; its /healthz says 503.":
+        'Toto je jediný server: dokud je v údržbě, nepřihlásí se nikdo kromě administrátora a nový terminál spustí jen administrátor. Běžící terminály pokračují a jeho stránky fungují dál; jeho /healthz vrací 503.',
+    'Once a day (and when Look now is pressed) the address below is asked for ai-X.Y.Z.tar.gz packages; a newer one than runs here is offered on this page - put in with one click, after its signature has been checked like any package sent by hand. Nothing is put in by itself, unless the switch below says so.':
+        'Jednou denně (a po stisknutí Zkontrolovat teď) se na adrese níže hledají balíčky ai-X.Y.Z.tar.gz; novější, než jaký tu běží, se nabídne na této stránce – nainstaluje se jedním kliknutím poté, co se ověří jeho podpis jako u každého ručně nahraného balíčku. Samo se nic neinstaluje, pokud to neříká přepínač níže.',
 }
 
 PATTERNS = {
@@ -3024,4 +3033,6 @@ RICH = {
     # ---- 1.0.6: the database, the outgoing mail, the texts, the upgrades as otp's ----
     'Put <b>this</b> one back, without downloading it and uploading it again: everything in the live database is replaced by what is in this file. You are shown what is in it and asked first, and a copy of what is being replaced is made before anything changes.':
         'Vrátit <b>tento</b> soubor bez stahování a nového nahrávání: všechno v živé databázi se nahradí tím, co je v tomto souboru. Nejdřív se ukáže, co v něm je, a zeptá se vás, a než se cokoli změní, udělá se kopie toho, co se nahrazuje.',
+    'Off: nothing on these pages offers going back to an older version. On: Settings → Upgrades shows <i>Going back to an older version</i> - only the versions it is safe to go back to, each with what changed in it. On the server, root can always: ai --downgrade.':
+        'Vypnuto: nic na těchto stránkách nenabízí návrat na starší verzi. Zapnuto: Nastavení → Aktualizace ukáže <i>Návrat na starší verzi</i> – jen verze, na které se lze bezpečně vrátit, u každé co se v ní změnilo. Na serveru to root může vždy: ai --downgrade.',
 }

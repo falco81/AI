@@ -203,5 +203,27 @@ check('a name at deSEC itself needs no CNAME', ai.acme_dns_where('ai.x.dedyn.io'
 ai.CONFIG.clear(); ai.CONFIG.update(_was)
 check('an ACME account gone is known by its error', ai._acme_account_gone('urn:ietf:params:acme:error:accountDoesNotExist', ''))
 
+# maintenance (1.0.46)
+class _MSt:
+    def __init__(s): s.m = {}; s.ev = []
+    def meta_json(s, k, d=None): import json as _j; return _j.loads(s.m[k]) if k in s.m else d
+    def set_meta(s, k, v): s.m[k] = v
+    def add_event(s, *a, **k): s.ev.append(a[1])
+_ms = _MSt()
+check('in service unless said', ai.maintenance_row(_ms) == {'on': False})
+ai.maintenance_set(_ms, True, 'upgrade to 9.9.9', ai.MAINT_BY_UPGRADE)
+_was_dir = ai.UPGRADE_DIR
+ai.UPGRADE_DIR = ai.Path(tempfile.mkdtemp())
+(ai.UPGRADE_DIR / 'status.json').write_text('{"state": "running", "at": %f}' % __import__('time').time())
+ai.maintenance_settle(_ms)
+check('kept out of service while the upgrade runs', ai.maintenance_row(_ms).get('on') is True)
+(ai.UPGRADE_DIR / 'status.json').write_text('{"state": "done"}')
+ai.maintenance_settle(_ms)
+check('back in service once the upgrade is over', ai.maintenance_row(_ms).get('on') is False)
+ai.maintenance_set(_ms, True, 'by hand', 'admin')
+ai.maintenance_settle(_ms)
+check('one taken out by hand stays out', ai.maintenance_row(_ms).get('on') is True)
+ai.UPGRADE_DIR = _was_dir
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

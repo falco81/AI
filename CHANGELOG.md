@@ -3,6 +3,28 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.46
+
+**Upgrades and maintenance, as otp 1.0.197 (without high availability)**
+- *Settings -> Upgrades and maintenance -> The nodes*: the server, its version, when it was heard from, and
+  whether it is **in service** or **in maintenance** (why, by whom, when) - with *Maintenance* / *Back in
+  service*, asked first with the reason for the events.
+- **Maintenance**: this server out of service - `/healthz` says `503 maintenance HOST` (and `ok HOST` otherwise),
+  so a monitor or a load balancer leaves it alone; nobody but an administrator signs in and no new terminal is
+  started but an administrator's; the terminals that run go on, and so do these pages. The header says *in
+  maintenance*. An upgrade from these pages takes the server out first and brings it back once the new version
+  runs (or the upgrade failed); one taken out by hand stays out until brought back.
+  `ai --maintenance on|off|status [--why ...]`; the console has it under Upgrades.
+- *What root said last* folded until opened (a long log pushed the rest down); *From the web*: its settings in
+  otp's order and words (*Look for a new version every day*, *Where new versions are looked for*, *Offer going
+  back to an older version*), ai's own auto-upgrade after them.
+- **The settings menu in otp's groups and order**: *Access* (Accounts, The sign-in page, Certificates and TLS,
+  Automatic certificates, Firewall and access, SSH keys of root), *Server* (Network, Time, Restart and power
+  off), *Data*, and *Monitoring and updates* (System updates, Upgrades, About).
+
+**Automatic certificates -> In your DNS** across the whole width again, each column a fixed share of it: the
+same on a reload and after *Check DNS* (the last column's words changed and the columns were shared out anew).
+
 ## 1.0.45
 
 - **Automatic certificates -> In your DNS**: room between the columns - the table no longer packed them against

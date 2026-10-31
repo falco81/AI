@@ -69,10 +69,11 @@ function paintHeader(s) {
   if (s.mailq && typeof mailqBadge === 'function') mailqBadge(s.mailq);
   var pill = $('state-pill');
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
-  if (s.upgrade_state === 'running') kind = 'warn';
+  var inMaint = !!(s.maintenance && s.maintenance.on);
+  if (s.upgrade_state === 'running' || inMaint) kind = 'warn';
   pill.className = 'pill ' + kind;
   pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
-    : (kind === 'warn' ? 'running, with trouble' : 'running');
+    : (inMaint ? 'in maintenance' : (kind === 'warn' ? 'running, with trouble' : 'running'));
   explain(pill, 'ai ' + s.version + ' on ' + s.host + '. ' + (s.terms_running || 0) + ' terminal(s) running.'
     + (s.newer ? ' A newer version is out: ' + s.newer + ' (Settings - Upgrades).' : ''));
   var pr = $('problems');
@@ -3927,6 +3928,25 @@ function drawUpDown(d) {
       .then(function () { busy(show, false); });
   };
 }
+/* Maintenance (1.0.46, as otp's): this server out of service, or back. */
+function maintenanceAsk(n, on, then) {
+  if (!on) {
+    api('upgrade', {action: 'maintenance', node: n.name, on: false}).then(function (r) { toast(r.message, 'good'); then(r); }).catch(oops);
+    return;
+  }
+  modal('Take ' + n.name + ' out of service', function (body) {
+    var p = el('p', 'note bad');
+    p.textContent = 'This is the only server: while it is in maintenance nobody but an administrator can sign in, and no new terminal is started but an administrator\'s. The terminals that run go on, and its pages go on working; its /healthz says 503.';
+    body.appendChild(p);
+    var why = textBox('', 'why - for the events', '');
+    why.id = 'maint-why';
+    body.appendChild(formField('Why', why));
+  }, [{words: 'No, leave it', close: true},
+      {words: 'Take it out', cls: 'danger', icon: 'power', close: true, go: function () {
+        api('upgrade', {action: 'maintenance', node: n.name, on: true, why: ($('maint-why') || {}).value || ''})
+          .then(function (r) { toast(r.message, 'good'); then(r); }).catch(oops);
+      }}], true);
+}
 function drawUpgrade(d) {
   d = upSteady(d);
   UP.last = d;
@@ -3934,7 +3954,7 @@ function drawUpgrade(d) {
   liveFill($('up-nodes'), function (host) {
   /* By name, so the rows keep their places whichever node answered (1.0.70). */
   var nodesSorted = (d.nodes || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-  host.appendChild(listTable(['Server', 'Version', 'Heard from', 'State', ''], nodesSorted, function (n) {
+  host.appendChild(listTable(['Node', 'Version', 'Heard from', 'State', ''], nodesSorted, function (n) {
     var tr = el('tr');
     var nm = el('td');
     nm.appendChild(noI18n(el('b', '', n.name)));
@@ -3950,6 +3970,11 @@ function drawUpgrade(d) {
     if (m.on && m.why) st.appendChild(el('span', 'sub', m.why + (m.by ? ' · ' + m.by : '') + (m.at ? ' · ' + ago(m.at) : '')));
     tr.appendChild(st);
     var tools = el('td', 'rowtools');
+    if (ADMIN && n.alive) {
+      var b = cmdButton(m.on ? 'Back in service' : 'Maintenance', m.on ? 'play' : 'power', 'small');
+      b.onclick = function (ev) { ev.stopPropagation(); maintenanceAsk(n, !m.on, drawUpgrade); };
+      tools.appendChild(b);
+    }
     tr.appendChild(tools);
     return tr;
   }, 'plain'));
