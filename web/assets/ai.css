@@ -3743,3 +3743,7 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 @media (max-width:520px){#modal-foot{flex-wrap:wrap;gap:8px}#modal-foot .btn{flex:1 1 auto;justify-content:center}}
 .mig-card .tag{max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.35}
 .mig-card > *{max-width:100%;min-width:0}
+/* Certificates from acme (1.0.58) */
+.push-code{font-size:30px;letter-spacing:.12em;text-align:center;padding:18px 10px;margin:12px 0;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);user-select:all;overflow-wrap:anywhere}
+#web-push .facts{margin:12px 0}
+#web-push h4{margin:16px 0 8px}

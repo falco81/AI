@@ -122,6 +122,35 @@ ai --acme            # how it stands
 ai --acme-order      # order it now, followed here
 ```
 
+## Certificates from acme (acme push)
+
+Your acme - the certificate manager - can give this server its certificate and renew it by itself:
+Settings -> Certificates and TLS -> *Certificates from acme* (protocol 1,
+[acme-push-protocol.md](acme-push-protocol.md)). One more way for a certificate to arrive, nothing else
+changes: off until switched on; an upload, a request, a self-signed one, the Automatic certificates, the TLS
+settings, the export, backups and the command line work as before and replace a pushed certificate as they
+replace any other.
+
+- ai is the application `ai`, at `https://NAME/` (requests `https://NAME/?api=acme-push-OP`); acme's
+  address must be among those that may reach the pages (`--allow`).
+- One slot, `node:HOST`, named as the Automatic certificates name it; both a certificate and its twin of the
+  other key type (ECDSA + RSA) are taken.
+- *Pair with an acme* shows a code (16 characters, 15 minutes, once, 5 wrong tries end it); or acme's key
+  (`acme-push-ed25519 ...`) is pasted. Every request is signed (Ed25519, 300 s, nonces kept 900 s in the
+  database); the certificate's key comes sealed for this server (X25519 + HKDF-SHA256 + AES-256-GCM).
+- A pushed certificate is checked (its fingerprint, its key, valid now, the name of the slot) and put in
+  exactly as an upload: nginx -t and reload, its own ACME leaves it alone from then on (*Look after it*
+  gives it back), an event says which acme put it in. The same certificate again is `already`.
+- The crypto is the `cryptography` module where it is installed, else plain Python - both tested against
+  the document's vectors.
+
+```bash
+ai --acme-push                 # how it stands
+ai --acme-push on              # off | pair | stop
+ai --acme-push-key 'acme-push-ed25519 AAAA... acme@acme1'
+ai --acme-push-forget KEY_ID
+```
+
 ## IPv6
 
 nginx listens on IPv6 whenever the kernel has it: its `[::]` lines are put in

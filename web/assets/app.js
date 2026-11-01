@@ -3214,8 +3214,123 @@ function editUser(u) {
    Certificates and TLS, as otp's (1.0.47)
    ========================================================================== */
 var WEB = {last: null, timer: null};
+/* ---- Certificates from acme (1.0.58): acme push, the receiving end ---------- */
+var PUSH = {};
+function loadPush() {
+  if (!ADMIN || !$('web-push')) return;
+  api('acme-push').then(drawPush).catch(function () { /* the card stays as it was */ });
+}
+function pushDo(body, then) {
+  return api('acme-push', body).then(function (d) {
+    if (d.message) toast(d.message, 'good');
+    drawPush(d);
+    if (then) then(d);
+    return d;
+  }).catch(oops);
+}
+function pushCode(code, until) {
+  modal('Pair with an acme', function (body) {
+    body.appendChild(el('p', 'note', 'In acme: Targets → add An application of ours (acme push), its address below, and this code in Pairing code - then Try. The code is shown this once, works once, for 15 minutes; five wrong tries end it.'));
+    var big = noI18n(el('div', 'push-code mono', code));
+    body.appendChild(big);
+    body.appendChild(peekFacts([['The address for acme', noI18n(el('span', 'mono', location.origin + '/'))],
+      ['Valid until', new Date(until * 1000).toLocaleTimeString(numLang())]]));
+  }, [{words: 'Close', close: true}], true);
+}
+function drawPush(d) {
+  PUSH = d || {};
+  var host = $('web-push');
+  if (!host) return;
+  clear(host);
+  var st = $('web-push-state');
+  if (st) { clear(st); st.appendChild(el('span', 'tag ' + (d.on ? (d.keys.length ? 'ok' : 'warn') : 'dim'), d.on ? (d.keys.length ? 'on - paired' : 'on - not paired yet') : 'off')); }
+  var g = el('div', 'set-grid');
+  var sw = switchBox(d.on);
+  sw._input.onchange = function () { pushDo({action: 'switch', on: !!sw._get()}); };
+  g.appendChild(formField('Take certificates from acme', sw, 'Off: hello says only that it is off, and nothing is taken.'));
+  if (d.on) {
+    var sw2 = switchBox(d.other_names);
+    sw2._input.onchange = function () { pushDo({action: 'other_names', on: !!sw2._get()}); };
+    g.appendChild(formField('Take certificates of other names', sw2, 'Off: a certificate must hold the name of this server (' + ((d.slots || [])[0] || {names: ['?']}).names.join(', ') + '). On: acme may say not to check it.'));
+  }
+  host.appendChild(g);
+  if (!d.on) return;
+  host.appendChild(peekFacts([
+    ['The address for acme', noI18n(el('span', 'mono', location.origin + '/'))],
+    ['This server’s id', noI18n(el('span', 'mono', d.app_id || ''))],
+    ['Its sealing key (X25519)', noI18n(el('span', 'mono small', d.enc_key || ''))]]));
+  /* pairing */
+  var row = el('div', 'btnrow');
+  var pair = cmdButton('Pair with an acme', 'key', 'primary');
+  pair.onclick = function () { pushDo({action: 'pair'}, function (x) { if (x.code) pushCode(x.code, x.pairing.until); }); };
+  row.appendChild(pair);
+  if (d.pairing) {
+    var back = cmdButton('Take it back', 'undo', '');
+    back.onclick = function () { pushDo({action: 'pair_stop'}); };
+    row.appendChild(back);
+    row.appendChild(el('span', 'small muted', 'A code waits until ' + new Date(d.pairing.until * 1000).toLocaleTimeString(numLang()) + ' (' + num(d.pairing.tries) + ' wrong so far).'));
+  }
+  var paste = cmdButton('Or paste acme’s key…', 'edit', '');
+  paste.onclick = function () {
+    var ta, nm;
+    modal('Paste acme’s key', function (body) {
+      body.appendChild(el('p', 'note', 'acme’s own Certificates from acme card shows This acme’s own key: acme-push-ed25519 AAAA… acme then pins this server when it first sees it - keep Check the application’s certificate on there.'));
+      ta = el('textarea', 'mono'); ta.rows = 3; ta.placeholder = 'acme-push-ed25519 …';
+      body.appendChild(formField('acme’s key', ta));
+      nm = textBox('', 'acme1', '');
+      body.appendChild(formField('A name for it', nm));
+    }, [{words: 'Close', close: true}, {words: 'Take this key', cls: 'primary', icon: 'key', go: function (b) {
+      busy(b, true);
+      api('acme-push', {action: 'key_add', key: ta.value.trim(), name: nm.value.trim()})
+        .then(function (x) { toast(x.message, 'good'); closeModal(); drawPush(x); })
+        .catch(function (e) { busy(b, false); oops(e); });
+    }}], true);
+  };
+  row.appendChild(paste);
+  host.appendChild(row);
+  /* the acmes paired */
+  if ((d.keys || []).length) {
+    host.appendChild(el('h4', '', 'Paired with'));
+    host.appendChild(listTable(['acme', 'Key', 'Since', 'How', {words: '', cls: 'act'}], d.keys, function (k) {
+      var tr = el('tr');
+      tr.appendChild(noI18n(el('td', '', k.name || k.comment || '–')));
+      tr.appendChild(noI18n(el('td', 'mono small', k.key_id)));
+      tr.appendChild(stampCell(k.at));
+      tr.appendChild(el('td', 'muted', k.how || ''));
+      var act = el('td', 'rowtools');
+      var f = cmdButton('Forget it', 'trash', 'small danger');
+      f.onclick = function () {
+        confirmThen('Forget this acme?', 'Nothing more is taken from it; the certificate it put in stays until another one replaces it.', 'Forget it', function () {
+          pushDo({action: 'key_forget', key_id: k.key_id});
+        }, true);
+      };
+      act.appendChild(f);
+      tr.appendChild(act);
+      return tr;
+    }));
+  }
+  /* what acme sees here */
+  host.appendChild(el('h4', '', 'What acme sees here'));
+  host.appendChild(listTable(['Slot', 'Names', 'Now', 'Until', 'Looked after by'], d.slots || [], function (s) {
+    var tr = el('tr');
+    tr.appendChild(noI18n(el('td', 'mono small', s.id)));
+    tr.appendChild(noI18n(el('td', 'mono small', (s.names || []).join(', '))));
+    var c = s.current || {};
+    tr.appendChild(el('td', 'small', c.fingerprint ? (c.issuer || '') + (c.alt ? ' + ' + (c.alt.key_type || '') : '') : 'none'));
+    tr.appendChild(c.not_after ? stampCell(c.not_after) : el('td', 'muted', '–'));
+    tr.appendChild(el('td', '', {none: 'nobody (none)', manual: 'by hand', 'own-acme': 'Automatic certificates', 'acme-push': 'acme push'}[s.managed_by] || s.managed_by));
+    return tr;
+  }));
+  if (d.last) {
+    var l = el('p', 'note good');
+    l.textContent = 'The last push: ' + (d.last.acme || '') + ' · ' + ago(d.last.at) + ' · ' + (d.last.said || '');
+    host.appendChild(l);
+  }
+  dressButtons(host);
+}
 function loadWeb() {
   apiLatest('web', 'web').then(drawWeb).catch(oops);
+  loadPush();
   clearInterval(WEB.timer);
   WEB.timer = setInterval(function () {
     if (!paneLive('web')) { clearInterval(WEB.timer); return; }

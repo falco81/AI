@@ -269,5 +269,31 @@ check('nothing written into config.json before the switch', _src.index("if switc
 check('the database settings stay on the page beside the wizard', 'DB_WIZARD_KEYS' not in _js and
       "s.key === 'db_engine'" in _js and 'another engine is reached by Move to another database' in _src)
 
+# acme push (1.0.58): the vectors of the protocol's document, in plain Python and with cryptography
+import re as _re2, collections as _co, base64
+_names = _co.Counter(a or b for a, b in _re2.findall(r'^(?:def|class)\s+([A-Za-z_]\w*)|^([A-Za-z_]\w*)\s*=', _src, _re2.M))
+check('no name defined twice in ai.py (a new part never replaces an old one)', not [k for k, v in _names.items() if v > 1])
+_was_crypto = ai.PUSH_CRYPTO
+for _mode in ('python', _was_crypto):
+    ai.PUSH_CRYPTO = _mode
+    _app = bytes(range(32, 64)); _eph = bytes(range(64, 96)); _gn = bytes(range(96, 108))
+    _apub = ai.push_x25519(_app, (9).to_bytes(32, 'little'))
+    _sealed = ai.push_seal_key('KEY\n', _apub, '00112233445566778899aabbccddeeff', 'ab' * 32, eph=_eph, nonce=_gn)
+    _pub = base64.b64decode('A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=')
+    _can = ai.push_canonical('inventory', '00112233445566778899aabbccddeeff', '56475aa75463474c', 1793534400,
+                             'n0nce-0123456789ab', b'{"slots": ["auto"]}')
+    _sig = base64.b64decode('7nqJW4/NR3Et6pZx3B8qS3rvQGaQR0UTlNdptpRs4lxaZtc3Cf2zBRkOWPB0tV/rmQNfwbcl2/FKJ3Pu2h/bDg==')
+    check('acme push vectors (%s)' % _mode,
+          base64.b64encode(_apub).decode() == 'NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=' and
+          _sealed['ct'] == '2UbSrj9NwnCBu3qZW4U7MzxzlGw=' and ai.push_key_id(_pub) == '56475aa75463474c' and
+          ai.push_ed25519_verify(_pub, _can, _sig) and not ai.push_ed25519_verify(_pub, _can + b'x', _sig) and
+          ai.push_open_key(_sealed, _app, '00112233445566778899aabbccddeeff', 'ab' * 32) == 'KEY\n' and
+          ai.push_open_key(_sealed, _app, '00112233445566778899aabbccddeeff', 'cd' * 32) is None and
+          ai.push_proof('ABCD-EFGH-JKMN-PQRS', 'pair', '00112233445566778899aabbccddeeff', '56475aa75463474c',
+                        'n0nce-0123456789ab') == 'e8e1978c03896460ce7f6e1697d5a5220c8f3a1cd8a01d2fc2e838dbd9318b39')
+ai.PUSH_CRYPTO = _was_crypto
+check('acme push is off until switched on', "'on': bool(got.get('on'))" in _src and
+      "acme-push-(hello|pair|inventory|install)" in open(os.path.join(HERE, 'web', 'index.php')).read())
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

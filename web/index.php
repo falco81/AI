@@ -18,6 +18,45 @@ require_once __DIR__ . '/ai-art.php';
 if (isset($_GET['api'])) {
     $what = (string) $_GET['api'];
     $post = $_SERVER['REQUEST_METHOD'] === 'POST';
+    /* acme push (1.0.58): acme, the certificate manager, puts certificates in
+       here. Before any session or CSRF check - nothing a browser can be made
+       to send carries a valid signature; the daemon checks it. This page
+       decides nothing: the raw body, byte for byte, and the five headers go
+       to the daemon as they came, its answer back as it is. */
+    if (preg_match('/^acme-push-(hello|pair|inventory|install)$/', $what, $pm)) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        $op = $pm[1];
+        if (($op === 'hello') === $post) {
+            http_response_code(405);
+            echo json_encode(['ok' => false, 'code' => 'bad_request', 'error' => $op === 'hello' ? 'GET' : 'POST']);
+            exit;
+        }
+        $payload = null;
+        if ($post) {
+            $raw = file_get_contents('php://input', false, null, 0, 1024 * 1024 + 1);
+            if ($raw === false) { $raw = ''; }
+            if (strlen($raw) > 1024 * 1024) {
+                http_response_code(413);
+                echo json_encode(['ok' => false, 'code' => 'too_big', 'error' => 'over 1 MiB']);
+                exit;
+            }
+            $hdr = [];
+            foreach (['Version', 'Key', 'Time', 'Nonce', 'Signature'] as $h) {
+                $hdr[$h] = substr((string) ($_SERVER['HTTP_X_ACME_PUSH_' . strtoupper($h)] ?? ''), 0, 300);
+            }
+            $payload = ['body' => base64_encode($raw), 'headers' => $hdr];
+        }
+        [$status, $body] = ai_call('/api/acme-push/' . $op, $post ? 'POST' : 'GET', $payload, 120.0);
+        if ($status === 0) {
+            http_response_code(503);
+            echo json_encode(['ok' => false, 'code' => 'down', 'error' => 'the daemon is not answering']);
+            exit;
+        }
+        http_response_code($status);
+        echo $body;
+        exit;
+    }
     if ($what === 'lang' && !$post) {
         ai_serve_lang();
     }
@@ -119,7 +158,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -130,7 +169,7 @@ if (isset($_GET['api'])) {
     ];
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
-        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'proxy' => '/api/proxy',
+        'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -760,6 +799,15 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         It is put in nginx and nginx is asked before it is reloaded - one it does not take is never
         put in.</p>
       <div id="web-certs" class="cert-grid"></div>
+    </div>
+    <div class="card full" id="web-push-card">
+      <h2>Certificates from acme <span class="right" id="web-push-state"></span></h2>
+      <p class="note">acme, the certificate manager, can give this server its certificate and renew it
+        by itself (acme push). Paired once with a code shown here, acme signs every request with its key and
+        sends the certificate's private key sealed for this server alone; the certificate is kept exactly where
+        an upload above keeps it, and the Automatic certificates leave it alone from then on. Off until switched
+        on; acme's address must be among those that may reach these pages.</p>
+      <div id="web-push"></div>
     </div>
   </div>
 

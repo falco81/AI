@@ -3074,9 +3074,93 @@ STRINGS = {
         'každá tabulka spočítána na obou stranách',
     'done - not switched over yet':
         'hotovo – zatím nepřepnuto',
+    # ---- 1.0.58: Certificates from acme (acme push) ----
+    'Certificates from acme':
+        'Certifikáty z acme',
+    "acme, the certificate manager, can give this server its certificate and renew it by itself (acme push). Paired once with a code shown here, acme signs every request with its key and sends the certificate's private key sealed for this server alone; the certificate is kept exactly where an upload above keeps it, and the Automatic certificates leave it alone from then on. Off until switched on; acme's address must be among those that may reach these pages.":
+        'acme, správce certifikátů, může tomuto serveru dávat certifikát a sám ho obnovovat (acme push). Po jednorázovém spárování kódem z této karty acme podepisuje každý požadavek svým klíčem a soukromý klíč certifikátu posílá zapečetěný jen pro tento server; certifikát se uloží přesně tam, kam ho ukládá ruční nahrání výše, a Automatické certifikáty ho od té doby nechají být. Vypnuté, dokud to nezapnete; adresa acme musí patřit mezi ty, které na tyto stránky smějí.',
+    'Take certificates from acme':
+        'Brát certifikáty z acme',
+    'Off: hello says only that it is off, and nothing is taken.':
+        'Vypnuto: acme se dozví jen to, že je to vypnuté, a nic se nepřevezme.',
+    'Take certificates of other names':
+        'Brát certifikáty i na jiná jména',
+    'The address for acme':
+        'Adresa pro acme',
+    'This server’s id':
+        'Id tohoto serveru',
+    'Its sealing key (X25519)':
+        'Jeho klíč pro pečetění (X25519)',
+    'Pair with an acme':
+        'Spárovat s acme',
+    'Take it back':
+        'Vzít zpět',
+    'Or paste acme’s key…':
+        'Nebo vložit klíč acme…',
+    'Paste acme’s key':
+        'Vložit klíč acme',
+    'acme’s key':
+        'Klíč acme',
+    'A name for it':
+        'Jméno pro něj',
+    'Take this key':
+        'Vzít tento klíč',
+    'Paired with':
+        'Spárováno s',
+    'Forget it':
+        'Zapomenout',
+    'Forget this acme?':
+        'Zapomenout toto acme?',
+    'Nothing more is taken from it; the certificate it put in stays until another one replaces it.':
+        'Nic dalšího se od něj nepřevezme; certifikát, který vložilo, zůstane, dokud ho nenahradí jiný.',
+    'What acme sees here':
+        'Co tu acme vidí',
+    'Slot':
+        'Slot',
+    'Until':
+        'Do',
+    'Looked after by':
+        'Spravuje',
+    'nobody (none)':
+        'nikdo (žádný)',
+    'by hand':
+        'ručně',
+    'acme push':
+        'acme push',
+    'paired with a code':
+        'spárováno kódem',
+    'pasted':
+        'vložený ručně',
+    'Valid until':
+        'Platí do',
+    'In acme: Targets → add An application of ours (acme push), its address below, and this code in Pairing code - then Try. The code is shown this once, works once, for 15 minutes; five wrong tries end it.':
+        'V acme: Cíle → přidat Naše aplikace (acme push), adresu níže a tento kód do Párovací kód – pak Vyzkoušet. Kód se ukáže jen teď, platí jednou a 15 minut; pět chybných pokusů ho zruší.',
+    'acme’s own Certificates from acme card shows This acme’s own key: acme-push-ed25519 AAAA… acme then pins this server when it first sees it - keep Check the application’s certificate on there.':
+        'Karta Certifikáty z acme v samotném acme ukazuje Vlastní klíč tohoto acme: acme-push-ed25519 AAAA… acme si pak tento server zapamatuje, až ho poprvé uvidí – nechte tam zapnuté Kontrolovat certifikát aplikace.',
+    'on - paired':
+        'zapnuto – spárováno',
+    'on - not paired yet':
+        'zapnuto – zatím nespárováno',
+    'switched on':
+        'zapnuto',
+    'the code waits 15 minutes':
+        'kód čeká 15 minut',
+    'the pairing code is gone':
+        'párovací kód je pryč',
+    'taken':
+        'převzato',
+    'forgotten':
+        'zapomenuto',
+    'switch Take certificates from acme on first':
+        'nejdřív zapněte Brát certifikáty z acme',
 }
 
 PATTERNS = {
+    'Off: a certificate must hold the name of this server ({0}). On: acme may say not to check it.':
+        'Vypnuto: certifikát musí obsahovat jméno tohoto serveru ({0}). Zapnuto: acme smí říct, ať se nekontroluje.',
+    'A code waits until {0} ({1} wrong so far).': 'Kód čeká do {0} (zatím {1} chybných).',
+    'The last push: {0} · {1} · {2}': 'Poslední push: {0} · {1} · {2}',
+
     '{0} setting(s) saved. the database settings are in {1}; the daemon starts again on them in a moment (the terminals go on)':
         'Uloženo nastavení: {0}. Nastavení databáze je v {1}; daemon se na něm za chvíli znovu spustí (terminály běží dál)',
 

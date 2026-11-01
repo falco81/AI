@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.57'
+__version__ = '1.0.58'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -13796,6 +13796,907 @@ def tls_export(prof, fmt, password='', legacy=False, chain=True):
             'bytes': len(data)}
 
 
+# ---------------------------------------------------------------------------
+# acme push (1.0.58): certificates from acme, the certificate manager, put in
+# here - protocol 1 (docs/acme-push.md). ai is the receiver: four requests
+# on its pages (?api=acme-push-hello|pair|inventory|install), relayed by PHP
+# as they came to /api/acme-push/OP. Off until switched on (Settings ->
+# Certificates and TLS -> Certificates from acme); nothing else changes: an
+# upload, a request, a self-signed one and the Automatic certificates work as
+# before, and a certificate pushed is kept exactly where an upload keeps it.
+# ---------------------------------------------------------------------------
+PUSH_APP = 'ai'
+PUSH_PROTOCOL = 1
+PUSH_ALG = 'X25519-HKDF-SHA256-A256GCM'
+PUSH_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+PUSH_CODE_S = 15 * 60
+PUSH_CODE_TRIES = 5
+PUSH_SKEW_S = 300
+PUSH_NONCE_S = 900
+PUSH_NONCES_MOST = 20000
+PUSH_KEYS_MOST = 8
+PUSH_BODY_MOST = 1024 * 1024
+PUSH_LOCK = threading.Lock()
+
+
+# ---- the crypto: `cryptography` where it is installed, else plain Python ----
+try:                                                    # pragma: no cover - either way is tested
+    from cryptography.hazmat.primitives.asymmetric import ed25519 as _c_ed25519, x25519 as _c_x25519
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _c_AESGCM
+    from cryptography.hazmat.primitives import serialization as _c_ser
+    PUSH_CRYPTO = 'cryptography'
+except Exception:                                       # noqa: BLE001
+    PUSH_CRYPTO = 'python'
+if os.environ.get('AI_PUSH_PURE'):                      # the tests: the plain Python path, end to end
+    PUSH_CRYPTO = 'python'
+
+_PUSH_ED_P = 2 ** 255 - 19
+_PUSH_ED_Q = 2 ** 252 + 27742317777372353535851937790883648493
+_PUSH_ED_D = -121665 * pow(121666, _PUSH_ED_P - 2, _PUSH_ED_P) % _PUSH_ED_P
+_PUSH_ED_I = pow(2, (_PUSH_ED_P - 1) // 4, _PUSH_ED_P)
+
+
+def _push_ed_xrecover(y, sign):
+    xx = (y * y - 1) * pow(_PUSH_ED_D * y * y + 1, _PUSH_ED_P - 2, _PUSH_ED_P) % _PUSH_ED_P
+    x = pow(xx, (_PUSH_ED_P + 3) // 8, _PUSH_ED_P)
+    if (x * x - xx) % _PUSH_ED_P:
+        x = x * _PUSH_ED_I % _PUSH_ED_P
+    if (x * x - xx) % _PUSH_ED_P:
+        return None
+    if x == 0 and sign:
+        return None
+    if x & 1 != sign:
+        x = _PUSH_ED_P - x
+    return x
+
+
+_PUSH_ED_BY = 4 * pow(5, _PUSH_ED_P - 2, _PUSH_ED_P) % _PUSH_ED_P
+_PUSH_ED_B = (_push_ed_xrecover(_PUSH_ED_BY, 0), _PUSH_ED_BY, 1, _push_ed_xrecover(_PUSH_ED_BY, 0) * _PUSH_ED_BY % _PUSH_ED_P)
+
+
+def _push_ed_add(P, Q):
+    x1, y1, z1, t1 = P
+    x2, y2, z2, t2 = Q
+    a = (y1 - x1) * (y2 - x2) % _PUSH_ED_P
+    b = (y1 + x1) * (y2 + x2) % _PUSH_ED_P
+    c = 2 * t1 * t2 * _PUSH_ED_D % _PUSH_ED_P
+    dd = 2 * z1 * z2 % _PUSH_ED_P
+    e, f, g, h = b - a, dd - c, dd + c, b + a
+    return (e * f % _PUSH_ED_P, g * h % _PUSH_ED_P, f * g % _PUSH_ED_P, e * h % _PUSH_ED_P)
+
+
+def _push_ed_mul(s, P):
+    Q = (0, 1, 1, 0)
+    while s:
+        if s & 1:
+            Q = _push_ed_add(Q, P)
+        P = _push_ed_add(P, P)
+        s >>= 1
+    return Q
+
+
+def _push_ed_eq(P, Q):
+    return (P[0] * Q[2] - Q[0] * P[2]) % _PUSH_ED_P == 0 and (P[1] * Q[2] - Q[1] * P[2]) % _PUSH_ED_P == 0
+
+
+def _push_ed_decode(b):
+    if len(b) != 32:
+        return None
+    y = int.from_bytes(b, 'little')
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    if y >= _PUSH_ED_P:
+        return None
+    x = _push_ed_xrecover(y, sign)
+    if x is None:
+        return None
+    return (x, y, 1, x * y % _PUSH_ED_P)
+
+
+def push_ed25519_verify(pub, msg, sig):
+    """RFC 8032 Ed25519 verification - True or False, never raises."""
+    try:
+        if len(pub) != 32 or len(sig) != 64:
+            return False
+        if PUSH_CRYPTO == 'cryptography':
+            try:
+                _c_ed25519.Ed25519PublicKey.from_public_bytes(bytes(pub)).verify(bytes(sig), bytes(msg))
+                return True
+            except Exception:                               # noqa: BLE001
+                return False
+        A = _push_ed_decode(pub)
+        R = _push_ed_decode(sig[:32])
+        s = int.from_bytes(sig[32:], 'little')
+        if A is None or R is None or s >= _PUSH_ED_Q:
+            return False
+        h = int.from_bytes(hashlib.sha512(sig[:32] + pub + msg).digest(), 'little') % _PUSH_ED_Q
+        return _push_ed_eq(_push_ed_mul(s, _PUSH_ED_B), _push_ed_add(R, _push_ed_mul(h, A)))
+    except Exception:                                   # noqa: BLE001
+        return False
+
+
+def push_x25519(k, u):
+    """RFC 7748 X25519: the scalar k (32 bytes) times the point u (32 bytes)."""
+    if PUSH_CRYPTO == 'cryptography':
+        priv = _c_x25519.X25519PrivateKey.from_private_bytes(bytes(k))
+        if u == (9).to_bytes(32, 'little'):
+            return priv.public_key().public_bytes(_c_ser.Encoding.Raw, _c_ser.PublicFormat.Raw)
+        return priv.exchange(_c_x25519.X25519PublicKey.from_public_bytes(bytes(u)))
+    p = _PUSH_ED_P
+    kk = bytearray(k)
+    kk[0] &= 248
+    kk[31] &= 127
+    kk[31] |= 64
+    sc = int.from_bytes(kk, 'little')
+    x1 = int.from_bytes(u, 'little') & ((1 << 255) - 1)
+    x2, z2, x3, z3, swap = 1, 0, x1, 1, 0
+    for t in range(254, -1, -1):
+        kt = (sc >> t) & 1
+        swap ^= kt
+        if swap:
+            x2, x3, z2, z3 = x3, x2, z3, z2
+        swap = kt
+        a, b = (x2 + z2) % p, (x2 - z2) % p
+        aa, bb = a * a % p, b * b % p
+        e = (aa - bb) % p
+        c, d = (x3 + z3) % p, (x3 - z3) % p
+        da, cb = d * a % p, c * b % p
+        x3 = (da + cb) ** 2 % p
+        z3 = x1 * (da - cb) ** 2 % p
+        x2 = aa * bb % p
+        z2 = e * (aa + 121665 * e) % p
+    if swap:
+        x2, z2 = x3, z3
+    return (x2 * pow(z2, p - 2, p) % p).to_bytes(32, 'little')
+
+
+def push_hkdf(ikm, salt, info, length=32):
+    prk = hmac.new(salt or b'\0' * 32, ikm, hashlib.sha256).digest()
+    out, t, i = b'', b'', 1
+    while len(out) < length:
+        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest()
+        out += t
+        i += 1
+    return out[:length]
+
+
+def _push_aes_tables():
+    sbox = [0] * 256
+    p = q = 1
+    while True:
+        p = p ^ ((p << 1) & 0xFF) ^ (0x1B if p & 0x80 else 0)
+        q ^= q << 1
+        q ^= q << 2
+        q ^= q << 4
+        q &= 0xFF
+        if q & 0x80:
+            q ^= 0x09
+        x = q ^ ((q << 1) | (q >> 7)) ^ ((q << 2) | (q >> 6)) ^ ((q << 3) | (q >> 5)) ^ ((q << 4) | (q >> 4))
+        sbox[p] = (x ^ 0x63) & 0xFF
+        if p == 1:
+            break
+    sbox[0] = 0x63
+    return sbox
+
+
+_PUSH_AES_SBOX = _push_aes_tables()
+
+
+def _push_xt(a):
+    return ((a << 1) ^ 0x1B) & 0xFF if a & 0x80 else a << 1
+
+
+class _PushAes256:
+    """AES-256, the block cipher only (encryption) - enough for GCM."""
+
+    def __init__(self, key):
+        if len(key) != 32:
+            raise ValueError('AES-256 takes 32 bytes')
+        w = [list(key[i:i + 4]) for i in range(0, 32, 4)]
+        rcon = 1
+        for i in range(8, 60):
+            t = list(w[i - 1])
+            if i % 8 == 0:
+                t = [_PUSH_AES_SBOX[b] for b in t[1:] + t[:1]]
+                t[0] ^= rcon
+                rcon = _push_xt(rcon)
+            elif i % 8 == 4:
+                t = [_PUSH_AES_SBOX[b] for b in t]
+            w.append([a ^ b for a, b in zip(w[i - 8], t)])
+        self.rk = [sum(w[r * 4:r * 4 + 4], []) for r in range(15)]
+
+    def block(self, data):
+        s = [a ^ b for a, b in zip(data, self.rk[0])]
+        for r in range(1, 15):
+            s = [_PUSH_AES_SBOX[b] for b in s]
+            s = [s[(i + 4 * (i % 4)) % 16] for i in range(16)]
+            if r != 14:
+                m = []
+                for c in range(4):
+                    a = s[c * 4:c * 4 + 4]
+                    t = a[0] ^ a[1] ^ a[2] ^ a[3]
+                    m += [a[i] ^ t ^ _push_xt(a[i] ^ a[(i + 1) % 4]) for i in range(4)]
+                s = m
+            s = [a ^ b for a, b in zip(s, self.rk[r])]
+        return bytes(s)
+
+
+def _push_gf_mul(x, y):
+    r = 0xE1 << 120
+    z = 0
+    for i in range(127, -1, -1):
+        if (y >> i) & 1:
+            z ^= x
+        x = (x >> 1) ^ r if x & 1 else x >> 1
+    return z
+
+
+def _push_ghash(h, aad, ct):
+    def pad(b):
+        return b + b'\0' * (-len(b) % 16)
+    data = pad(aad) + pad(ct) + (len(aad) * 8).to_bytes(8, 'big') + (len(ct) * 8).to_bytes(8, 'big')
+    y = 0
+    for i in range(0, len(data), 16):
+        y = _push_gf_mul(y ^ int.from_bytes(data[i:i + 16], 'big'), h)
+    return y
+
+
+def push_aes256gcm(key, nonce, data, aad, decrypt=False):
+    """AES-256-GCM with a 12-byte nonce: (ciphertext || tag), or the plaintext
+    of (ciphertext || tag) - None when the tag does not match."""
+    if PUSH_CRYPTO == 'cryptography':
+        try:
+            g = _c_AESGCM(bytes(key))
+            return g.decrypt(bytes(nonce), bytes(data), bytes(aad)) if decrypt else \
+                g.encrypt(bytes(nonce), bytes(data), bytes(aad))
+        except Exception:                               # noqa: BLE001
+            return None
+    if len(nonce) != 12:
+        return None
+    aes = _PushAes256(key)
+    h = int.from_bytes(aes.block(b'\0' * 16), 'big')
+    j0 = nonce + b'\0\0\0\1'
+
+    def ctr(text):
+        out = bytearray()
+        n = 2
+        for i in range(0, len(text), 16):
+            ks = aes.block(nonce + n.to_bytes(4, 'big'))
+            out += bytes(a ^ b for a, b in zip(text[i:i + 16], ks))
+            n += 1
+        return bytes(out)
+    if decrypt:
+        if len(data) < 16:
+            return None
+        ct, tag = data[:-16], data[-16:]
+        want = (_push_ghash(h, aad, ct) ^ int.from_bytes(aes.block(j0), 'big')).to_bytes(16, 'big')
+        if not hmac.compare_digest(want, tag):
+            return None
+        return ctr(ct)
+    ct = ctr(data)
+    tag = (_push_ghash(h, aad, ct) ^ int.from_bytes(aes.block(j0), 'big')).to_bytes(16, 'big')
+    return ct + tag
+
+
+# ---- the words of the protocol ------------------------------------------------------------
+def push_canonical(op, app_id, key_id, ts, nonce, body):
+    return '\n'.join(['acme-push/1', op, app_id, key_id, str(ts), nonce,
+                      hashlib.sha256(body).hexdigest()]).encode('utf-8')
+
+
+def push_key_id(pub):
+    return hashlib.sha256(pub).hexdigest()[:16]
+
+
+def push_key_parse(text):
+    """`acme-push-ed25519 BASE64 [comment]` -> (32 bytes, comment), or ValueError."""
+    parts = str(text or '').strip().split(None, 2)
+    if len(parts) < 2 or parts[0] != 'acme-push-ed25519':
+        raise ValueError('acme\'s key starts "acme-push-ed25519 " and its 32 bytes in BASE64')
+    try:
+        pub = base64.b64decode(parts[1], validate=True)
+    except (ValueError, TypeError):
+        raise ValueError('acme\'s key is not BASE64')
+    if len(pub) != 32 or _push_ed_decode(pub) is None:
+        raise ValueError('that is not an Ed25519 public key')
+    return pub, (parts[2] if len(parts) > 2 else '')
+
+
+def push_code_clean(code):
+    return re.sub(r'[^A-Z0-9]', '', str(code or '').upper())
+
+
+def push_proof(code, words, *parts):
+    return hmac.new(push_code_clean(code).encode(), '\n'.join(['acme-push/1 ' + words] + list(parts)).encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def push_seal_key(key_pem, app_pub, app_id, fingerprint, eph=None, nonce=None):
+    """The sender's half (as acme does it) - for the tests and for an ai
+    that pushes on one day; unused by the receiver."""
+    eph = eph or secrets.token_bytes(32)
+    epk = push_x25519(eph, (9).to_bytes(32, 'little'))
+    shared = push_x25519(eph, app_pub)
+    if shared == b'\0' * 32:
+        raise ValueError('a weak key')
+    k = push_hkdf(shared, epk + app_pub, b'acme-push/1 key_pem')
+    nonce = nonce or secrets.token_bytes(12)
+    aad = ('acme-push/1 key\n%s\n%s' % (app_id, fingerprint.lower())).encode()
+    ct = push_aes256gcm(k, nonce, key_pem.encode(), aad)
+    return {'alg': PUSH_ALG, 'epk': base64.b64encode(epk).decode(), 'nonce': base64.b64encode(nonce).decode(),
+            'ct': base64.b64encode(ct).decode()}
+
+
+def push_open_key(sealed, app_priv, app_id, fingerprint):
+    """The certificate's key, opened with this ai's X25519 key - or None."""
+    try:
+        if not isinstance(sealed, dict) or sealed.get('alg') != PUSH_ALG:
+            return None
+        epk = base64.b64decode(sealed['epk'], validate=True)
+        nonce = base64.b64decode(sealed['nonce'], validate=True)
+        ct = base64.b64decode(sealed['ct'], validate=True)
+        if len(epk) != 32 or len(nonce) != 12:
+            return None
+        app_pub = push_x25519(app_priv, (9).to_bytes(32, 'little'))
+        shared = push_x25519(app_priv, epk)
+        if shared == b'\0' * 32:
+            return None
+        k = push_hkdf(shared, epk + app_pub, b'acme-push/1 key_pem')
+        aad = ('acme-push/1 key\n%s\n%s' % (app_id, str(fingerprint).lower())).encode()
+        got = push_aes256gcm(k, nonce, ct, aad, decrypt=True)
+        return got.decode('utf-8') if got is not None else None
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+class PushNo(Exception):
+    """A refusal of the protocol: its code, its status, its words."""
+
+    def __init__(self, code, status, words):
+        Exception.__init__(self, words)
+        self.code, self.status = code, status
+
+
+# ---- what is kept here (meta, the database: an export or a backup carries it) -------------
+def push_conf(store):
+    got = store.meta_json('acme_push:conf', {}) or {}
+    return {'on': bool(got.get('on')), 'other_names': bool(got.get('other_names'))}
+
+
+def push_box(store, make=False):
+    """This ai's id and X25519 key - made once, the private half sealed."""
+    got = store.meta_json('acme_push:box', None)
+    if isinstance(got, dict) and got.get('app_id') and got.get('priv'):
+        priv = unseal_secret(got['priv'], 'acme_push:box')
+        if priv:
+            try:
+                p = bytes.fromhex(priv)
+                return {'app_id': got['app_id'], 'priv': p,
+                        'pub': base64.b64encode(push_x25519(p, (9).to_bytes(32, 'little'))).decode()}
+            except ValueError:
+                pass
+    if not make:
+        return None
+    with PUSH_LOCK:
+        priv = secrets.token_bytes(32)
+        app_id = secrets.token_hex(16)
+        store.set_meta_json('acme_push:box', {'app_id': app_id, 'at': time.time(),
+                                              'priv': seal_secret(priv.hex(), 'acme_push:box')})
+    return {'app_id': app_id, 'priv': priv, 'pub': base64.b64encode(push_x25519(priv, (9).to_bytes(32, 'little'))).decode()}
+
+
+def push_keys(store):
+    got = store.meta_json('acme_push:keys', []) or []
+    return [k for k in got if isinstance(k, dict) and k.get('pub') and k.get('key_id')]
+
+
+def push_key_add(store, text, name, by, how):
+    pub, comment = push_key_parse(text)
+    kid = push_key_id(pub)
+    with PUSH_LOCK:
+        keys = [k for k in push_keys(store) if k['key_id'] != kid]
+        keys.append({'key_id': kid, 'pub': base64.b64encode(pub).decode(), 'comment': comment[:120],
+                     'name': str(name or comment or '')[:120], 'at': time.time(), 'by': by, 'how': how})
+        store.set_meta_json('acme_push:keys', keys[-PUSH_KEYS_MOST:])
+    return kid
+
+
+def push_code_new(store, by):
+    code = ''.join(secrets.choice(PUSH_ALPHABET) for _ in range(16))
+    store.set_meta_json('acme_push:code', {'code': seal_secret(code, 'acme_push:code'),
+                                           'until': time.time() + PUSH_CODE_S, 'tries': 0, 'by': by})
+    return '-'.join(code[i:i + 4] for i in range(0, 16, 4))
+
+
+def push_code_waiting(store):
+    got = store.meta_json('acme_push:code', None)
+    if not isinstance(got, dict) or float(got.get('until') or 0) < time.time():
+        return None
+    code = unseal_secret(got.get('code') or '', 'acme_push:code')
+    return dict(got, plain=code) if code else None
+
+
+def push_code_drop(store):
+    store.x('DELETE FROM meta WHERE k = ?', ('acme_push:code',))
+
+
+def push_nonce_seen(store, key_id, nonce):
+    """True when (key, nonce) came within PUSH_NONCE_S; kept in the database."""
+    now = time.time()
+    with PUSH_LOCK:
+        seen = store.meta_json('acme_push:nonces', {}) or {}
+        seen = {k: v for k, v in seen.items() if now - float(v or 0) < PUSH_NONCE_S}
+        k = key_id + ':' + nonce
+        if k in seen:
+            return True
+        seen[k] = now
+        if len(seen) > PUSH_NONCES_MOST:
+            seen = dict(sorted(seen.items(), key=lambda kv: kv[1])[-PUSH_NONCES_MOST:])
+        store.set_meta_json('acme_push:nonces', seen)
+    return False
+
+
+# ---- the one slot of this server: its pages ------------------------------------------------
+def _push_fp(info):
+    return re.sub(r'[^0-9a-f]', '', str((info or {}).get('fingerprint') or '').lower())
+
+
+def _push_key_type(info):
+    m = re.match(r'(EC|RSA)\s+(\d+)', str((info or {}).get('key') or ''))
+    return ('%s-%s' % (m.group(1).lower(), m.group(2))) if m else ''
+
+
+def _push_names(info):
+    out = []
+    for n in [(info or {}).get('cn')] + list((info or {}).get('san') or []):
+        n = str(n or '').strip().lower()
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def push_covers(names, want):
+    """Whether a certificate of `names` holds the name `want` (a wildcard one
+    level deep holds it too)."""
+    want = str(want or '').lower().rstrip('.')
+    for n in names:
+        n = str(n or '').lower().rstrip('.')
+        if n == want:
+            return True
+        if n.startswith('*.') and '.' in want and want.split('.', 1)[1] == n[2:]:
+            return True
+    return False
+
+
+def push_slots(store):
+    prof = tls_prof(store) or {}
+    info = prof.get('info') or {}
+    how = str(prof.get('how') or '')
+    alt = tls_alt(prof)
+    current = None
+    if prof.get('cert'):
+        current = {'fingerprint': _push_fp(info), 'not_before': info.get('not_before'),
+                   'not_after': info.get('not_after'), 'subject': info.get('subject'),
+                   'issuer': info.get('issuer'), 'names': _push_names(info), 'key_type': _push_key_type(info),
+                   'alt': ({'fingerprint': _push_fp(alt.get('info')), 'not_after': (alt.get('info') or {}).get(
+                       'not_after'), 'key_type': _push_key_type(alt.get('info'))} if alt else None)}
+    if not prof.get('cert'):
+        managed = 'none'
+    elif how.startswith('acme push'):
+        managed = 'acme-push'
+    elif how == 'ACME' and CONFIG.get('acme') and acme_care(store):
+        managed = 'own-acme'
+    else:
+        managed = 'manual'
+    me = node_name()
+    return [{'id': 'node:' + me, 'kind': 'node', 'node': me, 'title': 'the pages of %s' % me,
+             'names': [acme_name_of(store)], 'key_types': ['ec', 'rsa'], 'dual': True, 'current': current,
+             'how': how, 'managed_by': managed, 'installable': True, 'why_not': ''}]
+
+
+def push_hello(store):
+    conf = push_conf(store)
+    out = {'protocol': [PUSH_PROTOCOL], 'app': PUSH_APP, 'version': __version__, 'on': conf['on']}
+    if not conf['on']:
+        return out
+    box = push_box(store, make=True)
+    me = node_name()
+    out.update(app_id=box['app_id'], enc_key=box['pub'], enc_alg=PUSH_ALG, node=me, cluster=False, nodes=[me],
+               vip={'on': False, 'fqdn': '', 'address': ''}, slots=[s['id'] for s in push_slots(store)],
+               paired=len(push_keys(store)), pairing=bool(push_code_waiting(store)))
+    return out
+
+
+def push_check(store, op, raw, headers, box):
+    """Section 5, in its order: the key that signed it, or PushNo."""
+    h = {str(k).lower(): str(v or '') for k, v in (headers or {}).items()}
+    if h.get('version', '') not in ('', '1'):
+        raise PushNo('version', 400, 'this speaks protocol 1')
+    kid, ts, nonce, sig = h.get('key', ''), h.get('time', ''), h.get('nonce', ''), h.get('signature', '')
+    if not re.match(r'^[0-9a-f]{16}\Z', kid) or not re.match(r'^\d{1,12}\Z', ts) or \
+            not re.match(r'^[A-Za-z0-9_-]{16,64}\Z', nonce):
+        raise PushNo('unsigned', 401, 'a header of the signature is missing or not as it should be')
+    try:
+        sig_b = base64.b64decode(sig, validate=True)
+    except (ValueError, TypeError):
+        raise PushNo('unsigned', 401, 'the signature is not BASE64')
+    if len(sig_b) != 64:
+        raise PushNo('unsigned', 401, 'the signature is not 64 bytes')
+    if op == 'pair':
+        try:
+            body = json.loads(raw.decode('utf-8'))
+            pub, _c = push_key_parse(body.get('acme_key') if isinstance(body, dict) else '')
+        except (ValueError, UnicodeDecodeError):
+            raise PushNo('bad_request', 400, 'the body has no acme_key')
+        if push_key_id(pub) != kid:
+            raise PushNo('unknown_key', 401, 'the key id is not the one of the key in the body')
+        key = {'key_id': kid, 'pub': base64.b64encode(pub).decode()}
+    else:
+        key = next((k for k in push_keys(store) if k['key_id'] == kid), None)
+        if not key:
+            raise PushNo('unknown_key', 401, 'that is not a key of an acme paired here')
+        pub = base64.b64decode(key['pub'])
+        if push_key_id(pub) != kid:
+            raise PushNo('unknown_key', 401, 'the key kept here is not that key')
+    off = int(time.time()) - int(ts)
+    if abs(off) > PUSH_SKEW_S:
+        raise PushNo('stale', 401, 'the time of the request is %d s away from this server\'s - a clock is wrong'
+                     % off)
+    if not push_ed25519_verify(pub, push_canonical(op, box['app_id'], kid, ts, nonce, raw), sig_b):
+        raise PushNo('bad_signature', 401, 'the signature does not match')
+    if push_nonce_seen(store, kid, nonce):
+        raise PushNo('replay', 401, 'that request was here already')
+    return key, nonce
+
+
+def push_body(raw):
+    try:
+        got = json.loads(raw.decode('utf-8'), parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+    except (ValueError, UnicodeDecodeError):
+        raise PushNo('bad_request', 400, 'the body is not JSON')
+    if not isinstance(got, dict):
+        raise PushNo('bad_request', 400, 'the body is not an object')
+    return got
+
+
+def push_pair(store, body, key, nonce, box):
+    waiting = push_code_waiting(store)
+    if not waiting:
+        raise PushNo('pairing_closed', 403, 'no pairing code waits here (Certificates from acme -> Pair with an '
+                                            'acme), or it ran out')
+    want = push_proof(waiting['plain'], 'pair', box['app_id'], key['key_id'], nonce)
+    if not hmac.compare_digest(want, str(body.get('proof') or '').lower()):
+        tries = int(waiting.get('tries') or 0) + 1
+        if tries >= PUSH_CODE_TRIES:
+            push_code_drop(store)
+            store.add_event('settings', 'acme push: a wrong pairing code %d times - the code is gone' % tries,
+                            'warn')
+        else:
+            store.set_meta_json('acme_push:code', dict({k: v for k, v in waiting.items() if k != 'plain'},
+                                                       tries=tries))
+            store.add_event('settings', 'acme push: a wrong pairing code (%d of %d)' % (tries, PUSH_CODE_TRIES),
+                            'warn')
+        raise PushNo('bad_code', 403, 'that is not the pairing code waiting here')
+    name = str(body.get('acme_name') or '')[:120]
+    push_key_add(store, body.get('acme_key'), name, 'acme push', 'paired with a code')
+    push_code_drop(store)
+    store.add_event('settings', 'acme push: paired with %s (key %s); it may put certificates in now'
+                    % (name or 'an acme', key['key_id']), 'warn')
+    return {'app': PUSH_APP, 'app_id': box['app_id'], 'key_id': key['key_id'], 'enc_key': box['pub'],
+            'enc_alg': PUSH_ALG,
+            'confirm': push_proof(waiting['plain'], 'paired', box['app_id'], key['key_id'], nonce, box['pub'])}
+
+
+def push_inventory(store, box):
+    me = node_name()
+    return {'app': PUSH_APP, 'version': __version__, 'app_id': box['app_id'],
+            'cluster': {'on': False, 'node': me, 'nodes': [me], 'vip': {'on': False, 'fqdn': '', 'address': ''}},
+            'other_names': push_conf(store)['other_names'], 'slots': push_slots(store)}
+
+
+def _push_der_fp(pem):
+    m = PEM_CERT.search(str(pem or ''))
+    if not m:
+        return ''
+    body = re.sub(r'-----[A-Z ]+-----|\s', '', m.group(0))
+    try:
+        return hashlib.sha256(base64.b64decode(body)).hexdigest()
+    except (ValueError, TypeError):
+        return ''
+
+
+def _push_one(part, box, what):
+    """One certificate of an install (the main one, or its twin) checked and
+    opened: cert_bundle's parts, the key in clear."""
+    if not isinstance(part, dict):
+        raise PushNo('bad_request', 400, '%s is not an object' % what)
+    cert = str(part.get('cert_pem') or '')
+    fp = str(part.get('fingerprint') or '').lower()
+    if not PEM_CERT.search(cert) or not re.match(r'^[0-9a-f]{64}\Z', fp):
+        raise PushNo('bad_request', 400, '%s has no certificate or no fingerprint' % what)
+    if _push_der_fp(cert) != fp:
+        raise PushNo('bad_request', 400, 'the fingerprint of %s is not the one of its certificate' % what)
+    key_pem = push_open_key(part.get('key'), box['priv'], box['app_id'], fp)
+    if not key_pem:
+        raise PushNo('bad_key', 400, 'the key of %s does not open here - sealed to another key of this server '
+                                     '(pair again), or for another certificate' % what)
+    leaf = PEM_CERT.search(cert).group(0)
+    chain = '\n'.join(m.group(0) for m in PEM_CERT.finditer(str(part.get('chain_pem') or '')))
+    try:
+        got = cert_bundle(cert=leaf, key=key_pem, chain=chain)
+    except ValueError as e:
+        if 'of this key' in str(e):
+            raise PushNo('key_mismatch', 422, 'the key is not the one of the certificate (%s)' % what)
+        raise PushNo('bad_cert', 422, '%s cannot be read: %s' % (what, e))
+    if _push_der_fp(got['cert']) != fp:
+        raise PushNo('key_mismatch', 422, 'the key is not the one of the certificate (%s)' % what)
+    info = got['info']
+    now = time.time()
+    if info.get('not_after') and float(info['not_after']) < now:
+        raise PushNo('expired', 422, '%s ran out' % what)
+    if info.get('not_before') and float(info['not_before']) > now + 60:
+        raise PushNo('not_yet_valid', 422, '%s is not valid yet' % what)
+    return got, fp
+
+
+def push_install(store, body, key, box):
+    conf = push_conf(store)
+    slots = push_slots(store)
+    by_id = {s['id']: s for s in slots}
+    me = node_name()
+    asked = body.get('slots') or ['auto']
+    if not isinstance(asked, list) or not all(isinstance(x, str) for x in asked):
+        raise PushNo('bad_request', 400, 'slots is a list of slot ids')
+    got, fp = _push_one(body, box, 'the certificate')
+    names = _push_names(got['info'])
+    check_names = body.get('check_names', True) is not False or not conf['other_names']
+    picked = []
+    for a in asked:
+        if a == 'auto':
+            hit = [s['id'] for s in slots if all(push_covers(names, n) for n in s['names'])]
+            if not hit:
+                raise PushNo('names', 422, 'no slot here is named in the certificate (%s); here: %s' % (
+                    ', '.join(names), ', '.join(n for s in slots for n in s['names'])))
+            picked += hit
+        elif a in ('nodes', 'this'):
+            picked.append('node:' + me)
+        elif a == 'vip':
+            raise PushNo('no_slot', 404, 'this server has no VIP address')
+        elif a in by_id:
+            picked.append(a)
+        elif ('node:' + a) in by_id:
+            picked.append('node:' + a)
+        else:
+            raise PushNo('no_slot', 404, 'there is no slot %s here' % a)
+    picked = list(dict.fromkeys(picked))
+    for sid in picked:
+        s = by_id[sid]
+        if not s.get('installable'):
+            raise PushNo('not_installable', 409, '%s: %s' % (sid, s.get('why_not') or 'not now'))
+        if check_names:
+            lack = [n for n in s['names'] if not push_covers(names, n)]
+            if lack:
+                raise PushNo('names', 422, 'the certificate does not hold %s, the name of %s' % (', '.join(lack), sid))
+    twin, twin_fp = None, ''
+    if isinstance(body.get('alt'), dict):
+        twin, twin_fp = _push_one(body['alt'], box, 'its twin (alt)')
+    acme_name = None
+    kk = next((k for k in push_keys(store) if k['key_id'] == key['key_id']), {})
+    acme_name = kk.get('name') or kk.get('comment') or key['key_id']
+    out = []
+    for sid in picked:
+        prof = tls_prof(store) or {}
+        now_alt = tls_alt(prof)
+        same = (_push_fp(prof.get('info')) == fp and str(prof.get('how') or '').startswith('acme push') and
+                (_push_fp((now_alt or {}).get('info')) if now_alt else '') == twin_fp)
+        if same and not body.get('force'):
+            out.append({'slot': sid, 'node': me, 'names': by_id[sid]['names'], 'fingerprint': fp,
+                        'not_after': got['info'].get('not_after'), 'state': 'already'})
+            continue
+        prof.update(cert=got['cert'], chain=got['chain'], root=got['root'], key=seal_secret(got['key'], 'web:tls'),
+                    info=got['info'], chain_info=got['chain_info'], root_info=got['root_info'],
+                    verify=got['verify'], how='acme push: %s' % acme_name)
+        if twin:
+            prof['alt'] = {'cert': twin['cert'], 'chain': twin['chain'], 'key': seal_secret(twin['key'], 'web:tls'),
+                           'info': twin['info'], 'for': tls_alt_for(got['cert'])}
+        else:
+            prof.pop('alt', None)
+        for k in ('pending_key', 'csr'):
+            prof.pop(k, None)
+        prof.setdefault('preset', 'standard')
+        prof.setdefault('dh', 'none')
+        try:
+            acme_tls_put(store, prof, 'acme push')
+        except AcmeError as e:
+            raise PushNo('not_installable', 409, str(e))
+        # Its own Automatic certificates leave it alone from now on, as after
+        # an upload; Look after it gives it back.
+        acme_care_set(store, None, False, 'acme push', 'a certificate came from acme push')
+        store.add_event('settings', 'acme push: %s put a certificate for %s in (%s%s, until %s)' % (
+            acme_name, ', '.join(names), got['info'].get('issuer') or '?',
+            ' + its twin' if twin else '', time.strftime('%d-%m-%Y', time.localtime(
+                float(got['info'].get('not_after') or 0)))), 'warn', who='acme push')
+        out.append({'slot': sid, 'node': me, 'names': by_id[sid]['names'], 'fingerprint': fp,
+                    'not_after': got['info'].get('not_after'), 'state': 'installed'})
+    said = '; '.join(('put in for %s - nginx has it now' if x['state'] == 'installed' else 'already there for %s')
+                     % x['slot'] for x in out)
+    store.set_meta_json('acme_push:last', {'at': time.time(), 'acme': acme_name, 'said': said,
+                                           'fingerprint': fp, 'names': names, 'installed': out})
+    return {'installed': out, 'said': said}
+
+
+def push_serve(store, op, given):
+    """One request of acme: (status, answer)."""
+    try:
+        conf = push_conf(store)
+        if op == 'hello':
+            return 200, push_hello(store)
+        if not isinstance(given, dict):
+            raise PushNo('bad_request', 400, 'not what the page sends')
+        try:
+            raw = base64.b64decode(str(given.get('body') or ''), validate=True)
+        except (ValueError, TypeError):
+            raise PushNo('bad_request', 400, 'the body did not come through')
+        if len(raw) > PUSH_BODY_MOST:
+            raise PushNo('too_big', 413, 'over 1 MiB')
+        if not conf['on']:
+            raise PushNo('off', 403, 'this server takes no certificates from acme (switched off)')
+        box = push_box(store, make=True)
+        if op != 'pair' and not push_keys(store):
+            raise PushNo('not_paired', 401, 'switched on, but no acme is paired here yet')
+        key, nonce = push_check(store, op, raw, given.get('headers') or {}, box)
+        body = push_body(raw)
+        if op == 'pair':
+            return 200, push_pair(store, body, key, nonce, box)
+        if op == 'inventory':
+            return 200, push_inventory(store, box)
+        if op == 'install':
+            return 200, push_install(store, body, key, box)
+        raise PushNo('bad_request', 400, 'no such request')
+    except PushNo as e:
+        log('acme push %s refused: %s' % (op, e.code), 'warn')
+        return e.status, {'ok': False, 'code': e.code, 'error': str(e)}
+
+
+for _op in ('pair', 'inventory', 'install'):
+    route('POST', '/api/acme-push/' + _op, anon=True)(
+        (lambda op: lambda c: push_serve(c.daemon.store, op, c.body))(_op))
+route('GET', '/api/acme-push/hello', anon=True)(lambda c: push_serve(c.daemon.store, 'hello', None))
+
+
+# ---- the card on Certificates and TLS (an administrator's) ----------------------------------
+def cli_acme_push(st, a, pal):
+    """ai --acme-push ...: the card Certificates from acme, on the command line."""
+    by = 'the command line'
+    conf = push_conf(st)
+    if a.acme_push in ('on', 'off'):
+        conf['on'] = a.acme_push == 'on'
+        st.set_meta_json('acme_push:conf', conf)
+        if conf['on']:
+            push_box(st, make=True)
+        else:
+            push_code_drop(st)
+        st.add_event('settings', '%s %s certificates from acme' % (by, 'takes' if conf['on'] else 'no longer takes'),
+                     'warn', who=by)
+    if a.acme_push in ('pair', 'stop') or a.acme_push_key or a.acme_push_forget:
+        if not conf['on']:
+            raise Refused('switch it on first: ai --acme-push on')
+    if a.acme_push == 'pair':
+        code = push_code_new(st, by)
+        st.add_event('settings', '%s opened a pairing with an acme for 15 minutes' % by, 'warn', who=by)
+        print(pal.ok_line('the pairing code, for 15 minutes, once: %s' % code))
+        print('  in acme: Targets -> An application of ours (acme push), the address https://%s/ and this code'
+              % (CONFIG.get('server_name') or socket.getfqdn()))
+    if a.acme_push == 'stop':
+        push_code_drop(st)
+        print(pal.ok_line('the pairing code is gone'))
+    if a.acme_push_key:
+        try:
+            kid = push_key_add(st, a.acme_push_key, getattr(a, 'name', '') or '', by, 'pasted')
+        except ValueError as e:
+            raise Refused(str(e))
+        st.add_event('settings', '%s took the key of an acme (%s)' % (by, kid), 'warn', who=by)
+        print(pal.ok_line('taken: %s' % kid))
+    if a.acme_push_forget:
+        keys = push_keys(st)
+        left = [k for k in keys if k['key_id'] != a.acme_push_forget]
+        if len(left) == len(keys):
+            raise Refused('no such key here')
+        st.set_meta_json('acme_push:keys', left)
+        st.add_event('settings', '%s forgot the key of an acme (%s)' % (by, a.acme_push_forget), 'warn', who=by)
+        print(pal.ok_line('forgotten'))
+    v = push_view(st)
+    if a.json:
+        say_json(v)
+        return 0
+    print('certificates from acme: %s%s' % ('on' if v['on'] else 'off', (' - %d acme(s) paired' % len(v['keys']))
+                                            if v['on'] else ''))
+    if v['on']:
+        print('  this server\'s id   %s' % v['app_id'])
+        print('  its sealing key    %s' % v['enc_key'])
+        if v['pairing']:
+            print('  a pairing code waits until %s' % time.strftime('%H:%M:%S', time.localtime(v['pairing']['until'])))
+    for k in v['keys']:
+        print('  paired: %-20s %s  %s' % (k.get('name') or k.get('comment') or '-', k['key_id'], k.get('how') or ''))
+    for s_ in v['slots']:
+        c_ = s_.get('current') or {}
+        print('  slot %s  %s  looked after: %s  %s' % (s_['id'], ', '.join(s_['names']), s_['managed_by'],
+                                                       ('until ' + time.strftime('%Y-%m-%d', time.localtime(
+                                                           float(c_['not_after'])))) if c_.get('not_after') else ''))
+    if v.get('last'):
+        print('  the last push: %s, %s' % (v['last'].get('acme'), v['last'].get('said')))
+    return 0
+
+
+def push_view(store):
+    conf = push_conf(store)
+    box = push_box(store) if conf['on'] else None
+    code = push_code_waiting(store)
+    return {'on': conf['on'], 'other_names': conf['other_names'], 'app': PUSH_APP,
+            'app_id': (box or {}).get('app_id', ''), 'enc_key': (box or {}).get('pub', ''),
+            'keys': [{k: x.get(k) for k in ('key_id', 'name', 'comment', 'at', 'by', 'how')} for x in push_keys(store)],
+            'pairing': ({'until': code['until'], 'tries': code.get('tries', 0)} if code else None),
+            'slots': push_slots(store), 'last': store.meta_json('acme_push:last', None),
+            'crypto': PUSH_CRYPTO, 'protocol': PUSH_PROTOCOL}
+
+
+@route('GET', '/api/acme-push', admin=True)
+def api_push(c):
+    return push_view(c.daemon.store)
+
+
+@route('POST', '/api/acme-push', admin=True)
+def api_push_do(c):
+    st, b, by = c.daemon.store, c.body, c.name
+    act = str(b.get('action') or '')
+    conf = push_conf(st)
+    if act == 'switch':
+        conf['on'] = bool(b.get('on'))
+        st.set_meta_json('acme_push:conf', conf)
+        if conf['on']:
+            push_box(st, make=True)
+        else:
+            push_code_drop(st)
+        st.add_event('settings', '%s %s certificates from acme' % (by, 'takes' if conf['on'] else 'no longer takes'),
+                     'warn', who=by)
+        return dict(push_view(st), message='switched %s' % ('on' if conf['on'] else 'off'))
+    if act == 'other_names':
+        conf['other_names'] = bool(b.get('on'))
+        st.set_meta_json('acme_push:conf', conf)
+        st.add_event('settings', '%s: certificates of other names from acme %s' % (
+            by, 'are taken' if conf['other_names'] else 'are refused'), 'warn', who=by)
+        return dict(push_view(st), message='saved')
+    if not conf['on']:
+        raise Refused('switch Take certificates from acme on first')
+    if act == 'pair':
+        code = push_code_new(st, by)
+        st.add_event('settings', '%s opened a pairing with an acme for 15 minutes' % by, 'warn', who=by)
+        return dict(push_view(st), code=code, message='the code waits 15 minutes')
+    if act == 'pair_stop':
+        push_code_drop(st)
+        return dict(push_view(st), message='the pairing code is gone')
+    if act == 'key_add':
+        try:
+            kid = push_key_add(st, b.get('key'), b.get('name') or '', by, 'pasted')
+        except ValueError as e:
+            raise Refused(str(e))
+        st.add_event('settings', '%s took the key of an acme (%s); it may put certificates in now' % (by, kid),
+                     'warn', who=by)
+        return dict(push_view(st), message='taken')
+    if act == 'key_forget':
+        kid = str(b.get('key_id') or '')
+        with PUSH_LOCK:
+            keys = push_keys(st)
+            left = [k for k in keys if k['key_id'] != kid]
+            if len(left) == len(keys):
+                raise Refused('that key is not here', 404)
+            st.set_meta_json('acme_push:keys', left)
+        st.add_event('settings', '%s forgot the key of an acme (%s): nothing more is taken from it' % (by, kid),
+                     'warn', who=by)
+        return dict(push_view(st), message='forgotten')
+    raise Refused('switch, other_names, pair, pair_stop, key_add or key_forget')
+
+
 @route('GET', '/api/web', admin=True)
 def api_web(c):
     prof = tls_prof(c.daemon.store)
@@ -21940,6 +22841,12 @@ def build_parser():
     g.add_argument('--acme', action='store_true', help='the certificate by ACME: its name, end, who looks after '
                    'it, its last order')
     g.add_argument('--acme-order', action='store_true', help='order the certificate by ACME now, followed here')
+    g.add_argument('--acme-push', nargs='?', const='status', choices=('status', 'on', 'off', 'pair', 'stop'),
+                   metavar='status|on|off|pair|stop',
+                   help='certificates from acme (acme push): how it stands, switched on or off, a pairing code '
+                        '(15 minutes), the code taken back')
+    g.add_argument('--acme-push-key', metavar='KEY', help='acme\'s key taken (acme-push-ed25519 ...)')
+    g.add_argument('--acme-push-forget', metavar='KEY_ID', help='an acme forgotten: nothing more is taken from it')
     g.add_argument('--tls-hsts', type=int, metavar='SECONDS', help='Strict-Transport-Security (0 = none)')
     g.add_argument('--reboot', action='store_true', help='restart the server (asks, or --yes)')
     g.add_argument('--poweroff', action='store_true', help='switch the server off (asks, or --yes)')
@@ -22527,6 +23434,8 @@ def cli_main(argv):
                 print('  account        %s, made %s, %s' % (v['account'].get('email') or '(no mail)',
                                                          _acme_day(v['account'].get('at')), v['account'].get('key')))
             return 0
+        if a.acme_push or a.acme_push_key or a.acme_push_forget:
+            return cli_acme_push(st, a, pal)
         if a.acme_order:
             if not CONFIG.get('acme'):
                 raise Refused('certificates by ACME are off - ai --set acme=1 (and acme_* ) first')

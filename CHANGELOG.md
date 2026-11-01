@@ -3,6 +3,28 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.58
+
+- **Certificates from acme (acme push, protocol 1)**: your acme - the certificate manager - can give this server
+  its certificate and renew it by itself. Settings -> Certificates and TLS has a new card *Certificates from
+  acme*: switched on (off until then), *Pair with an acme* shows a one-time code (15 minutes, five wrong tries end
+  it) or acme's key is pasted; the paired acmes with *Forget it*; *Take certificates of other names*; what acme
+  sees here (the slot `node:HOST`, its names, the certificate it has, who looks after it) and the last push.
+  The pages answer acme's four requests (`?api=acme-push-hello|pair|inventory|install`) before any session:
+  every request signed with acme's Ed25519 key (time within 300 s, nonces kept in the database), the
+  certificate's key sealed for this server alone (X25519 + HKDF-SHA256 + AES-256-GCM). A certificate pushed -
+  with its twin of the other key type where acme sends one - is checked (fingerprint, key, valid now, the name)
+  and put in exactly as an upload is: nginx -t and reload, the Automatic certificates leave it alone (*Look
+  after it* gives it back), an event for each. The same one again is `already`, nothing reloaded.
+- **Only one more way - nothing existing changes** (the document's chapter 0): upload, a request, self-signed,
+  the Automatic certificates (ordering and renewing), the TLS settings, the export, backups and the command
+  line work as before, with push off and with push on and paired, and replace a pushed certificate as they
+  replace any other; switched off, the certificate stays where it is. No existing function is redefined - a
+  check now refuses any name defined twice in ai.py.
+- On the command line: `ai --acme-push [status|on|off|pair|stop]`, `--acme-push-key KEY`, `--acme-push-forget
+  KEY_ID`. The crypto is the `cryptography` module where it is installed, else plain Python; both are checked
+  against the document's test vectors.
+
 ## 1.0.57
 
 - **Move to another database…, its first step on a server**: running on PostgreSQL or MariaDB, the card of the
