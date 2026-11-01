@@ -3,6 +3,18 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.52
+
+- **Settings -> Backups -> Try the newest** (as otp's 1.0.169): the newest backup of this server is fetched back
+  from the first destination switched on, opened with the password of the backups, every file checked against
+  its manifest, the copy of the database read to its last line (the accounts counted against the manifest, an
+  administrator there to sign in with), the secrets sealed in it tried against the key in it, config.json read -
+  and the newest nightly copy here read through too. Nothing is put back. The top of the page says *Tried: can
+  be put back* or *NOT GOOD*; a new card *Backups tried* lists each try with every check (one taken off, or the
+  list cleared - the backups stay). *Try the backups* (new setting): only by hand, after every backup (the one
+  just sent), or once a week. On the command line `ai --backup-try` (`--rbackup-verify`), in the console under
+  Data, and in `ai --backups`.
+
 ## 1.0.51
 
 - **A password saved stays saved on the page** (Settings, the save bar): what was saved was left among the

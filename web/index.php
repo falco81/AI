@@ -943,6 +943,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         destination switched on - a folder, FTP, FTPS, SFTP, SCP or a Windows/Samba share. The files of the
         Linux accounts (their projects, ~/.claude) are not in it.</p></div>
     <div id="rb-top"></div>
+    <div class="card full" id="rb-tried-card" hidden><h2>Backups tried <span class="right" id="rb-tried-tools"></span></h2>
+      <div id="rb-tried"></div></div>
     <div class="card full"><h2>When, how many, and the password</h2><div id="sect-backup"></div></div>
     <div class="card full"><h2>Where they go <span class="right" id="rb-add-host"></span></h2>
       <div id="rb-targets"></div></div>

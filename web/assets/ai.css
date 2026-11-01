@@ -3710,3 +3710,14 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .px-node{display:flex;flex-direction:column;gap:10px}
 .px-node-h{display:flex;gap:8px;align-items:center}
 .px-nodes .px-stop{min-width:120px}
+/* the backups tried (1.0.52, otp's 1.0.169) */
+.dot.bad{background:var(--crit)}
+.rb-tried{display:flex;flex-direction:column;gap:6px}
+.rb-try{border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.rb-try.bad{border-color:color-mix(in srgb,var(--crit,#f85149) 50%,var(--line))}
+.rb-try summary{cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap;list-style:none}
+.rb-try summary::-webkit-details-marker{display:none}
+.rb-try-x{margin-left:auto}
+.rb-checks{margin:8px 0 2px 16px;display:flex;flex-direction:column;gap:4px}
+.rb-check{display:flex;gap:8px;align-items:baseline}
+.rb-check .dot{flex:none;transform:translateY(-1px)}

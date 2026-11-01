@@ -5770,6 +5770,9 @@ function drawRbTop() {
   fact('Next', d.next ? new Date(d.next).toLocaleString(numLang(), {weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'by hand only', d.next ? '' : 'warn');
   fact('Locked', d.locked ? 'with the password (AES-256)' : 'NOT locked - set the password', d.locked ? 'good' : 'bad');
   fact('Destinations', num(on.length) + ' of ' + num((d.targets || []).length) + ' switched on');
+  /* The last try (1.0.52, otp's 1.0.169): whether the newest backup can be put back. */
+  var tried = (d.verified || []).filter(function (v) { return v.node === d.node; })[0];
+  fact('Tried', tried ? (tried.ok ? 'can be put back' : 'NOT GOOD') + ' · ' + ago(tried.at) : 'never', tried ? (tried.ok ? 'good' : 'bad') : 'warn');
   words.appendChild(facts);
   if (mine && !mine.ok) {
     var bad = (mine.targets || []).filter(function (x) { return !x.ok; });
@@ -5789,6 +5792,15 @@ function drawRbTop() {
       .catch(function (e) { busy(now, false); oops(e); });
   };
   acts.appendChild(now);
+  var tryb = cmdButton('Try the newest', 'check', '');
+  tryb.disabled = !on.length || (d.job && d.job.running);
+  explain(tryb, 'The newest backup of this server fetched back from the first destination, opened with the password, every file checked, the database read through and the secrets tried against the key in it - nothing is put back. And the newest nightly copy here read through.');
+  tryb.onclick = function () {
+    busy(tryb, true);
+    api('rbackup', {action: 'verify'}).then(function (x) { toast(x.message, 'good'); RB.job = x.job; rbWatch(); })
+      .catch(function (e) { busy(tryb, false); oops(e); });
+  };
+  acts.appendChild(tryb);
   var dl = cmdButton('Download one here', 'download', '');
   explain(dl, 'A backup made now, saved on the computer you are sitting at - locked with the password as the others.');
   dl.onclick = function () {
@@ -5816,6 +5828,61 @@ function drawRbTop() {
   card.appendChild(going);
   if (!d.tools.openssl) card.appendChild(el('p', 'note bad', 'openssl is not on this machine: backups cannot be locked (dnf install openssl).'));
   host.appendChild(card);
+  RB.verified = d.verified || [];
+  drawRbTried();
+}
+/* The backups tried (1.0.52, otp's 1.0.169): each try, every check of it; the
+   list can be emptied, or a try taken off - the backups themselves stay. */
+function drawRbTried() {
+  var card = $('rb-tried-card'), host = $('rb-tried'), tools = $('rb-tried-tools');
+  if (!card) return;
+  var rows = RB.verified || [];
+  card.hidden = !rows.length;
+  clear(host);
+  clear(tools);
+  if (!rows.length) return;
+  var forget = function (q) {
+    api('rbackup', Object.assign({action: 'verified_forget'}, q)).then(function (d) {
+      toast(d.message, 'good'); RB.verified = d.verified || []; drawRbTried(); drawRbTop();
+    }).catch(oops);
+  };
+  var wipe = cmdButton('Clear the list', 'trash', 'small');
+  wipe.onclick = function () {
+    confirmThen('Clear the list of backups tried?', 'Every try goes from this list. <b>The backups themselves stay where they are.</b> Events keeps a line saying who cleared it.', 'Clear the list', function () { forget({all: 1}); }, true);
+  };
+  tools.appendChild(wipe);
+  var list = el('div', 'rb-tried');
+  rows.slice(0, 8).forEach(function (v, i) {
+    var it = el('details', 'rb-try ' + (v.ok ? 'good' : 'bad'));
+    if (i === 0 && !v.ok) it.open = true;
+    var sm = el('summary');
+    sm.appendChild(el('span', 'dot ' + (v.ok ? 'ok' : 'bad')));
+    sm.appendChild(el('b', '', v.ok ? 'Can be put back' : 'Not good'));
+    sm.appendChild(noI18n(el('span', 'mono small', v.file || '?')));
+    sm.appendChild(el('span', 'muted small', '·'));
+    sm.appendChild(el('span', 'muted small', ago(v.at)));
+    sm.appendChild(el('span', 'muted small', '·'));
+    sm.appendChild(noI18n(el('span', 'muted small', (v.node || '') + ' → ' + (v.target_name || ''))));
+    var x = el('button', 'xbtn rb-try-x');
+    x.type = 'button';
+    x.setAttribute('data-icon', 'close');
+    x.title = 'Take it off the list';
+    x.onclick = function (e) { e.preventDefault(); e.stopPropagation(); forget({at: v.at}); };
+    sm.appendChild(x);
+    it.appendChild(sm);
+    var ul = el('div', 'rb-checks');
+    (v.checks || []).forEach(function (k) {
+      var row = el('div', 'rb-check');
+      row.appendChild(el('span', 'dot ' + (k.ok ? 'ok' : 'bad')));
+      row.appendChild(el('span', '', k.what));
+      if (k.said) row.appendChild(noI18n(el('span', 'muted small', '- ' + k.said)));
+      ul.appendChild(row);
+    });
+    it.appendChild(ul);
+    list.appendChild(it);
+  });
+  host.appendChild(list);
+  dressButtons(host);
 }
 /* RESTORE.md on the pages (1.0.110): read here, downloaded as the file. */
 function rbGuide() {
@@ -5943,7 +6010,8 @@ function rbWatch() {
       if (j.running) { RB_POLL = setTimeout(step, TAB === 'settings' && PANE === 'backup' ? 1000 : 5000); return; }
       RB_POLL = null;
       if (j.error) toast('the backup: ' + j.error, 'bad');
-      else if (j.result) toast(j.result.ok ? 'the backup went to every destination' : 'the backup did not reach every destination', j.result.ok ? 'good' : 'bad');
+      else if (j.result && j.what === 'verify') toast(j.result.ok ? 'the backup was tried: it can be put back' : 'the backup was tried: it is NOT good', j.result.ok ? 'good' : 'bad');
+      else if (j.result) toast(j.result.ok ? 'the backup went to every destination' + (j.result.verified ? ' - and it can be put back' : '') : 'the backup did not reach every destination', j.result.ok ? 'good' : 'bad');
       if (TAB === 'settings' && PANE === 'backup') loadRbackup();
     }).catch(function () { RB_POLL = null; });
   };

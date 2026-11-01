@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.51'
+__version__ = '1.0.52'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -254,6 +254,7 @@ DEFAULTS = {
     'rbackup_keep': 30,
     'rbackup_keep_days': 0,
     'rbackup_password': '',
+    'rbackup_verify': 'off',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
 SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password', 'proxy_password',
@@ -540,6 +541,12 @@ SCHEMA = [
     ('rbackup_password', 'backup', 'password', 'The password of the backups',
      'Every backup is locked with it (AES-256, opened with ai or with openssl alone). Keep it apart '
      'from the backups: without it none of them can be opened. Without one nothing is sent.', {'secret': True}),
+    ('rbackup_verify', 'backup', 'choice', 'Try the backups',
+     'The newest backup fetched back, opened with the password, every file checked, the database read '
+     'through and the secrets tried against the key in it - nothing is put back. After every backup, or '
+     'once a week.',
+     {'choices': [['off', 'only by hand'], ['after', 'after every backup, the one just sent'],
+                  ['weekly', 'once a week']]}),
     ('admin_2fa', 'people', 'bool', 'The second step of signing in, for everybody',
      'After a right password these pages ask for a code too: from an authenticator app, or sent '
      'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
@@ -7533,6 +7540,15 @@ def rb_job_start(store, by, only=None, what='backup', work=None):
             RB_JOB['result'] = work(progress) if work else rb_run(store, by, only, progress)
             if isinstance(RB_JOB['result'], dict) and RB_JOB['result'].get('error'):
                 RB_JOB['error'] = RB_JOB['result']['error']
+            elif not work and RB_JOB['result'].get('ok') and CONFIG.get('rbackup_verify') == 'after':
+                # Tried at once, at the first destination it went to (1.0.52, otp's 1.0.169).
+                RB_JOB.update(what='verify', says='the backup just sent is tried', done=0, whole=4)
+                sent = RB_JOB['result']
+                v = rb_verify(store, by, sent['targets'][0]['id'], sent.get('file'), progress)
+                sent['verified'] = v
+                if not v['ok']:
+                    RB_JOB['error'] = 'sent, but it is not good: ' + '; '.join(
+                        c['what'] for c in v['checks'] if not c['ok'])
         except Exception as e:                          # noqa: BLE001
             RB_JOB['error'] = scrub_secret(str(e))[:400]
             log('remote backup: %s' % e, 'error')
@@ -7559,8 +7575,15 @@ def rb_due(last_day):
 
 
 def rb_tick(daemon):
-    """From the daemon's loop: the scheduled backup."""
+    """From the daemon's loop: the scheduled backup, and the weekly try."""
     store = daemon.store
+    if not RB_JOB['running'] and rb_verify_due(store) and \
+            time.time() - float(getattr(daemon, '_rb_verify_at', 0)) > 3600:
+        daemon._rb_verify_at = time.time()          # once an hour at most, if it fails to start
+        try:
+            rb_verify_start(store, 'ai (weekly)')
+        except ValueError:
+            pass
     day = rb_due(store.get_meta('rbackup:day') or '')
     if not day or RB_JOB['running']:
         return
@@ -7721,6 +7744,236 @@ def rb_remote_list(store, tid):
     return out
 
 
+# ---- a backup tried, without putting it back (1.0.52, otp's 1.0.169) -----------------
+# Settings → Backups → Try the newest: the newest backup of this server at a
+# destination fetched into a folder of its own, opened with the password of
+# the backups, every file checked against its manifest, the copy of the
+# database read to its last line and counted, the key in it checked against
+# the secrets sealed in it, config.json read - what a restore needs, done
+# without touching the database in use. The newest nightly copy here is read
+# through as well. By hand, after every backup, or weekly (rbackup_verify);
+# in a thread of its own, the result kept ('rbackup:verified:NODE').
+RB_VERIFY_KEEP = 30
+
+
+def _seal_tag_ok(key, value, bind):
+    """Whether `key` is the one `value` was sealed with - its tag checked, the
+    secret itself never opened. None: not a sealed value."""
+    if not isinstance(value, str) or not value:
+        return None
+    if value.startswith(SEALED2):
+        v2, prefix = True, SEALED2
+    elif value.startswith(SEALED):
+        v2, prefix = False, SEALED
+    else:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(value[len(prefix):].encode('ascii'))
+    except (ValueError, TypeError):
+        return False
+    if len(raw) < 32:
+        return False
+    nonce, body, tag = raw[:16], raw[16:-16], raw[-16:]
+    sign = hmac.new(key, b'sign', hashlib.sha256).digest()
+    signed = (b'2|' + str(bind).encode('utf-8') + b'|' if v2 else b'') + nonce + body
+    return hmac.compare_digest(tag, hmac.new(sign, signed, hashlib.sha256).digest()[:16])
+
+
+def copy_read_through(path, key=None):
+    """A copy of the database read to its last line: what it holds, and - with
+    a key - how many of the settings sealed in it open with it."""
+    import gzip
+    counts, table, admins = {}, None, 0
+    tried = opened = 0
+    with gzip.open(str(path), 'rt', encoding='utf-8') as f:
+        head = json.loads(f.readline() or '{}')
+        if 'ai' not in head:
+            raise RbError('the copy of the database is not one made by ai')
+        for line in f:
+            got = json.loads(line)
+            if set(got.keys()) == {'table'}:
+                table = got['table']
+                counts.setdefault(table, 0)
+                continue
+            if not table:
+                continue
+            counts[table] += 1
+            if table == 'users' and got.get('role') == 'admin' and not got.get('disabled'):
+                admins += 1
+            if table == 'settings' and key and got.get('k') in SEALED_KEYS:
+                try:
+                    v = json.loads(got.get('v') or 'null')
+                except (TypeError, ValueError):
+                    v = None
+                ok = _seal_tag_ok(key, v, 'setting:' + got['k'])
+                if ok is not None:
+                    tried += 1
+                    opened += 1 if ok else 0
+    return {'head': head, 'counts': counts, 'admins': admins, 'tried': tried, 'opened': opened}
+
+
+def rb_verify_file(path, password, work):
+    """The checks on one backup file: [{what, ok, said}] and its manifest."""
+    checks = []
+
+    def check(what, ok, said=''):
+        checks.append({'what': what, 'ok': bool(ok), 'said': said})
+        return ok
+    try:
+        top, m = rb_open(path, password, work)
+    except RbError as e:
+        check('opened with the password of the backups, every file as its manifest says', False, str(e))
+        return checks, {}
+    check('opened with the password of the backups, every file as its manifest says', True,
+          '%d file(s)' % len(m.get('files') or {}))
+    key = None
+    try:
+        key = bytes.fromhex(open(os.path.join(top, 'secrets.key')).read().strip())
+        check('the key of the secrets is in it', len(key) >= 32)
+    except (OSError, ValueError) as e:
+        check('the key of the secrets is in it', False, str(e)[:200])
+    try:
+        got = copy_read_through(os.path.join(top, 'ai-copy.json.gz'), key)
+        c = got['counts']
+        check('the copy of the database reads to its last line', True, '%d tables, %d accounts, %d events'
+              % (len(c), c.get('users', 0), c.get('events', 0)))
+        want = m.get('accounts')
+        if isinstance(want, int):
+            check('every account the manifest names is in it', c.get('users', 0) == want,
+                  '%d of %d' % (c.get('users', 0), want))
+        check('an administrator can sign in after it', got['admins'] > 0, '%d' % got['admins'])
+        if got['tried']:
+            check('the secrets open with the key in it', got['opened'] == got['tried'],
+                  '%d of %d tried' % (got['opened'], got['tried']))
+    except (OSError, ValueError, EOFError, RbError) as e:
+        check('the copy of the database reads to its last line', False, str(e)[:200])
+    try:
+        with open(os.path.join(top, 'config.json')) as f:
+            json.load(f)
+        check('config.json is in it and reads', True)
+    except (OSError, ValueError) as e:
+        check('config.json is in it and reads', False, str(e)[:200])
+    return checks, m
+
+
+def rb_verify(store, by, tid=None, name=None, progress=None):
+    """The newest backup of this server at a destination (or the one named),
+    tried. The result is kept and returned."""
+    def say(n, t):
+        if progress:
+            progress(n, 4, t)
+    targets = [t for t in rb_targets(store) if t.get('enabled') and (not tid or t['id'] == tid)]
+    if tid and not targets:
+        raise RbError('no such destination')
+    if not targets:
+        raise RbError('no destination is switched on')
+    t = targets[0]
+    began = time.time()
+    res = {'at': began, 'by': by, 'node': node_name(), 'target': t['id'], 'target_name': t['name'],
+           'checks': [], 'ok': False}
+    work = tempfile.mkdtemp(prefix='ai-verify-', dir=str(STATE_DIR))
+    os.chmod(work, 0o700)
+    try:
+        say(1, 'the backups at %s listed' % t['name'])
+        files = rb_remote_list(store, t['id'])
+        pick = [f for f in files if f['name'] == name] if name else ([f for f in files if f['mine']] or files)
+        if not pick:
+            raise RbError('there is no backup %s at %s' % (('called ' + name) if name else 'of this server',
+                                                           t['name']))
+        f = pick[0]
+        res.update(file=f['name'], made=f['when'], bytes=f['bytes'])
+        say(2, 'fetched from %s' % t['name'])
+        dst = os.path.join(work, 'b')
+        rb_fetch(store, t['id'], f['name'], dst)
+        say(3, 'opened and read through')
+        res['checks'], m = rb_verify_file(dst, rb_password(), work)
+        res['ai'] = m.get('ai')
+    except (RbError, OSError, ValueError, subprocess.SubprocessError) as e:
+        res['checks'].append({'what': 'fetched from the destination', 'ok': False,
+                              'said': rb_said(e) if not isinstance(e, RbError) else str(e)})
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    say(4, 'the newest nightly copy read through')
+    try:
+        kept = kept_copies()
+        if kept:
+            got = copy_read_through(BACKUP_DIR / kept[0]['name'], sealing_key())
+            res['checks'].append({'what': 'the newest nightly copy here reads to its last line',
+                                  'ok': got['tried'] == got['opened'],
+                                  'said': '%s, %d accounts' % (kept[0]['name'], got['counts'].get('users', 0))})
+    except Exception as e:                              # noqa: BLE001
+        res['checks'].append({'what': 'the newest nightly copy here reads to its last line',
+                              'ok': False, 'said': str(e)[:200]})
+    res['ok'] = bool(res['checks']) and all(c['ok'] for c in res['checks'])
+    res['secs'] = round(time.time() - began, 1)
+    k = 'rbackup:verified:' + node_name()
+    with RB_LOCK:
+        rows = store.meta_json(k, []) or []
+        if not isinstance(rows, list):
+            rows = []
+        store.set_meta_json(k, ([res] + rows)[:RB_VERIFY_KEEP])
+    bad = [c['what'] + (': ' + c['said'] if c['said'] else '') for c in res['checks'] if not c['ok']]
+    store.add_event('backups', 'the backup %s at %s was tried: %s' % (
+        res.get('file') or '?', t['name'], 'it can be put back' if res['ok'] else
+        'NOT GOOD - ' + '; '.join(bad)), 'info' if res['ok'] else 'error', who=by)
+    return res
+
+
+def rb_verified(store):
+    """Every try, newest first."""
+    out = []
+    for r in store.db.rows("SELECT k, v FROM meta WHERE k LIKE 'rbackup:verified:%'"):
+        try:
+            rows = json.loads(r['v'] or '[]')
+        except (TypeError, ValueError):
+            continue
+        out += [x for x in rows if isinstance(x, dict)] if isinstance(rows, list) else []
+    out.sort(key=lambda x: -float(x.get('at') or 0))
+    return out
+
+
+def rb_verified_forget(store, at=None):
+    """Taken off the list - one try (by its time) or all; the backups stay."""
+    n = 0
+    with RB_LOCK:
+        for r in store.db.rows("SELECT k, v FROM meta WHERE k LIKE 'rbackup:verified:%'"):
+            try:
+                rows = json.loads(r['v'] or '[]')
+            except (TypeError, ValueError):
+                rows = []
+            if not isinstance(rows, list):
+                rows = []
+            keep = [] if at is None else [x for x in rows if abs(float(x.get('at') or 0) - at) > 0.001]
+            if len(keep) != len(rows):
+                n += len(rows) - len(keep)
+                store.set_meta_json(r['k'], keep)
+    return n
+
+
+def rb_verify_start(store, by, tid=None, name=None):
+    """In a thread of its own, followed as a backup is (RB_JOB)."""
+    def work(progress):
+        res = rb_verify(store, by, tid, name, progress)
+        if not res.get('ok'):
+            res['error'] = 'the backup is not good: ' + '; '.join(
+                c['what'] for c in res['checks'] if not c['ok'])
+        return res
+    job = rb_job_start(store, by, what='verify', work=work)
+    RB_JOB.update(whole=4)
+    return job
+
+
+def rb_verify_due(store):
+    """Weekly: a week since this server last tried one."""
+    if (CONFIG.get('rbackup_verify') or 'off') != 'weekly':
+        return False
+    if not any(t.get('enabled') for t in rb_targets(store)) or not rb_password():
+        return False
+    rows = store.meta_json('rbackup:verified:' + node_name(), []) or []
+    last = float(rows[0].get('at') or 0) if isinstance(rows, list) and rows else 0
+    return time.time() - last > 7 * 86400
+
+
 RB_UPLOADS = STATE_DIR / 'rbackup-uploads'
 RB_DOWNLOADS = STATE_DIR / 'rbackup-downloads'
 
@@ -7737,7 +7990,8 @@ def rb_page(store):
             'last_by_node': nodes, 'job': {k: v for k, v in RB_JOB.items()},
             'kinds': [{'kind': k, 'words': RB_KIND_WORDS[k], 'port': RB_PORTS.get(k)} for k in RB_KINDS],
             'tools': rb_tools(), 'node': node_name(), 'locked': bool(rb_password()), 'iter': RB_ITER,
-            'site': CONFIG.get('site_name') or 'ai', 'next': rb_next_words(), 'uploads': str(RB_UPLOADS)}
+            'site': CONFIG.get('site_name') or 'ai', 'next': rb_next_words(), 'uploads': str(RB_UPLOADS),
+            'verified': rb_verified(store)[:20]}
 
 
 def rb_tidy_files():
@@ -16434,6 +16688,25 @@ def api_rbackup_do(c):
             return {'message': 'the backup is being made', 'job': rb_job_start(st, by, only), 'others': []}
         if act == 'job':
             return {'job': dict(RB_JOB)}
+        if act == 'verify':
+            # Tried without being put back (1.0.52), followed as a backup is.
+            job = rb_verify_start(st, by, str(b.get('id') or '') or None, str(b.get('name') or '') or None)
+            return {'message': 'the backup is being tried', 'job': job}
+        if act == 'verified':
+            return {'verified': rb_verified(st)[:40]}
+        if act == 'verified_forget':
+            at = None
+            if not b.get('all'):
+                try:
+                    at = float(b.get('at'))
+                except (TypeError, ValueError):
+                    raise ValueError('which try?')
+            n = rb_verified_forget(st, at)
+            if not n:
+                raise ValueError('that try is not on the list any more')
+            st.add_event('backups', '%s took %d tr%s of backups off the list; the backups stay where they are'
+                         % (by, n, 'y' if n == 1 else 'ies'), who=by)
+            return {'message': 'taken off the list', 'verified': rb_verified(st)[:20]}
         if act == 'list':
             return {'files': rb_remote_list(st, b.get('id'))}
         if act == 'delete_file':
@@ -20943,6 +21216,7 @@ class Console(object):
             ('3', 'Put a copy back', restore),
             ('4', 'Backups to other machines: how they stand', lambda: self.act('--backups')),
             ('5', 'Back up now, to every destination', lambda: self.act('--backup-now')),
+            ('t', 'Try the newest backup (nothing is put back)', lambda: self.act('--backup-try')),
             ('6', 'Export the whole configuration into a file', export),
             ('7', 'Send a test mail', mail),
             ('8', 'Tidy up what has been kept long enough', lambda: self.act('--tidy')),
@@ -21356,6 +21630,8 @@ def build_parser():
                    help='a backup made and sent to every destination switched on')
     g.add_argument('--backups', '--rbackup-status', action='store_true', dest='backups',
                    help='the destinations of the backups and what was sent')
+    g.add_argument('--backup-try', '--rbackup-verify', action='store_true', dest='backup_try',
+                   help='the newest backup fetched back and tried - opened, read through; nothing put back')
     g.add_argument('--backup-file', metavar='FILE', help='a backup made into a file here (locked with its password)')
     g.add_argument('--restore-bundle', metavar='FILE', help='a backup put back (AI_BACKUP_PASSWORD; --yes)')
     g.add_argument('--passphrase-file', metavar='FILE', help='with --restore-bundle: the password of the backups, one line')
@@ -22159,7 +22435,20 @@ def cli_main(argv):
             for r in page['runs'][:10]:
                 print('  %s  %s  %s' % (when(r['at']), 'ok    ' if r.get('ok') else 'FAILED',
                                         r.get('file') or r.get('error') or ''))
+            for v in page['verified'][:5]:
+                print('  tried %s  %s  %s' % (when(v['at']), 'can be put back' if v.get('ok') else 'NOT GOOD',
+                                              v.get('file') or ''))
             return 0
+        if a.backup_try:
+            r = rb_verify(st, 'the command line')
+            if a.json:
+                say_json(r)
+                return 0 if r['ok'] else 1
+            print('%s at %s' % (r.get('file') or '?', r.get('target_name') or '?'))
+            for c_ in r['checks']:
+                print((pal.ok_line if c_['ok'] else pal.bad_line)(c_['what'] + (' - ' + c_['said'] if c_['said'] else '')))
+            print((pal.ok_line if r['ok'] else pal.bad_line)('it can be put back' if r['ok'] else 'it is NOT good'))
+            return 0 if r['ok'] else 1
         if a.backup_now:
             r = rb_run(st, 'the command line')
             for x in r['targets']:

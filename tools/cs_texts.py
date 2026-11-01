@@ -2839,6 +2839,75 @@ STRINGS = {
     'Installing and updating Claude Code': 'Instalace a aktualizace Claude Code',
     'The same variables for the install, npm install, update and doctor of Settings \u2192 Claude Code.':
         'Tytéž proměnné pro instalaci, npm instalaci, aktualizaci a doctor v Nastavení \u2192 Claude Code.',
+    # ---- 1.0.52: a backup tried ----
+    'Try the newest':
+        'Vyzkoušet nejnovější',
+    'Tried':
+        'Vyzkoušená',
+    'can be put back':
+        'jde obnovit',
+    'NOT GOOD':
+        'NENÍ V POŘÁDKU',
+    'Backups tried':
+        'Vyzkoušené zálohy',
+    'Can be put back':
+        'Jde obnovit',
+    'Not good':
+        'Není v pořádku',
+    'Clear the list':
+        'Vyprázdnit seznam',
+    'Clear the list of backups tried?':
+        'Vyprázdnit seznam vyzkoušených záloh?',
+    'Every try goes from this list. <b>The backups themselves stay where they are.</b> Events keeps a line saying who cleared it.':
+        'Ze seznamu zmizí každá zkouška. <b>Samotné zálohy zůstanou, kde jsou.</b> V Událostech zůstane řádek, kdo seznam vyprázdnil.',
+    'taken off the list':
+        'odebráno ze seznamu',
+    'the backup is being tried':
+        'záloha se zkouší',
+    'the backup was tried: it can be put back':
+        'záloha vyzkoušena: jde obnovit',
+    'the backup was tried: it is NOT good':
+        'záloha vyzkoušena: NENÍ v pořádku',
+    'the backup went to every destination - and it can be put back':
+        'záloha odešla do všech cílů – a jde obnovit',
+    'Try the backups':
+        'Zkoušet zálohy',
+    'The newest backup fetched back, opened with the password, every file checked, the database read through and the secrets tried against the key in it - nothing is put back. After every backup, or once a week.':
+        'Nejnovější záloha se stáhne zpět, otevře heslem, zkontroluje se každý soubor, databáze se přečte celá a tajemství se vyzkouší proti klíči v ní – nic se neobnovuje. Po každé záloze, nebo jednou týdně.',
+    'only by hand':
+        'jen ručně',
+    'after every backup, the one just sent':
+        'po každé záloze, ta právě odeslaná',
+    'once a week':
+        'jednou týdně',
+    'The newest backup of this server fetched back from the first destination, opened with the password, every file checked, the database read through and the secrets tried against the key in it - nothing is put back. And the newest nightly copy here read through.':
+        'Nejnovější záloha tohoto serveru se stáhne zpět z prvního cíle, otevře heslem, zkontroluje se každý soubor, databáze se přečte celá a tajemství se vyzkouší proti klíči v ní – nic se neobnovuje. A přečte se i nejnovější noční kopie zde.',
+    'starting':
+        'začíná',
+    'the backup just sent is tried':
+        'zkouší se právě odeslaná záloha',
+    'opened and read through':
+        'otevřena a přečtena',
+    'the newest nightly copy read through':
+        'přečtena nejnovější noční kopie',
+    'opened with the password of the backups, every file as its manifest says':
+        'otevřena heslem záloh, každý soubor odpovídá manifestu',
+    'the key of the secrets is in it':
+        'je v ní klíč tajemství',
+    'the copy of the database reads to its last line':
+        'kopie databáze se přečte do posledního řádku',
+    'every account the manifest names is in it':
+        'je v ní každý účet, který uvádí manifest',
+    'an administrator can sign in after it':
+        'po obnově se přihlásí administrátor',
+    'the secrets open with the key in it':
+        'tajemství se otevřou klíčem v ní',
+    'config.json is in it and reads':
+        'config.json v ní je a dá se přečíst',
+    'fetched from the destination':
+        'stažena z cíle',
+    'the newest nightly copy here reads to its last line':
+        'nejnovější noční kopie zde se přečte do posledního řádku',
 }
 
 PATTERNS = {
