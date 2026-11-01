@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.56
+
+- **The database's settings are back on Settings -> The database, and work beside the wizard.** How the database
+  in use is reached - server, port, database, account, password, encryption and its authority, the wait - is
+  shown and changed there again: saved, it is tried first (nothing changes if it cannot be used), written into
+  config.json, and the daemon starts again on it while the page waits and loads again. Pointing it at another
+  database that holds nothing of ai is refused - that is a move, and would leave everything behind. *The
+  database* (the engine) is shown but not changed there: the button under it opens *Move to another database…*,
+  which is for the moves alone. The wizard starts from what the settings say (server, account, encryption, the
+  wait), so the same server is one Next away.
+
 ## 1.0.55
 
 - **Move to another database…, its looks put right**: what the account said when it could not get in no longer

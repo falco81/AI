@@ -266,5 +266,8 @@ check('the move to another database is one wizard and one job', 'def db_migrate(
 check('nothing written into config.json before the switch', _src.index("if switch:\n            progress(7, 7")
       < _src.index("write_file_settings({k: c.get(k) for k in DB_KEYS})", _src.index('def db_migrate(')))
 
+check('the database settings stay on the page beside the wizard', 'DB_WIZARD_KEYS' not in _js and
+      "s.key === 'db_engine'" in _js and 'another engine is reached by Move to another database' in _src)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.55'
+__version__ = '1.0.56'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -343,8 +343,8 @@ SCHEMA = [
     ('debug', 'about', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
     ('db_engine', 'db', 'choice', 'The database',
      'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL '
-     'server. Kept in config.json, not in the database - changed only by Move to another database… '
-     '(Settings → The database) or ai --db-move.',
+     'server. Kept in config.json, not in the database. Another engine is reached only by Move to another '
+     'database… below (or ai --db-move), which carries everything across first.',
      {'choices': [['sqlite', 'the file on this machine (SQLite)'], ['mariadb', 'MariaDB'],
                   ['postgres', 'PostgreSQL']], 'file': True}),
     ('db_host', 'db', 'str', 'Server', 'Its name or address. Empty: this machine.',
@@ -355,7 +355,7 @@ SCHEMA = [
      {'file': True, 'when': ['db_engine', 'sqlite-not']}),
     ('db_user', 'db', 'str', 'Account', 'The account this program signs in to it with.',
      {'file': True, 'when': ['db_engine', 'sqlite-not']}),
-    ('db_password', 'db', 'password', 'Password', 'Kept in config.json (root only). Set it up makes one.',
+    ('db_password', 'db', 'password', 'Password', 'Kept in config.json (root only). Move to another database… makes one.',
      {'secret': True, 'file': True, 'when': ['db_engine', 'sqlite-not']}),
     ('db_timeout_s', 'db', 'int', 'Wait for it (s)', 'How long a connection is waited for.',
      {'min': 1, 'max': 300, 'file': True, 'when': ['db_engine', 'sqlite-not']}),
@@ -12292,12 +12292,27 @@ def api_settings_do(c):
             c.daemon.store.set_setting(k, nv, c.name)
         saved.append(k)
         said.append('%s = %s' % (k, '(hidden)' if secret_key(k) else json.dumps(nv)[:80]))
+    db_changed = False
     if file_side:
+        # The engine is changed only by Move to another database… (1.0.56):
+        # here it would point ai at an empty database of another kind.
+        if 'db_engine' in file_side and file_side['db_engine'] != (CONFIG.get('db_engine') or 'sqlite'):
+            raise Refused('db_engine: another engine is reached by Move to another database… (Settings - The '
+                          'database), which carries everything across first')
+        file_side.pop('db_engine', None)
+        db_changed = any(k in DB_KEYS for k in file_side) and (CONFIG.get('db_engine') or 'sqlite') != 'sqlite'
         if any(k in DB_KEYS for k in file_side) and (
                 file_side.get('db_engine', CONFIG.get('db_engine')) != 'sqlite' or
                 CONFIG.get('db_engine') != 'sqlite'):
             test = dict(CONFIG)
             test.update(file_side)
+            # Another database than the one in use, and empty of ours: that is a
+            # move, not a setting - everything here would be left behind.
+            if db_changed and not same_database(test, c.daemon.store.db):
+                there = db_try(test)
+                if there.get('reached') and not there.get('rows'):
+                    raise Refused('that is another database, and nothing of ai is in it: Move to another '
+                                  'database… carries everything into it first. Nothing was changed.')
             try:
                 probe = open_db(test)
                 try:
@@ -12309,8 +12324,13 @@ def api_settings_do(c):
                               % str(e).split('\n')[0][:300])
         write_file_settings(file_side)
         saved += sorted(file_side)
-        said.append('the database settings go into %s and take effect when the service is restarted '
-                    '(systemctl restart ai) - or with Start using it, which does that' % CONFIG_FILE)
+        if db_changed:
+            said.append('the database settings are in %s; the daemon starts again on them in a moment '
+                        '(the terminals go on)' % CONFIG_FILE)
+            c.daemon.store.add_event('settings', '%s changed how the database is reached (%s); the daemon starts '
+                                     'again' % (c.name, ', '.join(sorted(k for k in file_side if k in DB_KEYS))),
+                                     'warn', who=c.name)
+            threading.Timer(1.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
     was_2fa = bool(CONFIG.get('admin_2fa'))
     config_rebuild(c.daemon.store)
     CLAUDE_CACHE.clear()
@@ -12321,7 +12341,7 @@ def api_settings_do(c):
     if said:
         c.daemon.store.add_event('settings', '%s changed: %s' % (c.name, '; '.join(said)), 'info', who=c.name)
     return {'message': '%d setting(s) saved.' % len(saved) + (' ' + said[-1] if file_side else ''),
-            'saved': sorted(saved)}
+            'saved': sorted(saved), 'restarting': db_changed}
 
 
 @route('GET', '/api/users', admin=True)

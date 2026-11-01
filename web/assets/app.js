@@ -2553,8 +2553,6 @@ function drawSettings() {
       var s = settingByKey(key);
       if (!s) return;
       shown[key] = true;
-      /* Where the database is: asked by Move to another database… (1.0.54), not typed here. */
-      if (DB_WIZARD_KEYS.indexOf(key) >= 0) return;
       grid.appendChild(settingItem(s));
     });
     host.appendChild(grid);
@@ -2678,11 +2676,17 @@ function settingItemBare(s) {
     }
   }
   input.id = 'set-' + s.key;
-  input.disabled = !ADMIN;
+  input.disabled = !ADMIN || s.key === 'db_engine';
   input.addEventListener('input', function () { markDirty(item, s); });
   input.addEventListener('change', function () { markDirty(item, s); });
   item.appendChild(input);
   if (s.says) item.appendChild(saysClamped(s.short || s.says));   /* the whole on the (i) (1.0.156) */
+  if (s.key === 'db_engine' && ADMIN) {
+    var mv = cmdButton('Move to another database…', 'db', 'small');
+    mv.style.marginTop = '8px';
+    mv.onclick = function () { if (typeof migOpen === 'function') migOpen(); };
+    item.appendChild(mv);
+  }
   return item;
 }
 
@@ -2705,7 +2709,10 @@ function markDirty(item, s) {
   /* The database's address is what the steps below it ask about, never
      saved by the save bar (1.0.37): saved, the next restart opened a
      database nothing had been carried into. */
-  if (/^db_(engine|host|port|name|user|password)$/.test(s.key)) { delete DIRTY[s.key]; markDirtyCount(); applyOnlyWhen(); return; }
+  /* The engine is changed by Move to another database… alone (1.0.56); how
+     the one in use is reached - server, account, password, TLS - is saved
+     here, tried first, and the daemon starts again on it. */
+  if (s.key === 'db_engine') { delete DIRTY[s.key]; markDirtyCount(); applyOnlyWhen(); return; }
   if (changed) DIRTY[s.key] = now; else delete DIRTY[s.key];
   markDirtyCount();
   applyOnlyWhen();
@@ -2826,6 +2833,17 @@ $('set-save').onclick = function () {
   if (Object.keys(want).length) {
     chain = api('settings', {settings: want, drawn_by: DRAWN_NODE}).then(function (d) {
       toast(d.message, 'good');
+      /* How the database is reached changed (1.0.56): the daemon starts again
+         on it; the page waits for it and is loaded again. */
+      if (d.restarting) {
+        var tries = 0;
+        var back = function () {
+          tries += 1;
+          api('db').then(function () { location.reload(); })
+            .catch(function () { if (tries < 60) setTimeout(back, 2000); });
+        };
+        setTimeout(back, 5000);
+      }
       /* What was changed while the save was on its way stays changed
          (1.0.61): the redraw after it threw those away without a word. */
       var left = {};
@@ -5398,12 +5416,17 @@ function markErase() {
    into config.json and the daemon started again on it. Nothing changes here
    until that last step; a move that fails leaves this installation as it was. */
 var MIG = null;
-var DB_WIZARD_KEYS = ['db_engine', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password', 'db_timeout_s', 'db_tls', 'db_tls_ca'];
 function migDefaults() {
   var live = (DBSTATE && DBSTATE.engine) || 'sqlite';
   var to = live === 'sqlite' ? 'postgres' : 'sqlite';
-  return {step: 0, to: to, host: '', port: 0, name: 'ai', user: 'ai', password: '', tls: '', tls_ca: '',
-          timeout: 10, admin_user: '', admin_password: '', empty_first: false, switch_over: true, check: null};
+  /* What the settings above say (1.0.56) is where it starts: the same server,
+     account and encryption are the likeliest for the other engine too. */
+  var v = function (k, d) { var x = settingByKey(k); return x && x.value !== undefined && x.value !== null && x.value !== '' && String(x.value).charAt(0) !== '•' ? x.value : d; };
+  var server = live !== 'sqlite';
+  return {step: 0, to: to, host: server ? v('db_host', '') : '', port: 0, name: server ? v('db_name', 'ai') : 'ai',
+          user: server ? v('db_user', 'ai') : 'ai', password: '', tls: server ? v('db_tls', '') : '',
+          tls_ca: server ? v('db_tls_ca', '') : '', timeout: v('db_timeout_s', 10),
+          admin_user: '', admin_password: '', empty_first: false, switch_over: true, check: null};
 }
 function migSettings() {
   var m = MIG, out = {db_engine: m.to};

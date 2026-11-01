@@ -2909,6 +2909,18 @@ STRINGS = {
     'the newest nightly copy here reads to its last line':
         'nejnovější noční kopie zde se přečte do posledního řádku',
     # ---- 1.0.54: Move to another database ----
+    'Kept in config.json (root only). Move to another database… makes one.':
+        'Uloženo v config.json (jen pro roota). Přesun do jiné databáze ho vytvoří.',
+    'The account this program signs in to it with.':
+        'Účet, kterým se k ní program přihlašuje.',
+    'Keep the events (days)':
+        'Uchovávat události (dny)',
+    'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL server. Kept in config.json, not in the database. Another engine is reached only by Move to another database… below (or ai --db-move), which carries everything across first.':
+        'Ve které databázi je vše uloženo: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL. Uloženo v config.json, ne v databázi. Na jiný typ se přechází jen přes Přesunout do jiné databáze… (nebo ai --db-move), který nejdřív vše přenese.',
+    'another engine is reached by Move to another database… (Settings - The database), which carries everything across first':
+        'na jiný typ databáze se přechází přes Přesunout do jiné databáze… (Nastavení – Databáze), který nejdřív vše přenese',
+    'that is another database, and nothing of ai is in it: Move to another database… carries everything into it first. Nothing was changed.':
+        'to je jiná databáze a není v ní nic z ai: Přesunout do jiné databáze… do ní nejdřív vše přenese. Nic se nezměnilo.',
     'Close':
         'Zavřít',
     'Reached':
@@ -3063,6 +3075,9 @@ STRINGS = {
 }
 
 PATTERNS = {
+    '{0} setting(s) saved. the database settings are in {1}; the daemon starts again on them in a moment (the terminals go on)':
+        'Uloženo nastavení: {0}. Nastavení databáze je v {1}; daemon se na něm za chvíli znovu spustí (terminály běží dál)',
+
     'the database and its account made on {0}, with a password made here': 'na {0} se vytvoří databáze a její účet, s heslem vytvořeným zde',
     'the database and its account made on {0}': 'na {0} se vytvoří databáze a její účet',
     'carried in: {0} {1} ({2} of {3})': 'přeneseno: {0} {1} ({2} z {3})',

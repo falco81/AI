@@ -33,6 +33,13 @@ is a wizard, with **Back** and **Next**:
    (a move that lost anything stops there), the address written into the config
    file and the daemon started again on it. The terminals go on running.
 
+How the database in use is reached - its server, port, account, password, how
+it is encrypted, the wait - stays in the settings above the card: saved, it is
+tried first, written into the config file and the daemon starts again on it. A
+database that is not the one in use and holds nothing of ai is refused there
+(that is a move: the wizard), and the engine itself is changed by the wizard
+alone.
+
 Until that last step nothing here changes and nothing is written into the
 config file - a move that fails leaves the installation as it was. On the
 command line: `ai --db-move sqlite|mariadb|postgres --db-host … --db-name …
