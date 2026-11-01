@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.59
+
+- **Certificates from acme: changes wait for the save bar.** *Take certificates from acme*, *Take certificates
+  of other names* and *Forget it* no longer act at once: changed, the save bar comes up at the bottom (*1 change
+  not saved yet*), *Save the changes* does them, *Put them back* throws them away. An acme to forget is struck
+  through until then, with *Keep it* beside it. Pairing (a code shown once) and pasting acme's key stay actions
+  of their own, as before.
+
 ## 1.0.58
 
 - **Certificates from acme (acme push, protocol 1)**: your acme - the certificate manager - can give this server

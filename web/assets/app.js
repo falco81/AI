@@ -3237,20 +3237,47 @@ function pushCode(code, until) {
       ['Valid until', new Date(until * 1000).toLocaleTimeString(numLang())]]));
   }, [{words: 'Close', close: true}], true);
 }
+/* What is changed on the card and not saved yet (1.0.59): the two switches
+   and the acmes to forget wait for the save bar at the bottom, as every other
+   setting does; Put them back throws them away. */
+var PUSH_WANT = {forget: {}};
+function pushWanted() {
+  var w = PUSH_WANT, d = PUSH || {};
+  var any = (w.on !== undefined && w.on !== d.on) || (w.other_names !== undefined && w.other_names !== d.other_names)
+    || Object.keys(w.forget).length;
+  if (!any) { PUSH_WANT = {forget: {}}; delete PENDING.push; markDirtyCount(); return; }
+  pendingSet('push', {pane: 'web', save: pushSave, reset: function () { PUSH_WANT = {forget: {}}; drawPush(PUSH); }});
+}
+function pushSave() {
+  var w = PUSH_WANT, d = PUSH || {}, chain = Promise.resolve();
+  var step = function (body) { chain = chain.then(function () { return api('acme-push', body); }); };
+  /* Forgotten first, while it is still on; switched off last. */
+  Object.keys(w.forget).forEach(function (kid) { step({action: 'key_forget', key_id: kid}); });
+  if (w.on === true && !d.on) step({action: 'switch', on: true});
+  if (w.other_names !== undefined && w.other_names !== d.other_names) step({action: 'other_names', on: w.other_names});
+  if (w.on === false && d.on) step({action: 'switch', on: false});
+  return chain.then(function () {
+    PUSH_WANT = {forget: {}};
+    toast('Certificates from acme: saved', 'good');
+    loadPush();
+    return true;
+  });
+}
 function drawPush(d) {
   PUSH = d || {};
+  var W = PUSH_WANT;
   var host = $('web-push');
   if (!host) return;
   clear(host);
   var st = $('web-push-state');
   if (st) { clear(st); st.appendChild(el('span', 'tag ' + (d.on ? (d.keys.length ? 'ok' : 'warn') : 'dim'), d.on ? (d.keys.length ? 'on - paired' : 'on - not paired yet') : 'off')); }
   var g = el('div', 'set-grid');
-  var sw = switchBox(d.on);
-  sw._input.onchange = function () { pushDo({action: 'switch', on: !!sw._get()}); };
+  var sw = switchBox(W.on !== undefined ? W.on : d.on);
+  sw._input.onchange = function () { PUSH_WANT.on = !!sw._get(); pushWanted(); };
   g.appendChild(formField('Take certificates from acme', sw, 'Off: hello says only that it is off, and nothing is taken.'));
   if (d.on) {
-    var sw2 = switchBox(d.other_names);
-    sw2._input.onchange = function () { pushDo({action: 'other_names', on: !!sw2._get()}); };
+    var sw2 = switchBox(W.other_names !== undefined ? W.other_names : d.other_names);
+    sw2._input.onchange = function () { PUSH_WANT.other_names = !!sw2._get(); pushWanted(); };
     g.appendChild(formField('Take certificates of other names', sw2, 'Off: a certificate must hold the name of this server (' + ((d.slots || [])[0] || {names: ['?']}).names.join(', ') + '). On: acme may say not to check it.'));
   }
   host.appendChild(g);
@@ -3298,13 +3325,18 @@ function drawPush(d) {
       tr.appendChild(stampCell(k.at));
       tr.appendChild(el('td', 'muted', k.how || ''));
       var act = el('td', 'rowtools');
-      var f = cmdButton('Forget it', 'trash', 'small danger');
-      f.onclick = function () {
-        confirmThen('Forget this acme?', 'Nothing more is taken from it; the certificate it put in stays until another one replaces it.', 'Forget it', function () {
-          pushDo({action: 'key_forget', key_id: k.key_id});
-        }, true);
-      };
-      act.appendChild(f);
+      if (W.forget[k.key_id]) {
+        tr.classList.add('push-gone');
+        var keep = cmdButton('Keep it', 'undo', 'small');
+        keep.onclick = function () { delete PUSH_WANT.forget[k.key_id]; pushWanted(); drawPush(PUSH); };
+        act.appendChild(el('span', 'small muted', 'forgotten when saved'));
+        act.appendChild(keep);
+      } else {
+        var f = cmdButton('Forget it', 'trash', 'small danger');
+        explain(f, 'Nothing more is taken from it once saved; the certificate it put in stays until another one replaces it.');
+        f.onclick = function () { PUSH_WANT.forget[k.key_id] = true; pushWanted(); drawPush(PUSH); };
+        act.appendChild(f);
+      }
       tr.appendChild(act);
       return tr;
     }));

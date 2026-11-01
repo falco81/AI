@@ -3747,3 +3747,5 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .push-code{font-size:30px;letter-spacing:.12em;text-align:center;padding:18px 10px;margin:12px 0;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);user-select:all;overflow-wrap:anywhere}
 #web-push .facts{margin:12px 0}
 #web-push h4{margin:16px 0 8px}
+#web-push tr.push-gone td:not(.rowtools){text-decoration:line-through;opacity:.55}
+#web-push .rowtools .muted{margin-right:8px}

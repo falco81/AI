@@ -3075,6 +3075,12 @@ STRINGS = {
     'done - not switched over yet':
         'hotovo – zatím nepřepnuto',
     # ---- 1.0.58: Certificates from acme (acme push) ----
+    'forgotten when saved':
+        'zapomene se po uložení',
+    'Certificates from acme: saved':
+        'Certifikáty z acme: uloženo',
+    'Nothing more is taken from it once saved; the certificate it put in stays until another one replaces it.':
+        'Po uložení se od něj už nic nepřevezme; certifikát, který vložilo, zůstane, dokud ho nenahradí jiný.',
     'Certificates from acme':
         'Certifikáty z acme',
     "acme, the certificate manager, can give this server its certificate and renew it by itself (acme push). Paired once with a code shown here, acme signs every request with its key and sends the certificate's private key sealed for this server alone; the certificate is kept exactly where an upload above keeps it, and the Automatic certificates leave it alone from then on. Off until switched on; acme's address must be among those that may reach these pages.":
