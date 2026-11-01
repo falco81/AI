@@ -17,20 +17,29 @@ itself.
 
 ### Moving it to another engine - and back
 
-*Settings → The database → Which one it is*, as otp does it:
+*Settings → The database → Which one it is → **Move to another database…*** (1.0.54)
+is a wizard, with **Back** and **Next**:
 
-1. fill the address in above and **Try it** - nothing is written;
-2. **Set it up** - with an administrator of that server (used for that one
-   connection, stored nowhere) it makes the database and an account with rights
-   on that database alone, with a password made here and written into the
-   config file; pressed again later it only puts the tables right;
-3. **Carry everything across** - every row copied, what is here left as it is
-   (a copy of it is made first); **Empty it** throws away what is in the
-   *other* database, never the one in use, for a second try;
-4. **Start using it** - the address is written into the config file and the
-   daemon starts again on it. The terminals go on running.
+1. **Where to** - the file on this machine (SQLite), MariaDB or PostgreSQL;
+2. **How to reach it** - the server, port, database, account, its password
+   (empty: one is made) and how the connection is encrypted;
+3. **What is there** - it is reached and said what it holds; where the database
+   and the account are not there yet, an administrator of that server makes them
+   (used for this one move, stored nowhere); a database that already holds
+   records of ai is emptied only when that is agreed - never the one in use;
+4. **Go** - what will happen, and whether to switch over at the end;
+5. **Moving** - one job: a copy of everything here, the other database made and
+   emptied as agreed, everything carried in, every table counted on both sides
+   (a move that lost anything stops there), the address written into the config
+   file and the daemon started again on it. The terminals go on running.
 
-Going back is the same four steps with the file chosen. The installer puts in
+Until that last step nothing here changes and nothing is written into the
+config file - a move that fails leaves the installation as it was. On the
+command line: `ai --db-move sqlite|mariadb|postgres --db-host … --db-name …
+--db-user … --db-admin root` (its password in `AI_DB_ADMIN_PASSWORD`),
+`--empty-first`, `--no-switch`, `--yes`; in `ai --console` under Data.
+
+Going back is the same wizard with the file chosen. The installer puts in
 what the engine in use needs (`python3-psycopg2` or `python3-PyMySQL` and the
 client tools for the dumps); `install.sh --with-db postgres|mariadb` puts them
 in beforehand. `--no-db-restart` takes away the rule that lets the pages

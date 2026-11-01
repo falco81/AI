@@ -2553,6 +2553,8 @@ function drawSettings() {
       var s = settingByKey(key);
       if (!s) return;
       shown[key] = true;
+      /* Where the database is: asked by Move to another database… (1.0.54), not typed here. */
+      if (DB_WIZARD_KEYS.indexOf(key) >= 0) return;
       grid.appendChild(settingItem(s));
     });
     host.appendChild(grid);
@@ -5389,111 +5391,257 @@ function markErase() {
   setButtonIcon(go, 'forget', picked.length ? 'Erase ' + picked.length + ' of these…' : 'Erase what is ticked…');
 }
 
-if ($('db-engine-test')) {
-  $('db-engine-test').onclick = function () {
-    busy($('db-engine-test'), true);
-    api('db', {action: 'try', settings: dbAsked()}).then(function (d) {
-      modal('Trying ' + d.words, function (body) {
-        body.appendChild(el('p', 'note', 'Nothing was saved and nothing was written: this opened it, asked what it is, counted what is in it and closed it again.'));
-        body.appendChild(engineFacts(d));
-        if (!d.reached) body.appendChild(el('p', 'note bad', String(d.trouble || '')));
-        else if (d.in_use) body.appendChild(el('p', 'note', 'This is the database in use.'));
-        else if (!d.writable) body.appendChild(el('p', 'note bad', 'It answers, but this account may not make anything in it. Set it up, or give the account rights on that database.'));
-        else if (!d.rows) body.appendChild(el('p', 'note good', 'It is reachable and empty of ours, which is exactly what something to carry everything into should look like.'));
-      }, [{words: 'Close', close: true}], true);
-    }).catch(oops).then(function () { busy($('db-engine-test'), false); });
-  };
-
-  $('db-engine-setup').onclick = function () {
-    var want = dbAsked();
-    var who, word;
-    modal('Setting up ' + engineWord(want.db_engine), function (body) {
-      body.appendChild(el('p', 'note', 'This makes the database and the account on that server, and gives the account rights on that one database and no other. The first time, it needs an administrator on the server to do it — root on MariaDB, postgres on PostgreSQL, or anyone who may create a database.'));
-      body.appendChild(el('p', 'note', 'That administrator is used for this one connection and is stored nowhere: not in the settings, not in the database, not in any log.'));
-      body.appendChild(el('p', 'note', 'The account this program will use is made with a password of its own, generated here — you do not have to invent one. It is written into the config file, and shown once when this is done so you can keep a copy.'));
-      body.appendChild(el('p', 'note', 'Press this again later and it does the other half of the job: if the account already gets in, nothing is made and no administrator is wanted — it opens the database and puts its tables right. Leave the two boxes empty for that.'));
-      var g = el('div', 'formgrid');
-      who = textBox('', want.db_engine === 'postgres' ? 'postgres' : 'root', '');
-      who.autocomplete = 'off';
-      word = maskBox('', '', '');
-      g.appendChild(formField('An administrator on that server', who, 'Only needed the first time, or if the account cannot get in.'));
-      g.appendChild(formField('Its password', word));
-      body.appendChild(g);
-    }, [{words: 'Close', close: true}, {words: 'Set it up', cls: 'primary', icon: 'key', go: function (b) {
-      var ticket = modalTicket();
+/* ---- Move to another database… (1.0.54): a wizard, step by step, Back and
+   Next - where to, how to reach it, what is there - and then one job that
+   does it all: a copy here, the other one made and (if agreed) emptied,
+   everything carried in and counted table by table, the address written
+   into config.json and the daemon started again on it. Nothing changes here
+   until that last step; a move that fails leaves this installation as it was. */
+var MIG = null;
+var DB_WIZARD_KEYS = ['db_engine', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password', 'db_timeout_s', 'db_tls', 'db_tls_ca'];
+function migDefaults() {
+  var live = (DBSTATE && DBSTATE.engine) || 'sqlite';
+  var to = live === 'sqlite' ? 'postgres' : 'sqlite';
+  return {step: 0, to: to, host: '', port: 0, name: 'ai', user: 'ai', password: '', tls: '', tls_ca: '',
+          timeout: 10, admin_user: '', admin_password: '', empty_first: false, switch_over: true, check: null};
+}
+function migSettings() {
+  var m = MIG, out = {db_engine: m.to};
+  if (m.to !== 'sqlite') {
+    out.db_host = m.host; out.db_port = Number(m.port) || 0; out.db_name = m.name; out.db_user = m.user;
+    out.db_tls = m.tls; out.db_tls_ca = m.tls_ca; out.db_timeout_s = Number(m.timeout) || 10;
+    if (m.password) out.db_password = m.password;
+  }
+  return out;
+}
+var MIG_STEPS = ['Where to', 'How to reach it', 'What is there', 'Go', 'Moving'];
+function migOpen() {
+  MIG = migDefaults();
+  modal('Move to another database', function () {}, [], 'medium');
+  migDraw();
+}
+function migSteps(body) {
+  var bar = el('div', 'mig-steps');
+  MIG_STEPS.forEach(function (w, i) {
+    if (i === 1 && MIG.to === 'sqlite') return;
+    var one = el('span', 'mig-step' + (i === MIG.step ? ' now' : (i < MIG.step ? ' done' : '')));
+    one.appendChild(el('b', '', String(i + 1 - (MIG.to === 'sqlite' && i > 1 ? 1 : 0))));
+    one.appendChild(el('span', '', w));
+    bar.appendChild(one);
+  });
+  body.appendChild(bar);
+}
+function migFoot(buttons) {
+  var foot = $('modal-foot');
+  clear(foot);
+  var made = [];
+  buttons.forEach(function (b) {
+    if (!b) return;
+    var x = cmdButton(b.words, b.icon || '', b.cls || '');
+    if (b.left) x.classList.add('left');
+    x.disabled = !!b.off;
+    x.onclick = function () { b.go(x); };
+    foot.appendChild(x);
+    made.push(x);
+  });
+  return made;
+}
+function migGo(to) { MIG.step = to; migDraw(); }
+function migDraw() {
+  var body = $('modal-body');
+  clear(body);
+  migSteps(body);
+  var m = MIG, live = (DBSTATE && DBSTATE.engine) || 'sqlite';
+  var back = function (n) { return {words: 'Back', icon: 'prev', left: true, go: function () { migGo(n); }}; };
+  var close = {words: 'Close', icon: 'close', go: closeModal};
+  if (m.step === 0) {
+    body.appendChild(el('p', 'note', 'Everything this installation holds - the accounts and their sign-ins, the settings, the events, the terminals, the mails - is in one database. This moves all of it into another one. Nothing here changes until the very last step.'));
+    var cards = el('div', 'mig-cards');
+    [['sqlite', 'The file on this machine', 'SQLite - nothing to install or run, one file in the state folder. Right for one server.'],
+     ['mariadb', 'MariaDB', 'A server - on this machine or another. The account and the database are made by the wizard.'],
+     ['postgres', 'PostgreSQL', 'A server - on this machine or another. The account and the database are made by the wizard.']].forEach(function (e) {
+      var drv = ((DBSTATE && DBSTATE.drivers) || {})[e[0]];
+      var inUse = e[0] === live && live === 'sqlite';
+      var c = el('button', 'mig-card' + (m.to === e[0] ? ' on' : '') + (inUse ? ' off' : ''));
+      c.type = 'button';
+      c.disabled = inUse;
+      c.appendChild(el('b', '', e[1]));
+      c.appendChild(el('span', 'small muted', e[2]));
+      if (e[0] === live) c.appendChild(el('span', 'tag ' + (inUse ? 'dim' : 'warn'), inUse ? 'in use now' : 'in use now - another server or database of it'));
+      if (drv && !drv.ready) c.appendChild(el('span', 'tag bad', 'no driver: ' + drv.package));
+      c.onclick = function () { m.to = e[0]; m.check = null; migDraw(); };
+      cards.appendChild(c);
+    });
+    body.appendChild(cards);
+    body.appendChild(el('p', 'btnhelp', 'In use now: ' + engineWord(live) + ' · ' + ((DBSTATE && DBSTATE.where) || '')));
+    migFoot([close, {words: 'Next', icon: 'next', cls: 'primary', go: function () { migGo(m.to === 'sqlite' ? 2 : 1); }}]);
+    return;
+  }
+  if (m.step === 1) {
+    body.appendChild(el('p', 'note', 'How this program reaches ' + engineWord(m.to) + '. The server must be running; the database and the account need not exist yet - the next step makes them.'));
+    var g = el('div', 'formgrid');
+    var fld = function (label, key, input, says) {
+      input.value = m[key] === undefined || m[key] === null ? '' : String(m[key]);
+      input.addEventListener('input', function () { m[key] = input._get ? input._get() : input.value; m.check = null; });
+      input.addEventListener('change', function () { m[key] = input.value; m.check = null; });
+      g.appendChild(formField(label, input, says));
+      return input;
+    };
+    fld('Server', 'host', textBox('', 'empty: this machine', 'mono'), 'Its name or address.');
+    fld('Port', 'port', textBox('', m.to === 'postgres' ? '5432' : '3306', 'mono'), '0 or empty: the engine’s own.');
+    fld('Database', 'name', textBox('', 'ai', 'mono'), 'Letters, digits and _ only.');
+    fld('Account', 'user', textBox('', 'ai', 'mono'), 'The account this program signs in with.');
+    fld('Its password', 'password', maskBox('', 'empty: one is made and kept', 'mono'), 'Empty: a strong one is made when the account is made, and kept in config.json (root only).');
+    fld('Encrypted', 'tls', selectBox([['', 'as the driver decides'], ['require', 'encrypted, the certificate not checked'],
+      ['verify-ca', 'encrypted, signed by the authority below'], ['verify-full', 'encrypted, the authority and the name checked']], m.tls), 'How the connection is encrypted.');
+    fld('The authority of its certificate (a file)', 'tls_ca', textBox('', '/etc/pki/…/ca.pem', 'mono'), 'Only for the two checked kinds.');
+    fld('Wait for it (s)', 'timeout', textBox('', '10', 'mono'), 'How long a connection is waited for.');
+    body.appendChild(g);
+    migFoot([back(0), close, {words: 'Next', icon: 'next', cls: 'primary', go: function () {
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(m.name) || !/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(m.user)) { toast('the database and the account are letters, digits and _ only', 'bad'); return; }
+      migGo(2);
+    }}]);
+    return;
+  }
+  if (m.step === 2) {
+    var box = el('div');
+    body.appendChild(box);
+    var ask = function (b) {
+      if (b) busy(b, true);
+      box.appendChild(el('p', 'note', 'Reaching it…'));
+      api('db', {action: 'migrate_check', settings: migSettings(), admin_user: m.admin_user, admin_password: m.admin_password})
+        .then(function (d) { m.check = d; migDraw(); })
+        .catch(function (e) { m.check = {trouble: String(e.message || e), failed: true}; migDraw(); });
+    };
+    var c = m.check;
+    if (!c) { migFoot([back(m.to === 'sqlite' ? 0 : 1), close]); ask(); return; }
+    var t = c.try || {};
+    var canNow = function () {};
+    var facts = [['Where', noI18n(el('span', 'mono', c.where || ''))]];
+    if (t.reached) {
+      facts.push(['It says it is', t.version || '']);
+      facts.push(['Records of ours in it', num(c.rows || 0)]);
+      facts.push(['May the account write', t.writable ? 'yes' : 'NO']);
+    } else if (c.where) facts.push(['Reached', c.needs_admin ? 'not with that account yet' : 'no']);
+    box.appendChild(peekFacts(facts));
+    var ready = !c.failed && !c.same && !(c.driver && !c.driver.ready);
+    if (c.trouble && !c.needs_admin) box.appendChild(el('p', 'note bad', c.trouble));
+    if (c.needs_admin && ready) {
+      box.appendChild(el('p', 'note', 'The database and its account are made by an administrator of that server - root on MariaDB, postgres on PostgreSQL, or anyone who may create a database and an account. It is used for this one move and kept nowhere: not in the settings, not in the database, not in any log.'));
+      if (t.trouble) box.appendChild(el('p', 'btnhelp', 'With the account: ' + t.trouble));
+      var ga = el('div', 'formgrid');
+      var au = textBox(m.admin_user, m.to === 'postgres' ? 'postgres' : 'root', 'mono');
+      au.addEventListener('input', function () { m.admin_user = au.value.trim(); canNow(); });
+      var ap = maskBox('', '', 'mono');
+      ap.value = m.admin_password;
+      ap.addEventListener('input', function () { m.admin_password = ap.value; });
+      ga.appendChild(formField('An administrator of that server', au));
+      ga.appendChild(formField('Its password', ap));
+      box.appendChild(ga);
+    }
+    if (c.rows && ready) {
+      var sw = switchBox(m.empty_first);
+      sw._input.addEventListener('change', function () { m.empty_first = !!sw._get(); migDraw(); });
+      box.appendChild(el('p', 'note bad', 'There are ' + num(c.rows) + ' record(s) of ours in it already - an earlier move, or another installation. Moving into it as it is would mix the two.'));
+      box.appendChild(formField('Throw away what is in it first (never the one in use)', sw));
+    } else if (t.reached && t.writable && ready) {
+      box.appendChild(el('p', 'note good', 'Reachable, writable and empty of ours - exactly what a move needs.'));
+    }
+    var can = function () { return ready && (!c.needs_admin || !!m.admin_user) && (!c.rows || m.empty_first); };
+    var bs = migFoot([back(m.to === 'sqlite' ? 0 : 1), close,
+      {words: 'Check again', icon: 'refresh', go: function (b) { m.check = null; ask(b); }},
+      {words: 'Next', icon: 'next', cls: 'primary', off: !can(), go: function () { migGo(3); }}]);
+    canNow = function () { bs[bs.length - 1].disabled = !can(); };
+    return;
+  }
+  if (m.step === 3) {
+    var n = (m.check && m.check.counts) || (DBSTATE && DBSTATE.counts) || {};
+    var total = 0;
+    Object.keys(n).forEach(function (k) { total += Number(n[k] || 0); });
+    body.appendChild(peekFacts([
+      ['Moved from', engineWord(live) + ' · ' + ((DBSTATE && DBSTATE.where) || '')],
+      ['Moved to', (function () { var w = el('span'); w.appendChild(el('span', '', engineWord(m.to))); w.appendChild(document.createTextNode(' · ')); w.appendChild(noI18n(el('span', 'mono', (m.check && m.check.where) || ''))); return w; })()],
+      ['What goes', num(total) + ' row(s): ' + num(n.users || 0) + ' account(s), ' + num(n.events || 0) + ' event(s), ' + num(n.terms || 0) + ' terminal(s)']
+    ]));
+    var ol = el('ol', 'mig-plan');
+    [(m.check && m.check.needs_admin) ? 'the database and its account made on ' + engineWord(m.to) + (m.password ? '' : ', with a password made here') : 'the other database reached',
+     m.empty_first ? 'what is in it thrown away first' : 'it is checked to be empty',
+     'a copy of everything here made (kept with the others - the way back)',
+     'everything carried in',
+     'every table counted on both sides - a move that lost anything stops here',
+     m.switch_over ? 'the address written into config.json and the daemon started again on it (a few seconds; the terminals go on running)' : 'left at that: you switch over later'].forEach(function (w) { ol.appendChild(el('li', '', w)); });
+    body.appendChild(ol);
+    var sw2 = switchBox(m.switch_over);
+    sw2._input.addEventListener('change', function () { m.switch_over = !!sw2._get(); migDraw(); });
+    body.appendChild(formField('Switch over to it at the end', sw2, 'Off: everything is carried in and checked, and this installation stays on the one in use.'));
+    body.appendChild(el('p', 'btnhelp', 'Until the switch nothing here changes and nothing is written into config.json. Anything recorded during the move itself (a few seconds) stays only in the copy made first.'));
+    migFoot([back(2), close, {words: 'Start the move', icon: 'power', cls: 'primary', go: function (b) {
       busy(b, true);
-      api('db', {action: 'setup', settings: want, admin_user: who.value.trim(), admin_password: word.value}).then(function (d) {
-        if (!modalStill(ticket)) modal('The database, set up', function () {}, [{words: 'Close', close: true}]);
-        var body = $('modal-body');
-        clear(body);
-        (d.made || []).forEach(function (line) { body.appendChild(el('p', 'note good', line)); });
-        body.appendChild(engineFacts(d.try || {}));
-        if (d.password) {
-          body.appendChild(el('h4', '', 'The password made for ' + (want.db_user || 'it')));
-          var pw = el('input');
-          pw.type = 'text'; pw.readOnly = true; pw.className = 'mono'; pw.value = d.password;
-          pw.onclick = function () { pw.select(); };
-          noI18n(pw);
-          body.appendChild(pw);
-          var copy = cmdButton('Copy it', 'copy', 'small');
-          copy.style.marginTop = '8px';
-          copy.onclick = function () {
-            pw.select();
-            var ok = false;
-            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-            toast(ok ? 'copied' : 'press Ctrl+C — it is selected', ok ? 'good' : 'warn');
-          };
-          body.appendChild(copy);
-          body.appendChild(el('p', 'note', 'It is saved in ' + (d.kept_in || 'the config file') + ' and nowhere else, so nothing has to be typed in above. This is the only time it is shown — keep a copy if you want one, though nothing here needs it again.'));
-        }
-        body.appendChild(el('p', 'note', 'The address is saved. Nothing has moved yet: carry everything across when you are ready.'));
-        clear($('modal-foot'));
-        var close = cmdButton('Close', 'close', '');
-        close.onclick = closeModal;
-        $('modal-foot').appendChild(close);
-        loadSettings();
-      }).catch(function (e) { busy(b, false); oops(e); });
-    }}], 'medium');
+      api('db', {action: 'migrate', settings: migSettings(), admin_user: m.admin_user, admin_password: m.admin_password,
+                 empty_first: m.empty_first, switch: m.switch_over}).then(function () { m.job = null; migGo(4); migPoll(); })
+        .catch(function (e) { busy(b, false); oops(e); });
+    }}]);
+    return;
+  }
+  /* step 4: moving */
+  var j = m.job || {};
+  var bar = el('div', 'going wide');
+  var pct = j.whole ? Math.min(100, Math.round(100 * j.done / j.whole)) : 3;
+  bar.innerHTML = '<div class="bar"><span style="width:' + (j.running === false && !j.error ? 100 : pct) + '%"></span></div>';
+  var says = el('div', 'says', j.says || 'starting');
+  bar.appendChild(says);
+  body.appendChild(bar);
+  var r = j.result;
+  if (j.error) {
+    body.appendChild(el('p', 'note bad', 'The move stopped: ' + j.error));
+    body.appendChild(el('p', 'btnhelp', 'Nothing here was changed and this installation goes on as it was. Go back, put it right and start it again.'));
+    migFoot([back(2), close]);
+    return;
+  }
+  if (r) {
+    body.appendChild(el('p', 'note good', 'Everything is in ' + engineWord(r.engine) + ': ' + num(r.rows) + ' row(s), every table counted on both sides. The copy made first: ' + r.copy + '.'));
+    if (r.password) {
+      body.appendChild(el('p', 'note', 'The password made for the account (kept in config.json - shown this once):'));
+      var pw = textBox(r.password, '', 'mono'); pw.readOnly = true; noI18n(pw);
+      body.appendChild(pw);
+    }
+    if (r.switched) {
+      var wait = el('p', 'note', 'The daemon is starting again on it…');
+      body.appendChild(wait);
+      migFoot([]);
+      migBack(wait);
+    } else {
+      body.appendChild(el('p', 'note', 'Not switched over: this installation stays on ' + engineWord(live) + '. Run the wizard again with the switch on when you want it.'));
+      migFoot([close]);
+    }
+    return;
+  }
+  migFoot([{words: 'Hide - it goes on', icon: 'close', go: closeModal}]);
+}
+function migPoll() {
+  api('db', {action: 'job'}).then(function (d) {
+    var j = d.job || {};
+    if (!MIG) return;
+    MIG.job = j;
+    if (!$('modal').hidden && MIG.step === 4) migDraw();
+    if (j.running) setTimeout(migPoll, 800);
+    else loadDb();
+  }).catch(function () { setTimeout(migPoll, 1500); });
+}
+/* Waits for the daemon to answer again on the new database, then reloads. */
+function migBack(line) {
+  var tries = 0;
+  var again = function () {
+    tries += 1;
+    api('db').then(function (d) {
+      if (d.engine === MIG.to) { line.textContent = 'Running on ' + engineWord(d.engine) + ' now - the page is loaded again.'; setTimeout(function () { location.reload(); }, 1500); }
+      else if (tries < 60) setTimeout(again, 2000);
+    }).catch(function () { if (tries < 60) setTimeout(again, 2000); else line.textContent = 'The daemon has not answered for two minutes: systemctl status ai'; });
   };
-
-  $('db-engine-move').onclick = function () {
-    var want = dbAsked();
-    var word = engineWord(want.db_engine);
-    modal('Carrying everything into ' + word, function (body) {
-      body.appendChild(el('p', 'note', 'Every account, every event, every setting and every terminal is copied into ' + word + '. On a large database this takes minutes; you can close this and it carries on.'));
-      body.appendChild(el('p', 'note', 'What is here is not touched, and a copy of it is made first in any case. Nothing starts using the other database until you say so afterwards.'));
-    }, [{words: 'Leave it', close: true}, {words: 'Carry it across', cls: 'primary', icon: 'save', close: true, go: function () {
-      api('db', {action: 'move', settings: want}).then(function () { dbWatch(); }).catch(oops);
-    }}], true);
-  };
-
-  $('db-engine-empty').onclick = function () {
-    var want = dbAsked();
-    var word = engineWord(want.db_engine);
-    modal('Emptying ' + word, function (body) {
-      body.appendChild(el('p', 'note bad', 'This throws away everything of ai in the OTHER database — the ' + word + ' above, not the one in use. It is for when a first attempt at moving left something in it and the move will not go on.'));
-      body.appendChild(el('p', 'note', 'Nothing in the database this installation is running on is touched, and this is refused outright if the two are the same.'));
-    }, [{words: 'Leave it', close: true}, {words: 'Empty it', cls: 'danger', icon: 'forget', close: true, go: function () {
-      api('db', {action: 'empty', settings: want}).then(function (d) { toast(d.message, 'good'); loadDb(); }).catch(oops);
-    }}], true);
-  };
-
-  $('db-engine-use').onclick = function () {
-    var want = dbAsked();
-    var word = engineWord(want.db_engine);
-    modal('Start using ' + word, function (body) {
-      body.appendChild(el('p', 'note', 'This writes the address into ' + ((DBSTATE && DBSTATE.config_file) || 'the config file') + ' and restarts the daemon, which takes a few seconds. Nothing in either database is touched.'));
-      body.appendChild(el('p', 'note', want.db_engine === 'sqlite'
-        ? 'Everything will be read out of the file on this machine from then on, and the server may be uninstalled once you are happy.'
-        : 'Everything will be read out of ' + word + ' from then on, and the file on this machine may be deleted once you are happy. Carry everything across first if you have not — this does not move anything.'));
-    }, [{words: 'Not yet', close: true}, {words: 'Start using it', cls: 'primary', icon: 'power', close: true, go: function () {
-      api('db', {action: 'use', settings: want}).then(function (d) {
-        toast(d.message, 'good');
-        setTimeout(function () { location.reload(); }, 9000);
-      }).catch(oops);
-    }}], true);
-  };
-
+  setTimeout(again, 4000);
+}
+if ($('db-migrate')) $('db-migrate').onclick = migOpen;
+{
   $('db-backup').onclick = function () {
     busy($('db-backup'), true);
     api('db', {action: 'backup'}).then(function (x) { toast(x.message, 'good'); loadDb(); })

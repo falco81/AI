@@ -2908,9 +2908,154 @@ STRINGS = {
         'stažena z cíle',
     'the newest nightly copy here reads to its last line':
         'nejnovější noční kopie zde se přečte do posledního řádku',
+    # ---- 1.0.54: Move to another database ----
+    'Where': 'Kde',
+    'It says it is': 'Hlásí se jako',
+    'the file on this machine': 'soubor na tomto stroji',
+    'Move to another database':
+        'Přesun do jiné databáze',
+    'Move to another database…':
+        'Přesunout do jiné databáze…',
+    'A wizard, step by step: where to, how to reach it, what is there - then one job makes the other database if it is not there, carries everything into it, counts every table on both sides and switches over. Nothing here changes until the last step.':
+        'Průvodce krok za krokem: kam, jak se tam dostat, co tam je – pak jedna úloha vytvoří druhou databázi, pokud neexistuje, přenese do ní vše, spočítá každou tabulku na obou stranách a přepne se. Až do posledního kroku se tu nic nemění.',
+    'One of three: a SQLite file on this machine, or a MariaDB or a PostgreSQL server - here or on another machine. Where it is, is kept in':
+        'Jedna ze tří: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL – zde nebo na jiném stroji. Kde je, se uchovává v',
+    'Where to':
+        'Kam',
+    'How to reach it':
+        'Spojení',
+    'What is there':
+        'Co tam je',
+    'Go':
+        'Spustit',
+    'Moving':
+        'Přesun',
+    'Back':
+        'Zpět',
+    'Next':
+        'Další',
+    'Check again':
+        'Zkontrolovat znovu',
+    'Start the move':
+        'Spustit přesun',
+    'Hide - it goes on':
+        'Skrýt – běží dál',
+    'Everything this installation holds - the accounts and their sign-ins, the settings, the events, the terminals, the mails - is in one database. This moves all of it into another one. Nothing here changes until the very last step.':
+        'Vše, co tato instalace drží – účty a jejich přihlášení, nastavení, události, terminály, pošta – je v jedné databázi. Tímto se celá přesune do jiné. Až do úplně posledního kroku se tu nic nemění.',
+    'The file on this machine':
+        'Soubor na tomto stroji',
+    'SQLite - nothing to install or run, one file in the state folder. Right for one server.':
+        'SQLite – nic se neinstaluje ani nespouští, jeden soubor ve složce stavu. Vhodné pro jeden server.',
+    'A server - on this machine or another. The account and the database are made by the wizard.':
+        'Server – na tomto nebo jiném stroji. Účet i databázi vytvoří průvodce.',
+    'in use now':
+        'teď používaná',
+    'in use now - another server or database of it':
+        'teď používaná – jiný server nebo databáze',
+    'In use now: ':
+        'Teď používaná: ',
+    'empty: this machine':
+        'prázdné: tento stroj',
+    'Its name or address.':
+        'Jeho jméno nebo adresa.',
+    '0 or empty: the engine’s own.':
+        '0 nebo prázdné: výchozí port.',
+    'The account this program signs in with.':
+        'Účet, kterým se program přihlašuje.',
+    'empty: one is made and kept':
+        'prázdné: vytvoří se a uloží',
+    'Empty: a strong one is made when the account is made, and kept in config.json (root only).':
+        'Prázdné: při vytvoření účtu se vytvoří silné heslo a uloží se do config.json (jen pro root).',
+    'How the connection is encrypted.':
+        'Jak je spojení šifrované.',
+    'Only for the two checked kinds.':
+        'Jen pro dva kontrolované druhy.',
+    'the database and the account are letters, digits and _ only':
+        'databáze a účet jsou jen písmena, číslice a _',
+    'Reaching it…':
+        'Připojuji se…',
+    'Records of ours in it':
+        'Našich záznamů v ní',
+    'May the account write':
+        'Smí účet zapisovat',
+    'not with that account yet':
+        'tímto účtem zatím ne',
+    'The database and its account are made by an administrator of that server - root on MariaDB, postgres on PostgreSQL, or anyone who may create a database and an account. It is used for this one move and kept nowhere: not in the settings, not in the database, not in any log.':
+        'Databázi a její účet vytvoří administrátor toho serveru – root na MariaDB, postgres na PostgreSQL, nebo kdokoli, kdo smí vytvořit databázi a účet. Použije se jen pro tento přesun a nikde se neuloží: ani v nastavení, ani v databázi, ani v žádném logu.',
+    'An administrator of that server':
+        'Administrátor toho serveru',
+    'Throw away what is in it first (never the one in use)':
+        'Nejdřív vyprázdnit, co v ní je (nikdy ne tu používanou)',
+    'Reachable, writable and empty of ours - exactly what a move needs.':
+        'Dostupná, zapisovatelná a bez našich dat – přesně to, co přesun potřebuje.',
+    'Moved from':
+        'Odkud',
+    'Moved to':
+        'Kam',
+    'What goes':
+        'Co se přesune',
+    'the other database reached':
+        'spojení s druhou databází',
+    'what is in it thrown away first':
+        'nejdřív se vyprázdní, co v ní je',
+    'it is checked to be empty':
+        'ověří se, že je prázdná',
+    'a copy of everything here made (kept with the others - the way back)':
+        'vytvoří se kopie všeho zde (uloží se k ostatním – cesta zpět)',
+    'everything carried in':
+        'vše se přenese',
+    'every table counted on both sides - a move that lost anything stops here':
+        'každá tabulka se spočítá na obou stranách – přesun, který něco ztratil, tady skončí',
+    'the address written into config.json and the daemon started again on it (a few seconds; the terminals go on running)':
+        'adresa se zapíše do config.json a daemon se na ní znovu spustí (pár sekund; terminály běží dál)',
+    'left at that: you switch over later':
+        'tím to skončí: přepnete později',
+    'Switch over to it at the end':
+        'Na konci na ni přepnout',
+    'Off: everything is carried in and checked, and this installation stays on the one in use.':
+        'Vypnuto: vše se přenese a zkontroluje, a instalace zůstane na té používané.',
+    'Until the switch nothing here changes and nothing is written into config.json. Anything recorded during the move itself (a few seconds) stays only in the copy made first.':
+        'Až do přepnutí se tu nic nemění a nic se nezapisuje do config.json. Co se zaznamená během samotného přesunu (pár sekund), zůstane jen v kopii vytvořené na začátku.',
+    'Nothing here was changed and this installation goes on as it was. Go back, put it right and start it again.':
+        'Nic se tu nezměnilo a instalace běží dál jako předtím. Vraťte se, opravte to a spusťte znovu.',
+    'The password made for the account (kept in config.json - shown this once):':
+        'Heslo vytvořené pro účet (uložené v config.json – ukazuje se jen teď):',
+    'The daemon is starting again on it…':
+        'Daemon se na ní znovu spouští…',
+    'The daemon has not answered for two minutes: systemctl status ai':
+        'Daemon dvě minuty neodpovídá: systemctl status ai',
+    'the move has started':
+        'přesun začal',
+    'the database and its account made':
+        'databáze a její účet vytvořeny',
+    'the database and its account are there':
+        'databáze a její účet existují',
+    'emptied first, as agreed':
+        'nejdřív vyprázdněna, jak bylo odsouhlaseno',
+    'it is empty':
+        'je prázdná',
+    'a copy of what is here made':
+        'vytvořena kopie toho, co je zde',
+    'every table counted on both sides':
+        'každá tabulka spočítána na obou stranách',
+    'done - not switched over yet':
+        'hotovo – zatím nepřepnuto',
 }
 
 PATTERNS = {
+    '{0} row(s): {1} account(s), {2} event(s), {3} terminal(s)': '{0} řádků: {1} účtů, {2} událostí, {3} terminálů',
+    'There are {0} record(s) of ours in it already - an earlier move, or another installation. Moving into it as it is would mix the two.':
+        'Je v ní už {0} našich záznamů – z dřívějšího přesunu, nebo z jiné instalace. Přesun do ní tak, jak je, by obojí smíchal.',
+    'Everything is in {0}: {1} row(s), every table counted on both sides. The copy made first: {2}.':
+        'Vše je v {0}: {1} řádků, každá tabulka spočítána na obou stranách. Kopie vytvořená na začátku: {2}.',
+    'Running on {0} now - the page is loaded again.': 'Teď běží na {0} – stránka se načte znovu.',
+    'The move stopped: {0}': 'Přesun se zastavil: {0}',
+    'Not switched over: this installation stays on {0}. Run the wizard again with the switch on when you want it.':
+        'Nepřepnuto: instalace zůstává na {0}. Až budete chtít, spusťte průvodce znovu se zapnutým přepnutím.',
+    'How this program reaches {0}. The server must be running; the database and the account need not exist yet - the next step makes them.':
+        'Jak se program připojí k {0}. Server musí běžet; databáze a účet ještě existovat nemusí – vytvoří je další krok.',
+    'With the account: {0}': 'S tímto účtem: {0}',
+
     'Take every ended one off the list ({0})':
         'Odebrat všechny ukončené ze seznamu ({0})',
     'Take {0} ended terminal(s) off the list?':

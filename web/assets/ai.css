@@ -3721,3 +3721,18 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .rb-checks{margin:8px 0 2px 16px;display:flex;flex-direction:column;gap:4px}
 .rb-check{display:flex;gap:8px;align-items:baseline}
 .rb-check .dot{flex:none;transform:translateY(-1px)}
+/* Move to another database… (1.0.54) */
+.mig-steps{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.mig-step{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:1px solid var(--line);border-radius:999px;color:var(--tx-mut);font-size:13px}
+.mig-step b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--panel2);font-size:12px}
+.mig-step.now{border-color:var(--accent,#4c8dff);color:var(--tx)}
+.mig-step.now b{background:var(--accent,#4c8dff);color:#fff}
+.mig-step.done{color:var(--tx)}
+.mig-step.done b{background:color-mix(in srgb,var(--ok) 35%,var(--panel2));color:var(--tx)}
+.mig-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:10px 0}
+.mig-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--tx);cursor:pointer;font:inherit}
+.mig-card:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent,#4c8dff) 60%,var(--line))}
+.mig-card.on{border-color:var(--accent,#4c8dff);box-shadow:0 0 0 1px var(--accent,#4c8dff) inset}
+.mig-card.off{opacity:.55;cursor:not-allowed}
+.mig-plan{margin:12px 0 14px 18px;display:flex;flex-direction:column;gap:5px}
+#modal-foot .left{margin-right:auto}

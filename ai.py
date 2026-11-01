@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.53'
+__version__ = '1.0.54'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -343,8 +343,8 @@ SCHEMA = [
     ('debug', 'about', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
     ('db_engine', 'db', 'choice', 'The database',
      'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL '
-     'server. Kept in config.json, not in the database - changed only by the steps of the card below '
-     '(try it, set it up, carry everything across, start using it).',
+     'server. Kept in config.json, not in the database - changed only by Move to another database… '
+     '(Settings → The database) or ai --db-move.',
      {'choices': [['sqlite', 'the file on this machine (SQLite)'], ['mariadb', 'MariaDB'],
                   ['postgres', 'PostgreSQL']], 'file': True}),
     ('db_host', 'db', 'str', 'Server', 'Its name or address. Empty: this machine.',
@@ -14377,6 +14377,173 @@ def db_move(store, c, by):
     return db_job('carrying everything across', work)
 
 
+# ---- the move to another engine, as one job (1.0.54) ------------------------
+# Settings → The database → Move to another database…: a wizard asks where
+# to (the engine), how to reach it, makes the database and its account if
+# they are not there (with an administrator of that server, used for that
+# one connection and kept nowhere), says what is in it already - and then
+# one job does it all: a copy of what is here, the other one emptied if that
+# was agreed, everything carried in, every table counted on both sides, the
+# address written into config.json and the daemon started again on it. Until
+# that last step nothing here changes and nothing is written into
+# config.json, so a move that fails leaves this installation as it was.
+def db_migrate_check(store, given, admin_user='', admin_password=''):
+    """Where the wizard stands with a database: reached, writable, what is
+    in it, whether an administrator is needed - nothing is written."""
+    c = engine_asked(given)
+    eng = c['db_engine']
+    out = {'engine': eng, 'words': ENGINE_WORDS.get(eng), 'where': db_where(c), 'here': store.db.engine,
+           'same': same_database(c, store.db), 'counts': store.counts(), 'needs_admin': False}
+    if out['same']:
+        out['trouble'] = 'that is the database in use now - choose another'
+        return out
+    if eng != 'sqlite':
+        drv = drivers_state().get(eng) or {}
+        out['driver'] = drv
+        if not drv.get('ready'):
+            out['trouble'] = (drv.get('says') or 'no driver') + ' - install %s first' % drv.get('package')
+            return out
+    got = db_try(c) if (eng == 'sqlite' or c.get('db_password')) else {'reached': False}
+    out['try'] = got
+    if eng != 'sqlite' and not (got.get('reached') and got.get('writable')):
+        out['needs_admin'] = True
+        if not admin_user:
+            out['trouble'] = (got.get('trouble') or 'the account cannot get in yet') + \
+                ' - an administrator of that server makes the database and the account'
+    out['rows'] = int(got.get('rows') or 0)
+    return out
+
+
+def db_migrate(store, given, by, admin_user='', admin_password='', empty_first=False, switch=True):
+    """The whole move, in one job; see above."""
+    c = engine_asked(given)
+    if same_database(c, store.db):
+        raise ValueError('that is the database in use now')
+    eng = c['db_engine']
+    words = ENGINE_WORDS.get(eng)
+    if eng != 'sqlite' and not (drivers_state().get(eng) or {}).get('ready'):
+        raise ValueError('the driver for %s is not installed' % words)
+
+    def work(progress):
+        steps = []
+
+        def step(what):
+            steps.append(what)
+            progress(len(steps), 7, what)
+        made, fresh = [], ''
+        step('the other database reached')
+        got = db_try(c) if (eng == 'sqlite' or c.get('db_password')) else {'reached': False}
+        if eng != 'sqlite' and not (got.get('reached') and got.get('writable')):
+            if not admin_user:
+                raise ValueError((got.get('trouble') or 'the account cannot get in') +
+                                 ' - and no administrator of that server was given to make it')
+            step('the database and its account made')
+            if not c.get('db_password'):
+                fresh = c['db_password'] = db_password_made()
+            made = db_make(c, admin_user, admin_password)
+            got = db_try(c)
+            if not (got.get('reached') and got.get('writable')):
+                raise ValueError(got.get('trouble') or 'made, but the account still cannot write to it')
+        else:
+            step('the database and its account are there')
+        if got.get('rows'):
+            if not empty_first:
+                raise ValueError('there are %d record(s) in it already - agree to empty it first' % got['rows'])
+            step('emptied first, as agreed')
+            db_empty(c)
+        else:
+            step('it is empty')
+        before = store.counts()
+        step('a copy of what is here made')
+        copy = make_backup(store, 'before moving to %s, by %s' % (words, by))
+        far = db_open(c)
+        try:
+            far.make_tables()
+            whole = max(1, sum(before.values()))
+            tally = {}
+
+            def along(table, done):
+                tally[table] = done
+                progress(5, 7, 'carried in: %s %s (%d of %d)' % (table, done, sum(tally.values()), whole))
+            step('everything carried in')
+            load_tables(far, copy, say=along)
+            step('every table counted on both sides')
+            after = {t: int(far.value('SELECT COUNT(*) FROM %s' % t) or 0) for t in DB_TABLES if t != 'meta'}
+            short = {t: [before.get(t, 0), after.get(t, 0)] for t in after
+                     if after.get(t, 0) < before.get(t, 0) and t not in ('sessions',)}
+            if short:
+                raise ValueError('not everything came across: ' + ', '.join(
+                    '%s %d of %d' % (t, a, b_) for t, (b_, a) in sorted(short.items())))
+            far.run('INSERT INTO events(at,kind,level,who,text) VALUES(?,?,?,?,?)',
+                    (time.time(), 'settings', 'warn', by,
+                     '%s moved everything here from %s (%s): %d row(s), checked table by table'
+                     % (by, ENGINE_WORDS.get(store.db.engine), db_where({k: CONFIG.get(k) for k in DB_KEYS}),
+                        sum(after.values()))))
+        finally:
+            far.close()
+        res = {'copy': copy.name, 'rows': sum(after.values()), 'tables': after, 'where': db_where(c),
+               'engine': eng, 'made': made, 'password': fresh, 'switched': False, 'steps': steps}
+        store.add_event('settings', '%s carried everything into %s at %s (%d row(s), checked)%s' % (
+            by, words, db_where(c), res['rows'], '; switching over to it' if switch else ''), 'warn', who=by)
+        if switch:
+            progress(7, 7, 'the address written into %s; the daemon starts again on it' % CONFIG_FILE)
+            write_file_settings({k: c.get(k) for k in DB_KEYS})
+            res['switched'] = True
+            log('the database is now %s; starting again on it' % db_where(c), 'warn')
+            threading.Timer(2.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+        else:
+            # Nothing goes into config.json before the switch: an address of
+            # the other engine beside this engine's name breaks the next start.
+            progress(7, 7, 'done - not switched over yet')
+        return res
+    return db_job('moving to %s' % words, work)
+
+
+def cli_db_move(st, a, pal):
+    """ai --db-move ENGINE: the wizard's job from the command line - the
+    daemon is started again on the new one by systemctl, not by this process."""
+    given = {'db_engine': a.db_move}
+    if a.db_move != 'sqlite':
+        given.update(db_host=a.db_host, db_port=a.db_port, db_name=a.db_name, db_user=a.db_user)
+        if os.environ.get('AI_DB_PASSWORD'):
+            given['db_password'] = os.environ['AI_DB_PASSWORD']
+    chk = db_migrate_check(st, given, a.db_admin, os.environ.get('AI_DB_ADMIN_PASSWORD', ''))
+    print('from: %s · %s' % (ENGINE_WORDS.get(st.db.engine), db_where({k: CONFIG.get(k) for k in DB_KEYS})))
+    print('to:   %s · %s' % (chk.get('words'), chk.get('where')))
+    if chk.get('trouble') and not (chk.get('needs_admin') and a.db_admin):
+        raise Refused(chk['trouble'])
+    if chk.get('rows') and not a.empty_first:
+        raise Refused('there are %d record(s) in it already: add --empty-first to throw them away first' % chk['rows'])
+    if not a.yes:
+        raise Refused('everything is carried into it%s: add --yes' % ('' if a.no_switch else ' and ai switches over to it'))
+    db_migrate(st, given, 'the command line', a.db_admin, os.environ.get('AI_DB_ADMIN_PASSWORD', ''),
+               bool(a.empty_first), switch=False)
+    shown = ''
+    while DB_JOB.get('running'):
+        if DB_JOB.get('says') != shown:
+            shown = DB_JOB.get('says')
+            print(pal.dim('  ' + str(shown)))
+        time.sleep(0.3)
+    if DB_JOB.get('error'):
+        print(pal.bad_line('the move stopped: %s - nothing here was changed' % DB_JOB['error']))
+        return 1
+    r = DB_JOB['result']
+    print(pal.ok_line('everything is in %s: %d row(s), every table counted on both sides; the copy made first: %s'
+                      % (ENGINE_WORDS.get(r['engine']), r['rows'], r['copy'])))
+    if r.get('password'):
+        print('  the password made for the account (kept in config.json): %s' % r['password'])
+    if a.no_switch:
+        print(pal.dim('  not switched over (--no-switch)'))
+        return 0
+    c = engine_asked(given)
+    if r.get('password'):
+        c['db_password'] = r['password']
+    write_file_settings({k: c.get(k) for k in DB_KEYS})
+    print(pal.ok_line('the address is in %s; ai starts again on it' % CONFIG_FILE))
+    subprocess.run(['systemctl', 'restart', 'ai'], check=False)
+    return 0
+
+
 def db_where(c):
     if c.get('db_engine') == 'sqlite':
         return str(DB_FILE)
@@ -16222,6 +16389,14 @@ def api_db_do(c):
         except ValueError as e:
             raise ApiError(400, str(e))
     try:
+        if act == 'migrate_check':
+            return db_migrate_check(st, b.get('settings') or {}, str(b.get('admin_user') or '').strip(),
+                                    str(b.get('admin_password') or ''))
+        if act == 'migrate':
+            job = db_migrate(st, b.get('settings') or {}, by, str(b.get('admin_user') or '').strip(),
+                             str(b.get('admin_password') or ''), bool(b.get('empty_first')),
+                             b.get('switch', True) is not False)
+            return {'message': 'the move has started', 'job': job}
         if act in ('try', 'setup', 'empty', 'move', 'use'):
             cc = engine_asked(b.get('settings') or {})
             words = ENGINE_WORDS.get(cc['db_engine'])
@@ -21210,6 +21385,48 @@ class Console(object):
             to = self.ask_one('A test mail', 'to', '', help_='An address the mail goes to - every step is shown.')
             if to:
                 self.act('--mail-test', to)
+        def move():
+            # The web page's wizard, as questions (1.0.54).
+            eng = self.choose('Move to another database: where to', [
+                ('sqlite', 'The file on this machine (SQLite)'), ('mariadb', 'MariaDB'), ('postgres', 'PostgreSQL')])
+            if not eng:
+                return
+            args, env = ['--db-move', eng], {}
+            if eng != 'sqlite':
+                host = self.ask_one('How to reach it', 'server', '', help_='Its name or address; empty: this machine.',
+                                    need=False)
+                if host is None:
+                    return
+                port = self.ask_one('How to reach it', 'port', '0', help_='0: the engine\'s own (3306, 5432).')
+                name = self.ask_one('How to reach it', 'database', 'ai', help_='Letters, digits and _ only.')
+                user = self.ask_one('How to reach it', 'account', 'ai', help_='The account ai signs in with.')
+                if not (port and name and user):
+                    return
+                pw = self.ask_one('How to reach it', 'its password', '', secret=True, need=False,
+                                  help_='Empty: the one in config.json, or one is made with the account.')
+                admin = self.ask_one('Making it', 'an administrator of that server', '', need=False,
+                                     help_='root on MariaDB, postgres on PostgreSQL - to make the database and the '
+                                           'account if they are not there. Empty: they are there already.')
+                adm_pw = self.ask_one('Making it', 'its password', '', secret=True, need=False) if admin else ''
+                args += ['--db-host', host or '', '--db-port', str(port or 0), '--db-name', name, '--db-user', user]
+                if admin:
+                    args += ['--db-admin', admin]
+                    env['AI_DB_ADMIN_PASSWORD'] = adm_pw or ''
+                if pw:
+                    env['AI_DB_PASSWORD'] = pw
+            if self.confirm('Throw away what is in it first?', 'Only if it holds an earlier move or another '
+                            'installation - never the database in use. No: a database that is not empty stops the '
+                            'move.', 'Throw it away', 'No', danger=True):
+                args.append('--empty-first')
+            switch = self.confirm('Switch over at the end?', 'Everything is carried in and counted on both sides; '
+                                  'then the address goes into config.json and ai starts again on it.', 'Switch over',
+                                  'Only carry it in')
+            if not switch:
+                args.append('--no-switch')
+            if self.confirm('Start the move', 'A copy of everything here is made first. Nothing here changes until '
+                            'the switch.', 'Start it'):
+                self.act(*(args + ['--yes']), env=env or None)
+
         def db4():
             r = self.choose('The database server', [('status', 'Where it listens'),
                                                     ('only', 'Keep it to IPv4 (127.0.0.1 only)')])
@@ -21229,6 +21446,7 @@ class Console(object):
             ('7', 'Send a test mail', mail),
             ('8', 'Tidy up what has been kept long enough', lambda: self.act('--tidy')),
             ('9', 'The database server: where it listens, kept to IPv4', db4),
+            ('m', 'Move to another database (SQLite, MariaDB, PostgreSQL)…', move),
         ])
 
     # ---- 11 the service ---------------------------------------------------------
@@ -21629,6 +21847,19 @@ def build_parser():
                    help='a copy put back (everything replaced; --yes)')
     g.add_argument('--db-ipv4', nargs='?', const='status', choices=('status', 'only'), metavar='status|only',
                    help='where the database server of this machine listens; only: 127.0.0.1, no IPv6')
+    g.add_argument('--db-move', metavar='ENGINE', choices=('sqlite', 'mariadb', 'postgres'),
+                   help='everything moved into another database (sqlite, mariadb or postgres), counted on both '
+                        'sides, then switched over to it: --db-host, --db-port, --db-name, --db-user, '
+                        '--db-admin (AI_DB_ADMIN_PASSWORD), --empty-first, --no-switch; --yes')
+    g.add_argument('--db-host', default='', help='with --db-move: the server (empty: this machine)')
+    g.add_argument('--db-port', type=int, default=0, help='with --db-move: its port (0: the engine\'s own)')
+    g.add_argument('--db-name', default='ai', help='with --db-move: the database')
+    g.add_argument('--db-user', default='ai', help='with --db-move: the account (its password: AI_DB_PASSWORD, '
+                                                   'else the one in config.json, else one is made)')
+    g.add_argument('--db-admin', default='', help='with --db-move: an administrator of that server, to make the '
+                                                  'database and the account (AI_DB_ADMIN_PASSWORD)')
+    g.add_argument('--empty-first', action='store_true', help='with --db-move: what is in it thrown away first')
+    g.add_argument('--no-switch', action='store_true', help='with --db-move: carried in and checked, not switched to')
     g.add_argument('--tidy', action='store_true', help='delete what has been kept long enough (events, sign-ins, copies)')
     g.add_argument('--export-config', metavar='FILE', help='the whole configuration into a file (- for stdout)')
     g.add_argument('--with-secrets', action='store_true', help='with --export-config: the secrets too, locked')
@@ -22297,6 +22528,8 @@ def cli_main(argv):
             return cli_signin(st, a, pal)
         if a.db_ipv4:
             return cli_db_ipv4(st, a, pal)
+        if a.db_move:
+            return cli_db_move(st, a, pal)
         if a.end or a.restart_term or a.again:
             r = tm.row(a.end or a.restart_term or a.again)
             if a.end:

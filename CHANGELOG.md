@@ -3,6 +3,26 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.54
+
+- **Settings -> The database -> Move to another database…: a wizard** in place of the four buttons (Try it, Set
+  it up, Carry everything across, Start using it) and the address boxes above them. Step by step, with Back and
+  Next: *Where to* (the file on this machine, MariaDB, PostgreSQL - the one in use marked, a missing driver said),
+  *How to reach it* (server, port, database, account, its password - empty: one is made -, encryption, its
+  authority, the wait), *What is there* (reached or not, what it holds; an administrator of that server asked for
+  only where the database and the account are not there yet, used once and kept nowhere; a database already
+  holding records of ai is emptied only when agreed), *Go* (what will happen, switch over at the end or not) and
+  *Moving*: one job makes a copy here, makes and empties the other one as agreed, carries everything in, counts
+  every table on both sides (a move that lost anything stops there), writes the address into config.json and
+  starts the daemon again on it - the page waits for it and loads again. Until the switch nothing here changes
+  and nothing is written into config.json, so a failed move leaves the installation as it was.
+- `ai --db-move sqlite|mariadb|postgres` (`--db-host`, `--db-port`, `--db-name`, `--db-user`, `--db-admin` with
+  `AI_DB_ADMIN_PASSWORD`, `--empty-first`, `--no-switch`, `--yes`), and in `ai --console` under Data.
+- Tested every way: SQLite -> PostgreSQL -> MariaDB -> SQLite -> MariaDB -> PostgreSQL -> SQLite, into empty and
+  into used databases, with a new account made and with one already there; refused or stopped with nothing
+  changed: the database in use, a wrong administrator password, a used database not agreed to be emptied, an
+  unknown engine.
+
 ## 1.0.53
 
 - **Every saved password shown as dots and its last two characters, to an administrator, everywhere; typed,

@@ -258,5 +258,13 @@ check('only errors on the console, a printk set by hand kept', 'kernel.printk = 
 check('every password is drawn masked, its last two shown', all(ai.secret_key(k) for k, _p, kind, *_r in ai.SCHEMA
       if kind == 'password') and ai.secret_shown('TajneHeslo42') == '••••••••••42' and ai.is_masked(ai.secret_shown('ab12345')))
 
+_js = open(os.path.join(HERE, 'web', 'assets', 'app.js')).read()
+check('the move to another database is one wizard and one job', 'def db_migrate(' in _src and
+      "act == 'migrate'" in _src and "act == 'migrate_check'" in _src and 'function migOpen' in _js and
+      "id=\"db-migrate\"" in open(os.path.join(HERE, 'web', 'index.php')).read() and
+      'db-engine-move' not in open(os.path.join(HERE, 'web', 'index.php')).read())
+check('nothing written into config.json before the switch', _src.index("if switch:\n            progress(7, 7")
+      < _src.index("write_file_settings({k: c.get(k) for k in DB_KEYS})", _src.index('def db_migrate(')))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
