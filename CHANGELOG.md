@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.53
+
+- **Every saved password shown as dots and its last two characters, to an administrator, everywhere; typed,
+  only dots.** The proxy's password and the ACME DNS API secrets (TSIG secret, acme-dns, Cloudflare and deSEC
+  tokens) were drawn as plain text boxes - what was typed showed as it was typed; they are masked now like the
+  others. `ai --settings`, `ai --set` and the console's settings show a saved password the same way (dots and
+  its last two) instead of `(hidden)` or its sealed form, and the console asks for it unseen. The passphrase of
+  an exported configuration is typed into the same masked box. Everyone but an administrator still sees
+  nothing of them.
+
 ## 1.0.52
 
 - **Settings -> Backups -> Try the newest** (as otp's 1.0.169): the newest backup of this server is fetched back

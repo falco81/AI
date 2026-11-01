@@ -5639,8 +5639,7 @@ $('ex-file').onchange = function () {
     modal('Import ' + f.name, function (body) {
       if (locked) {
         body.appendChild(el('p', 'note', 'Exported with the secrets, it is locked: the passphrase shown when it was exported opens it.'));
-        phrase = textBox('', 'the passphrase', 'mono');
-        phrase.type = 'password';
+        phrase = maskBox('', 'the passphrase', 'mono');
         noI18n(phrase);
         body.appendChild(formField('Passphrase', phrase));
       }

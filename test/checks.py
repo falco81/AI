@@ -255,5 +255,8 @@ check('only errors on the console, a printk set by hand kept', 'kernel.printk = 
       '\nconsole_quiet\n' in _ins and 'set by hand' in _ins and 'chmod +x /etc/rc.d' not in _ins
       and '/etc/sysctl.d/80-ai-console.conf; do' in _ins)
 
+check('every password is drawn masked, its last two shown', all(ai.secret_key(k) for k, _p, kind, *_r in ai.SCHEMA
+      if kind == 'password') and ai.secret_shown('TajneHeslo42') == '••••••••••42' and ai.is_masked(ai.secret_shown('ab12345')))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

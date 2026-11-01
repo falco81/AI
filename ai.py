@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.52'
+__version__ = '1.0.53'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -7248,6 +7248,13 @@ def secret_shown(value, last=True):
     return '•' * min(10, max(4, len(said) - 2)) + said[-2:] if len(said) > 4 else '•' * 6
 
 
+def secret_key(k):
+    """A setting never shown whole (1.0.53): every password, and what is marked
+    secret - the proxy's and the DNS APIs' passwords were drawn as plain text."""
+    one = SCHEMA_KEYS.get(k)
+    return bool(one and (one[2] == 'password' or one[5].get('secret')))
+
+
 def is_masked(value):
     return isinstance(value, str) and value.startswith('•')
 
@@ -12212,7 +12219,7 @@ def settings_state(store, may_change=True):
         one = {'key': k, 'pane': pane, 'name': label, 'says': help_, 'short': '', 'source': source,
                'source_says': {'saved': 'saved on these pages', 'file': 'from config.json',
                                'default': 'the built-in default'}[source],
-               'file_only': k in FILE_ONLY_KEYS, 'in_file': k in in_file, 'secret': bool(extra.get('secret')),
+               'file_only': k in FILE_ONLY_KEYS, 'in_file': k in in_file, 'secret': secret_key(k),
                'tall': kind == 'text' and not extra.get('cell'), 'cell': bool(extra.get('cell')),
                'node_key': False}
         if kind == 'bool':
@@ -12284,7 +12291,7 @@ def api_settings_do(c):
         else:
             c.daemon.store.set_setting(k, nv, c.name)
         saved.append(k)
-        said.append('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(nv)[:80]))
+        said.append('%s = %s' % (k, '(hidden)' if secret_key(k) else json.dumps(nv)[:80]))
     if file_side:
         if any(k in DB_KEYS for k in file_side) and (
                 file_side.get('db_engine', CONFIG.get('db_engine')) != 'sqlite' or
@@ -20437,7 +20444,8 @@ class Console(object):
             body = []
             for para in helptext.split('\n'):
                 body += textwrap.wrap(para, ww - 4) or ['']
-            facts = ['now: %s%s' % ('(hidden)' if secret else (self._shown(st.get('value')) or '(empty)'),
+            facts = ['now: %s%s' % ((st.get('value') or '(not set)') if secret and st.get('kind') == 'password'
+                                    else '(hidden)' if secret else (self._shown(st.get('value')) or '(empty)'),
                                     '' if st.get('source') == 'default' else
                                     '   - %s' % (st.get('source_says') or st.get('source'))),
                      'as it comes: %s' % (self._shown(st.get('default')) or '(empty)')]
@@ -22543,14 +22551,18 @@ def cli_main(argv):
         if a.settings:
             saved = st.settings_all()
             rows = [{'key': k, 'pane': pane, 'kind': kind, 'label': label, 'help': h, 'extra': extra,
-                     'value': ('' if extra.get('secret') and CONFIG.get(k) else CONFIG.get(k)),
-                     'secret': bool(extra.get('secret')), 'default': DEFAULTS.get(k),
+                     'value': (secret_shown(unseal_secret(CONFIG.get(k), 'setting:' + k) or '')
+                               if kind == 'password' and CONFIG.get(k) and k not in FILE_ONLY_KEYS
+                               else secret_shown(CONFIG.get(k) or '') if kind == 'password' and CONFIG.get(k)
+                               else '' if extra.get('secret') and CONFIG.get(k) else CONFIG.get(k)),
+                     'secret': secret_key(k), 'default': DEFAULTS.get(k),
                      'source': 'saved' if k in saved else 'default'}
                     for k, pane, kind, label, h, extra in SCHEMA]
             if a.json:
                 say_json({'settings': rows})
             else:
-                print(table([[r['key'], r['pane'], '(hidden)' if r['secret'] and CONFIG.get(r['key'])
+                print(table([[r['key'], r['pane'], r['value'] if r['kind'] == 'password' and r['value']
+                              else '(hidden)' if r['secret'] and CONFIG.get(r['key'])
                               else json.dumps(r['value']), r['source']] for r in rows],
                             ['key', 'pane', 'value', 'from']))
             return 0
@@ -22568,7 +22580,8 @@ def cli_main(argv):
                 if SCHEMA_KEYS[k][2] == 'password' and nv:
                     nv = seal_secret(nv, 'setting:' + k)
                 st.set_setting(k, nv, 'the command line')
-                print(pal.ok_line('%s = %s' % (k, '(hidden)' if SCHEMA_KEYS[k][5].get('secret') else json.dumps(v))))
+                print(pal.ok_line('%s = %s' % (k, secret_shown(v) if SCHEMA_KEYS[k][2] == 'password'
+                                                else '(hidden)' if secret_key(k) else json.dumps(v))))
             st.add_event('settings', 'the command line changed: %s' % ', '.join(s.split('=')[0] for s in sets), 'info')
             print(pal.dim('  the running daemon takes it within a minute'))
             return 0
