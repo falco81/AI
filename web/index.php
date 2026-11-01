@@ -809,9 +809,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 
     <div class="card full" id="db-engine-card">
       <h2>Which one it is <span class="right" id="db-engine-now"></span></h2>
-      <p class="note">One of three: a SQLite file on this machine, or a MariaDB or a PostgreSQL server -
-        here or on another machine. Where it is, is kept in <b id="db-engine-file">the config file</b>
-        rather than in the database: a database cannot hold the address of itself.</p>
+      <p class="note">One of three: a SQLite file on this machine, or a MariaDB or a PostgreSQL server - here or on another machine. Where it is, is kept in the config file rather than in the database: a database cannot hold the address of itself.</p>
+      <p class="btnhelp">The config file: <code id="db-engine-file">config.json</code></p>
       <div id="db-engine-says"></div>
       <div class="btnrow admin-only" style="margin-top:12px">
         <button class="btn cmd primary" id="db-migrate" data-icon="db"

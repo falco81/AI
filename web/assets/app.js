@@ -5528,7 +5528,7 @@ function migDraw() {
     if (c.trouble && !c.needs_admin) box.appendChild(el('p', 'note bad', c.trouble));
     if (c.needs_admin && ready) {
       box.appendChild(el('p', 'note', 'The database and its account are made by an administrator of that server - root on MariaDB, postgres on PostgreSQL, or anyone who may create a database and an account. It is used for this one move and kept nowhere: not in the settings, not in the database, not in any log.'));
-      if (t.trouble) box.appendChild(el('p', 'btnhelp', 'With the account: ' + t.trouble));
+      if (t.trouble) box.appendChild(el('p', 'btnhelp mig-trouble', 'With the account: ' + t.trouble));
       var ga = el('div', 'formgrid');
       var au = textBox(m.admin_user, m.to === 'postgres' ? 'postgres' : 'root', 'mono');
       au.addEventListener('input', function () { m.admin_user = au.value.trim(); canNow(); });
@@ -5564,7 +5564,7 @@ function migDraw() {
       ['What goes', num(total) + ' row(s): ' + num(n.users || 0) + ' account(s), ' + num(n.events || 0) + ' event(s), ' + num(n.terms || 0) + ' terminal(s)']
     ]));
     var ol = el('ol', 'mig-plan');
-    [(m.check && m.check.needs_admin) ? 'the database and its account made on ' + engineWord(m.to) + (m.password ? '' : ', with a password made here') : 'the other database reached',
+    [(m.check && m.check.needs_admin) ? (m.password ? 'the database and its account made on ' + engineWord(m.to) : 'the database and its account made on ' + engineWord(m.to) + ', with a password made here') : 'the other database reached',
      m.empty_first ? 'what is in it thrown away first' : 'it is checked to be empty',
      'a copy of everything here made (kept with the others - the way back)',
      'everything carried in',
@@ -5585,10 +5585,10 @@ function migDraw() {
   }
   /* step 4: moving */
   var j = m.job || {};
-  var bar = el('div', 'going wide');
+  var bar = el('div', 'going wide mig-going' + (j.error ? ' failed' : ''));
   var pct = j.whole ? Math.min(100, Math.round(100 * j.done / j.whole)) : 3;
   bar.innerHTML = '<div class="bar"><span style="width:' + (j.running === false && !j.error ? 100 : pct) + '%"></span></div>';
-  var says = el('div', 'says', j.says || 'starting');
+  var says = el('div', 'says', j.error ? 'stopped at: ' + (j.says || 'the start') : (j.says || 'starting'));
   bar.appendChild(says);
   body.appendChild(bar);
   var r = j.result;

@@ -2909,6 +2909,26 @@ STRINGS = {
     'the newest nightly copy here reads to its last line':
         'nejnovější noční kopie zde se přečte do posledního řádku',
     # ---- 1.0.54: Move to another database ----
+    'Close':
+        'Zavřít',
+    'Reached':
+        'Spojení',
+    'Which one it is':
+        'Která to je',
+    'Holding':
+        'Obsahuje',
+    'Room it takes':
+        'Zabírá',
+    'In use now':
+        'Teď používaná',
+    'One of three: a SQLite file on this machine, or a MariaDB or a PostgreSQL server - here or on another machine. Where it is, is kept in the config file rather than in the database: a database cannot hold the address of itself.':
+        'Jedna ze tří: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL – zde nebo na jiném stroji. Kde je, se uchovává v konfiguračním souboru, ne v databázi: databáze nemůže držet svou vlastní adresu.',
+    'The config file: ':
+        'Konfigurační soubor: ',
+    'The one it came from stays as it was - a spare copy: the file may be deleted, or the server uninstalled, once you are happy. Coming back is the same wizard the other way.':
+        'Ta původní zůstane, jak byla – jako záložní kopie: až budete spokojeni, soubor lze smazat nebo server odinstalovat. Cesta zpět je tentýž průvodce opačným směrem.',
+    'stopped at: the start':
+        'zastaveno na: začátku',
     'Where': 'Kde',
     'It says it is': 'Hlásí se jako',
     'the file on this machine': 'soubor na tomto stroji',
@@ -3043,6 +3063,13 @@ STRINGS = {
 }
 
 PATTERNS = {
+    'the database and its account made on {0}, with a password made here': 'na {0} se vytvoří databáze a její účet, s heslem vytvořeným zde',
+    'the database and its account made on {0}': 'na {0} se vytvoří databáze a její účet',
+    'carried in: {0} {1} ({2} of {3})': 'přeneseno: {0} {1} ({2} z {3})',
+    'the address written into {0}; the daemon starts again on it': 'adresa zapsána do {0}; daemon se na ní znovu spouští',
+    'stopped at: {0}': 'zastaveno na: {0}',
+    '{0} account(s), {1} event(s)': '{0} účtů, {1} událostí',
+
     '{0} row(s): {1} account(s), {2} event(s), {3} terminal(s)': '{0} řádků: {1} účtů, {2} událostí, {3} terminálů',
     'There are {0} record(s) of ours in it already - an earlier move, or another installation. Moving into it as it is would mix the two.':
         'Je v ní už {0} našich záznamů – z dřívějšího přesunu, nebo z jiné instalace. Přesun do ní tak, jak je, by obojí smíchal.',

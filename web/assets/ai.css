@@ -3736,3 +3736,8 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 .mig-card.off{opacity:.55;cursor:not-allowed}
 .mig-plan{margin:12px 0 14px 18px;display:flex;flex-direction:column;gap:5px}
 #modal-foot .left{margin-right:auto}
+.mig-going .says{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.45}
+.mig-going.failed .bar span{background:var(--crit)}
+.mig-trouble{margin:6px 0 14px;word-break:break-word}
+#modal-body .note,#modal-body .btnhelp{overflow-wrap:anywhere}
+@media (max-width:520px){#modal-foot{flex-wrap:wrap;gap:8px}#modal-foot .btn{flex:1 1 auto;justify-content:center}}

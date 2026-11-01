@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.55
+
+- **Move to another database…, its looks put right**: what the account said when it could not get in no longer
+  runs into the administrator's boxes below it; the line under the bar while it moves wraps instead of being cut
+  off with "…"; a move that stopped shows a red bar and the step it stopped at, not an empty bar saying
+  "starting"; long notes and addresses wrap inside their boxes; on a phone the buttons at the bottom share the
+  width instead of leaving one on a line of its own. Everything in it, and on the card *Which one it is*, is in
+  Czech now (Close, Reached, the plan's first step, the steps as they go, the card's own words). Checked at
+  1500, 1200, 900, 600 and 390 px: nothing over anything, nothing out of its box.
+
 ## 1.0.54
 
 - **Settings -> The database -> Move to another database…: a wizard** in place of the four buttons (Try it, Set
