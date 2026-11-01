@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.51
+
+- **A password saved stays saved on the page** (Settings, the save bar): what was saved was left among the
+  changes, so a password - shown as dots once saved, never as what was typed - kept *1 change(s) not saved yet*
+  for ever and the page was not drawn again; on Backups the top still said *NOT locked - set the password*,
+  though the password was saved. The saved ones are forgotten as changes now, the page is drawn again, and
+  Backups shows at once whether its backups are locked and when the next one goes.
+
 ## 1.0.50
 
 - **No more kernel notices over the ai console** (as otp's 1.0.210): every `systemctl daemon-reload` - each

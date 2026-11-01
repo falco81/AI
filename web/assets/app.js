@@ -2830,9 +2830,14 @@ $('set-save').onclick = function () {
       Object.keys(DIRTY).forEach(function (k) {
         if (!(k in want) || DIRTY[k] !== want[k]) left[k] = DIRTY[k];
       });
-      if (Object.keys(left).length) { DIRTY = left; markDirtyCount(); loadSettings(false); }
-      else loadSettings();
+      /* What was saved is no longer a change (1.0.51): left in DIRTY, a
+         password - shown as dots once saved, never as what was typed - stayed
+         "1 change(s) not saved yet" for ever, and the page was not drawn again. */
+      DIRTY = left;
+      markDirtyCount();
+      if (Object.keys(left).length) loadSettings(false); else loadSettings();
       if (paneLive('upgrade')) loadUpgrade();      /* the card to go back shown or not */
+      if (paneLive('backup')) loadRbackup();       /* locked or not, the next one */
       return true;
     }).catch(function (e) {
       var said = String(e.message || e);
