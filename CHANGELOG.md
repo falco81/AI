@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.57
+
+- **Move to another database…, its first step on a server**: running on PostgreSQL or MariaDB, the card of the
+  engine in use said *in use now - another server or database of it* in one long label that ran out of the card.
+  It says *in use now*, and under it, wrapped inside the card, that another server or another database of it can
+  still be chosen. Labels in the cards wrap rather than run out of them. Checked at 1500, 900 and 390 px.
+
 ## 1.0.56
 
 - **The database's settings are back on Settings -> The database, and work beside the wizard.** How the database

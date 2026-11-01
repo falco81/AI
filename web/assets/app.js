@@ -5490,7 +5490,10 @@ function migDraw() {
       c.disabled = inUse;
       c.appendChild(el('b', '', e[1]));
       c.appendChild(el('span', 'small muted', e[2]));
-      if (e[0] === live) c.appendChild(el('span', 'tag ' + (inUse ? 'dim' : 'warn'), inUse ? 'in use now' : 'in use now - another server or database of it'));
+      if (e[0] === live) {
+        c.appendChild(el('span', 'tag ' + (inUse ? 'dim' : 'warn'), 'in use now'));
+        if (!inUse) c.appendChild(el('span', 'small muted', 'Another server or another database of it can still be chosen.'));
+      }
       if (drv && !drv.ready) c.appendChild(el('span', 'tag bad', 'no driver: ' + drv.package));
       c.onclick = function () { m.to = e[0]; m.check = null; migDraw(); };
       cards.appendChild(c);

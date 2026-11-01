@@ -2909,6 +2909,8 @@ STRINGS = {
     'the newest nightly copy here reads to its last line':
         'nejnovější noční kopie zde se přečte do posledního řádku',
     # ---- 1.0.54: Move to another database ----
+    'Another server or another database of it can still be chosen.':
+        'Lze zvolit jiný server nebo jinou databázi tohoto typu.',
     'Kept in config.json (root only). Move to another database… makes one.':
         'Uloženo v config.json (jen pro roota). Přesun do jiné databáze ho vytvoří.',
     'The account this program signs in to it with.':
