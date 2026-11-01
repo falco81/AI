@@ -246,7 +246,7 @@ if [[ -n "$DO_UNINSTALL" ]]; then
     ASSUME_YES="" confirm "Go ahead?" n || { say "Nothing was changed."; exit 0; }
     run systemctl disable --now ai.service 2>/dev/null || true
     for one in "$UNIT_FILE" "$LOGROTATE_FILE" "$NGINX_CONF" "$BIN_LINK" /etc/php-fpm.d/ai.conf /etc/php/*/fpm/pool.d/ai.conf \
-               /etc/profile.d/zz-ai-console.sh /etc/ai-console-login; do
+               /etc/profile.d/zz-ai-console.sh /etc/ai-console-login /etc/sysctl.d/80-ai-console.conf; do
         [[ -e "$one" ]] && run rm -f "$one"
     done
     [[ -d "$LIB_DIR" ]] && run rm -rf "$LIB_DIR"
@@ -884,6 +884,30 @@ install_console() {     # the ai console when root signs in, as otp's
     return 0
 }
 
+CONSOLE_SYSCTL=/etc/sysctl.d/80-ai-console.conf
+console_quiet() {       # only errors on the console (1.0.50, as otp's 1.0.210)
+    # Every systemctl daemon-reload (each dnf update touching units, our own
+    # install) has systemd's generators log to /dev/kmsg - "rc.local is not
+    # marked executable" and the like - and with a console log level of 7 the
+    # kernel prints it over the ai console on tty1. Errors only (4, RHEL's own
+    # default); journalctl -k keeps everything. A kernel.printk set by hand
+    # elsewhere is left alone. rc.local is never made executable.
+    local own
+    own=$(grep -ls '^[[:space:]]*kernel\.printk' /etc/sysctl.d/*.conf /etc/sysctl.conf 2>/dev/null \
+          | grep -v "^$CONSOLE_SYSCTL\$" || true)
+    if [[ -n "$own" ]]; then
+        note "kernel.printk is set by hand ($(echo $own)): left as it is"
+        return 0
+    fi
+    if [[ -n "$DRY_RUN" ]]; then note "[would write] $CONSOLE_SYSCTL"; return 0; fi
+    printf '%s\n' '# Written by ai: only errors on the console; everything is in journalctl -k.' \
+        'kernel.printk = 4 4 1 7' > "$CONSOLE_SYSCTL"
+    chmod 0644 "$CONSOLE_SYSCTL"
+    sysctl -q -p "$CONSOLE_SYSCTL" >/dev/null 2>&1 || true
+    good "only errors on the console ($CONSOLE_SYSCTL; all of it in journalctl -k)"
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # Doing it
 # ---------------------------------------------------------------------------
@@ -950,6 +974,7 @@ install_db_drivers
 install_colour
 install_program
 install_console
+console_quiet
 install_pages
 [[ -z "$DO_UPGRADE" ]] && open_firewall
 start_all

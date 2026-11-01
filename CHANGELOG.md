@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.50
+
+- **No more kernel notices over the ai console** (as otp's 1.0.210): every `systemctl daemon-reload` - each
+  dnf update touching units, ai's own install - has systemd's generators log lines such as
+  `/etc/rc.d/rc.local is not marked executable, skipping` to the kernel's log, and where the console log level
+  is 7 the kernel printed them over the console on tty1. install.sh (install and every upgrade) now writes
+  `/etc/sysctl.d/80-ai-console.conf` with `kernel.printk = 4 4 1 7` - errors only on the console, RHEL's own
+  default; `journalctl -k` keeps everything - unless `kernel.printk` is already set by hand elsewhere, which is
+  left alone. `--uninstall` takes the file away. rc.local is not made executable.
+
 ## 1.0.49
 
 - **Settings -> Proxy: each use switched on by itself**, all off at first (the proxy itself too) - with none on,

@@ -250,5 +250,10 @@ check('every way out over HTTP names its use', 'urllib.request.urlopen(' not in 
       all(u in _src for u in ("purpose='upgrade'", "purpose='acme'", "purpose='acme_dns'", "purpose='sms'",
                               "purpose='sms_tel'", "proxy_use='claude_install'")))
 
+_ins = open(os.path.join(HERE, 'install.sh')).read()
+check('only errors on the console, a printk set by hand kept', 'kernel.printk = 4 4 1 7' in _ins and
+      '\nconsole_quiet\n' in _ins and 'set by hand' in _ins and 'chmod +x /etc/rc.d' not in _ins
+      and '/etc/sysctl.d/80-ai-console.conf; do' in _ins)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
