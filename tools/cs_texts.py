@@ -3075,6 +3075,12 @@ STRINGS = {
     'done - not switched over yet':
         'hotovo – zatím nepřepnuto',
     # ---- 1.0.58: Certificates from acme (acme push) ----
+    'A click on the code or the address copies it.':
+        'Kliknutím na kód nebo adresu se zkopíruje.',
+    'the pairing code is copied':
+        'párovací kód je zkopírovaný',
+    'Click to copy':
+        'Kliknutím zkopírujete',
     'forgotten when saved':
         'zapomene se po uložení',
     'Certificates from acme: saved':
@@ -3162,6 +3168,7 @@ STRINGS = {
 }
 
 PATTERNS = {
+    'copied: {0}': 'zkopírováno: {0}',
     'Off: a certificate must hold the name of this server ({0}). On: acme may say not to check it.':
         'Vypnuto: certifikát musí obsahovat jméno tohoto serveru ({0}). Zapnuto: acme smí říct, ať se nekontroluje.',
     'A code waits until {0} ({1} wrong so far).': 'Kód čeká do {0} (zatím {1} chybných).',

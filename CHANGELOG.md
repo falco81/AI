@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.60
+
+- **Certificates from acme: a click on a tile copies it.** The pairing code, the address for acme, this
+  server's id and its sealing key - on the card and in *Pair with an acme* - go to the clipboard with one click
+  (the tile lights up, a toast says what was copied), ready to paste into acme's target.
+
 ## 1.0.59
 
 - **Certificates from acme: changes wait for the save bar.** *Take certificates from acme*, *Take certificates

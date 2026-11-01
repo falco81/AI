@@ -3228,13 +3228,23 @@ function pushDo(body, then) {
     return d;
   }).catch(oops);
 }
+/* The tiles of the card and of the code (1.0.60): a click copies what is in
+   it - the code, the address for acme, the id, the key - for acme's Target. */
+function pushTiles(box, values) {
+  Array.prototype.forEach.call(box.querySelectorAll('.fact'), function (cell, i) {
+    if (values[i]) copyOnClick(cell, values[i], 'copied: ' + cell.querySelector('.k').textContent);
+  });
+  return box;
+}
 function pushCode(code, until) {
   modal('Pair with an acme', function (body) {
     body.appendChild(el('p', 'note', 'In acme: Targets → add An application of ours (acme push), its address below, and this code in Pairing code - then Try. The code is shown this once, works once, for 15 minutes; five wrong tries end it.'));
     var big = noI18n(el('div', 'push-code mono', code));
+    copyOnClick(big, code, 'the pairing code is copied');
     body.appendChild(big);
-    body.appendChild(peekFacts([['The address for acme', noI18n(el('span', 'mono', location.origin + '/'))],
-      ['Valid until', new Date(until * 1000).toLocaleTimeString(numLang())]]));
+    body.appendChild(pushTiles(peekFacts([['The address for acme', noI18n(el('span', 'mono', location.origin + '/'))],
+      ['Valid until', new Date(until * 1000).toLocaleTimeString(numLang())]]), [location.origin + '/']));
+    body.appendChild(el('p', 'btnhelp', 'A click on the code or the address copies it.'));
   }, [{words: 'Close', close: true}], true);
 }
 /* What is changed on the card and not saved yet (1.0.59): the two switches
@@ -3282,10 +3292,11 @@ function drawPush(d) {
   }
   host.appendChild(g);
   if (!d.on) return;
-  host.appendChild(peekFacts([
+  host.appendChild(pushTiles(peekFacts([
     ['The address for acme', noI18n(el('span', 'mono', location.origin + '/'))],
     ['This server’s id', noI18n(el('span', 'mono', d.app_id || ''))],
-    ['Its sealing key (X25519)', noI18n(el('span', 'mono small', d.enc_key || ''))]]));
+    ['Its sealing key (X25519)', noI18n(el('span', 'mono small', d.enc_key || ''))]]),
+    [location.origin + '/', d.app_id, d.enc_key]));
   /* pairing */
   var row = el('div', 'btnrow');
   var pair = cmdButton('Pair with an acme', 'key', 'primary');
