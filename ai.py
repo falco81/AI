@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.60'
+__version__ = '1.0.61'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -13729,6 +13729,92 @@ TLS_EXPORTS = {
 }
 
 
+def cert_pair_sent(text, pfxs, password=''):
+    """Two certificates with their two private keys sent at once (1.0.61):
+    (the RSA one, the ECDSA one) as cert_bundle gives each, or None when it is
+    not two - one certificate goes the way it always went."""
+    pems = [str(text or '')]
+    for one in pfxs:
+        got = None
+        for extra in ([], ['-legacy']):
+            try:
+                got = _openssl(['pkcs12', '-nodes', '-passin', 'env:AI_PW'] + extra, one,
+                               {'AI_PW': password or ''}, what='the PFX / PKCS#12 file')
+                break
+            except ValueError as e:
+                last = e
+        if got is None:
+            raise ValueError('%s - is the password right?' % last)
+        pems.append(got.decode('utf-8', 'replace'))
+    whole = '\n'.join(pems)
+    keys = [m.group(0) for m in PEM_KEY.finditer(whole)]
+    if len(keys) < 2:
+        return None
+    if len(keys) > 2:
+        raise ValueError('more than two private keys were sent - two at most: an RSA one and an ECDSA one')
+    certs = list(dict.fromkeys(m.group(0) for m in PEM_CERT.finditer(whole)))
+    out = []
+    leaves = []
+    for k in keys:
+        plain = key_plain(k, password)
+        want = _pub_of_key(plain)
+        leaf = next((c for c in certs if _pub_of_cert(c) == want), None)
+        if not leaf:
+            raise ValueError('one of the two keys has no certificate of its own among those sent')
+        leaves.append((leaf, plain))
+    for leaf, plain in leaves:
+        other = [c for c in certs if c not in (lf for lf, _k in leaves)]
+        out.append(cert_bundle(cert=leaf, key=plain, chain='\n'.join(other)))
+    kinds = [str(g['info'].get('key') or '').split(' ')[0] for g in out]
+    if sorted(kinds) != ['EC', 'RSA']:
+        raise ValueError('two certificates are taken together only as an RSA one and an ECDSA one (here: %s)'
+                         % ' + '.join(g['info'].get('key') or '?' for g in out))
+    names = [sorted(set(_push_names(g['info']))) for g in out]
+    if names[0] != names[1]:
+        raise ValueError('the two certificates are not for the same names (%s / %s)' % (
+            ', '.join(names[0]), ', '.join(names[1])))
+    out.sort(key=lambda g: 0 if str(g['info'].get('key') or '').startswith('RSA') else 1)
+    return out[0], out[1]
+
+
+TLS_WHICH = ('main', 'alt', 'both')
+
+
+def tls_export_both(prof, fmt, password='', legacy=False, chain=True, which='main'):
+    """tls_export for one of a dual pair, or both of them in a ZIP (1.0.61)."""
+    if which not in TLS_WHICH:
+        raise Refused('which is main, alt or both')
+    alt = tls_alt(prof or {})
+    if which == 'main' or not alt:
+        if which != 'main' and not alt:
+            raise Refused('there is no second certificate here')
+        return tls_export(prof, fmt, password, legacy, chain)
+    twin = {'cert': alt['cert'], 'chain': alt.get('chain') or '', 'key': alt.get('key')}
+    if which == 'alt':
+        got = tls_export(twin, fmt, password, legacy, chain)
+        got['name'] = re.sub(r'(\.[a-z0-9]+)$', r'-ecdsa\1', got['name']) if not got['name'].endswith('-with-key.pem') \
+            else got['name'].replace('-with-key.pem', '-ecdsa-with-key.pem')
+        return got
+    import zipfile
+    a = tls_export(prof, fmt, password, legacy, chain)
+    b2 = tls_export(twin, fmt, password, legacy, chain)
+    kind_a = str(((prof or {}).get('info') or {}).get('key') or 'RSA').split(' ')[0].lower()
+    kind_b = str((alt.get('info') or {}).get('key') or 'EC').split(' ')[0].lower()
+    kind_a = 'ecdsa' if kind_a == 'ec' else kind_a
+    kind_b = 'ecdsa' if kind_b == 'ec' else kind_b
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for one, kind in ((a, kind_a), (b2, kind_b)):
+            n = one['name']
+            n = n.replace('-with-key.pem', '-%s-with-key.pem' % kind) if n.endswith('-with-key.pem') else \
+                re.sub(r'(\.[a-z0-9]+)$', r'-%s\1' % kind, n)
+            z.writestr(n, base64.b64decode(one['b64']))
+    data = buf.getvalue()
+    base = re.sub(r'\.[a-z0-9]+$', '', a['name']).replace('-with-key', '')
+    return {'name': base + '-both.zip', 'type': 'application/zip', 'b64': base64.b64encode(data).decode('ascii'),
+            'key': a['key'], 'bytes': len(data)}
+
+
 def tls_export(prof, fmt, password='', legacy=False, chain=True):
     """The certificate of the pages in the form asked (1.0.31): PEM, CRT,
     DER, PKCS#7 - or with its private key, as PEM (the key locked with a
@@ -14729,6 +14815,23 @@ def api_web_do(c):
         if act == 'tls_upload':
             pfx = base64.b64decode(b.get('pfx') or '') if b.get('pfx') else b''
             pend = unseal_secret(prof.get('pending_key'), 'web:tls-pending') if prof.get('pending_key') else ''
+            more = [base64.b64decode(x) for x in (b.get('pfx_more') or []) if isinstance(x, str) and x]
+            pair = cert_pair_sent(b.get('cert') or '', ([pfx] if pfx else []) + more, b.get('password') or '')
+            if pair:
+                # Two certificates with their two keys (1.0.61): an RSA one and
+                # an ECDSA one of the same names, put in as ACME's "both" is.
+                got, twin = pair
+                got['key'] = seal_secret(got['key'], 'web:tls')
+                prof.update(got)
+                prof['how'] = 'uploaded'
+                for k in ('pending_key', 'csr'):
+                    prof.pop(k, None)
+                prof['alt'] = {'cert': twin['cert'], 'chain': twin['chain'], 'key': seal_secret(twin['key'], 'web:tls'),
+                               'info': twin['info'], 'for': tls_alt_for(got['cert'])}
+                acme_care_set(st, None, False, c.name, 'a certificate was put in by hand')
+                tls_apply_later(st, prof, c.name)
+                return {'message': 'the certificates of %s (%s + %s) are being put in' % (
+                    got['info'].get('cn') or '?', got['info'].get('key') or '?', twin['info'].get('key') or '?')}
             got = cert_bundle(cert=b.get('cert') or '', pfx=pfx, password=b.get('password') or '',
                               pending_key=pend or '')
             got['key'] = seal_secret(got['key'], 'web:tls')
@@ -14773,11 +14876,13 @@ def api_web_do(c):
             tls_apply_later(st, prof, c.name)
             return {'message': 'the TLS settings are being put in'}
         if act == 'tls_export':
-            out = tls_export(prof, str(b.get('format') or ''), str(b.get('password') or ''),
-                             bool(b.get('legacy')), bool(b.get('chain', True)))
+            out = tls_export_both(prof, str(b.get('format') or ''), str(b.get('password') or ''),
+                                  bool(b.get('legacy')), bool(b.get('chain', True)), str(b.get('which') or 'main'))
             if out['key']:
-                st.add_event('system', '%s downloaded the certificate of the pages WITH its private key (%s)'
-                             % (c.name, out['name']), 'warn', who=c.name)
+                st.add_event('system', '%s downloaded the certificate%s of the pages WITH %s (%s)'
+                             % (c.name, 's' if b.get('which') == 'both' else '',
+                                'both private keys' if b.get('which') == 'both' else 'its private key', out['name']),
+                             'warn', who=c.name)
             return out
         if act == 'tls_pem':
             if prof.get('cert'):

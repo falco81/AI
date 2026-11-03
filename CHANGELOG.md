@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.61
+
+- **Dual certificates (an RSA one and an ECDSA one beside it) downloaded and uploaded whole.** *Download* gave
+  out only the RSA certificate and its key; the ECDSA one and its key never left the server. With a second
+  certificate there, the window asks *Which certificate*: the RSA one, the ECDSA one, or both - a ZIP with the
+  two files, each with its own chain and its own private key, in every form (PEM, CRT, DER, PKCS#7, PFX, PEM
+  with the key, the key alone), locked with the same password. With one certificate nothing changes.
+- *Upload* takes a pair: two certificates of the same names, an RSA one and an ECDSA one, each with its key, as
+  PEM in any order or as two PFX files with one password. Each key is matched with its own certificate, and they
+  are put in as the Automatic certificates' *both* are - nginx offers the ECDSA one to the clients that take it,
+  the RSA one to the rest. Refused, with nothing changed: two of the same key type, other names, more than two
+  keys, a key without its certificate. One certificate is uploaded as always (and takes the place of a pair).
+
 ## 1.0.60
 
 - **Certificates from acme: a click on a tile copies it.** The pairing code, the address for acme, this

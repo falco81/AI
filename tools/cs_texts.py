@@ -3165,6 +3165,23 @@ STRINGS = {
         'zapomenuto',
     'switch Take certificates from acme on first':
         'nejdřív zapněte Brát certifikáty z acme',
+    # ---- 1.0.61: dual certificates downloaded and uploaded ----
+    'Download': 'Stáhnout',
+    'Cancel': 'Zrušit',
+    'Which certificate':
+        'Který certifikát',
+    'both (a ZIP, each with its own key)':
+        'oba (ZIP, každý se svým klíčem)',
+    'the first':
+        'první',
+    'the second':
+        'druhý',
+    'This server has two certificates of the same names: nginx offers the ECDSA one to the clients that take it and the RSA one to the rest. Each has its own private key.':
+        'Tento server má dva certifikáty na stejná jména: nginx nabízí ECDSA těm klientům, kteří ho umí, a RSA ostatním. Každý má vlastní privátní klíč.',
+    'two PFX / PKCS#12 files at most - an RSA one and an ECDSA one':
+        'nejvýš dva soubory PFX / PKCS#12 – jeden RSA a jeden ECDSA',
+    'Two certificates of the same names, an RSA one and an ECDSA one, each with its key (or two PFX files with one password), are put in together as a pair: nginx offers each to the clients that take it.':
+        'Dva certifikáty na stejná jména, RSA a ECDSA, každý se svým klíčem (nebo dva soubory PFX s jedním heslem), se vloží společně jako dvojice: nginx nabídne každý klientům, kteří ho umí.',
 }
 
 PATTERNS = {
