@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.61'
+__version__ = '1.0.62'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -13729,6 +13729,52 @@ TLS_EXPORTS = {
 }
 
 
+CERT_ZIP_FILES = 20
+CERT_ZIP_BYTES = 1024 * 1024
+
+
+def cert_zip_open(text, binaries):
+    """(PEM text, PFX files) with every ZIP among the binaries opened (1.0.62):
+    a PEM file inside is added to the text, a DER certificate turned into PEM,
+    a PFX / P12 kept as a PFX. Nothing but those, and nothing big."""
+    import zipfile
+    text = str(text or '')
+    out = []
+    for one in binaries:
+        if not one.startswith(b'PK\x03\x04'):
+            out.append(one)
+            continue
+        try:
+            z = zipfile.ZipFile(io.BytesIO(one))
+        except zipfile.BadZipFile:
+            raise ValueError('the ZIP cannot be read')
+        names = [n for n in z.infolist() if not n.is_dir()]
+        if len(names) > CERT_ZIP_FILES:
+            raise ValueError('the ZIP holds %d files - %d at most for certificates' % (len(names), CERT_ZIP_FILES))
+        found = 0
+        for n in names:
+            if n.file_size > CERT_ZIP_BYTES or n.flag_bits & 0x1:
+                raise ValueError('%s in the ZIP is too big, or the ZIP is locked with a password (not taken)'
+                                 % n.filename[:80])
+            data = z.read(n)[:CERT_ZIP_BYTES]
+            low = n.filename.lower()
+            if b'-----BEGIN ' in data:
+                text += '\n' + data.decode('utf-8', 'replace')
+                found += 1
+            elif low.endswith(('.pfx', '.p12')):
+                out.append(data)
+                found += 1
+            elif low.endswith(('.cer', '.der', '.crt')):
+                try:
+                    text += '\n' + _openssl(['x509', '-inform', 'DER'], data, what='%s in the ZIP' % n.filename).decode()
+                    found += 1
+                except ValueError:
+                    pass
+        if not found:
+            raise ValueError('there is no certificate, key or PFX in the ZIP')
+    return text, out
+
+
 def cert_pair_sent(text, pfxs, password=''):
     """Two certificates with their two private keys sent at once (1.0.61):
     (the RSA one, the ECDSA one) as cert_bundle gives each, or None when it is
@@ -14816,6 +14862,13 @@ def api_web_do(c):
             pfx = base64.b64decode(b.get('pfx') or '') if b.get('pfx') else b''
             pend = unseal_secret(prof.get('pending_key'), 'web:tls-pending') if prof.get('pending_key') else ''
             more = [base64.b64decode(x) for x in (b.get('pfx_more') or []) if isinstance(x, str) and x]
+            # A ZIP among them (1.0.62) - Download's "both", or one of your
+            # own: what is in it taken as if each file had been sent.
+            sent_text, binaries = cert_zip_open(b.get('cert') or '', ([pfx] if pfx else []) + more)
+            if sent_text != (b.get('cert') or '') or len(binaries) != len(([pfx] if pfx else []) + more):
+                b = dict(b, cert=sent_text)
+                pfx = binaries[0] if binaries else b''
+                more = binaries[1:]
             pair = cert_pair_sent(b.get('cert') or '', ([pfx] if pfx else []) + more, b.get('password') or '')
             if pair:
                 # Two certificates with their two keys (1.0.61): an RSA one and

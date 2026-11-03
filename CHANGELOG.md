@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.62
+
+- **Upload takes a ZIP**: the one *Download -> both* gives (two PFX, or two PEM with their keys), or one of your
+  own with PEM, CER/DER or PFX files in it, in folders too. What is in it is taken as if each file had been
+  chosen: a pair is put in as a pair, one certificate as one. Refused, with nothing changed: a ZIP locked with a
+  password, one that cannot be read, one with nothing of a certificate in it, more than 20 files or a file over
+  1 MB. Two PFX files chosen together still make a pair, as in 1.0.61.
+
 ## 1.0.61
 
 - **Dual certificates (an RSA one and an ECDSA one beside it) downloaded and uploaded whole.** *Download* gave

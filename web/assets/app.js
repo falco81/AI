@@ -3612,10 +3612,11 @@ function certUpload(target, prof) {
   modal('A certificate for ' + webTargetWords(target), function (body) {
     body.appendChild(el('p', 'note', 'PEM files - the certificate, its key, the chain, the root, in any order or all in one - or one PFX / PKCS#12 file. ' +
       (prof && prof.pending ? 'A request waits here: the certificate the authority sent back is enough, its key is here.' : 'The key has to come with it.')));
-    body.appendChild(el('p', 'note', 'Two certificates of the same names, an RSA one and an ECDSA one, each with its key (or two PFX files with one password), are put in together as a pair: nginx offers each to the clients that take it.'))
+    body.appendChild(el('p', 'note', 'Two certificates of the same names, an RSA one and an ECDSA one, each with its key (or two PFX files with one password), are put in together as a pair: nginx offers each to the clients that take it.'));
+    body.appendChild(el('p', 'note', 'A ZIP is taken too - the one Download gives for both, or one of your own with PEM, CER or PFX files in it.'))
     var drop = el('div', 'drop');
     var inp = el('input'); inp.type = 'file'; inp.multiple = true; inp.hidden = true;
-    inp.accept = '.pem,.crt,.cer,.key,.pfx,.p12,.chain,.ca,.txt';
+    inp.accept = '.pem,.crt,.cer,.key,.pfx,.p12,.chain,.ca,.txt,.zip';
     var says = el('span', '', 'Drop the files here, or press to choose them');
     drop.appendChild(inp); drop.appendChild(says);
     var list = el('div', 'cert-files');
@@ -3623,7 +3624,7 @@ function certUpload(target, prof) {
       readCertFiles(files).then(function (r) {
         got = got.concat(r);
         clear(list);
-        got.forEach(function (x) { list.appendChild(noI18n(el('span', 'cchip', x.name + (x.pfx ? ' (PFX)' : ' (PEM)')))); });
+        got.forEach(function (x) { list.appendChild(noI18n(el('span', 'cchip', x.name + (x.pfx ? (/\.zip$/i.test(x.name) ? ' (ZIP)' : ' (PFX)') : ' (PEM)')))); });
         says.textContent = 'Read: ' + got.length + ' file(s). More can be added.';
       }).catch(oops);
     }
@@ -3649,7 +3650,7 @@ function certUpload(target, prof) {
       {words: 'Put it in', cls: 'primary', icon: 'save', go: function (b) {
         var pem = got.filter(function (x) { return x.pem; }).map(function (x) { return x.pem; }).join('\n') + '\n' + ($('cu-paste').value || '');
         var pfx = got.filter(function (x) { return x.pfx; });
-        if (pfx.length > 2) { toast('two PFX / PKCS#12 files at most - an RSA one and an ECDSA one', 'bad'); return; }
+        if (pfx.filter(function (x) { return !/\.zip$/i.test(x.name); }).length > 2) { toast('two PFX / PKCS#12 files at most - an RSA one and an ECDSA one', 'bad'); return; }
         if (!pfx.length && !/-----BEGIN /.test(pem)) { toast('choose the files first, or paste the PEM', 'bad'); return; }
         busy(b, true);
         api('web', {action: 'tls_upload', target: target, cert: pem, pfx: pfx.length ? pfx[0].pfx : '',

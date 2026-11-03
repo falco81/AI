@@ -3166,6 +3166,8 @@ STRINGS = {
     'switch Take certificates from acme on first':
         'nejdřív zapněte Brát certifikáty z acme',
     # ---- 1.0.61: dual certificates downloaded and uploaded ----
+    'A ZIP is taken too - the one Download gives for both, or one of your own with PEM, CER or PFX files in it.':
+        'Vezme se i ZIP – ten, který dá Stáhnout pro oba, nebo vlastní se soubory PEM, CER či PFX uvnitř.',
     'Download': 'Stáhnout',
     'Cancel': 'Zrušit',
     'Which certificate':
