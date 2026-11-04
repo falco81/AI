@@ -80,6 +80,8 @@ ai --signin-logo /root/logo.svg      # a picture of your own there; --signin-log
 ai --db-ipv4                         # where the database server listens; --db-ipv4 only: 127.0.0.1
 ai --users                           # the accounts; --add-user, --passwd, --set-role…
 ai --set upgrade_auto=1              # a setting
+ai --get upgrade_auto                # its value, as --set takes it (a password: dots and its last two)
+ai --get 'acme_*' --get db_engine    # several, KEY = VALUE; --json with the default and where it is from
 ai --osup check                      # the system's updates; --osup upgrade, followed here
 ai --upgrade-online                  # a new version of ai
 ```

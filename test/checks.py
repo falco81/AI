@@ -295,5 +295,9 @@ ai.PUSH_CRYPTO = _was_crypto
 check('acme push is off until switched on', "'on': bool(got.get('on'))" in _src and
       "acme-push-(hello|pair|inventory|install)" in open(os.path.join(HERE, 'web', 'index.php')).read())
 
+ai.CONFIG.update(upgrade_auto=True)
+check('ai --get shows a value as --set takes it', ai.cli_get_value('upgrade_auto') == 'true' and
+      ai.cli_get_value('acme_days') == str(ai.CONFIG.get('acme_days')))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

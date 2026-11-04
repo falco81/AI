@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.63
+
+- **`ai --get KEY`**, beside `ai --set KEY=VALUE`: a setting's value as `--set` takes it back (`true`/`false`,
+  numbers, text), alone on its line for a script. Several (`--get a --get b`, or `--get a,b`) or a group
+  (`--get 'acme_*'`) are `KEY = VALUE`; `--json` adds the default and where the value comes from (saved,
+  config.json, the default). A password shows as dots and its last two characters, another secret as
+  `(hidden)`; a key that is not a setting says which ones it may have meant, and ends with 1.
+
 ## 1.0.62
 
 - **Upload takes a ZIP**: the one *Download -> both* gives (two PFX, or two PEM with their keys), or one of your

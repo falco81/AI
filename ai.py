@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.62'
+__version__ = '1.0.63'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -14697,6 +14697,58 @@ route('GET', '/api/acme-push/hello', anon=True)(lambda c: push_serve(c.daemon.st
 
 
 # ---- the card on Certificates and TLS (an administrator's) ----------------------------------
+def cli_get_value(k):
+    """A setting's value as the command line shows it: as --set takes it back,
+    a password as dots and its last two, another secret hidden."""
+    kind, extra = SCHEMA_KEYS[k][2], SCHEMA_KEYS[k][5]
+    v = CONFIG.get(k)
+    if kind == 'password':
+        if not v:
+            return ''
+        return secret_shown((unseal_secret(v, 'setting:' + k) or '') if k not in FILE_ONLY_KEYS else v)
+    if extra.get('secret') and v:
+        return '(hidden)'
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if v is None:
+        return ''
+    if isinstance(v, (list, dict)):
+        return json.dumps(v, ensure_ascii=False)
+    return str(v)
+
+
+def cli_get(st, a, pal):
+    """ai --get KEY [--get KEY2 | --get 'acme_*']: the values, one key alone as
+    the bare value (for a script), several as KEY = VALUE."""
+    import fnmatch
+    import difflib
+    keys = []
+    for want in a.get:
+        for one in [w for w in re.split(r'[,\s]+', want) if w]:
+            hit = [k for k, *_r in SCHEMA if fnmatch.fnmatchcase(k, one)] if any(c in one for c in '*?[') else \
+                ([one] if one in SCHEMA_KEYS else [])
+            if not hit:
+                near = difflib.get_close_matches(one, list(SCHEMA_KEYS), 3)
+                raise Refused('there is no setting %s%s (ai --settings)' % (
+                    one, (' - did you mean %s?' % ', '.join(near)) if near else ''))
+            keys += [k for k in hit if k not in keys]
+    saved = st.settings_all()
+    if a.json:
+        say_json({'settings': {k: {'value': cli_get_value(k) if secret_key(k) else CONFIG.get(k),
+                                   'default': None if secret_key(k) else DEFAULTS.get(k),
+                                   'from': 'saved' if k in saved else ('config.json' if k in FILE_ONLY_KEYS else
+                                                                       'default'),
+                                   'secret': secret_key(k)} for k in keys}})
+        return 0
+    if len(keys) == 1:
+        print(cli_get_value(keys[0]))
+        return 0
+    wide = max(len(k) for k in keys)
+    for k in keys:
+        print('%-*s = %s' % (wide, k, cli_get_value(k)))
+    return 0
+
+
 def cli_acme_push(st, a, pal):
     """ai --acme-push ...: the card Certificates from acme, on the command line."""
     by = 'the command line'
@@ -22845,6 +22897,7 @@ HELP_EXAMPLES = [
     ('ai --new /srv/project --continue', 'Claude Code in a folder, its last conversation'),
     ('ai --add-user jan --role user --run-as jan', 'the password asked for (or AI_PASSWORD)'),
     ('ai --set upgrade_auto=1', 'a setting changed'),
+    ('ai --get upgrade_auto', 'and its value (--get \'acme_*\' for a group)'),
     ('ai --upgrade-online', 'the newest version: fetched, checked, put in'),
 ]
 
@@ -22960,6 +23013,8 @@ def build_parser():
     g.add_argument('--set', action='append', metavar='KEY=VALUE', default=[],
                    help='a setting changed (VALUE @env: from AI_VALUE_KEY)')
     g.add_argument('--setting', nargs=2, metavar=('KEY', 'VALUE'), help=argparse.SUPPRESS)
+    g.add_argument('--get', action='append', metavar='KEY', default=[],
+                   help='a setting\'s value, as --set takes it (several, or acme_* for a group; --json)')
     g = p.add_argument_group('FIREWALL AND ACCESS', 'A change goes back by itself unless kept (--change-keep).')
     g.add_argument('--fw', choices=('status', 'on', 'off'), metavar='status|on|off',
                    help='ai\'s firewall rules: how they stand, or on or off')
@@ -23886,6 +23941,8 @@ def cli_main(argv):
                               else json.dumps(r['value']), r['source']] for r in rows],
                             ['key', 'pane', 'value', 'from']))
             return 0
+        if a.get:
+            return cli_get(st, a, pal)
         sets = list(a.set) + (['%s=%s' % tuple(a.setting)] if a.setting else [])
         if sets:
             for one in sets:
