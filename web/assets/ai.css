@@ -3762,3 +3762,10 @@ body.kb-up{padding-top:4px !important;padding-bottom:0 !important}
 body.kb-up .term-host{min-height:60px}
 body.kb-up .term-path{display:none}
 body.kb-up .term-keys{padding-top:5px}
+/* The start page in a low window - an iPad's Safari with its bars (1.0.69):
+   the card grows with what is in it and the page scrolls as one, rather than
+   the card staying the window's height with the rest running out of it. */
+@media (min-width: 901px){
+  .term-layout.at-start{height:auto;min-height:100%;flex:0 0 auto}
+  .term-layout.at-start > .term-main{height:auto;min-height:100%}
+}

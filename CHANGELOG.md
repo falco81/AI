@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.69
+
+- **The start page of Terminals in a low window (an iPad's Safari, with its address bar and tabs).** The card
+  stayed as tall as the window while what is in it - the box to start, the folders used lately, what is going on,
+  what ended lately - ran out below it, and the page scrolled with the card and its contents moving apart. The
+  card now grows with what is in it, the list's rail with it, and the page scrolls as one. A window tall enough
+  (a PC) looks as before; an open terminal is as tall as the window, as before.
+
 ## 1.0.68
 
 - **On an iPad the full-screen button puts Safari into full screen too**, and the X (or Esc twice) brings Safari
