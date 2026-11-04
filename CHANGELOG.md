@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.68
+
+- **On an iPad the full-screen button puts Safari into full screen too**, and the X (or Esc twice) brings Safari
+  back as it was. The terminal covers the whole window and Safari is asked to give the whole screen to the page,
+  so its address bar and tabs go away. Safari takes that back by itself when its keyboard on the screen comes up
+  (with a Magic Keyboard or another hardware keyboard it does not): the terminal then stays over the window, only
+  Safari's bars come back.
+- **ai on the home screen.** *Share -> Add to Home Screen* on an iPad or a phone now makes an app of it - its own
+  icon, opened without any bars of the browser at all, the keyboard on the screen included (a manifest, the
+  icons, `apple-mobile-web-app-capable`). It signs in once on its own.
+
 ## 1.0.67
 
 - **Settings -> Claude Code: Check it, Update and Install work with the folders limited.** With *The folder of

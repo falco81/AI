@@ -1518,6 +1518,26 @@ function termPure(on) {
     var req = termIOS() ? null : (host.requestFullscreen || host.webkitRequestFullscreen);
     var fallback = function () { host.classList.add('pure'); termPureFit(); };
     TL.pureAt = Date.now();
+    if (termIOS()) {
+      /* iPad (1.0.68): the terminal over the whole window, and Safari asked
+         to give the whole screen to the page - its bars go away. Safari takes
+         that back by itself when its keyboard on the screen comes up (with a
+         Magic Keyboard it does not); the terminal stays over the window then,
+         only Safari's bars come back. An app on the home screen has none. */
+      fallback();
+      var root = document.documentElement;
+      var ask = root.requestFullscreen || root.webkitRequestFullscreen;
+      var standalone = window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      if (ask && !standalone) {
+        try {
+          var got = ask.call(root);
+          TL.pureDoc = true;
+          if (got && got.catch) got.catch(function () { TL.pureDoc = false; });
+        } catch (e) { TL.pureDoc = false; }
+      }
+      setTimeout(function () { termPureFit(); }, 300);
+      return;
+    }
     if (req) {
       try {
         Promise.resolve(req.call(host)).then(function () {
@@ -1528,7 +1548,11 @@ function termPure(on) {
   } else {
     try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) { }
     var fs = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fs === host) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    /* Safari back as it was (1.0.68): the whole screen it gave the page is given back too. */
+    if (fs === host || (fs && TL.pureDoc)) {
+      try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { }
+    }
+    TL.pureDoc = false;
     host.classList.remove('pure');
     termPureFit();
   }

@@ -17,7 +17,7 @@ if (PHP_SAPI !== 'cli' && isset($_SERVER['SCRIPT_FILENAME'])
     exit;
 }
 
-const AI_VERSION = '1.0.67';
+const AI_VERSION = '1.0.68';
 const AI_LANG_CODE = '/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/';
 
 header('Cache-Control: no-cache, no-store, must-revalidate');
@@ -253,6 +253,15 @@ function ai_head(string $title, string $lang, bool $load, string $nonce, string 
     echo "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
     echo '<title>' . h($title) . "</title>\n";
     echo '<link rel="icon" href="' . h($base) . 'assets/favicon.svg" type="image/svg+xml">' . "\n";
+    /* On the home screen of an iPad or a phone (1.0.68): Share - Add to Home
+       Screen opens it as an app of its own, without the bars of the browser. */
+    echo '<link rel="manifest" href="' . h($base) . 'assets/manifest.json">' . "\n";
+    echo '<link rel="apple-touch-icon" href="' . h($base) . 'assets/icon-180.png">' . "\n";
+    echo "<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n";
+    echo "<meta name=\"mobile-web-app-capable\" content=\"yes\">\n";
+    echo "<meta name=\"apple-mobile-web-app-title\" content=\"ai\">\n";
+    echo "<meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black\">\n";
+    echo "<meta name=\"theme-color\" content=\"#0d1117\">\n";
     if ($load) {
         echo '<script nonce="' . h($nonce) . '" src="?api=lang&amp;code=' . h(rawurlencode($lang))
            . '&amp;v=' . (int) ($langs[$lang]['mtime'] ?? 0) . '"></script>' . "\n";
