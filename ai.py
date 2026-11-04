@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.69'
+__version__ = '1.0.70'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -137,6 +137,8 @@ DEFAULTS = {
     'debug': False,
     # the second step of signing in (otp's admin_2fa)
     'admin_2fa': False,
+    'passkeys': True,
+    'passkey_is_2fa': True,
     'admin_2fa_app': True,
     'admin_2fa_mail': True,
     'totp_window': 1,
@@ -547,6 +549,13 @@ SCHEMA = [
      'once a week.',
      {'choices': [['off', 'only by hand'], ['after', 'after every backup, the one just sent'],
                   ['weekly', 'once a week']]}),
+    ('passkeys', 'people', 'bool', 'Signing in with a passkey (Face ID, Touch ID, Windows Hello)',
+     'Each account may add passkeys in My account (signed in with its password); the sign-in page then offers '
+     'Sign in with a passkey - no name, no password, the face, the finger or the PIN of the device. Only on the '
+     'pages reached by their name with a certificate the browser trusts. Off: no passkey is offered or taken.', {}),
+    ('passkey_is_2fa', 'people', 'bool', 'A passkey counts as the second step',
+     'With the second step on, a passkey checked with the face, the finger or the PIN is both steps at once (as '
+     'most services take it). Off: after it the code is asked for too.', {'when': ['passkeys', [True]]}),
     ('admin_2fa', 'people', 'bool', 'The second step of signing in, for everybody',
      'After a right password these pages ask for a code too: from an authenticator app, or sent '
      'by e-mail. The first time, each account chooses how and proves it; Accounts → Reset the '
@@ -9130,7 +9139,9 @@ def api_health(c):
     return {'ok': True, 'version': __version__, 'lang': CONFIG.get('ui_lang'),
             'users': len(d.store.users()), 'database': {'ok': True}, 'host': host_name(),
             'node': node_name(), 'maintenance': bool(maintenance_now(d.store).get('on')),
-            'art': art_read(d.store)}
+            'art': art_read(d.store),
+            # whether the sign-in page offers a passkey (1.0.70): on, and somebody has one
+            'passkeys': bool(CONFIG.get('passkeys', True) and passkeys_all(d.store))}
 
 
 @route('POST', '/api/auth/login', anon=True)
@@ -9146,6 +9157,381 @@ def api_login(c):
                       % (' (%s)' % m['why'] if m.get('why') else ''), 503)
     stage = mfa_stage(c.daemon.store, name) if CONFIG.get('admin_2fa') else ''
     return {'token': token, 'who': None if stage else user_view(u), 'mfa': stage}
+
+
+# ---------------------------------------------------------------------------
+# Passkeys (1.0.70): signing in with Face ID, Touch ID, Windows Hello or a
+# security key - WebAuthn. An account adds one in My account (signed in with
+# its password); the sign-in page then offers "Sign in with a passkey", and
+# no name or password is typed. With the second step on, a passkey checked
+# with the person's face, finger or PIN (user verification) counts as both
+# steps (passkey_is_2fa). The signatures are checked with openssl, which the
+# server has anyway: ES256 (Apple, Google, most keys), RS256 (Windows Hello),
+# EdDSA. Kept in meta 'passkeys': the credential's id, its public key, its
+# counter - nothing secret. Nothing changes for an account without one.
+# ---------------------------------------------------------------------------
+PASSKEY_CHALLENGES = {}
+PASSKEY_LOCK = threading.Lock()
+PASSKEY_CHALLENGE_S = 300
+PASSKEYS_MOST = 20                     # of one account
+
+
+def _pk_b64u(b):
+    return base64.urlsafe_b64encode(b).rstrip(b'=').decode('ascii')
+
+
+def _pk_unb64u(s):
+    s = str(s or '')
+    try:
+        return base64.urlsafe_b64decode(s + '=' * (-len(s) % 4))
+    except (ValueError, TypeError):
+        raise Refused('that is not what a passkey sends', 400)
+
+
+def _pk_cbor(data, at=0):
+    """One CBOR item (RFC 8949) from `data` at `at`: (value, next). The parts
+    WebAuthn uses: integers, byte and text strings, arrays, maps, simple."""
+    if at >= len(data):
+        raise ValueError('short CBOR')
+    first = data[at]
+    major, info = first >> 5, first & 0x1F
+    at += 1
+    if info < 24:
+        val = info
+    elif info in (24, 25, 26, 27):
+        n = 1 << (info - 24)
+        if at + n > len(data):
+            raise ValueError('short CBOR')
+        val = int.from_bytes(data[at:at + n], 'big')
+        at += n
+    else:
+        raise ValueError('CBOR of an unknown length')
+    if major == 0:
+        return val, at
+    if major == 1:
+        return -1 - val, at
+    if major in (2, 3):
+        if at + val > len(data):
+            raise ValueError('short CBOR')
+        raw = data[at:at + val]
+        return (raw if major == 2 else raw.decode('utf-8')), at + val
+    if major == 4:
+        out = []
+        for _ in range(val):
+            item, at = _pk_cbor(data, at)
+            out.append(item)
+        return out, at
+    if major == 5:
+        out = {}
+        for _ in range(val):
+            k, at = _pk_cbor(data, at)
+            v, at = _pk_cbor(data, at)
+            out[k] = v
+        return out, at
+    if major == 7:
+        return {20: False, 21: True, 22: None}.get(info, None), at
+    raise ValueError('CBOR not taken here')
+
+
+def _pk_der_len(n):
+    if n < 0x80:
+        return bytes([n])
+    b = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+    return bytes([0x80 | len(b)]) + b
+
+
+def _pk_der(tag, body):
+    return bytes([tag]) + _pk_der_len(len(body)) + body
+
+
+def _pk_der_int(b):
+    b = b.lstrip(b'\0') or b'\0'
+    if b[0] & 0x80:
+        b = b'\0' + b
+    return _pk_der(0x02, b)
+
+
+def passkey_pem(cose):
+    """A COSE public key as PEM (SubjectPublicKeyInfo), with its algorithm."""
+    kty, alg = cose.get(1), cose.get(3)
+    if kty == 2 and alg == -7 and cose.get(-1) == 1:
+        x, y = cose.get(-2), cose.get(-3)
+        if not (isinstance(x, bytes) and isinstance(y, bytes) and len(x) == 32 and len(y) == 32):
+            raise ValueError('a P-256 key of another size')
+        der = bytes.fromhex('3059301306072a8648ce3d020106082a8648ce3d030107034200') + b'\x04' + x + y
+    elif kty == 3 and alg == -257:
+        n, e = cose.get(-1), cose.get(-2)
+        if not (isinstance(n, bytes) and isinstance(e, bytes)) or len(n) < 256:
+            raise ValueError('an RSA key under 2048 bits')
+        key = _pk_der(0x30, _pk_der_int(n) + _pk_der_int(e))
+        der = _pk_der(0x30, bytes.fromhex('300d06092a864886f70d0101010500') + _pk_der(0x03, b'\0' + key))
+    elif kty == 1 and alg == -8 and cose.get(-1) == 6:
+        x = cose.get(-2)
+        if not (isinstance(x, bytes) and len(x) == 32):
+            raise ValueError('an Ed25519 key of another size')
+        der = bytes.fromhex('302a300506032b6570032100') + x
+    else:
+        raise ValueError('a key of a kind not taken here (ES256, RS256 and EdDSA are)')
+    b64 = base64.b64encode(der).decode()
+    return alg, '-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n' % '\n'.join(
+        b64[i:i + 64] for i in range(0, len(b64), 64))
+
+
+def passkey_verify(pem, alg, data, sig):
+    """Whether `sig` is the key's signature over `data` - by openssl."""
+    if alg == -8:
+        m = re.search(r'-----BEGIN PUBLIC KEY-----(.+?)-----END', pem, re.S)
+        der = base64.b64decode(re.sub(r'\s', '', m.group(1))) if m else b''
+        return push_ed25519_verify(der[-32:], data, sig)
+    with tempfile.TemporaryDirectory(prefix='ai-pk-') as t:
+        kf, sf = os.path.join(t, 'k.pem'), os.path.join(t, 's.bin')
+        with open(kf, 'w') as f:
+            f.write(pem)
+        with open(sf, 'wb') as f:
+            f.write(sig)
+        try:
+            _openssl(['dgst', '-sha256', '-verify', kf, '-signature', sf], data, what='the signature')
+            return True
+        except ValueError:
+            return False
+
+
+def passkey_host(c):
+    """The name the pages were reached by: what a passkey is tied to. Never an
+    address - WebAuthn takes none."""
+    host = str(getattr(c, 'host', '') or '').lower().split(':')[0]
+    if not host or not re.match(r'^(?=.{1,253}\Z)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}'
+                                r'[a-z0-9])?)*\Z', host) or re.match(r'^[0-9.]+\Z', host):
+        raise Refused('passkeys work only on the pages reached by their name (https://name/), not by an address')
+    return host
+
+
+def passkey_origin_ok(origin, host):
+    o = urllib.parse.urlsplit(str(origin or ''))
+    return o.scheme == 'https' and (o.hostname or '').lower() == host
+
+
+def passkeys_all(store):
+    got = store.meta_json('passkeys', []) or []
+    return [p for p in got if isinstance(p, dict) and p.get('id') and p.get('user')]
+
+
+def passkeys_of(store, name):
+    return [p for p in passkeys_all(store) if p['user'] == name]
+
+
+def passkey_view(p):
+    return {k: p.get(k) for k in ('id', 'user', 'name', 'created', 'last_used', 'alg', 'host', 'backed_up')}
+
+
+def passkey_challenge(kind, user='', host=''):
+    ch = secrets.token_bytes(32)
+    now = time.time()
+    with PASSKEY_LOCK:
+        for k in [k for k, v in PASSKEY_CHALLENGES.items() if now - v['at'] > PASSKEY_CHALLENGE_S]:
+            PASSKEY_CHALLENGES.pop(k, None)
+        PASSKEY_CHALLENGES[_pk_b64u(ch)] = {'at': now, 'kind': kind, 'user': user, 'host': host}
+    return _pk_b64u(ch)
+
+
+def passkey_client(c, kind, raw_client):
+    """clientDataJSON checked: its type, its challenge (waiting here, once,
+    for this kind), its origin. The challenge's record."""
+    try:
+        cd = json.loads(_pk_unb64u(raw_client).decode('utf-8'))
+    except (ValueError, UnicodeDecodeError):
+        raise Refused('that is not what a passkey sends', 400)
+    if cd.get('type') != ('webauthn.create' if kind == 'register' else 'webauthn.get'):
+        raise Refused('that is not what a passkey sends', 400)
+    with PASSKEY_LOCK:
+        rec = PASSKEY_CHALLENGES.pop(str(cd.get('challenge') or ''), None)
+    if not rec or rec['kind'] != kind or time.time() - rec['at'] > PASSKEY_CHALLENGE_S:
+        raise Refused('the passkey took too long, or was asked for elsewhere - try again', 400)
+    host = rec['host']
+    if not passkey_origin_ok(cd.get('origin'), host):
+        raise Refused('the passkey was used on another page than this one', 400)
+    return rec
+
+
+def passkey_auth_data(raw, host, need_attested=False):
+    """authenticatorData: (flags, counter, credential id, COSE key) - the name's
+    hash, the presence and the verification of the person checked."""
+    if len(raw) < 37:
+        raise Refused('that is not what a passkey sends', 400)
+    if raw[:32] != hashlib.sha256(host.encode()).digest():
+        raise Refused('the passkey is of another name than this one', 400)
+    flags = raw[32]
+    count = int.from_bytes(raw[33:37], 'big')
+    if not flags & 0x01:
+        raise Refused('the passkey was not touched or looked at', 400)
+    if not flags & 0x04:
+        raise Refused('the passkey did not check who you are (Face ID, Touch ID or a PIN) - it is needed', 400)
+    cred, cose = None, None
+    if need_attested:
+        if not flags & 0x40 or len(raw) < 55:
+            raise Refused('that is not what a passkey sends', 400)
+        n = int.from_bytes(raw[53:55], 'big')
+        cred = raw[55:55 + n]
+        try:
+            cose, _end = _pk_cbor(raw, 55 + n)
+        except ValueError:
+            raise Refused('that is not what a passkey sends', 400)
+    return flags, count, cred, cose
+
+
+@route('POST', '/api/auth/passkey/register', admin=False)
+def api_passkey_register(c):
+    """Adding a passkey to the account signed in: 'begin' gives the options,
+    'finish' takes what the browser sends back."""
+    if not CONFIG.get('passkeys', True):
+        raise Refused('passkeys are switched off (Settings - The sign-in page)', 403)
+    st, b, name = c.daemon.store, c.body, c.name
+    host = passkey_host(c)
+    mine = passkeys_of(st, name)
+    if str(b.get('step') or 'begin') == 'begin':
+        return {'publicKey': {
+            'challenge': passkey_challenge('register', name, host),
+            'rp': {'id': host, 'name': (CONFIG.get('site_name') or 'ai') + ' · ' + host},
+            'user': {'id': _pk_b64u(hashlib.sha256(('ai-user:' + name).encode()).digest()[:16]),
+                     'name': name, 'displayName': name},
+            'pubKeyCredParams': [{'type': 'public-key', 'alg': -7}, {'type': 'public-key', 'alg': -8},
+                                 {'type': 'public-key', 'alg': -257}],
+            'authenticatorSelection': {'residentKey': 'required', 'requireResidentKey': True,
+                                       'userVerification': 'required'},
+            'excludeCredentials': [{'type': 'public-key', 'id': p['id']} for p in mine],
+            'attestation': 'none', 'timeout': PASSKEY_CHALLENGE_S * 1000}}
+    rec = passkey_client(c, 'register', b.get('clientDataJSON'))
+    if rec['user'] != name:
+        raise Refused('the passkey was asked for by another sign-in', 400)
+    try:
+        att, _e = _pk_cbor(_pk_unb64u(b.get('attestationObject')))
+        auth = att.get('authData') if isinstance(att, dict) else None
+    except ValueError:
+        auth = None
+    if not isinstance(auth, bytes):
+        raise Refused('that is not what a passkey sends', 400)
+    flags, count, cred, cose = passkey_auth_data(auth, rec['host'], need_attested=True)
+    try:
+        alg, pem = passkey_pem(cose if isinstance(cose, dict) else {})
+    except ValueError as e:
+        raise Refused(str(e), 400)
+    cid = _pk_b64u(cred)
+    if len(mine) >= PASSKEYS_MOST:
+        raise Refused('%d passkeys at most for one account - take one away first' % PASSKEYS_MOST)
+    with PASSKEY_LOCK:
+        keys = [p for p in passkeys_all(st) if p['id'] != cid]
+        label = clean_line(str(b.get('name') or ''), 60) or ('passkey %d' % (len(mine) + 1))
+        keys.append({'id': cid, 'user': name, 'name': label, 'pem': pem, 'alg': alg, 'count': count,
+                     'created': time.time(), 'last_used': 0, 'host': rec['host'], 'backed_up': bool(flags & 0x10)})
+        st.set_meta_json('passkeys', keys)
+    st.add_event('sign-in', '%s added a passkey (%s) for %s' % (name, label, rec['host']), 'warn', who=name)
+    return {'message': 'the passkey is added - sign in with it next time', 'passkeys':
+            [passkey_view(p) for p in passkeys_of(st, name)]}
+
+
+@route('POST', '/api/auth/passkey/begin', anon=True)
+def api_passkey_begin(c):
+    """The sign-in page asks for a passkey: a challenge, no name - the
+    browser offers the passkeys it has for this name."""
+    if not CONFIG.get('passkeys', True):
+        raise Refused('passkeys are switched off here', 403)
+    host = passkey_host(c)
+    return {'publicKey': {'challenge': passkey_challenge('login', '', host), 'rpId': host,
+                          'userVerification': 'required', 'allowCredentials': [],
+                          'timeout': PASSKEY_CHALLENGE_S * 1000}}
+
+
+@route('POST', '/api/auth/passkey/login', anon=True)
+def api_passkey_login(c):
+    if not CONFIG.get('passkeys', True):
+        raise Refused('passkeys are switched off here', 403)
+    st, b, auth = c.daemon.store, c.body, c.daemon.auth
+    cid = str(b.get('id') or '')
+    wait = auth.locked('passkey:' + cid[:40], c.ip)
+    if wait:
+        raise Refused('too many tries - again in %d min' % max(1, wait // 60 + 1), 429)
+    rec = passkey_client(c, 'login', b.get('clientDataJSON'))
+    p = next((x for x in passkeys_all(st) if x['id'] == cid), None)
+    raw_auth = _pk_unb64u(b.get('authenticatorData'))
+    raw_client = _pk_unb64u(b.get('clientDataJSON'))
+    sig = _pk_unb64u(b.get('signature'))
+    if not p:
+        auth.failed('passkey:' + cid[:40], c.ip)
+        st.add_event('sign-in', 'a sign-in from %s with a passkey not known here was refused' % c.ip, 'warn')
+        raise Refused('this passkey is not known here (taken away, or of another server)', 401)
+    flags, count, _c, _k = passkey_auth_data(raw_auth, rec['host'])
+    if not passkey_verify(p['pem'], p['alg'], raw_auth + hashlib.sha256(raw_client).digest(), sig):
+        auth.failed('passkey:' + cid[:40], c.ip)
+        st.add_event('sign-in', 'a sign-in as %s with a passkey from %s was refused (the signature)' % (p['user'], c.ip),
+                     'warn', who=p['user'])
+        raise Refused('the passkey\'s signature does not match', 401)
+    if p.get('count') and count and count <= int(p['count']):
+        st.add_event('sign-in', 'a sign-in as %s with a passkey from %s was refused: its counter went back - a '
+                     'copy of it?' % (p['user'], c.ip), 'bad', who=p['user'])
+        raise Refused('this passkey\'s counter went back - it may have been copied; take it away and add it anew', 401)
+    u = st.user(p['user'])
+    if not u or u['disabled']:
+        raise Refused('the account of this passkey is switched off', 403)
+    m = maintenance_now(st)
+    if m.get('on') and u.get('role') != 'admin':
+        raise Refused('this server is in maintenance - only an administrator may sign in now', 503)
+    stage = ''
+    if CONFIG.get('admin_2fa') and not CONFIG.get('passkey_is_2fa', True):
+        stage = mfa_stage(st, u['name'])
+    token = auth.session_new(u['name'], c.ip, b.get('agent') or '', dict({'mfa': stage} if stage else {},
+                                                                         passkey=p['id']))
+    with PASSKEY_LOCK:
+        keys = passkeys_all(st)
+        for x in keys:
+            if x['id'] == p['id']:
+                x['count'] = count
+                x['last_used'] = time.time()
+        st.set_meta_json('passkeys', keys)
+    st.x('UPDATE users SET last_login=?, last_ip=? WHERE name=?', (time.time(), c.ip, u['name']))
+    st.add_event('sign-in', '%s signed in from %s with a passkey (%s)%s' % (
+        u['name'], c.ip, p.get('name') or '?', ' - the second step still to give' if stage else
+        (' - it counts as the second step' if CONFIG.get('admin_2fa') else '')), 'info', who=u['name'])
+    return {'token': token, 'who': None if stage else user_view(u), 'mfa': stage}
+
+
+@route('GET', '/api/auth/passkeys')
+def api_passkeys(c):
+    """The passkeys of the account signed in - or, for an administrator, of
+    the account named (or of every account)."""
+    st = c.daemon.store
+    who = c.arg('name')
+    if who or c.arg('all'):
+        need_admin(c)
+        rows = passkeys_of(st, who) if who else passkeys_all(st)
+    else:
+        rows = passkeys_of(st, c.name)
+    return {'passkeys': [passkey_view(p) for p in rows], 'on': bool(CONFIG.get('passkeys', True)),
+            'is_2fa': bool(CONFIG.get('passkey_is_2fa', True)), 'here': getattr(c, 'host', '')}
+
+
+@route('POST', '/api/auth/passkeys')
+def api_passkeys_do(c):
+    st, b = c.daemon.store, c.body
+    act, pid = str(b.get('do') or ''), str(b.get('id') or '')
+    with PASSKEY_LOCK:
+        keys = passkeys_all(st)
+        p = next((x for x in keys if x['id'] == pid), None)
+        if not p:
+            raise Refused('there is no such passkey', 404)
+        if p['user'] != c.name:
+            need_admin(c)
+        if act == 'rename':
+            p['name'] = clean_line(str(b.get('name') or ''), 60) or p.get('name')
+            st.set_meta_json('passkeys', keys)
+            return {'message': 'renamed', 'passkeys': [passkey_view(x) for x in keys if x['user'] == p['user']]}
+        if act == 'delete':
+            left = [x for x in keys if x['id'] != pid]
+            st.set_meta_json('passkeys', left)
+            st.add_event('sign-in', '%s took the passkey %s of %s away' % (c.name, p.get('name') or '?', p['user']),
+                         'warn', who=c.name)
+            return {'message': 'the passkey is taken away', 'passkeys':
+                    [passkey_view(x) for x in left if x['user'] == p['user']]}
+    raise Refused('rename or delete')
 
 
 @route('POST', '/api/auth/logout')
@@ -19537,6 +19923,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail(401, 'not signed in')
         body = self.body_json() if method == 'POST' else {}
         c = Ctx(d, who, body, urllib.parse.parse_qs(u.query), ip, token)
+        # The name the pages were reached by (PHP's HTTP_HOST, checked there):
+        # what a passkey is tied to (1.0.70).
+        c.host = re.sub(r'[^A-Za-z0-9.:\[\]-]', '', str(self.headers.get('X-Ai-Host') or ''))[:260]
         if who and who.get('_mfa') and u.path not in MFA_ALLOWED:
             return self.fail(403, 'give the second step of signing in first')
         if who and who['must_change'] and u.path not in ('/api/auth/password', '/api/auth/whoami',
@@ -23087,6 +23476,9 @@ def build_parser():
                    metavar='status|on|off|pair|stop',
                    help='certificates from acme (acme push): how it stands, switched on or off, a pairing code '
                         '(15 minutes), the code taken back')
+    g.add_argument('--passkeys', nargs='?', const='', metavar='ACCOUNT',
+                   help='the passkeys (Face ID, Touch ID...) of every account, or of one')
+    g.add_argument('--passkey-forget', metavar='ID', help='a passkey taken away (its ID from --passkeys; all: every one)')
     g.add_argument('--acme-push-key', metavar='KEY', help='acme\'s key taken (acme-push-ed25519 ...)')
     g.add_argument('--acme-push-forget', metavar='KEY_ID', help='an acme forgotten: nothing more is taken from it')
     g.add_argument('--tls-hsts', type=int, metavar='SECONDS', help='Strict-Transport-Security (0 = none)')
@@ -23675,6 +24067,25 @@ def cli_main(argv):
             if (v.get('account') or {}).get('kid'):
                 print('  account        %s, made %s, %s' % (v['account'].get('email') or '(no mail)',
                                                          _acme_day(v['account'].get('at')), v['account'].get('key')))
+            return 0
+        if a.passkeys is not None or a.passkey_forget:
+            keys = passkeys_all(st)
+            if a.passkey_forget:
+                left = [] if a.passkey_forget == 'all' else [k for k in keys if not k['id'].startswith(a.passkey_forget)]
+                if len(left) == len(keys):
+                    raise Refused('no passkey starts so (ai --passkeys)')
+                st.set_meta_json('passkeys', left)
+                st.add_event('sign-in', 'the command line took %d passkey(s) away' % (len(keys) - len(left)), 'warn')
+                print(pal.ok_line('%d passkey(s) taken away' % (len(keys) - len(left))))
+                return 0
+            rows = [k for k in keys if not a.passkeys or k['user'] == a.passkeys]
+            if a.json:
+                say_json({'passkeys': [passkey_view(k) for k in rows]})
+                return 0
+            print(table([[k['user'], k.get('name') or '', k['id'][:16], k.get('host') or '', when(k.get('created')),
+                          when(k.get('last_used')) if k.get('last_used') else 'never'] for k in rows],
+                        ['account', 'passkey', 'id', 'for', 'added', 'last used']) if rows
+                  else pal.dim('no passkey'))
             return 0
         if a.acme_push or a.acme_push_key or a.acme_push_forget:
             return cli_acme_push(st, a, pal)

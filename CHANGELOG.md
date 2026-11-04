@@ -3,6 +3,24 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.70
+
+- **Signing in with a passkey - Face ID, Touch ID, Windows Hello, a security key (WebAuthn).** *My account ->
+  Passkeys -> Add a passkey of this device*, signed in with the password: the device keeps it (an iPad and an
+  iPhone in the iCloud Keychain, so the other Apple devices of the same Apple ID too). The sign-in page then
+  offers *Sign in with a passkey (Face ID, Touch ID)*: no name, no password - the face, the finger or the PIN of
+  the device. It works in Safari and in ai added to the home screen.
+- **With the second step on, a passkey counts as it** (*A passkey counts as the second step*, Settings ->
+  Signing in, on by default): a passkey that checked the person is both steps at once; off, the code is asked for
+  after it. *Signing in with a passkey* switches the whole of it off.
+- The server keeps only the public half of each passkey and checks every signature with openssl: ES256 (Apple,
+  Google, most keys), RS256 (Windows Hello), EdDSA. Refused: a passkey that did not check the person, one of
+  another name or page, an answer used twice, a counter that went back (a copied key), a passkey taken away.
+  Each account lists and takes away its own; an administrator anybody's (Accounts -> the account), and
+  `ai --passkeys [NAME]`, `ai --passkey-forget ID|all` on the server. Every addition, removal and sign-in is an
+  event. Only on the pages reached by their name over HTTPS with a trusted certificate. Signing in with the
+  password is as it was.
+
 ## 1.0.69
 
 - **The start page of Terminals in a low window (an iPad's Safari, with its address bar and tabs).** The card

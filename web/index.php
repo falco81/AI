@@ -120,6 +120,30 @@ if (isset($_GET['api'])) {
         echo json_encode(is_array($data) ? $data : ['ok' => false, 'error' => 'sign-in failed']);
         exit;
     }
+    if ($what === 'passkey-login' && $post) {
+        /* A passkey given on the sign-in page (1.0.70): the daemon checks its
+           signature and hands a sign-in - its cookie set here, as login's. */
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        $sent = sent_body();
+        $sent['agent'] = substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200);
+        [$status, $body] = ai_call('/api/auth/passkey/login', 'POST', $sent, 30.0);
+        if ($status === 0) {
+            http_response_code(503);
+            echo json_encode(['ok' => false, 'error' => 'the daemon is not answering — is ai.service running?']);
+            exit;
+        }
+        $data = json_decode($body, true);
+        if ($status === 200 && is_array($data) && !empty($data['token'])) {
+            ai_set_session((string) $data['token']);
+            unset($data['token']);
+            echo json_encode($data);
+            exit;
+        }
+        http_response_code($status === 200 ? 400 : $status);
+        echo json_encode(is_array($data) ? $data : ['ok' => false, 'error' => 'sign-in failed']);
+        exit;
+    }
     if ($what === 'mfa' && $post) {
         /* The second step given: the daemon ends the sign-in the password
            opened and hands a new one - its cookie set here, the token never
@@ -158,7 +182,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -170,6 +194,7 @@ if (isset($_GET['api'])) {
     $writes = [
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
         'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy',
+        'passkeys' => '/api/auth/passkeys', 'passkey-begin' => '/api/auth/passkey/begin', 'passkey-register' => '/api/auth/passkey/register',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -219,7 +244,8 @@ if (!$me && !ai_local()) {
     }
     // Nothing more to a stranger than the language and the picture of the sign-in.
     $health = ['lang' => (string) ($health['lang'] ?? 'cs'), 'users' => 1,
-               'art' => is_array($health['art'] ?? null) ? $health['art'] : []];
+               'art' => is_array($health['art'] ?? null) ? $health['art'] : [],
+               'passkeys' => !empty($health['passkeys'])];
 }
 $initial = $me ? (ai_get('/api/status', 8.0) ?: null) : null;
 $host    = (string) ($_SERVER['HTTP_HOST'] ?? php_uname('n'));
@@ -279,6 +305,15 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         d="M18 9l3 3-3 3"/></svg><span>Sign in</span></button>
       <div class="said" id="in-said"></div>
     </form>
+    <?php if (!empty($health['passkeys']) && $mfa === ''): ?>
+    <div class="pk-or" id="pk-box" hidden>
+      <span class="muted small">or</span>
+      <button class="btn cmd" type="button" id="pk-go"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"
+        stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        ><circle cx="8" cy="9" r="4"/><path d="M2 21v-1a6 6 0 0 1 9-5.2"/><path d="M15.5 13.5a3 3 0 1 1 3 3v4.5l-1.5 1-1.5-1v-1l1-1-1-1v-1.5"/></svg
+        ><span>Sign in with a passkey (Face ID, Touch ID)</span></button>
+    </div>
+    <?php endif; ?>
     <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
       <span class="muted small">ai <?= h(AI_VERSION) ?></span>
       <span class="langpick" id="langpick"></span>
@@ -327,6 +362,34 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
       $('in-pass').focus();
     });
   });
+  /* A passkey (1.0.70): Face ID, Touch ID, Windows Hello - no name, no password. */
+  var pkb = $('pk-box'), pkgo = $('pk-go');
+  if (pkb && window.PublicKeyCredential && navigator.credentials && location.protocol === 'https:'
+      && !/^[0-9.]+$|^\[/.test(location.hostname)) {
+    pkb.hidden = false;
+    pkgo.onclick = function () {
+      said.className = 'said'; said.textContent = '';
+      pkgo.disabled = true;
+      api('passkey-begin', {}).then(function (d) {
+        var o = d.publicKey;
+        o.challenge = pkBytes(o.challenge);
+        return navigator.credentials.get({publicKey: o});
+      }).then(function (cr) {
+        return api('passkey-login', {id: cr.id, clientDataJSON: pkText(cr.response.clientDataJSON),
+          authenticatorData: pkText(cr.response.authenticatorData), signature: pkText(cr.response.signature),
+          userHandle: cr.response.userHandle ? pkText(cr.response.userHandle) : ''});
+      }).then(function (d) {
+        if (d && d.mfa) { form.hidden = true; pkb.hidden = true; mfaStep(); return; }
+        said.className = 'said good'; said.textContent = 'Welcome back.';
+        location.reload();
+      }).catch(function (e) {
+        pkgo.disabled = false;
+        if (e && (e.name === 'NotAllowedError' || e.name === 'AbortError')) return;   /* cancelled */
+        said.className = 'said bad';
+        said.textContent = String(e.message || e);
+      });
+    };
+  }
   if ($('mfa-box').dataset.stage) mfaStep(); else $('in-name').focus();
 }());
 </script>

@@ -302,5 +302,8 @@ check('ai --get shows a value as --set takes it', ai.cli_get_value('upgrade_auto
 check('Claude Code upkeep is not kept to the folders of the chats', "upkeep=True)" in _src and
       "keep['upkeep'] = True" in _src and "if root and not upkeep and not path_under(cwd, root)" in _src)
 
+check('a passkey\'s COSE key becomes PEM', ai.passkey_pem({1: 2, 3: -7, -1: 1, -2: b'\x01' * 32, -3: b'\x02' * 32})[1]
+      .startswith('-----BEGIN PUBLIC KEY-----') and ai._pk_cbor(bytes.fromhex('a2616101616283020304'))[0] == {'a': 1, 'b': [2, 3, 4]})
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

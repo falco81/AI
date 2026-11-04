@@ -3184,9 +3184,79 @@ STRINGS = {
         'nejvýš dva soubory PFX / PKCS#12 – jeden RSA a jeden ECDSA',
     'Two certificates of the same names, an RSA one and an ECDSA one, each with its key (or two PFX files with one password), are put in together as a pair: nginx offers each to the clients that take it.':
         'Dva certifikáty na stejná jména, RSA a ECDSA, každý se svým klíčem (nebo dva soubory PFX s jedním heslem), se vloží společně jako dvojice: nginx nabídne každý klientům, kteří ho umí.',
+    # ---- 1.0.70: passkeys ----
+    'Sign in with a passkey (Face ID, Touch ID)':
+        'Přihlásit přes passkey (Face ID, Touch ID)',
+    'or':
+        'nebo',
+    'Passkeys - Face ID, Touch ID':
+        'Passkeys – Face ID, Touch ID',
+    'A passkey signs you in with the face, the finger or the PIN of this device - no name and no password typed. It is kept in the device (on an iPad and an iPhone in the iCloud Keychain, on your other Apple devices too); the server keeps only its public half.':
+        'Passkey vás přihlásí obličejem, prstem nebo PINem tohoto zařízení – bez psaní jména a hesla. Je uložený v zařízení (na iPadu a iPhonu v Klíčence na iCloudu, takže i na vašich dalších zařízeních Apple); server má jen jeho veřejnou část.',
+    'Add a passkey of this device':
+        'Přidat passkey tohoto zařízení',
+    'Passkey':
+        'Passkey',
+    'Added':
+        'Přidáno',
+    'Last used':
+        'Naposledy použito',
+    'Passkeys':
+        'Passkeys',
+    'No passkey.':
+        'Žádný passkey.',
+    'Take this passkey away?':
+        'Odebrat tento passkey?',
+    'Passkeys are switched off on this server (Settings - Signing in).':
+        'Passkeys jsou na tomto serveru vypnuté (Nastavení – Přihlašování).',
+    'A passkey is added on the pages reached by their name over HTTPS (https://name/), not by an address.':
+        'Passkey se přidává na stránkách otevřených jménem přes HTTPS (https://jméno/), ne IP adresou.',
+    'With the second step on, signing in with a passkey is both steps at once.':
+        'Se zapnutým druhým krokem je přihlášení přes passkey oba kroky najednou.',
+    'this device has a passkey for this account already':
+        'toto zařízení už má passkey pro tento účet',
+    'Signing in with a passkey (Face ID, Touch ID, Windows Hello)':
+        'Přihlášení přes passkey (Face ID, Touch ID, Windows Hello)',
+    'Each account may add passkeys in My account (signed in with its password); the sign-in page then offers Sign in with a passkey - no name, no password, the face, the finger or the PIN of the device. Only on the pages reached by their name with a certificate the browser trusts. Off: no passkey is offered or taken.':
+        'Každý účet si může v Můj účet přidat passkeys (přihlášený heslem); přihlašovací stránka pak nabídne Přihlásit přes passkey – bez jména a hesla, obličejem, prstem nebo PINem zařízení. Jen na stránkách otevřených jménem s certifikátem, kterému prohlížeč věří. Vypnuto: žádný passkey se nenabízí ani nebere.',
+    'A passkey counts as the second step':
+        'Passkey se počítá jako druhý krok',
+    'With the second step on, a passkey checked with the face, the finger or the PIN is both steps at once (as most services take it). Off: after it the code is asked for too.':
+        'Se zapnutým druhým krokem je passkey ověřený obličejem, prstem nebo PINem oba kroky najednou (jak to bere většina služeb). Vypnuto: po něm se ještě ptá na kód.',
+    'the passkey is added - sign in with it next time':
+        'passkey je přidaný – příště se přihlaste jím',
+    'the passkey is taken away':
+        'passkey je odebraný',
+    'passkeys work only on the pages reached by their name (https://name/), not by an address':
+        'passkeys fungují jen na stránkách otevřených jménem (https://jméno/), ne IP adresou',
+    'the passkey took too long, or was asked for elsewhere - try again':
+        'passkey trval příliš dlouho, nebo byl vyžádán jinde – zkuste to znovu',
+    'the passkey was used on another page than this one':
+        'passkey byl použit na jiné stránce než této',
+    'the passkey is of another name than this one':
+        'passkey patří k jinému jménu než tomuto',
+    'the passkey was not touched or looked at':
+        'passkey nebyl potvrzen dotykem ani pohledem',
+    'the passkey did not check who you are (Face ID, Touch ID or a PIN) - it is needed':
+        'passkey neověřil, kdo jste (Face ID, Touch ID nebo PIN) – je to potřeba',
+    'this passkey is not known here (taken away, or of another server)':
+        'tento passkey tu není známý (odebraný, nebo z jiného serveru)',
+    "the passkey's signature does not match":
+        'podpis passkey nesedí',
+    "this passkey's counter went back - it may have been copied; take it away and add it anew":
+        'počítadlo passkey šlo zpět – mohl být zkopírován; odeberte ho a přidejte znovu',
+    'the account of this passkey is switched off':
+        'účet tohoto passkey je vypnutý',
+    'passkeys are switched off here':
+        'passkeys jsou tu vypnuté',
+    'that is not what a passkey sends':
+        'to není to, co posílá passkey',
 }
 
 PATTERNS = {
+    'It no longer signs {0} in. On the device it stays until taken away there (Settings - Passwords).':
+        '{0} se jím už nepřihlásí. V zařízení zůstane, dokud ho tam neodeberete (Nastavení – Hesla).',
+
     'copied: {0}': 'zkopírováno: {0}',
     'Off: a certificate must hold the name of this server ({0}). On: acme may say not to check it.':
         'Vypnuto: certifikát musí obsahovat jméno tohoto serveru ({0}). Zapnuto: acme smí říct, ať se nekontroluje.',

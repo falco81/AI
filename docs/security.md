@@ -15,6 +15,24 @@ ai --lockouts
 ai --unlock 192.0.2.7        # an address, a name, or all
 ```
 
+## Passkeys (Face ID, Touch ID, Windows Hello)
+
+*My account -> Passkeys -> Add a passkey of this device* (signed in with the password) keeps a passkey in the
+device - on an iPad or an iPhone in the iCloud Keychain. The sign-in page then offers *Sign in with a passkey*: no
+name, no password, the face, the finger or the PIN. With the second step on, a passkey checked so counts as both
+steps (*A passkey counts as the second step*, Settings -> Signing in; off, the code is asked for after it).
+
+- Only on the pages reached by their name over HTTPS with a certificate the browser trusts (`https://name/`) -
+  never an address; a passkey is tied to that name.
+- The server keeps only the public half (meta `passkeys`): ES256, RS256 and EdDSA, checked with openssl. A
+  counter that goes back (a copied key) is refused; so is a passkey that did not check the person.
+- An administrator sees and takes away anybody's under Accounts; on the server:
+
+```bash
+ai --passkeys                 # every one (ai --passkeys NAME: of one account)
+ai --passkey-forget ID        # one taken away (all: every one)
+```
+
 ## The second step
 
 `Settings → Signing in → The second step of signing in, for everybody`

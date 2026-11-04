@@ -3769,3 +3769,6 @@ body.kb-up .term-keys{padding-top:5px}
   .term-layout.at-start{height:auto;min-height:100%;flex:0 0 auto}
   .term-layout.at-start > .term-main{height:auto;min-height:100%}
 }
+/* the sign-in with a passkey (1.0.70) */
+.pk-or{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:14px;text-align:center}
+.pk-or .btn{justify-content:center}

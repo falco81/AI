@@ -344,6 +344,18 @@ function showMe() {
     mine.appendChild(io);
     body.appendChild(mine);
 
+    /* Passkeys (1.0.70): Face ID, Touch ID, Windows Hello. */
+    var pks = el('div', 'me-sec');
+    pks.appendChild(el('h3', '', 'Passkeys - Face ID, Touch ID'));
+    pks.appendChild(el('p', '', 'A passkey signs you in with the face, the finger or the PIN of this device - no name and no password typed. It is kept in the device (on an iPad and an iPhone in the iCloud Keychain, on your other Apple devices too); the server keeps only its public half.'));
+    var pkList = el('div');
+    pks.appendChild(pkList);
+    var pkActs = el('div', 'me-acts');
+    var pkAdd = cmdButton('Add a passkey of this device', 'key', 'small primary');
+    pkActs.appendChild(pkAdd);
+    pks.appendChild(pkActs);
+    body.appendChild(pks);
+    passkeysDraw(pkList, pkAdd, null);
     var ssec = el('div', 'me-sec');
     ssec.appendChild(el('h3', '', 'Where you are signed in'));
     ssec.appendChild(el('p', '', 'You may be signed in from several places at once - every one sees the same terminals, live. Signing out or closing the browser ends no terminal: Claude Code goes on working on the server.'));
@@ -366,6 +378,63 @@ function showMe() {
       {words: 'Change the password', cls: 'primary', icon: 'lock', go: function (b) { $('modal-body')._go(b); }}], 'medium');
 }
 $('me-btn').onclick = showMe;
+
+/* The passkeys of an account (1.0.70): its own in My account (and the button
+   to add one there), anybody's for an administrator under Accounts. */
+function passkeysDraw(host, addBtn, name) {
+  var draw = function (d) {
+    clear(host);
+    var rows = d.passkeys || [];
+    if (!d.on) { host.appendChild(el('p', 'small muted', 'Passkeys are switched off on this server (Settings - Signing in).')); if (addBtn) addBtn.disabled = true; return; }
+    if (!rows.length) host.appendChild(el('p', 'small muted', name ? 'No passkey.' : 'None yet.'));
+    else host.appendChild(listTable(['Passkey', 'For', 'Added', 'Last used', {words: '', cls: 'act'}], rows, function (p) {
+      var tr = el('tr');
+      tr.appendChild(noI18n(el('td', '', p.name || '–')));
+      tr.appendChild(noI18n(el('td', 'mono small', p.host || '')));
+      tr.appendChild(stampCell(p.created));
+      tr.appendChild(p.last_used ? stampCell(p.last_used) : el('td', 'muted', 'never'));
+      var act = el('td', 'rowtools');
+      var x = cmdButton('Take it away', 'trash', 'small danger');
+      x.onclick = function () {
+        confirmThen('Take this passkey away?', 'It no longer signs ' + (name ? htmlText(name) : 'you') + ' in. On the device it stays until taken away there (Settings - Passwords).', 'Take it away', function () {
+          api('passkeys', {do: 'delete', id: p.id}).then(function (r) { toast(r.message, 'good'); load(); }).catch(oops);
+        }, true);
+      };
+      act.appendChild(x);
+      tr.appendChild(act);
+      return tr;
+    }));
+    if (addBtn) {
+      var here = location.hostname;
+      var ok = window.PublicKeyCredential && location.protocol === 'https:' && !/^[0-9.]+$|^\[/.test(here);
+      addBtn.disabled = !ok;
+      if (!ok) host.appendChild(el('p', 'small bad', 'A passkey is added on the pages reached by their name over HTTPS (https://name/), not by an address.'));
+      if (d.is_2fa) host.appendChild(el('p', 'small muted', 'With the second step on, signing in with a passkey is both steps at once.'));
+    }
+  };
+  var load = function () { api('passkeys' + (name ? '&name=' + encodeURIComponent(name) : '')).then(draw).catch(oops); };
+  if (addBtn) addBtn.onclick = function () {
+    var nm = (/iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)) ? 'iPad'
+      : /iPhone/.test(navigator.userAgent) ? 'iPhone' : /Mac/.test(navigator.userAgent) ? 'Mac'
+      : /Windows/.test(navigator.userAgent) ? 'Windows' : /Android/.test(navigator.userAgent) ? 'Android' : 'this device';
+    busy(addBtn, true);
+    api('passkey-register', {step: 'begin'}).then(function (d) {
+      var o = d.publicKey;
+      o.challenge = pkBytes(o.challenge);
+      o.user.id = pkBytes(o.user.id);
+      o.excludeCredentials = (o.excludeCredentials || []).map(function (c) { return {type: c.type, id: pkBytes(c.id)}; });
+      return navigator.credentials.create({publicKey: o});
+    }).then(function (cr) {
+      return api('passkey-register', {step: 'finish', name: nm + ' · ' + new Date().toLocaleDateString(numLang()),
+        clientDataJSON: pkText(cr.response.clientDataJSON), attestationObject: pkText(cr.response.attestationObject)});
+    }).then(function (r) { toast(r.message, 'good'); load(); })
+      .catch(function (e) {
+        if (e && e.name === 'InvalidStateError') toast('this device has a passkey for this account already', 'warn');
+        else if (!(e && (e.name === 'NotAllowedError' || e.name === 'AbortError'))) oops(e);
+      }).then(function () { busy(addBtn, false); });
+  };
+  load();
+}
 
 /** "Edit the columns" on or off for this sign-in: the daemon holds it. */
 function colsSwitch(on) {
@@ -3298,7 +3367,16 @@ function editUser(u) {
       api('users', {do: 'mfa_reset', name: u.name}).then(function (r) { toast(r.message, 'good'); closeModal(); loadUsers(); }).catch(oops);
     }, true);
   }};
-  modal('The account ' + u.name, function (body) { body._f = userForm(body, u); }, (u.mfa ? [reset] : []).concat([
+  modal('The account ' + u.name, function (body) {
+    body._f = userForm(body, u);
+    /* Its passkeys (1.0.70): seen and taken away here - a lost iPad. */
+    var pk = el('div', 'me-sec');
+    pk.appendChild(el('h4', '', 'Passkeys'));
+    var host = el('div');
+    pk.appendChild(host);
+    body.appendChild(pk);
+    passkeysDraw(host, null, u.name);
+  }, (u.mfa ? [reset] : []).concat([
     {words: 'Take it away', cls: 'danger', icon: 'trash', go: function () {
       api('users', {do: 'drop', name: u.name}).then(function () { closeModal(); loadUsers(); }).catch(oops);
     }},
