@@ -1420,6 +1420,30 @@ $('tb-full').onclick = function () {
    the keys locked (Chrome, Edge) Esc goes to the terminal and is held to
    come out; where an element cannot take the screen (an iPhone), the box
    covers the whole window instead and Esc twice comes out. */
+/* iPad and iPhone (1.0.64): Safari there gives an element the whole screen
+   only until a keyboard comes up - and the terminal wants one at once - so it
+   left it again at once and the terminal closed. There the box covers the
+   whole window instead, sized to what the keyboard leaves of it. */
+function termIOS() {
+  var ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+function termPureFit() {
+  var host = $('term-host'), vv = window.visualViewport;
+  if (!host) return;
+  if (TL.pure && host.classList.contains('pure') && vv) {
+    host.style.top = Math.round(vv.offsetTop) + 'px';
+    host.style.height = Math.round(vv.height) + 'px';
+    host.style.bottom = 'auto';
+  } else {
+    host.style.top = host.style.height = host.style.bottom = '';
+  }
+  termFit();
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', function () { if (TL.pure) termPureFit(); });
+  window.visualViewport.addEventListener('scroll', function () { if (TL.pure) termPureFit(); });
+}
 function termPure(on) {
   var host = $('term-host');
   TL.pure = !!on;
@@ -1440,8 +1464,9 @@ function termPure(on) {
     });
   }
   if (on) {
-    var req = host.requestFullscreen || host.webkitRequestFullscreen;
-    var fallback = function () { host.classList.add('pure'); };
+    var req = termIOS() ? null : (host.requestFullscreen || host.webkitRequestFullscreen);
+    var fallback = function () { host.classList.add('pure'); termPureFit(); };
+    TL.pureAt = Date.now();
     if (req) {
       try {
         Promise.resolve(req.call(host)).then(function () {
@@ -1454,6 +1479,7 @@ function termPure(on) {
     var fs = document.fullscreenElement || document.webkitFullscreenElement;
     if (fs === host) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     host.classList.remove('pure');
+    termPureFit();
   }
   setTimeout(function () { termFit(); if (TERM.t) TERM.t.focus(); }, 150);
 }
@@ -1461,7 +1487,12 @@ $('tb-pure').onclick = function () { termPure(true); };
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
   document.addEventListener(ev, function () {
     var host = $('term-host');
-    if (TL.pure && !(document.fullscreenElement || document.webkitFullscreenElement) && !host.classList.contains('pure')) termPure(false);
+    if (TL.pure && !(document.fullscreenElement || document.webkitFullscreenElement) && !host.classList.contains('pure')) {
+      /* Left again at once - not by the person but by the browser (a keyboard
+         coming up): the whole window instead of closing (1.0.64). */
+      if (Date.now() - (TL.pureAt || 0) < 2500) { host.classList.add('pure'); termPureFit(); return; }
+      termPure(false);
+    }
   });
 });
 document.addEventListener('keydown', function (e) {

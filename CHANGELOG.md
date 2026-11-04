@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.64
+
+- **The terminal over the whole screen on an iPad (and an iPhone) no longer closes at once.** Safari there gives
+  an element the whole screen only until a keyboard comes up - and the terminal takes the keyboard at once - so
+  it left the whole screen again by itself, and the page took that for the person leaving it. On iPadOS and iOS
+  the terminal now covers the whole window instead, sized to what the on-screen keyboard leaves of it; the X in
+  its corner (or Esc twice) brings it back. Elsewhere the whole screen is the browser's as before; and a
+  browser leaving it by itself within moments no longer closes it - the terminal stays over the whole window.
+
 ## 1.0.63
 
 - **`ai --get KEY`**, beside `ai --set KEY=VALUE`: a setting's value as `--set` takes it back (`true`/`false`,
