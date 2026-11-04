@@ -305,5 +305,7 @@ check('Claude Code upkeep is not kept to the folders of the chats', "upkeep=True
 check('a passkey\'s COSE key becomes PEM', ai.passkey_pem({1: 2, 3: -7, -1: 1, -2: b'\x01' * 32, -3: b'\x02' * 32})[1]
       .startswith('-----BEGIN PUBLIC KEY-----') and ai._pk_cbor(bytes.fromhex('a2616101616283020304'))[0] == {'a': 1, 'b': [2, 3, 4]})
 
+check('passkeys are off until switched on', ai.DEFAULTS['passkeys'] is False and "CONFIG.get('passkeys', True)" not in _src)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

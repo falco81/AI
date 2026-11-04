@@ -3217,8 +3217,8 @@ STRINGS = {
         'toto zařízení už má passkey pro tento účet',
     'Signing in with a passkey (Face ID, Touch ID, Windows Hello)':
         'Přihlášení přes passkey (Face ID, Touch ID, Windows Hello)',
-    'Each account may add passkeys in My account (signed in with its password); the sign-in page then offers Sign in with a passkey - no name, no password, the face, the finger or the PIN of the device. Only on the pages reached by their name with a certificate the browser trusts. Off: no passkey is offered or taken.':
-        'Každý účet si může v Můj účet přidat passkeys (přihlášený heslem); přihlašovací stránka pak nabídne Přihlásit přes passkey – bez jména a hesla, obličejem, prstem nebo PINem zařízení. Jen na stránkách otevřených jménem s certifikátem, kterému prohlížeč věří. Vypnuto: žádný passkey se nenabízí ani nebere.',
+    'Each account may add passkeys in My account (signed in with its password); the sign-in page then offers Sign in with a passkey - no name, no password, the face, the finger or the PIN of the device. Only on the pages reached by their name with a certificate the browser trusts. Off until switched on here: no passkey is offered or taken.':
+        'Každý účet si může v Můj účet přidat passkeys (přihlášený heslem); přihlašovací stránka pak nabídne Přihlásit přes passkey – bez jména a hesla, obličejem, prstem nebo PINem zařízení. Jen na stránkách otevřených jménem s certifikátem, kterému prohlížeč věří. Vypnuté, dokud to tady nezapnete: žádný passkey se nenabízí ani nebere.',
     'A passkey counts as the second step':
         'Passkey se počítá jako druhý krok',
     'With the second step on, a passkey checked with the face, the finger or the PIN is both steps at once (as most services take it). Off: after it the code is asked for too.':

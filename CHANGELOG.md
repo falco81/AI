@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.71
+
+- **Passkeys are off until switched on** (Settings -> Signing in -> *Signing in with a passkey*): until then the
+  sign-in page offers none, none can be added in My account (it says where to switch them on) and none is taken.
+  Passkeys added under 1.0.70 are kept, and work again once switched on.
+
 ## 1.0.70
 
 - **Signing in with a passkey - Face ID, Touch ID, Windows Hello, a security key (WebAuthn).** *My account ->

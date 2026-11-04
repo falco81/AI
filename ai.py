@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.70'
+__version__ = '1.0.71'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -137,7 +137,7 @@ DEFAULTS = {
     'debug': False,
     # the second step of signing in (otp's admin_2fa)
     'admin_2fa': False,
-    'passkeys': True,
+    'passkeys': False,
     'passkey_is_2fa': True,
     'admin_2fa_app': True,
     'admin_2fa_mail': True,
@@ -552,7 +552,7 @@ SCHEMA = [
     ('passkeys', 'people', 'bool', 'Signing in with a passkey (Face ID, Touch ID, Windows Hello)',
      'Each account may add passkeys in My account (signed in with its password); the sign-in page then offers '
      'Sign in with a passkey - no name, no password, the face, the finger or the PIN of the device. Only on the '
-     'pages reached by their name with a certificate the browser trusts. Off: no passkey is offered or taken.', {}),
+     'pages reached by their name with a certificate the browser trusts. Off until switched on here: no passkey is offered or taken.', {}),
     ('passkey_is_2fa', 'people', 'bool', 'A passkey counts as the second step',
      'With the second step on, a passkey checked with the face, the finger or the PIN is both steps at once (as '
      'most services take it). Off: after it the code is asked for too.', {'when': ['passkeys', [True]]}),
@@ -9141,7 +9141,7 @@ def api_health(c):
             'node': node_name(), 'maintenance': bool(maintenance_now(d.store).get('on')),
             'art': art_read(d.store),
             # whether the sign-in page offers a passkey (1.0.70): on, and somebody has one
-            'passkeys': bool(CONFIG.get('passkeys', True) and passkeys_all(d.store))}
+            'passkeys': bool(CONFIG.get('passkeys', False) and passkeys_all(d.store))}
 
 
 @route('POST', '/api/auth/login', anon=True)
@@ -9383,7 +9383,7 @@ def passkey_auth_data(raw, host, need_attested=False):
 def api_passkey_register(c):
     """Adding a passkey to the account signed in: 'begin' gives the options,
     'finish' takes what the browser sends back."""
-    if not CONFIG.get('passkeys', True):
+    if not CONFIG.get('passkeys', False):
         raise Refused('passkeys are switched off (Settings - The sign-in page)', 403)
     st, b, name = c.daemon.store, c.body, c.name
     host = passkey_host(c)
@@ -9433,7 +9433,7 @@ def api_passkey_register(c):
 def api_passkey_begin(c):
     """The sign-in page asks for a passkey: a challenge, no name - the
     browser offers the passkeys it has for this name."""
-    if not CONFIG.get('passkeys', True):
+    if not CONFIG.get('passkeys', False):
         raise Refused('passkeys are switched off here', 403)
     host = passkey_host(c)
     return {'publicKey': {'challenge': passkey_challenge('login', '', host), 'rpId': host,
@@ -9443,7 +9443,7 @@ def api_passkey_begin(c):
 
 @route('POST', '/api/auth/passkey/login', anon=True)
 def api_passkey_login(c):
-    if not CONFIG.get('passkeys', True):
+    if not CONFIG.get('passkeys', False):
         raise Refused('passkeys are switched off here', 403)
     st, b, auth = c.daemon.store, c.body, c.daemon.auth
     cid = str(b.get('id') or '')
@@ -9505,7 +9505,7 @@ def api_passkeys(c):
         rows = passkeys_of(st, who) if who else passkeys_all(st)
     else:
         rows = passkeys_of(st, c.name)
-    return {'passkeys': [passkey_view(p) for p in rows], 'on': bool(CONFIG.get('passkeys', True)),
+    return {'passkeys': [passkey_view(p) for p in rows], 'on': bool(CONFIG.get('passkeys', False)),
             'is_2fa': bool(CONFIG.get('passkey_is_2fa', True)), 'here': getattr(c, 'host', '')}
 
 
