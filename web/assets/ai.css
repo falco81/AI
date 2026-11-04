@@ -3755,3 +3755,10 @@ button.cc-tile:hover{border-color:rgba(88,166,255,.5)}
 /* which certificate of a dual pair to download (1.0.61) */
 .cx-which{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
 .cx-which .seg{flex-wrap:wrap}
+/* The on-screen keyboard up on an iPad (1.0.66): the page fits above it - the
+   header and the tabs make way for the terminal and its keys until it is down. */
+body.kb-up header,body.kb-up .tabs,body.kb-up #problems{display:none !important}
+body.kb-up{padding-top:4px !important;padding-bottom:0 !important}
+body.kb-up .term-host{min-height:60px}
+body.kb-up .term-path{display:none}
+body.kb-up .term-keys{padding-top:5px}

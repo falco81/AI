@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.66
+
+- **The keyboard on an iPad's screen no longer covers the terminal.** The page is as tall as the window and the
+  on-screen keyboard only lay over it: the bottom of the terminal - where the cursor and Claude Code's prompt are
+  - and its keys (Ctrl, Esc, the arrows) went under it. While it is up and a terminal is open, the page is as tall
+  as what the keyboard leaves, the header and the tabs make way, and the terminal is fitted to the rest; with the
+  keyboard down everything is as before. A hardware keyboard (Magic Keyboard, Smart Keyboard) changes nothing.
+  Checked on an iPad Pro 11 on its side and upright.
+
 ## 1.0.65
 
 - **An iPad turned with a terminal open keeps it in sight.** On its side it is wide (the list beside the

@@ -1468,9 +1468,32 @@ function termPureFit() {
   }
   termFit();
 }
+/* The keyboard on the screen of an iPad (1.0.66): the page is as tall as the
+   window (100dvh), and the keyboard only covers it - the bottom of the
+   terminal and its keys (Ctrl, Esc, the arrows) went under it. While it is
+   up and a terminal is open, the page is as tall as what the keyboard leaves,
+   and the terminal is fitted to that; down again, it is as tall as before. */
+function termKeyboardFit(vv) {
+  vv = vv || window.visualViewport;
+  var body = document.body;
+  if (!vv || !body) return false;
+  var up = termIOS() && !!TL.open && !TL.pure && TAB === 'terms' && vv.height < window.innerHeight - 120;
+  if (up) {
+    body.style.height = Math.round(vv.height) + 'px';
+    body.classList.add('kb-up');
+    if (window.scrollY) window.scrollTo(0, 0);
+  } else if (body.classList.contains('kb-up')) {
+    body.style.height = '';
+    body.classList.remove('kb-up');
+  } else {
+    return false;
+  }
+  setTimeout(termFit, 60);
+  return up;
+}
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', function () { if (TL.pure) termPureFit(); });
-  window.visualViewport.addEventListener('scroll', function () { if (TL.pure) termPureFit(); });
+  window.visualViewport.addEventListener('resize', function () { if (TL.pure) termPureFit(); else termKeyboardFit(); });
+  window.visualViewport.addEventListener('scroll', function () { if (TL.pure) termPureFit(); else termKeyboardFit(); });
 }
 function termPure(on) {
   var host = $('term-host');
