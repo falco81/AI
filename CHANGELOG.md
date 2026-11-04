@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.65
+
+- **An iPad turned with a terminal open keeps it in sight.** On its side it is wide (the list beside the
+  terminal), upright it is narrow (the list and the terminal in turn) - and turned upright, the open terminal
+  vanished behind the list. The turn is noticed now: upright the list makes way for the open terminal, on its side
+  again it comes back as it was. After every turn the terminal is fitted again a few times as Safari settles on
+  the new size, over the whole screen too. Checked on an iPad Pro 11 both ways, over and over.
+
 ## 1.0.64
 
 - **The terminal over the whole screen on an iPad (and an iPhone) no longer closes at once.** Safari there gives

@@ -1366,6 +1366,34 @@ function closeTermView() {
   drawTermList();
   writeHash();
 }
+/* Turned (1.0.65): an iPad on its side is wide - the list beside the
+   terminal - and upright narrow, where the list and the terminal take the
+   screen in turn. Turning it with a terminal open keeps the terminal in
+   sight (the list made way for it, and comes back as it was once wide
+   again); and the terminal is fitted again as the browser settles on the new
+   size, which Safari says only a moment after the turn. */
+(function termTurns() {
+  var mq = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+  var refit = function () {
+    [60, 300, 800].forEach(function (ms) { setTimeout(function () { if (TL.pure) termPureFit(); else termFit(); }, ms); });
+  };
+  var turned = function () {
+    if (!mq) return;
+    if (mq.matches) {
+      if (TL.open && TL.side !== false) { TL.sideWide = true; sideShow(false); }
+    } else if (TL.sideWide) {
+      TL.sideWide = false;
+      sideShow(true);
+    }
+    refit();
+  };
+  if (mq) {
+    if (mq.addEventListener) mq.addEventListener('change', turned);
+    else if (mq.addListener) mq.addListener(turned);
+  }
+  window.addEventListener('orientationchange', refit);
+  if (window.screen && screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', refit);
+})();
 function sideShow(on) {
   TL.side = on;
   $('term-layout').classList.toggle('no-side', !on);
