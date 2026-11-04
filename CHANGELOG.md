@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.67
+
+- **Settings -> Claude Code: Check it, Update and Install work with the folders limited.** With *The folder of
+  the chats* set (or *Files only in the folder of the chats* on), they were refused - *outside the folders this
+  account may use* - for they run in the account's home, where Claude Code lives. They are an administrator's
+  upkeep of Claude Code, not a chat, and are no longer kept to those folders; started again from the list, they
+  still are not. *Sign in* opens a session of Claude's, so it keeps to them: it starts in the folder of the chats,
+  else in the first folder the account may use. Chats and shells are kept to the folders exactly as before.
+
 ## 1.0.66
 
 - **The keyboard on an iPad's screen no longer covers the terminal.** The page is as tall as the window and the

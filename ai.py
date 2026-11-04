@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.66'
+__version__ = '1.0.67'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4427,7 +4427,7 @@ class Terms:
                 'exec "${SHELL:-/bin/bash}" -l; fi; exec %s %s' % (exe, cmd.replace('"', ''), exe, q))
 
     def new(self, u, kind='claude', cwd='', title='', opts=None, cols=160, rows=48, run_as=None, tid=None,
-            proxy_use=''):
+            proxy_use='', upkeep=False):
         if (u or {}).get('role') != 'admin' and maintenance_now(self.store).get('on'):
             raise Refused('this server is in maintenance - no new terminal now (the ones running go on)', 503)
         """A terminal started - a new one, or (`tid`) an ended one of the list
@@ -4446,8 +4446,14 @@ class Terms:
         if not cwd.startswith('/'):
             cwd = os.path.join(root or pw.pw_dir, cwd)
         cwd = os.path.normpath(cwd)
-        path_allowed(u, cwd)
-        if root and not path_under(cwd, root):
+        # Looking after Claude Code itself (1.0.67): install, update, doctor -
+        # an administrator's command in the account's home, where Claude Code
+        # lives; not a chat, so the folders chats and files are kept to do not
+        # stop it.
+        upkeep = bool(upkeep) and kind == 'command' and (u or {}).get('role') == 'admin'
+        if not upkeep:
+            path_allowed(u, cwd)
+        if root and not upkeep and not path_under(cwd, root):
             raise Refused('a chat starts in %s or a folder under it (Settings - Claude Code - The folder '
                           'of the chats), not in %s' % (root, cwd))
         if not os.path.isdir(cwd):
@@ -4510,6 +4516,8 @@ class Terms:
                                                        'args', 'command', 'add_dirs') or k in CC_KEEP}
         if sid:
             keep['sid'] = sid
+        if upkeep:
+            keep['upkeep'] = True       # started again, still Claude Code's upkeep (1.0.67)
         if revive:
             self.store.x('UPDATE terms SET ended=NULL, last_screen=NULL, exit_status=NULL, cwd=?, opts=?, '
                          'title=? WHERE id=?', (cwd, json.dumps(keep), clean_line(title, 120), tid))
@@ -4728,7 +4736,8 @@ class Terms:
             else:
                 opts['continue'] = True
         return self.new(u, r['kind'] or 'shell', r['cwd'], r['title'], opts,
-                        run_as=r['run_as'] if u['role'] == 'admin' else None, tid=r['id'])
+                        run_as=r['run_as'] if u['role'] == 'admin' else None, tid=r['id'],
+                        upkeep=bool(opts.get('upkeep')))
 
     def holding(self, u, pw, sid):
         """The terminal of the list that holds a conversation of Claude Code -
@@ -9527,14 +9536,34 @@ def api_claude_do(c):
         raise Refused('install, npm, update, doctor or login')
     CLAUDE_CACHE.pop(pw.pw_name, None)
     if do == 'login':
-        tid = c.daemon.terms.new(c.who, 'claude', pw.pw_dir, 'Claude · sign in', {}, run_as=pw.pw_name)
+        # Signing in is a session of Claude's, so it starts where a chat may
+        # (1.0.67): the folder of the chats, else the first folder the account
+        # may use, else the home - the sign-in itself is kept in ~/.claude.
+        where = ''
+        for one in [chat_root_of(pw)] + [r for r in roots_of(c.who) if r != '/'] + [pw.pw_dir]:
+            if not one:
+                continue
+            try:
+                path_allowed(c.who, one)
+            except Refused:
+                continue
+            root = chat_root_of(pw)
+            if root and not path_under(os.path.normpath(one), root):
+                continue
+            where = one
+            break
+        if not where:
+            raise Refused('there is no folder this account may start Claude Code in (Settings - Claude Code - The '
+                          'folder of the chats, and the folders of the account)')
+        opts = {'mkdir': True} if where == chat_root_of(pw) else {}
+        tid = c.daemon.terms.new(c.who, 'claude', where, 'Claude · sign in', opts, run_as=pw.pw_name)
         return {'id': tid}
     if c.who['role'] != 'admin':
         raise Refused('only an administrator installs or updates Claude Code', 403)
     script, words = scripts[do]
     full = '%s; rc=$?; echo; echo "== done ($rc) - press Enter to close"; read -r _' % script
-    tid = c.daemon.terms.new(c.who, 'command', pw.pw_dir, words, {'command': full}, run_as=pw.pw_name,
-                             proxy_use='claude_install')
+    tid = c.daemon.terms.new(c.who, 'command', pw.pw_dir, words, {'command': full, 'upkeep': True},
+                             run_as=pw.pw_name, proxy_use='claude_install', upkeep=True)
     return {'id': tid}
 
 

@@ -299,5 +299,8 @@ ai.CONFIG.update(upgrade_auto=True)
 check('ai --get shows a value as --set takes it', ai.cli_get_value('upgrade_auto') == 'true' and
       ai.cli_get_value('acme_days') == str(ai.CONFIG.get('acme_days')))
 
+check('Claude Code upkeep is not kept to the folders of the chats', "upkeep=True)" in _src and
+      "keep['upkeep'] = True" in _src and "if root and not upkeep and not path_under(cwd, root)" in _src)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
