@@ -812,7 +812,7 @@ function hpTiles(p, k) {
 }
 function hloadTick(now) {
   if (!$('hload') || (HLOAD.busy && !now) || document.hidden || !LIVE.on) return;
-  HLOAD.look = prefs().hload || 'graphs';
+  HLOAD.look = prefs().hload || 'off';
   if (HLOAD.look === 'off') { $('hload').hidden = true; return; }
   HLOAD.busy = true;
   var withDetail = !!HLOAD.open;
@@ -946,7 +946,7 @@ function showMe() {
                       ['rings', 'with rings'], ['off', 'not shown']];
       var g3 = el('div', 'hl-pickers');
       g3.appendChild(el('div', 'hl-pick-h', 'The load of the server in the header (CPU, RAM, the disks, the network)'));
-      g3.appendChild(hlPicker(HL_LOOKS, prefs().hload || 'graphs', hlPreviewLook, function (v) {
+      g3.appendChild(hlPicker(HL_LOOKS, prefs().hload || 'off', hlPreviewLook, function (v) {
         savePrefs({hload: v}).then(function () {
           HLOAD.look = v;
           if (v === 'off') { hloadPanelClose(); $('hload').hidden = true; } else if (HLOAD.last) hloadDraw(HLOAD.last); else hloadTick();

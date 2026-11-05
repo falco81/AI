@@ -328,5 +328,7 @@ _d = ai.load_detail()
 check('the load panels have each core, the filesystems and the cards',
       len(_d.get('cores', [])) == os.cpu_count() and _d.get('filesystems') and all(c.get('busy') is not None for c in _d['cores']))
 
+check('the load in the header is off until an account picks a look', "HLOAD.look = prefs().hload || 'off'" in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

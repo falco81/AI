@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.77
+
+- **The load of the server in the header is off until switched on**: an account that has not picked a look sees
+  nothing beside *running*, and its pages ask the server nothing for it. It is switched on in My account, by
+  picking one of the looks (with a graph, pills, one line, rings); an account that had picked one keeps it.
+
 ## 1.0.76
 
 - **The start page on an iPad held upright**: the start card took only the window's height and the tiles of
