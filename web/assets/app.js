@@ -198,16 +198,23 @@ function hloadRing(pct) {
   return '<svg class="hl-ring" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="' + r + '" class="hl-ring-bg"/>'
     + '<circle cx="9" cy="9" r="' + r + '" class="hl-ring-fg" stroke-dasharray="' + (c * p / 100).toFixed(1) + ' ' + c.toFixed(1) + '" transform="rotate(-90 9 9)"/></svg>';
 }
-function hloadDraw(d) {
-  var host = $('hload');
+function hloadDraw(d, into, asLook) {
+  /* into/asLook: a preview of a look drawn elsewhere (My account), from the
+     sample numbers; it touches nothing of the real header (1.0.75) */
+  var preview = !!into;
+  var host = into || $('hload');
   if (!host) return;
-  HLOAD.last = d;
-  var hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
-  var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
+  var hist;
   var mp = d.mem_total ? 100 * d.mem_used / d.mem_total : null;
-  if (d.cpu !== undefined) { push('cpu', d.cpu); push('mem', mp); push('disk', (d.disk_rd || 0) + (d.disk_wr || 0)); push('net', (d.net_rx || 0) + (d.net_tx || 0)); }
-  var look = HLOAD.look || 'graphs';
-  host.className = 'hload look-' + look;
+  if (preview) hist = hpSample().hist;
+  else {
+    HLOAD.last = d;
+    hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
+    var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
+    if (d.cpu !== undefined) { push('cpu', d.cpu); push('mem', mp); push('disk', (d.disk_rd || 0) + (d.disk_wr || 0)); push('net', (d.net_rx || 0) + (d.net_tx || 0)); }
+  }
+  var look = asLook || HLOAD.look || 'graphs';
+  host.className = 'hload look-' + look + (preview ? ' hl-preview' : '');
   clear(host);
   var tips = {
     cpu: 'The processor, busy over the last ' + (d.over_s || 3) + ' s, all ' + d.cores + ' core(s) together' + (d.load ? ' · load ' + d.load.join(' / ') : ''),
@@ -234,7 +241,7 @@ function hloadDraw(d) {
       part.dataset.k = x[2];
       part.tabIndex = 0;
       part.setAttribute('role', 'button');
-      hloadPanelHooks(part, x[2]);
+      if (!preview) hloadPanelHooks(part, x[2]);
       line.appendChild(part);
     });
     host.appendChild(line);
@@ -263,12 +270,82 @@ function hloadDraw(d) {
       c.tabIndex = 0;
       c.setAttribute('role', 'button');
       if (hpStyle() !== 'off') c.removeAttribute('title');
-      hloadPanelHooks(c, x[2]);
+      if (!preview) hloadPanelHooks(c, x[2]);
       host.appendChild(c);
     });
   }
   host.hidden = false;
-  if (HLOAD.open) hloadPanelDraw();
+  if (!preview && HLOAD.open) hloadPanelDraw();
+}
+/* Sample numbers for the previews in My account: a server with sensors, so
+   every part shows (1.0.75). */
+function hpSample() {
+  if (HLOAD.sample) return HLOAD.sample;
+  var h = {cpu: [], mem: [], disk: [], net: []};
+  for (var i = 0; i < HLOAD_KEEP; i++) {
+    h.cpu.push(48 + 28 * Math.sin(i / 4)); h.mem.push(30 + i * 0.15);
+    h.disk.push((1 + Math.sin(i / 4 + 1)) * 9e7); h.net.push((1 + Math.sin(i / 4 + 2)) * 7e6);
+  }
+  var cores = [[96, 3900, 71], [12, 1200, 48], [88, 3800, 69], [4, 800, 46], [61, 3400, 62], [9, 1100, 47], [100, 4100, 84], [22, 2000, 51]]
+    .map(function (c, n) { return {n: n, busy: c[0], mhz: c[1], temp: c[2]}; });
+  HLOAD.sample = {hist: h,
+    last: {cpu: 49, mem_used: 9.8e9, mem_total: 33.5e9, disk_rd: 190e6, disk_wr: 48e6, net_rx: 12.6e6, net_tx: 1.5e6, cores: 8, load: [3.92, 3.1, 2.71], over_s: 3},
+    detail: {cores: cores, model: 'AMD Ryzen 7 5800X 8-Core Processor', temps: {cpu: [['Tctl', 73]], cores: {}, other: []},
+      disks: [{name: 'nvme0n1', size: 1e12, model: 'Samsung SSD 980 PRO', rd: 190e6, wr: 48e6, util: 38, temp: 44},
+              {name: 'sda', size: 4e12, model: 'WDC WD40EFRX', rd: 2.2e6, wr: 0, util: 3, temp: 36}],
+      filesystems: [{mount: '/', kind: 'ext4', total: 984e9, used: 212e9}, {mount: '/srv', kind: 'xfs', total: 3.6e12, used: 3.1e12}],
+      nics: [{name: 'eno1', state: 'up', speed: 1000, rx: 12.6e6, tx: 1.5e6, rx_all: 812e9, tx_all: 96e9}],
+      top_cpu: [{name: 'node', pid: 1201, cpu: 187}, {name: 'claude', pid: 1302, cpu: 96}, {name: 'postgres', pid: 812, cpu: 41}],
+      top_mem: [{name: 'node', pid: 1201, rss: 2.1e9}, {name: 'claude', pid: 1302, rss: 1.4e9}],
+      uptime: 1051200, mem: {total: 33.5e9, available: 21.6e9, cached: 6.1e9, buffers: 0.3e9, swap_total: 8.6e9, swap_free: 8.6e9, shared: 120e6}, procs: 312}};
+  return HLOAD.sample;
+}
+/* A picker as the terminal colours: a card for each choice with what it
+   really looks like, drawn by the same code from the sample numbers. */
+function hlPicker(choices, now, draw, pick) {
+  var box = el('div', 'pal-pick hl-pick' + (draw === hlPreviewPanel ? ' hl-pick-p' : ''));
+  choices.forEach(function (n) {
+    var b = el('button', 'pal-card hl-card' + (n[0] === now ? ' on' : ''));
+    b.type = 'button';
+    b.dataset.v = n[0];
+    var sw = el('div', 'pal-sw hl-sw');
+    draw(sw, n[0]);
+    b.appendChild(sw);
+    b.appendChild(el('span', 'pal-name', n[1]));
+    b.onclick = function () {
+      box.querySelectorAll('.pal-card').forEach(function (x) { x.classList.toggle('on', x === b); });
+      pick(n[0]);
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
+function hlPreviewLook(sw, look) {
+  if (look === 'off') { sw.appendChild(el('span', 'muted small hl-none', 'nothing in the header')); return; }
+  var inner = el('div', 'hl-scale');
+  var host = el('div', 'hload');
+  inner.appendChild(host);
+  hloadDraw(hpSample().last, host, look);
+  sw.appendChild(inner);
+}
+function hlPreviewPanel(sw, st) {
+  if (st === 'off') {
+    var t = el('div', 'hl-tipbox');
+    t.appendChild(el('span', 'hl-tipchip', 'CPU 49 %'));
+    t.appendChild(el('span', 'hl-tip small', 'The processor, busy over the last 3 s, all 8 core(s) together'));
+    sw.appendChild(t);
+    return;
+  }
+  var smp = hpSample(), keep = [HLOAD.last, HLOAD.detail, HLOAD.hist, HLOAD.open];
+  HLOAD.last = smp.last; HLOAD.detail = smp.detail; HLOAD.hist = smp.hist; HLOAD.open = 'cpu';
+  var p = el('div', 'hl-panel hp-' + st + ' hl-prevpanel');
+  p.style.width = (st === 'wide' ? 1180 : (st === 'table' ? 420 : 470)) + 'px';
+  try {
+    if (st === 'table') hpTable(p, 'cpu'); else if (st === 'map') hpMap(p, 'cpu'); else if (st === 'wide') hpWide(p); else hpTiles(p, 'cpu');
+  } finally { HLOAD.last = keep[0]; HLOAD.detail = keep[1]; HLOAD.hist = keep[2]; HLOAD.open = keep[3]; }
+  var inner = el('div', 'hl-scale hl-scale-p' + (st === 'wide' ? ' wide' : ''));
+  inner.appendChild(p);
+  sw.appendChild(inner);
 }
 /* The panel of one chip (1.0.73): pointed at (or tapped on an iPad), what is
    behind the number - each core with its frequency and temperature, the
@@ -672,7 +749,7 @@ function hpTiles(p, k) {
       one.appendChild(top);
       one.appendChild(hlBar(c.busy));
       var bot = el('div', 'hp-core-bot muted small');
-      bot.appendChild(noI18n(el('span', '', c.mhz ? (c.mhz >= 1000 ? (c.mhz / 1000).toFixed(2) + ' GHz' : c.mhz + ' MHz') : '')));
+      bot.appendChild(noI18n(el('span', '', c.mhz ? (c.mhz >= 1000 ? (c.mhz / 1000).toFixed(1) + ' GHz' : c.mhz + ' MHz') : '')));
       var t = hlTemp(c.temp);
       if (t) bot.appendChild(t);
       one.appendChild(bot);
@@ -864,32 +941,27 @@ function showMe() {
     lsec.appendChild(g2);
     if ($('hload')) {
       /* The load of the server beside running (1.0.72): how it looks, or not at all. */
-      var hl = selectBox([['graphs', 'with a graph of the last two minutes'], ['pills', 'pills with a bar'], ['line', 'one plain line'],
-                          ['rings', 'with rings'], ['off', 'not shown']], prefs().hload || 'graphs');
-      hl.onchange = function () {
-        savePrefs({hload: hl.value}).then(function () {
-          HLOAD.look = hl.value;
-          if (hl.value === 'off') $('hload').hidden = true; else if (HLOAD.last) hloadDraw(HLOAD.last); else hloadTick();
+      /* chosen from cards showing what each really looks like (1.0.75) */
+      var HL_LOOKS = [['graphs', 'with a graph of the last two minutes'], ['pills', 'pills with a bar'], ['line', 'one plain line'],
+                      ['rings', 'with rings'], ['off', 'not shown']];
+      var g3 = el('div', 'hl-pickers');
+      g3.appendChild(el('div', 'hl-pick-h', 'The load of the server in the header (CPU, RAM, the disks, the network)'));
+      g3.appendChild(hlPicker(HL_LOOKS, prefs().hload || 'graphs', hlPreviewLook, function (v) {
+        savePrefs({hload: v}).then(function () {
+          HLOAD.look = v;
+          if (v === 'off') { hloadPanelClose(); $('hload').hidden = true; } else if (HLOAD.last) hloadDraw(HLOAD.last); else hloadTick();
           toast('kept', 'good');
         }).catch(oops);
-      };
-      var g3 = el('div', 'formgrid');
-      g3.style.marginTop = '12px';
-      var hf = formField('The load of the server in the header (CPU, RAM, the disks, the network)', hl);
-      hf.classList.add('span-2');
-      g3.appendChild(hf);
+      }));
       /* and how its details look when a number is pointed at (1.0.74) */
-      var hs = selectBox(HP_STYLES, hpStyle());
-      hs.onchange = function () {
-        savePrefs({hpanel: hs.value}).then(function () {
-          if (hs.value === 'off') hloadPanelClose(); else if (HLOAD.open) { hloadPanelDraw(); hloadPanelPlace(); }
+      g3.appendChild(el('div', 'hl-pick-h', 'Its details, when a number is pointed at (or tapped)'));
+      g3.appendChild(hlPicker(HP_STYLES, hpStyle(), hlPreviewPanel, function (v) {
+        savePrefs({hpanel: v}).then(function () {
+          if (v === 'off') hloadPanelClose(); else if (HLOAD.open) { hloadPanelDraw(); hloadPanelPlace(); }
           if (HLOAD.last) hloadDraw(HLOAD.last);
           toast('kept', 'good');
         }).catch(oops);
-      };
-      var hsf = formField('Its details, when a number is pointed at (or tapped)', hs);
-      hsf.classList.add('span-2');
-      g3.appendChild(hsf);
+      }));
       lsec.appendChild(g3);
     }
     body.appendChild(lsec);

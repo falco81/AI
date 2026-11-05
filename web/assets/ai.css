@@ -3897,3 +3897,26 @@ body.kb-up .term-keys{padding-top:5px}
 .hl-panel.hp-wide .hp-t.hp-kvt{table-layout:auto}
 .hl-panel.hp-wide .hp-t.hp-kvt td.num{width:auto}
 .hl-panel.hp-wide .hp-t td.hp-name{width:7.6em}
+/* 1.0.75: picking the looks of the load from cards, as the terminal colours */
+.hl-pickers{margin-top:14px}
+.hl-pick-h{font-weight:600;font-size:13px;margin:12px 0 0}
+.hl-pick{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.hl-sw{background:var(--bg);height:118px;overflow:hidden;position:relative;padding:6px;justify-content:center;align-items:flex-start}
+.hl-sw .hl-scale{transform:scale(.62);transform-origin:0 0;width:161%;pointer-events:none}
+.hl-sw .hload{display:flex !important;flex-wrap:wrap;gap:5px}
+.hl-sw .hload .hl-disk .hl-g,.hl-sw .hload .hl-net .hl-g{display:inline-flex !important}
+.hl-sw .hl-scale-p{transform:scale(.42);width:auto}
+.hl-sw .hl-scale-p.wide{transform:scale(.165)}
+.hl-sw .hl-prevpanel{position:static;box-shadow:none;max-height:none;overflow:visible}
+.hl-sw .hl-none{align-self:center;margin:auto}
+.hl-tipbox{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.hl-tipchip{padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:12px}
+.hl-tip{background:#ffffe1;color:#222;border:1px solid #999;padding:3px 6px;border-radius:3px;max-width:180px;line-height:1.3}
+.hl-sw .hload .hl{display:inline-flex !important}
+.hl-sw .hload.look-line .hl-part,.hl-sw .hload.look-line .hl-sep{display:inline-flex !important}
+.hl-sw .hload.look-line .hl-line{flex-wrap:wrap;white-space:normal}
+.hl-sw{justify-content:flex-start}
+.hl-pick.hl-pick-p .hl-sw{height:160px}
+.hl-sw .hl-none{margin:auto;align-self:center;padding-top:40px}
+.hl-panel .hp-core-bot{font-size:11px;white-space:nowrap;gap:4px}
+.hl-panel .hp-core-top{white-space:nowrap}

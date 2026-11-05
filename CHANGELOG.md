@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.75
+
+- **The looks of the load are picked from cards in My account**, as the colours of the terminals: every choice
+  shows what it really looks like - the header's numbers (with graphs, pills, one line, rings, not shown) and the
+  details (tiles, table, map of the cores, one wide panel, only a short tip) - drawn by the same code from sample
+  numbers of a server with sensors. A click picks it and it is kept at once.
+- The tiles of the cores no longer break their frequency and temperature onto two lines on machines with many
+  cores.
+
 ## 1.0.74
 
 - **The details of the load have four styles to choose from**, in My account (*Its details, when a number is

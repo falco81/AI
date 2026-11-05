@@ -3338,6 +3338,8 @@ STRINGS = {
         'čtení',
     'written':
         'zápis',
+    'nothing in the header':
+        'v záhlaví nic',
 }
 
 PATTERNS = {
