@@ -310,5 +310,23 @@ check('passkeys are off until switched on', ai.DEFAULTS['passkeys'] is False and
 _l = ai.server_load()
 check('the load of the server is read from /proc', isinstance(_l.get('mem_total'), int) and _l.get('cores') >= 1)
 
+import tempfile as _tf
+_fs = _tf.mkdtemp()
+def _w(rel, txt):
+    f = os.path.join(_fs, rel); os.makedirs(os.path.dirname(f), exist_ok=True); open(f, 'w').write(txt)
+_w('class/hwmon/hwmon0/name', 'coretemp\n'); _w('class/hwmon/hwmon0/temp1_input', '52000\n')
+_w('class/hwmon/hwmon0/temp1_label', 'Package id 0\n'); _w('class/hwmon/hwmon0/temp2_input', '49000\n')
+_w('class/hwmon/hwmon0/temp2_label', 'Core 0\n'); _w('class/hwmon/hwmon0/temp3_input', '55000\n')
+_w('class/hwmon/hwmon0/temp3_label', 'Core 1\n')
+_was_sys, ai.LOAD_SYS = ai.LOAD_SYS, _fs
+_t = ai.load_temps()
+check('temperatures are read per core and of the whole processor',
+      _t.get('cpu') == [['Package id 0', 52.0]] and {str(k): v for k, v in _t.get('cores', {}).items()} == {'0': 49.0, '1': 55.0})
+ai.LOAD_SYS = _was_sys
+import shutil as _sh; _sh.rmtree(_fs, ignore_errors=True)
+_d = ai.load_detail()
+check('the load panels have each core, the filesystems and the cards',
+      len(_d.get('cores', [])) == os.cpu_count() and _d.get('filesystems') and all(c.get('busy') is not None for c in _d['cores']))
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

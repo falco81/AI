@@ -3272,6 +3272,52 @@ STRINGS = {
         'Disky: čtení ↓ a zápis ↑, všechny disky dohromady',
     'The network cards: down ↓ (in) and up ↑ (out), every card together - not the loopback nor the bridges of containers':
         'Síťové karty: příjem ↓ a odesílání ↑, všechny karty dohromady – bez loopbacku a mostů kontejnerů',
+    'The processor':
+        'Procesor',
+    'The disks':
+        'Disky',
+    'The network':
+        'Síť',
+    'the last two minutes':
+        'poslední dvě minuty',
+    'load':
+        'load',
+    'Up for':
+        'Běží',
+    'processes':
+        'procesů',
+    'Each core':
+        'Jednotlivá jádra',
+    'No temperature: this machine has no sensors the kernel reads (a virtual machine has none).':
+        'Bez teploty: tento stroj nemá čidla, která jádro čte (virtuální stroj je nemá).',
+    'Taking most of the processor':
+        'Nejvíc vytěžují procesor',
+    'nothing busy just now':
+        'teď nic nezatěžuje',
+    'In use':
+        'Použito',
+    'Free for programs':
+        'Volné pro programy',
+    'Cache (given back when needed)':
+        'Cache (vrací se, když je potřeba)',
+    'Shared':
+        'Sdílená',
+    'Altogether':
+        'Celkem',
+    'Taking most memory':
+        'Nejvíc paměti zabírají',
+    'Each disk':
+        'Jednotlivé disky',
+    'busy':
+        'vytížení',
+    'Filesystems':
+        'Souborové systémy',
+    'Each card':
+        'Jednotlivé karty',
+    'no card':
+        'žádná karta',
+    'Other sensors':
+        'Další čidla',
 }
 
 PATTERNS = {

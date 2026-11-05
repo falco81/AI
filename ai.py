@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.72'
+__version__ = '1.0.73'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9196,8 +9196,7 @@ def _load_raw():
                 name, _s, rest = line.partition(':')
                 name = name.strip()
                 # the cards, not the loopback nor the bridges and pairs of containers
-                if name == 'lo' or name.startswith(('veth', 'docker', 'br-', 'virbr', 'podman', 'cni', 'flannel',
-                                                   'tun', 'tap', 'vnet')):
+                if not load_nic_counted(name):
                     continue
                 x = rest.split()
                 rx += int(x[0])
@@ -9206,6 +9205,273 @@ def _load_raw():
     except (OSError, ValueError, IndexError):
         pass
     return raw
+
+
+LOAD_SYS = '/sys'                # the tests point it at a sysfs of their own
+LOAD_DETAIL = {'at': 0.0, 'raw': None, 'out': None}
+
+
+def load_nic_counted(name):
+    """A network card counted: not the loopback, not the bridges and pairs of
+    containers, not a card that is a slave of a bond (the bond is counted)."""
+    if name == 'lo' or name.startswith(('veth', 'docker', 'br-', 'virbr', 'podman', 'cni', 'flannel', 'tun', 'tap',
+                                       'vnet', 'ifb', 'dummy', 'lxc', 'kube', 'cali', 'vxlan', 'genev')):
+        return False
+    master = os.path.join(LOAD_SYS, 'class/net', name, 'master')
+    if os.path.islink(master) and os.path.isdir(os.path.join(os.path.realpath(master), 'bonding')):
+        return False
+    return True
+
+
+def _read_first(path, default=''):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def load_temps():
+    """What the sensors say: {'cpu': [(label, °C)], 'cores': {core n: °C}, 'disks': {name: °C}, 'other': [...]}.
+    hwmon first (coretemp, k10temp, zenpower, nvme, drivetemp, acpitz...), then the thermal zones."""
+    out = {'cpu': [], 'cores': {}, 'disks': {}, 'other': []}
+    base = os.path.join(LOAD_SYS, 'class/hwmon')
+    try:
+        mons = sorted(os.listdir(base))
+    except OSError:
+        mons = []
+    for m in mons:
+        d = os.path.join(base, m)
+        chip = _read_first(os.path.join(d, 'name'))
+        try:
+            files = sorted(f for f in os.listdir(d) if re.match(r'^temp\d+_input$', f))
+        except OSError:
+            continue
+        for f in files:
+            n = f.split('_')[0]
+            try:
+                t = int(_read_first(os.path.join(d, f), 'x')) / 1000.0
+            except ValueError:
+                continue
+            if t <= -40 or t > 150:
+                continue
+            label = _read_first(os.path.join(d, n + '_label')) or chip
+            core = re.match(r'^Core (\d+)$', label)
+            if chip in ('coretemp', 'k10temp', 'zenpower', 'cpu_thermal', 'soc_thermal', 'k8temp', 'via_cputemp'):
+                if core:
+                    out['cores'][int(core.group(1))] = round(t, 1)
+                else:
+                    out['cpu'].append([label, round(t, 1)])
+            elif chip in ('nvme', 'drivetemp'):
+                dev = ''
+                try:
+                    dev = os.path.basename(os.path.realpath(os.path.join(d, 'device')))
+                except OSError:
+                    pass
+                if chip == 'nvme':
+                    try:
+                        nv = [x for x in os.listdir(os.path.join(d, 'device')) if re.match(r'^nvme\d+n\d+$', x)]
+                        dev = nv[0] if nv else dev
+                    except OSError:
+                        pass
+                elif chip == 'drivetemp':
+                    try:
+                        blk = os.listdir(os.path.join(d, 'device', 'block'))
+                        dev = blk[0] if blk else dev
+                    except OSError:
+                        pass
+                if label.lower() in ('composite', chip, '') or dev not in out['disks']:
+                    out['disks'][dev or chip] = round(t, 1)
+            else:
+                out['other'].append([chip + (' ' + label if label != chip else ''), round(t, 1)])
+    if not out['cpu'] and not out['cores']:
+        tz = os.path.join(LOAD_SYS, 'class/thermal')
+        try:
+            zones = sorted(z for z in os.listdir(tz) if z.startswith('thermal_zone'))
+        except OSError:
+            zones = []
+        for z in zones:
+            kind = _read_first(os.path.join(tz, z, 'type'))
+            try:
+                t = int(_read_first(os.path.join(tz, z, 'temp'), 'x')) / 1000.0
+            except ValueError:
+                continue
+            if -40 < t < 150:
+                (out['cpu'] if re.search(r'cpu|x86_pkg|soc|core', kind, re.I) else out['other']).append(
+                    [kind, round(t, 1)])
+    return out
+
+
+def _load_detail_raw():
+    raw = {'at': time.time(), 'cores': {}, 'disks': {}, 'nics': {}, 'procs': {}}
+    try:
+        with open('/proc/stat') as f:
+            for line in f:
+                m = re.match(r'^cpu(\d+)\s+(.*)$', line)
+                if m:
+                    v = [int(x) for x in m.group(2).split()[:8]]
+                    raw['cores'][int(m.group(1))] = (v[3] + v[4], sum(v))
+    except (OSError, ValueError):
+        pass
+    try:
+        whole = set(os.listdir(os.path.join(LOAD_SYS, 'block')))
+        with open('/proc/diskstats') as f:
+            for line in f:
+                x = line.split()
+                if len(x) < 13 or x[2] not in whole or x[2].startswith(('loop', 'ram', 'zram', 'sr')):
+                    continue
+                raw['disks'][x[2]] = (int(x[5]) * 512, int(x[9]) * 512, int(x[12]))
+    except (OSError, ValueError):
+        pass
+    try:
+        with open('/proc/net/dev') as f:
+            for line in f.readlines()[2:]:
+                name, _s, rest = line.partition(':')
+                name = name.strip()
+                if load_nic_counted(name):
+                    x = rest.split()
+                    raw['nics'][name] = (int(x[0]), int(x[8]))
+    except (OSError, ValueError, IndexError):
+        pass
+    tick = os.sysconf('SC_CLK_TCK') if hasattr(os, 'sysconf') else 100
+    page = os.sysconf('SC_PAGE_SIZE') if hasattr(os, 'sysconf') else 4096
+    try:
+        pids = [p for p in os.listdir('/proc') if p.isdigit()]
+    except OSError:
+        pids = []
+    for pid in pids:
+        try:
+            with open('/proc/%s/stat' % pid) as f:
+                st = f.read()
+            name = st[st.index('(') + 1:st.rindex(')')]
+            rest = st[st.rindex(')') + 2:].split()
+            raw['procs'][int(pid)] = (name[:40], (int(rest[11]) + int(rest[12])) / float(tick), int(rest[21]) * page)
+        except (OSError, ValueError, IndexError):
+            continue
+    return raw
+
+
+def load_detail():
+    """What the header's panels show when opened: each core, its frequency and
+    temperature, the disks one by one and the filesystems, the cards one by one,
+    the processes taking most - read only while a panel is open."""
+    with LOAD_LOCK:
+        now = time.time()
+        if LOAD_DETAIL['out'] and now - LOAD_DETAIL['at'] < 1.0:
+            return LOAD_DETAIL['out']
+        raw = _load_detail_raw()
+        was = LOAD_DETAIL['raw'] or {}
+        if not was or now - was.get('at', 0) > 30:
+            # the first look (or one long after the last): two readings a
+            # moment apart, so the panel opens with numbers, not dots
+            was = raw
+            time.sleep(0.3)
+            raw = _load_detail_raw()
+        dt = max(0.2, raw['at'] - was.get('at', raw['at'] - 1)) if was else None
+        temps = load_temps()
+        cores = []
+        for n in sorted(raw['cores']):
+            idle, allc = raw['cores'][n]
+            busy = None
+            if dt and n in was.get('cores', {}):
+                pi, pa = was['cores'][n]
+                if allc > pa:
+                    busy = round(max(0.0, min(1.0, 1 - (idle - pi) / float(allc - pa))) * 100, 1)
+            mhz = _read_first(os.path.join(LOAD_SYS, 'devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq' % n))
+            cores.append({'n': n, 'busy': busy, 'mhz': round(int(mhz) / 1000) if mhz.isdigit() else None,
+                          'temp': temps['cores'].get(n)})
+        if cores and not any(c['mhz'] for c in cores):
+            try:
+                with open('/proc/cpuinfo') as f:
+                    mh = [float(x.split(':')[1]) for x in f if x.startswith('cpu MHz')]
+                for c, m in zip(cores, mh):
+                    c['mhz'] = round(m)
+            except (OSError, ValueError, IndexError):
+                pass
+        model = ''
+        try:
+            with open('/proc/cpuinfo') as f:
+                for line in f:
+                    if line.startswith(('model name', 'Hardware', 'Model')):
+                        model = line.split(':', 1)[1].strip()
+                        break
+        except OSError:
+            pass
+        disks = []
+        for name, (rd, wr, ms) in sorted(raw['disks'].items()):
+            one = {'name': name, 'temp': temps['disks'].get(name),
+                   'size': int(_read_first(os.path.join(LOAD_SYS, 'block', name, 'size'), '0') or 0) * 512,
+                   'model': _read_first(os.path.join(LOAD_SYS, 'block', name, 'device/model'))}
+            if dt and name in was.get('disks', {}):
+                prd, pwr, pms = was['disks'][name]
+                one['rd'] = max(0, round((rd - prd) / dt))
+                one['wr'] = max(0, round((wr - pwr) / dt))
+                one['util'] = round(max(0.0, min(100.0, (ms - pms) / (dt * 10.0))), 1)
+            disks.append(one)
+        fss = []
+        seen = set()
+        try:
+            with open('/proc/mounts') as f:
+                for line in f:
+                    dev, mnt, kind = line.split()[:3]
+                    if kind in ('proc', 'sysfs', 'tmpfs', 'devtmpfs', 'devpts', 'cgroup', 'cgroup2', 'overlay',
+                                'squashfs', 'mqueue', 'debugfs', 'tracefs', 'securityfs', 'pstore', 'bpf', 'autofs',
+                                'fusectl', 'configfs', 'hugetlbfs', 'binfmt_misc', 'efivarfs', 'nsfs', 'ramfs',
+                                'rpc_pipefs', 'selinuxfs', 'fuse.lxcfs', 'iso9660') or dev in seen:
+                        continue
+                    if not dev.startswith('/') and kind not in ('nfs', 'nfs4', 'cifs', 'smb3', 'zfs', 'btrfs'):
+                        continue
+                    seen.add(dev)
+                    try:
+                        sv = os.statvfs(mnt)
+                    except OSError:
+                        continue
+                    total = sv.f_blocks * sv.f_frsize
+                    if not total:
+                        continue
+                    free = sv.f_bavail * sv.f_frsize
+                    fss.append({'mount': mnt, 'dev': dev, 'kind': kind, 'total': total, 'used': total - sv.f_bfree * sv.f_frsize,
+                                'free': free})
+        except OSError:
+            pass
+        nics = []
+        for name, (rx, tx) in sorted(raw['nics'].items()):
+            sp = _read_first(os.path.join(LOAD_SYS, 'class/net', name, 'speed'))
+            one = {'name': name, 'state': _read_first(os.path.join(LOAD_SYS, 'class/net', name, 'operstate')),
+                   'speed': int(sp) if sp.lstrip('-').isdigit() and int(sp) > 0 else None, 'rx_all': rx, 'tx_all': tx}
+            if dt and name in was.get('nics', {}):
+                one['rx'] = max(0, round((rx - was['nics'][name][0]) / dt))
+                one['tx'] = max(0, round((tx - was['nics'][name][1]) / dt))
+            nics.append(one)
+        procs = []
+        for pid, (name, cpu_s, rss) in raw['procs'].items():
+            p = {'pid': pid, 'name': name, 'rss': rss}
+            if dt and pid in was.get('procs', {}):
+                p['cpu'] = round(max(0.0, (cpu_s - was['procs'][pid][1]) / dt) * 100, 1)
+            procs.append(p)
+        mem = {}
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    k, _s, rest = line.partition(':')
+                    mem[k] = int(rest.split()[0]) * 1024
+        except (OSError, ValueError, IndexError):
+            pass
+        up = 0.0
+        try:
+            up = float(_read_first('/proc/uptime', '0').split()[0])
+        except ValueError:
+            pass
+        out = {'cores': cores, 'model': model, 'temps': temps, 'disks': disks, 'filesystems': fss, 'nics': nics,
+               'top_cpu': sorted([p for p in procs if p.get('cpu')], key=lambda p: -p['cpu'])[:6],
+               'top_mem': sorted(procs, key=lambda p: -p['rss'])[:6], 'uptime': up,
+               'mem': {k: mem.get(v) for k, v in (('total', 'MemTotal'), ('available', 'MemAvailable'),
+                                                  ('cached', 'Cached'), ('buffers', 'Buffers'),
+                                                  ('swap_total', 'SwapTotal'), ('swap_free', 'SwapFree'),
+                                                  ('shared', 'Shmem'))},
+               'procs': len(procs)}
+        LOAD_DETAIL.update(at=now, raw=raw, out=out)
+        return out
 
 
 def server_load():
@@ -9241,7 +9507,10 @@ def server_load():
 
 @route('GET', '/api/load', admin=True)
 def api_load(c):
-    return server_load()
+    out = dict(server_load())
+    if c.arg('detail'):
+        out['detail'] = load_detail()
+    return out
 
 
 @route('POST', '/api/auth/login', anon=True)

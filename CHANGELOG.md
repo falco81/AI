@@ -3,6 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.73
+
+- **The load in the header opens into details.** Pointing at a chip (a tap on an iPad, Enter from the keyboard)
+  opens a panel under it: the last two minutes larger, and for **CPU** each core with how busy it is, its
+  frequency and temperature, the processor's model, load, uptime, the processes taking most; for **RAM** what is
+  in use, free for programs, cache, shared, swap and the processes holding most; for **disks** each disk with
+  read/write, how busy it is, its size, model and temperature, and every filesystem with how full it is; for
+  **network** each card with its state, speed, traffic now and since start. Temperatures come from the kernel's
+  hwmon (coretemp, k10temp, zenpower, nvme, drivetemp), else from thermal zones; a machine without sensors (a
+  virtual one) says so. The details are read only while a panel is open, and it closes on leaving it or a tap
+  elsewhere.
+- The header's look **with a graph of the last two minutes** is now the default (My account still chooses).
+- The chips in the header keep their width: every number has a fixed place, so the graphs and chips beside it
+  no longer jump as the numbers grow or shrink (in all four looks).
+
 ## 1.0.72
 
 - **How busy the server is, in the header beside *running***, for an administrator: CPU, RAM in use, the disks
