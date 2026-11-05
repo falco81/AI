@@ -335,5 +335,32 @@ ai.server_load(); time.sleep(1.1); ai.server_load()
 _h = ai.load_history()
 check('the last two minutes of the load are kept for a page loaded again', bool(_h) and set(_h[-1]) >= {'at', 'cpu', 'mem', 'disk', 'net'})
 
+# the perf meter's fixes of 1.0.79 (found in plexmon 2.7.1-2.7.3)
+import tempfile as _tf2, shutil as _sh2
+_fs2 = _tf2.mkdtemp()
+def _w2(rel, txt):
+    f = os.path.join(_fs2, rel); os.makedirs(os.path.dirname(f), exist_ok=True); open(f, 'w').write(txt)
+# coretemp of package 0 with Core 0 and Core 1; 4 logical processors, two threads on each core
+_w2('devices/platform/coretemp.0/x', ''); _w2('class/hwmon/hwmon1/name', 'coretemp\n')
+os.symlink(os.path.join(_fs2, 'devices/platform/coretemp.0'), os.path.join(_fs2, 'class/hwmon/hwmon1/device'))
+for _n, _lab, _t in ((2, 'Core 0', 50000), (3, 'Core 1', 60000)):
+    _w2('class/hwmon/hwmon1/temp%d_label' % _n, _lab + '\n'); _w2('class/hwmon/hwmon1/temp%d_input' % _n, '%d\n' % _t)
+for _c in range(os.cpu_count() or 1):
+    _w2('devices/system/cpu/cpu%d/topology/core_id' % _c, '%d\n' % (_c % 2))
+    _w2('devices/system/cpu/cpu%d/topology/physical_package_id' % _c, '0\n')
+_was_sys2, ai.LOAD_SYS = ai.LOAD_SYS, _fs2
+
+ai.LOAD_DETAIL.update(at=0.0, raw=None, out=None)
+_cs = ai.load_detail()['cores']
+check('every logical processor has its core\'s temperature (hyperthreading)',
+      all(c['temp'] == (50.0 if c['n'] % 2 == 0 else 60.0) for c in _cs) and len(_cs) == (os.cpu_count() or 1))
+ai.LOAD_SYS = _was_sys2; ai.LOAD_DETAIL.update(at=0.0, raw=None, out=None)
+_sh2.rmtree(_fs2, ignore_errors=True)
+check('free space is asked only of the kernel\'s own filesystems', 'nfs' not in ai.LOAD_FS_KINDS and
+      'fuseblk' not in ai.LOAD_FS_KINDS and 'vfat' not in ai.LOAD_FS_KINDS and 'ext4' in ai.LOAD_FS_KINDS)
+_appjs = open(os.path.join(HERE, 'web', 'assets', 'app.js')).read()
+check('bars of the load: nothing at 0 %, the real share of a process', 'Math.max(2, Math.min(100, x[3]))' not in _appjs
+      and 'hlBar(100 * v / top' not in _appjs and 'function hlWidth(pct)' in _appjs)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

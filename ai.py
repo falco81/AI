@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.78'
+__version__ = '1.0.79'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9213,6 +9213,12 @@ def _load_raw():
 
 
 LOAD_SYS = '/sys'                # the tests point it at a sysfs of their own
+# Free space is asked only of the kernel's own filesystems, which answer from
+# memory (1.0.79) - never FUSE (a program that may go to the disks), a network
+# share (statvfs hangs on a server gone, and LOAD_LOCK with it) nor FAT (it may
+# count its free clusters on the disk).
+LOAD_FS_KINDS = ('ext2', 'ext3', 'ext4', 'xfs', 'btrfs', 'zfs', 'f2fs', 'exfat', 'ntfs3', 'jfs',
+                 'reiserfs', 'nilfs2', 'bcachefs')
 LOAD_DETAIL = {'at': 0.0, 'raw': None, 'out': None}
 
 
@@ -9238,8 +9244,9 @@ def _read_first(path, default=''):
 
 def load_temps():
     """What the sensors say: {'cpu': [(label, °C)], 'cores': {core n: °C}, 'disks': {name: °C}, 'other': [...]}.
-    hwmon first (coretemp, k10temp, zenpower, nvme, drivetemp, acpitz...), then the thermal zones."""
-    out = {'cpu': [], 'cores': {}, 'disks': {}, 'other': []}
+    hwmon first (coretemp, k10temp, zenpower, nvme, drivetemp, acpitz...), then the thermal zones.
+    'pkg_cores' {"package:core": °C} is for matching a core to the logical processors on it (1.0.79)."""
+    out = {'cpu': [], 'cores': {}, 'pkg_cores': {}, 'disks': {}, 'other': []}
     base = os.path.join(LOAD_SYS, 'class/hwmon')
     try:
         mons = sorted(os.listdir(base))
@@ -9265,6 +9272,8 @@ def load_temps():
             if chip in ('coretemp', 'k10temp', 'zenpower', 'cpu_thermal', 'soc_thermal', 'k8temp', 'via_cputemp'):
                 if core:
                     out['cores'][int(core.group(1))] = round(t, 1)
+                    pkg = re.search(r'\.(\d+)$', os.path.realpath(os.path.join(d, 'device')))
+                    out['pkg_cores']['%s:%s' % (pkg.group(1) if pkg else '0', core.group(1))] = round(t, 1)
                 else:
                     out['cpu'].append([label, round(t, 1)])
             elif chip in ('nvme', 'drivetemp'):
@@ -9383,8 +9392,21 @@ def load_detail():
                 if allc > pa:
                     busy = round(max(0.0, min(1.0, 1 - (idle - pi) / float(allc - pa))) * 100, 1)
             mhz = _read_first(os.path.join(LOAD_SYS, 'devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq' % n))
+            # the temperature of the core this logical processor is on (1.0.79): coretemp
+            # names physical cores ("Core 0", "Core 4"...), per package; with
+            # hyperthreading cpu2 is the second thread of core 0, not "Core 2"
+            topo = os.path.join(LOAD_SYS, 'devices/system/cpu/cpu%d/topology' % n)
+            cid = _read_first(os.path.join(topo, 'core_id'))
+            pkgid = _read_first(os.path.join(topo, 'physical_package_id'), '0')
+            temp = None
+            if cid.isdigit():
+                temp = temps['pkg_cores'].get('%s:%s' % (pkgid if pkgid.isdigit() else '0', cid))
+                if temp is None:
+                    temp = temps['cores'].get(int(cid))
+            else:
+                temp = temps['cores'].get(n)
             cores.append({'n': n, 'busy': busy, 'mhz': round(int(mhz) / 1000) if mhz.isdigit() else None,
-                          'temp': temps['cores'].get(n)})
+                          'temp': temp})
         if cores and not any(c['mhz'] for c in cores):
             try:
                 with open('/proc/cpuinfo') as f:
@@ -9424,7 +9446,9 @@ def load_detail():
                                 'fusectl', 'configfs', 'hugetlbfs', 'binfmt_misc', 'efivarfs', 'nsfs', 'ramfs',
                                 'rpc_pipefs', 'selinuxfs', 'fuse.lxcfs', 'iso9660') or dev in seen:
                         continue
-                    if not dev.startswith('/') and kind not in ('nfs', 'nfs4', 'cifs', 'smb3', 'zfs', 'btrfs'):
+                    if kind not in LOAD_FS_KINDS:
+                        continue
+                    if not dev.startswith('/') and kind not in ('zfs', 'btrfs', 'bcachefs'):
                         continue
                     seen.add(dev)
                     try:

@@ -3,6 +3,20 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.79
+
+Fixes of the load in the header, found when it was taken into another application:
+- **Every core has its temperature**: the temperature of `coretemp`'s "Core N" went to the logical processor
+  numbered N, so with hyperthreading (cpu2 is the second thread of core 0), with cores numbered with gaps (Core 0,
+  1, 4, 5...) or with two processors, part of the cores had none. Each logical processor gets the temperature of
+  the core it is on now (`topology/core_id` and `physical_package_id` in /sys).
+- **Free space only of the kernel's own filesystems** (ext4, xfs, btrfs, zfs...), which answer from memory: a
+  network share (NFS, SMB) gone away made `statvfs` hang and every ask of the load with it; FUSE and FAT may go to
+  the disk for it. They are not listed in the panel now.
+- **Bars say exactly what they show**: nothing at 0 % (an idle core, disk or filesystem had a bit of a bar beside
+  its "0 %", and a ring a dot); the bar of a process is its real share - one core, or of the memory in use - not its
+  share of the busiest process, so a process at "0 %" no longer has a third of a bar.
+
 ## 1.0.78
 
 - **The graphs of the load survive F5**: the daemon keeps the readings of the last two minutes that pages asked for

@@ -3929,3 +3929,5 @@ body.kb-up .term-keys{padding-top:5px}
   .term-layout.at-start > .term-main{height:auto;flex:0 0 auto;min-height:0}
   .term-layout.at-start > .term-side{flex:0 0 auto}
 }
+/* nothing at 0 % (1.0.79): a round cap drew a dot there */
+.hl-ring-fg[stroke-dasharray^="0.0 "],.hp-ring-fg[stroke-dasharray^="0.0 "]{stroke:transparent}

@@ -194,7 +194,7 @@ function hlVal(v) {
   return s;
 }
 function hloadRing(pct) {
-  var r = 7, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
+  var r = 7, c = 2 * Math.PI * r, p = hlWidth(pct);
   return '<svg class="hl-ring" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="' + r + '" class="hl-ring-bg"/>'
     + '<circle cx="9" cy="9" r="' + r + '" class="hl-ring-fg" stroke-dasharray="' + (c * p / 100).toFixed(1) + ' ' + c.toFixed(1) + '" transform="rotate(-90 9 9)"/></svg>';
 }
@@ -256,7 +256,7 @@ function hloadDraw(d, into, asLook) {
       c.appendChild(hlVal(x[1]));
       if (look === 'pills' && x[3] !== null && x[3] !== undefined) {
         var bar = el('span', 'hl-bar'), fill = el('span', '');
-        fill.style.width = Math.max(2, Math.min(100, x[3])) + '%';
+        fill.style.width = hlWidth(x[3]) + '%';
         bar.appendChild(fill); c.appendChild(bar);
       }
       if (look === 'graphs') {
@@ -398,10 +398,18 @@ function hloadPanelPlace(chip) {
   p.style.top = Math.round(r.bottom + 6) + 'px';
   p.style.maxHeight = Math.max(200, window.innerHeight - r.bottom - 20) + 'px';
 }
+/* How wide a bar is (1.0.79): exactly what it says - nothing at 0 %, at least
+   a hairline for anything that rounds to 1 % or more. A bar of 1 or 2 % drawn
+   for an idle core or disk stood beside its "0 %". */
+function hlWidth(pct) {
+  pct = Number(pct) || 0;
+  if (pct < 0.5) return 0;
+  return Math.max(1, Math.min(100, pct));
+}
 function hlBar(pct, cls) {
   var b = el('span', 'hp-bar ' + (cls || ''));
   var f = el('span', '');
-  f.style.width = Math.max(1, Math.min(100, pct || 0)) + '%';
+  f.style.width = hlWidth(pct) + '%';
   if (pct >= 90) b.classList.add('hot'); else if (pct >= 70) b.classList.add('warm');
   b.appendChild(f);
   return b;
@@ -456,7 +464,7 @@ function hpArea(k, h, grid) {
 }
 function hpRing(pct, label, cls, size) {
   size = size || 78;
-  var r = size / 2 - 7, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pct || 0));
+  var r = size / 2 - 7, c = 2 * Math.PI * r, v = hlWidth(pct);
   var col = cls || (v >= 90 ? 'hot' : (v >= 70 ? 'warm' : ''));
   var box = el('span', 'hp-ring ' + col);
   box.innerHTML = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" aria-hidden="true">'
@@ -488,11 +496,17 @@ function hpMemRows(host, x) {
   host.appendChild(t);
 }
 function hpProcs(host, list, what) {
-  var t = el('table', 'hp-t'), top = 1;
-  list.forEach(function (q) { top = Math.max(top, what === 'cpu' ? q.cpu : q.rss); });
+  /* The bar is the process's real share (1.0.79), not its share of the busiest
+     one - with every process at 0.3 % one showing "0 %" had a third of a bar.
+     The processor: one core is 100 % (a process on more cores sets the scale);
+     memory: a share of what is in use, so a small one still shows. */
+  var t = el('table', 'hp-t'), top = 100;
+  var memAll = (HLOAD.last && (HLOAD.last.mem_used || HLOAD.last.mem_total)) || 0;
+  list.forEach(function (q) { if (what === 'cpu') top = Math.max(top, q.cpu || 0); });
   list.slice(0, 5).forEach(function (q) {
     var tr = el('tr', ''), v = what === 'cpu' ? q.cpu : q.rss;
-    hpTd(tr, q.name, 'mono hp-name'); hpTd(tr, hlBar(100 * v / top, 'hp-info'), 'hp-barc');
+    var share = what === 'cpu' ? 100 * (v || 0) / top : (memAll ? 100 * (v || 0) / memAll : 0);
+    hpTd(tr, q.name, 'mono hp-name'); hpTd(tr, hlBar(share, 'hp-info'), 'hp-barc');
     hpTd(tr, what === 'cpu' ? Math.round(v) + ' %' : bytes(v), 'num');
     t.appendChild(tr);
   });
