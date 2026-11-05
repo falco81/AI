@@ -3931,3 +3931,7 @@ body.kb-up .term-keys{padding-top:5px}
 }
 /* nothing at 0 % (1.0.79): a round cap drew a dot there */
 .hl-ring-fg[stroke-dasharray^="0.0 "],.hp-ring-fg[stroke-dasharray^="0.0 "]{stroke:transparent}
+/* the graphs slide at the pace of time (1.0.81): 6 steps of 24 = 25 % in 30 s */
+.hl-slide{transform-box:view-box;animation:hl-slide 30s linear forwards}
+@keyframes hl-slide{from{transform:translateX(0)}to{transform:translateX(-25%)}}
+@media (prefers-reduced-motion:reduce){.hl-slide{animation:none}}

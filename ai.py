@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.81'
+__version__ = '1.0.82'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9579,6 +9579,7 @@ def _load_watcher():
         nxt += LOAD_STEP_S
         try:
             _load_keep(server_load())
+            st = LOAD_WATCH['store'] or st
             if st is not None:
                 st.set_meta_json('load:' + node_name(), {'at': time.time(), 'hist': load_history()})
         except Exception as e:                              # noqa: BLE001
@@ -9596,6 +9597,7 @@ def load_watch(store):
         if not LOAD_LAST['out'] or time.time() - LOAD_LAST['at'] > 30:
             server_load()                  # two readings a second apart: a rate at once
             time.sleep(1.05)
+            server_load()
         t = threading.Thread(target=_load_watcher, name='ai-load', daemon=True)
         LOAD_WATCH['thread'] = t
         t.start()

@@ -197,15 +197,19 @@ function hlSeries(vals, times, w, h, top, pad) {
   }
   return parts.filter(function (p) { return p.length > 1; });
 }
-/* The graph slides by one step to the left until the next reading - one SVG
-   animation, nothing redrawn on a timer; begun as far in as the reading is old. */
+/* The graph slides left at the pace of time - one step every 5 s - by one
+   animation of the graph's SVG group (CSS, so every browser runs it the same);
+   nothing is redrawn on a timer, only when a reading comes. It is begun as far
+   in as the newest reading is old, and runs on for six steps so it never
+   stands still waiting for the next one: with it the graph is drawn anew one
+   step further, and the slide goes on from there without a jump. Six steps of
+   24 are 25 % of the graph's width (transform-box: view-box). */
+var HLOAD_SLIDE_STEPS = 6;
 function hlSlide(w, times) {
   if (!times || !times.length || !HLOAD.skewAt) return ['', ''];
   var nowS = Date.now() / 1000 - HLOAD.skew;
-  var age = Math.max(0, Math.min(HLOAD_STEP, nowS - times[times.length - 1]));
-  var dx = (w / (HLOAD_KEEP - 1)).toFixed(2);
-  return ['<g><animateTransform attributeName="transform" type="translate" from="0 0" to="-' + dx + ' 0" dur="'
-    + HLOAD_STEP + 's" begin="-' + age.toFixed(2) + 's" fill="freeze"/>', '</g>'];
+  var age = Math.max(0, Math.min(HLOAD_STEP * HLOAD_SLIDE_STEPS, nowS - times[times.length - 1]));
+  return ['<g class="hl-slide" style="animation-delay:-' + age.toFixed(2) + 's">', '</g>'];
 }
 function hlPts(part) { return part.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
 function hloadSpark(vals, max, cls, times) {

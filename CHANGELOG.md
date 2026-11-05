@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.82
+
+- **The graphs of the load slide all the time**: the slide of 1.0.81 (an SVG `animateTransform`) moved one step and
+  then stood still until the next reading - a reading is up to 5 s old when a page gets it - and some browsers did
+  not run it at all. Now each graph's SVG group slides by one CSS animation at the pace of time, six steps long so it
+  never waits, begun as far in as the newest reading is old; a new reading draws it one step further and the slide
+  goes on without a jump. Nothing is redrawn on a timer. With *reduce motion* set in the system it does not slide.
+- The first ask after the watching starts has its numbers at once (it waited for the watcher's first reading).
+
 ## 1.0.81
 
 - **The load is watched by the daemon, once for every page**: while a page shows the meter the daemon reads the

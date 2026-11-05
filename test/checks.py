@@ -371,7 +371,7 @@ check('a page with the meter off has no timer and asks nothing', "if (HLOAD.gone
 
 check('the load is read once every 5 s for every page, and the watching ends by itself', ai.LOAD_STEP_S == 5.0
       and ai.LOAD_WATCH_S == 45.0 and 'load_watch(c.daemon.store)' in _src2 and "'load:' + node_name()" in _src2)
-check('the graphs slide by one SVG animation, not redrawn on a timer', 'animateTransform' in _appjs and
+check('the graphs slide by one animation of their SVG group, not redrawn on a timer', 'hl-slide' in _appjs and
       'setInterval(hloadTick, HLOAD_STEP * 1000)' in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
 
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
