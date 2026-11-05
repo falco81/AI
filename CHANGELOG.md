@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.76
+
+- **The start page on an iPad held upright**: the start card took only the window's height and the tiles of
+  the ended chats ran out of it, over the list of terminals under it. It grows with what is in it now and the
+  page scrolls as one - as it does in a wide window since 1.0.69.
+- **docs/ipad-and-passkeys.md**: how signing in with Face ID / Touch ID (passkeys), the icon on the home screen,
+  the whole screen on an iPad and the rest made for it (the keyboard on the screen, turning it, pointing and
+  tapping) are done - the API, every check, the code of the pages, the looks with pictures - to be taken into
+  another application.
+
 ## 1.0.75
 
 - **The looks of the load are picked from cards in My account**, as the colours of the terminals: every choice

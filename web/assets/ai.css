@@ -3920,3 +3920,12 @@ body.kb-up .term-keys{padding-top:5px}
 .hl-sw .hl-none{margin:auto;align-self:center;padding-top:40px}
 .hl-panel .hp-core-bot{font-size:11px;white-space:nowrap;gap:4px}
 .hl-panel .hp-core-top{white-space:nowrap}
+/* The start page on an iPad held upright (1.0.76): the start card took only
+   the window's height and the tiles of the ended chats ran out of it, over
+   the list under it. As in a wide window, it grows with what is in it and
+   the page scrolls as one. */
+@media (max-width: 900px){
+  .term-layout.at-start{height:auto;flex:0 0 auto}
+  .term-layout.at-start > .term-main{height:auto;flex:0 0 auto;min-height:0}
+  .term-layout.at-start > .term-side{flex:0 0 auto}
+}

@@ -17,6 +17,8 @@ ai --unlock 192.0.2.7        # an address, a name, or all
 
 ## Passkeys (Face ID, Touch ID, Windows Hello)
 
+(How it is built, to take into another application - the API, every check, the code and the looks: [ipad-and-passkeys.md](ipad-and-passkeys.md).)
+
 *My account -> Passkeys -> Add a passkey of this device* (signed in with the password) keeps a passkey in the
 device - on an iPad or an iPhone in the iCloud Keychain. The sign-in page then offers *Sign in with a passkey*: no
 name, no password, the face, the finger or the PIN. With the second step on, a passkey checked so counts as both
