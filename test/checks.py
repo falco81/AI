@@ -362,5 +362,12 @@ _appjs = open(os.path.join(HERE, 'web', 'assets', 'app.js')).read()
 check('bars of the load: nothing at 0 %, the real share of a process', 'Math.max(2, Math.min(100, x[3]))' not in _appjs
       and 'hlBar(100 * v / top' not in _appjs and 'function hlWidth(pct)' in _appjs)
 
+_src2 = open(os.path.join(HERE, 'ai.py')).read()
+check('the performance meter can be switched off for the whole server', ai.DEFAULTS.get('perf_meter') is True and
+      "if not CONFIG.get('perf_meter', True):" in _src2 and "($initial['perf_meter'] ?? true)" in
+      open(os.path.join(HERE, 'web', 'index.php')).read())
+check('a page with the meter off has no timer and asks nothing', "if (HLOAD.gone || (prefs().hload || 'off') === 'off') { hloadStop(); return; }"
+      in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

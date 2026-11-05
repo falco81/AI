@@ -3340,6 +3340,14 @@ STRINGS = {
         'zápis',
     'nothing in the header':
         'v záhlaví nic',
+    'The performance meter in the header':
+        'Měřič výkonu v záhlaví',
+    'How busy the server is - the processor, the memory, the disks and the network - beside running at the top of the pages, with the cores, the temperatures, the disks and the processes behind each number. Each administrator switches it on for themselves in My account. Off here: it is gone for everybody, and the server reads nothing for it.':
+        'Jak je server vytížený – procesor, paměť, disky a síť – vedle „běží“ nahoře na stránkách, a za každým číslem jednotlivá jádra, teploty, disky a procesy. Každý administrátor si ho zapíná sám ve Vašem účtu. Vypnuto zde: zmizí všem a server pro něj nic nečte.',
+    'The performance meter is switched off on this server (Settings - About).':
+        'Měřič výkonu je na tomto serveru vypnutý (Nastavení – O programu).',
+    'the performance meter is switched off on this server (Settings - About)':
+        'měřič výkonu je na tomto serveru vypnutý (Nastavení – O programu)',
 }
 
 PATTERNS = {

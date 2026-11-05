@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.79'
+__version__ = '1.0.80'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -135,6 +135,7 @@ DEFAULTS = {
     'ended_keep_days': 14,
     'revert_s': 120,
     'debug': False,
+    'perf_meter': True,
     # the second step of signing in (otp's admin_2fa)
     'admin_2fa': False,
     'passkeys': False,
@@ -343,6 +344,11 @@ SCHEMA = [
     ('upgrade_auto_hour', 'upgrade', 'int', 'At what hour', 'Local time of this server, 0-23.',
      {'min': 0, 'max': 23}),
     ('debug', 'about', 'bool', 'Debug log', 'Writes far more into /var/log/ai/ai.log.', {}),
+    ('perf_meter', 'about', 'bool', 'The performance meter in the header',
+     'How busy the server is - the processor, the memory, the disks and the network - beside running at the top of '
+     'the pages, with the cores, the temperatures, the disks and the processes behind each number. Each '
+     'administrator switches it on for themselves in My account. Off here: it is gone for everybody, and the '
+     'server reads nothing for it.', {}),
     ('db_engine', 'db', 'choice', 'The database',
      'Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL '
      'server. Kept in config.json, not in the database. Another engine is reached only by Move to another '
@@ -9551,6 +9557,9 @@ def load_history():
 
 @route('GET', '/api/load', admin=True)
 def api_load(c):
+    if not CONFIG.get('perf_meter', True):
+        # switched off for the whole server (Settings - About): nothing read at all
+        raise Refused('the performance meter is switched off on this server (Settings - About)', 403)
     out = dict(server_load())
     if c.arg('detail'):
         out['detail'] = load_detail()
@@ -10159,6 +10168,7 @@ def status_view(c):
     terms = d.terms.list(c.who, ended=False)
     return {
         'version': __version__, 'host': host_name(), 'node': node_name(), 'site': CONFIG.get('site_name') or '',
+        'perf_meter': bool(CONFIG.get('perf_meter', True)),
         'who': user_view(c.who), 'problems': problems, 'trials': d.trials.view() if c.who['role'] == 'admin' else [],
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',

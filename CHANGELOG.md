@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.80
+
+- **The performance meter can be switched off for the whole server**: Settings → About → *The performance meter in
+  the header* (on by default; `ai --set perf_meter=false`). Off, it is gone for everybody: the header has no place
+  for it, My account says it is off instead of offering its looks, and `GET /api/load` is refused - the server reads
+  nothing for it. A page open while it is switched off stops asking at its next try.
+- **Off means nothing at all**: an account that has it off (the default) runs no timer for it in the page any more -
+  before, an empty one ticked every 3 s, asking nothing; switched off in My account, what the page held of it is
+  dropped too.
+
 ## 1.0.79
 
 Fixes of the load in the header, found when it was taken into another application:

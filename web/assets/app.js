@@ -834,7 +834,10 @@ function hloadTick(now) {
     if (d.detail) { HLOAD.detail = d.detail; HLOAD.detailAt = Date.now(); }
     if (withHist && d.hist) { hloadHistFrom(d.hist, d.at); HLOAD.histHad = true; }
     hloadDraw(d);
-  }).catch(function () { }).then(function () { HLOAD.busy = false; });
+  }).catch(function (e) {
+    /* switched off for the whole server meanwhile (Settings - About): stop asking */
+    if (e && e.status === 403) { HLOAD.gone = true; hloadStop(); }
+  }).then(function () { HLOAD.busy = false; });
 }
 /* The graphs after F5 (1.0.78): the daemon keeps what the pages asked for in
    the last two minutes; laid out here 3 s apart, ending just before now (the
@@ -856,11 +859,24 @@ function hloadHistFrom(list, at) {
 function hloadLoop() {
   if (!$('hload')) return;
   clearInterval(HLOAD.timer);
+  HLOAD.timer = null;
+  /* Off (the default, 1.0.80): no timer at all, nothing asked of the server - and
+     the server reads nothing unless asked. Picking a look starts it. */
+  if (HLOAD.gone || (prefs().hload || 'off') === 'off') { hloadStop(); return; }
   hloadTick();
   setTimeout(hloadTick, 1200);      /* the first rate needs a second reading */
   HLOAD.timer = setInterval(hloadTick, 3000);
 }
-document.addEventListener('visibilitychange', function () { if (!document.hidden) hloadTick(); });
+function hloadStop() {
+  clearInterval(HLOAD.timer);
+  HLOAD.timer = null;
+  hloadPanelClose();
+  HLOAD.last = HLOAD.detail = null;
+  HLOAD.hist = null;
+  HLOAD.histHad = false;          /* switched on again: the last two minutes asked for anew */
+  if ($('hload')) $('hload').hidden = true;
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden && HLOAD.timer) hloadTick(); });
 function liveLoop() {
   hloadLoop();
   clearInterval(LIVE.timer);
@@ -981,7 +997,7 @@ function showMe() {
       g3.appendChild(hlPicker(HL_LOOKS, prefs().hload || 'off', hlPreviewLook, function (v) {
         savePrefs({hload: v}).then(function () {
           HLOAD.look = v;
-          if (v === 'off') { hloadPanelClose(); $('hload').hidden = true; } else if (HLOAD.last) hloadDraw(HLOAD.last); else hloadTick();
+          if (v === 'off') hloadStop(); else if (!HLOAD.timer) hloadLoop(); else if (HLOAD.last) hloadDraw(HLOAD.last);
           toast('kept', 'good');
         }).catch(oops);
       }));
@@ -995,6 +1011,11 @@ function showMe() {
         }).catch(oops);
       }));
       lsec.appendChild(g3);
+    } else if (ME && ME.role === 'admin') {
+      var pmOff = el('div', 'hl-pickers');
+      pmOff.appendChild(el('div', 'hl-pick-h', 'The load of the server in the header (CPU, RAM, the disks, the network)'));
+      pmOff.appendChild(el('p', 'small muted', 'The performance meter is switched off on this server (Settings - About).'));
+      lsec.appendChild(pmOff);
     }
     body.appendChild(lsec);
 

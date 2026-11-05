@@ -400,7 +400,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <header>
   <h1 data-no-i18n><?= h($site ?: 'ai') ?> <span class="host"><?= h($host) ?></span></h1>
   <span id="state-pill" class="pill unknown"><span class="dot"></span><span>…</span></span>
-  <?php if (($me['role'] ?? '') === 'admin'): ?>
+  <?php if (($me['role'] ?? '') === 'admin' && ($initial['perf_meter'] ?? true)): ?>
   <div class="hload" id="hload" hidden aria-live="off"></div>
   <?php endif; ?>
   <div class="spacer"></div>
