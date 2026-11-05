@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.73'
+__version__ = '1.0.74'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -12783,7 +12783,7 @@ def put_user_cols(store, name, cols):
 
 
 PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins',
-             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right', 'hload')
+             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right', 'hload', 'hpanel')
 
 
 def clean_prefs(prefs):

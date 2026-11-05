@@ -3,6 +3,16 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.74
+
+- **The details of the load have four styles to choose from**, in My account (*Its details, when a number is
+  pointed at*): **tiles** (a card for each core, as in 1.0.73, the default), **a table** (a row for each core
+  with its bar, %, frequency and temperature, as htop - best for many cores; the disks as a table), **a map of
+  the cores with rings** (the whole processor and its temperature as rings, each core a coloured square, the
+  disks as cards and the filesystems as rings) and **one wide panel** with the processor, memory, disks and
+  network side by side (two columns on a narrow screen). Or **no details** at all: the numbers then only show
+  their short tip, and nothing more is read from the server.
+
 ## 1.0.73
 
 - **The load in the header opens into details.** Pointing at a chip (a tap on an iPad, Enter from the keyboard)

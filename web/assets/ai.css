@@ -3842,3 +3842,58 @@ body.kb-up .term-keys{padding-top:5px}
 .hl-panel .hp-util .hp-bar{margin-top:0}
 .hp-temp{font-variant-numeric:tabular-nums;color:var(--ok)}
 .hp-temp.warm{color:var(--warn)} .hp-temp.hot{color:var(--crit);font-weight:600}
+/* 1.0.74: the four styles of the details */
+.hload .hl.hl-open{border-color:var(--accent)}
+.hl-panel .hp-area{display:block;color:var(--info);margin:4px 0 2px}
+.hl-panel .hp-area svg{display:block;width:100%}
+.hl-panel .hp-area.hl-cpu{color:var(--ok)} .hl-panel .hp-area.hl-mem{color:var(--violet)} .hl-panel .hp-area.hl-disk{color:var(--load)}
+.hl-panel .hp-grid{stroke:var(--line);stroke-dasharray:2 3}
+.hl-panel .hp-t{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.hl-panel .hp-t td{padding:2px 4px;white-space:nowrap;vertical-align:middle}
+.hl-panel .hp-t td:first-child{padding-left:0} .hl-panel .hp-t td:last-child{padding-right:0}
+.hl-panel .hp-t td.num{text-align:right}
+.hl-panel .hp-t td.hp-barc{width:45%}
+.hl-panel .hp-t td.hp-barc .hp-bar{margin-top:0;min-width:40px}
+.hl-panel .hp-t td.hp-name{max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.hl-panel .hp-t tr.hp-th td{color:var(--tx-mut);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.hl-panel .hp-t tr.hp-sub td{padding-top:0;padding-bottom:5px}
+.hp-bar.hp-info>span{background:var(--info)}
+.hl-panel .hp-sum{color:var(--tx)}
+.hl-panel .hp-ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hl-panel .hp-top{display:flex;gap:12px;align-items:center;margin-bottom:4px}
+.hl-panel .hp-info-col{min-width:0;display:flex;flex-direction:column;gap:2px}
+.hl-panel .hp-big{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;margin:2px 0}
+.hp-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.hp-ring svg{display:block}
+.hp-ring-bg{fill:none;stroke:var(--panel2);stroke-width:7}
+.hp-ring-fg{fill:none;stroke:var(--ok);stroke-width:7;stroke-linecap:round}
+.hp-ring.warm .hp-ring-fg{stroke:var(--warn)} .hp-ring.hot .hp-ring-fg{stroke:var(--crit)}
+.hp-ring-v{position:absolute;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
+.hp-ring.warm .hp-ring-v{color:var(--warn)} .hp-ring.hot .hp-ring-v{color:var(--crit)}
+.hl-panel .hp-heat{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:4px}
+.hl-panel .hp-cell{border-radius:6px;padding:5px 0;text-align:center;display:flex;flex-direction:column;color:#fff;line-height:1.25}
+.hl-panel .hp-cell-n{font-size:10px;opacity:.8} .hl-panel .hp-cell-t{font-size:11px}
+.hl-panel .hp-pills{display:flex;flex-wrap:wrap;gap:5px}
+.hl-panel .hp-pill{display:inline-flex;gap:6px;padding:2px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);font-size:12px}
+.hl-panel .hp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:10px}
+.hl-panel .hp-card{border:1px solid var(--line);border-radius:8px;padding:8px;min-width:0}
+.hl-panel .hp-card-top{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.hl-panel .hp-rings{display:flex;flex-wrap:wrap;gap:10px}
+.hl-panel .hp-fsring{flex:1 1 90px;text-align:center;min-width:0;display:flex;flex-direction:column;align-items:center}
+.hl-panel .hp-fsring .hp-ring-v{font-size:13px}
+.hl-panel .hp-wide-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.hl-panel .hp-col{min-width:0;font-size:12px}
+.hl-panel .hp-col .hp-head{margin-bottom:0}
+@media (max-width:1000px){.hl-panel .hp-wide-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hl-panel .num{font-family:inherit}
+.hl-panel .hp-t td{overflow:hidden;text-overflow:ellipsis}
+.hl-panel.hp-wide .hp-t{table-layout:fixed}
+.hl-panel.hp-wide .hp-t td{white-space:normal;overflow-wrap:anywhere}
+.hl-panel.hp-wide .hp-t td.hp-barc{width:38%}
+.hl-panel.hp-wide .hp-t td.mono:first-child{width:4.2em}
+.hl-panel.hp-wide .hp-t td.hp-name{white-space:nowrap;overflow-wrap:normal;width:5.5em}
+.hl-panel.hp-wide .hp-t td.num{white-space:nowrap;overflow-wrap:normal;width:4.6em}
+.hl-panel.hp-wide .hp-t tr.hp-sub td{white-space:nowrap}
+.hl-panel.hp-wide .hp-t.hp-kvt{table-layout:auto}
+.hl-panel.hp-wide .hp-t.hp-kvt td.num{width:auto}
+.hl-panel.hp-wide .hp-t td.hp-name{width:7.6em}

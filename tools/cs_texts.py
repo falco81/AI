@@ -3318,6 +3318,26 @@ STRINGS = {
         'žádná karta',
     'Other sensors':
         'Další čidla',
+    'tiles - a card for each core':
+        'dlaždice – karta pro každé jádro',
+    'a table - a row for each core (as htop)':
+        'tabulka – řádek pro každé jádro (jako htop)',
+    'a map of the cores with rings':
+        'mapa jader s kroužky',
+    'one wide panel with everything at once':
+        'jeden široký panel se vším najednou',
+    'no details - only a short tip':
+        'bez podrobností – jen krátký popisek',
+    'Its details, when a number is pointed at (or tapped)':
+        'Jeho podrobnosti při najetí na číslo (nebo klepnutí)',
+    'Map of the cores (colour = how busy, number = temperature)':
+        'Mapa jader (barva = vytížení, číslo = teplota)',
+    'disk':
+        'disk',
+    'read':
+        'čtení',
+    'written':
+        'zápis',
 }
 
 PATTERNS = {
