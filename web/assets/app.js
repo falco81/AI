@@ -815,11 +815,29 @@ function hloadTick(now) {
   HLOAD.look = prefs().hload || 'off';
   if (HLOAD.look === 'off') { $('hload').hidden = true; return; }
   HLOAD.busy = true;
-  var withDetail = !!HLOAD.open;
-  api('load' + (withDetail ? '&detail=1' : '')).then(function (d) {
+  var withDetail = !!HLOAD.open, withHist = !HLOAD.histHad;
+  api('load' + (withDetail ? '&detail=1' : '') + (withHist ? '&hist=1' : '')).then(function (d) {
     if (d.detail) { HLOAD.detail = d.detail; HLOAD.detailAt = Date.now(); }
+    if (withHist && d.hist) { hloadHistFrom(d.hist, d.at); HLOAD.histHad = true; }
     hloadDraw(d);
   }).catch(function () { }).then(function () { HLOAD.busy = false; });
+}
+/* The graphs after F5 (1.0.78): the daemon keeps what the pages asked for in
+   the last two minutes; laid out here 3 s apart, ending just before now (the
+   reading of now is added by hloadDraw). A stretch nobody asked about is not
+   filled with made-up numbers: the graph starts after it. */
+function hloadHistFrom(list, at) {
+  var h = {cpu: [], mem: [], disk: [], net: []};
+  var got = false;
+  for (var i = HLOAD_KEEP - 1; i >= 1; i--) {
+    var want = at - i * 3, best = null;
+    list.forEach(function (x) { if (Math.abs(x.at - want) <= 1.6 && (!best || Math.abs(x.at - want) < Math.abs(best.at - want))) best = x; });
+    if (!best && !got) continue;
+    if (!best) { ['cpu', 'mem', 'disk', 'net'].forEach(function (k) { h[k].push(h[k][h[k].length - 1]); }); continue; }
+    got = true;
+    h.cpu.push(best.cpu || 0); h.mem.push(best.mem || 0); h.disk.push(best.disk || 0); h.net.push(best.net || 0);
+  }
+  if (got) HLOAD.hist = h;
 }
 function hloadLoop() {
   if (!$('hload')) return;

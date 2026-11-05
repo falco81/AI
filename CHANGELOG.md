@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.78
+
+- **The graphs of the load survive F5**: the daemon keeps the readings of the last two minutes that pages asked for
+  anyway (a list of a few dozen numbers, no reading made for it), and a page loaded again - F5, a new tab, another
+  device - draws its graphs from them and goes on, rather than starting from nothing. A stretch nobody looked at is
+  not filled with made-up numbers: the graph starts after it.
+
 ## 1.0.77
 
 - **The load of the server in the header is off until switched on**: an account that has not picked a look sees

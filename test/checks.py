@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 import tempfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -329,6 +330,10 @@ check('the load panels have each core, the filesystems and the cards',
       len(_d.get('cores', [])) == os.cpu_count() and _d.get('filesystems') and all(c.get('busy') is not None for c in _d['cores']))
 
 check('the load in the header is off until an account picks a look', "HLOAD.look = prefs().hload || 'off'" in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
+
+ai.server_load(); time.sleep(1.1); ai.server_load()
+_h = ai.load_history()
+check('the last two minutes of the load are kept for a page loaded again', bool(_h) and set(_h[-1]) >= {'at', 'cpu', 'mem', 'disk', 'net'})
 
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

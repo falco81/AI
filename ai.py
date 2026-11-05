@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.77'
+__version__ = '1.0.78'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9151,6 +9151,11 @@ def api_health(c):
 # counters. Pages asking within the same second share one reading.
 LOAD_LOCK = threading.Lock()
 LOAD_LAST = {'at': 0.0, 'raw': None, 'out': None}
+# The last two minutes of readings (1.0.78), so a page loaded again (F5, a new
+# tab, another device) draws its graphs from where they were, not from nothing.
+# Only what pages asked for anyway: no reading is made for it.
+LOAD_HIST = []
+LOAD_HIST_S = 130
 
 
 def _load_raw():
@@ -9501,8 +9506,23 @@ def server_load():
             for k in ('disk_rd', 'disk_wr', 'net_rx', 'net_tx'):
                 out[k] = rate(k)
             out['over_s'] = round(dt, 1)
+            if out.get('cpu') is not None:
+                mt = out.get('mem_total') or 0
+                LOAD_HIST.append({'at': round(now, 2), 'cpu': out['cpu'],
+                                  'mem': round(100.0 * (out.get('mem_used') or 0) / mt, 1) if mt else None,
+                                  'disk': (out.get('disk_rd') or 0) + (out.get('disk_wr') or 0),
+                                  'net': (out.get('net_rx') or 0) + (out.get('net_tx') or 0)})
+                while LOAD_HIST and now - LOAD_HIST[0]['at'] > LOAD_HIST_S:
+                    LOAD_HIST.pop(0)
         LOAD_LAST.update(at=now, raw=raw, out=out)
         return out
+
+
+def load_history():
+    """The readings of the last two minutes, oldest first: [{at, cpu, mem %, disk B/s, net B/s}]."""
+    with LOAD_LOCK:
+        now = time.time()
+        return [dict(h) for h in LOAD_HIST if now - h['at'] <= LOAD_HIST_S]
 
 
 @route('GET', '/api/load', admin=True)
@@ -9510,6 +9530,8 @@ def api_load(c):
     out = dict(server_load())
     if c.arg('detail'):
         out['detail'] = load_detail()
+    if c.arg('hist'):
+        out['hist'] = load_history()
     return out
 
 
