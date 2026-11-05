@@ -331,7 +331,7 @@ check('the load panels have each core, the filesystems and the cards',
 
 check('the load in the header is off until an account picks a look', "HLOAD.look = prefs().hload || 'off'" in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
 
-ai.server_load(); time.sleep(1.1); ai.server_load()
+ai.server_load(); time.sleep(1.1); ai._load_keep(ai.server_load())
 _h = ai.load_history()
 check('the last two minutes of the load are kept for a page loaded again', bool(_h) and set(_h[-1]) >= {'at', 'cpu', 'mem', 'disk', 'net'})
 
@@ -368,6 +368,11 @@ check('the performance meter can be switched off for the whole server', ai.DEFAU
       open(os.path.join(HERE, 'web', 'index.php')).read())
 check('a page with the meter off has no timer and asks nothing', "if (HLOAD.gone || (prefs().hload || 'off') === 'off') { hloadStop(); return; }"
       in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
+
+check('the load is read once every 5 s for every page, and the watching ends by itself', ai.LOAD_STEP_S == 5.0
+      and ai.LOAD_WATCH_S == 45.0 and 'load_watch(c.daemon.store)' in _src2 and "'load:' + node_name()" in _src2)
+check('the graphs slide by one SVG animation, not redrawn on a timer', 'animateTransform' in _appjs and
+      'setInterval(hloadTick, HLOAD_STEP * 1000)' in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
 
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

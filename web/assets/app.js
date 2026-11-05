@@ -177,14 +177,47 @@ function hloadRate(n) {
 }
 /* Four looks to choose from (1.0.72): pills with a bar, one plain line,
    small graphs of the last two minutes, rings. */
-var HLOAD_KEEP = 40;
-function hloadSpark(vals, max, cls) {
+/* The daemon reads every 5 s while a page watches (1.0.81): two minutes are
+   25 readings. */
+var HLOAD_STEP = 5, HLOAD_KEEP = 25;
+/* The points of a graph: by the time of each reading when the daemon gave them
+   (the newest at the right edge; a stretch nobody watched breaks the line),
+   else one after the other (the previews). [[x, y]...] per unbroken piece. */
+function hlSeries(vals, times, w, h, top, pad) {
+  var y = function (v) { return h - 1 - (h - pad) * Math.min(1, (v || 0) / top); };
+  var parts = [[]];
+  if (times && times.length === vals.length && vals.length) {
+    var last = times[times.length - 1], span = HLOAD_STEP * (HLOAD_KEEP - 1);
+    vals.forEach(function (v, i) {
+      if (i && times[i] - times[i - 1] > HLOAD_STEP * 2.5) parts.push([]);
+      parts[parts.length - 1].push([w - (last - times[i]) / span * w, y(v)]);
+    });
+  } else {
+    vals.forEach(function (v, i) { parts[0].push([i * w / (HLOAD_KEEP - 1), y(v)]); });
+  }
+  return parts.filter(function (p) { return p.length > 1; });
+}
+/* The graph slides by one step to the left until the next reading - one SVG
+   animation, nothing redrawn on a timer; begun as far in as the reading is old. */
+function hlSlide(w, times) {
+  if (!times || !times.length || !HLOAD.skewAt) return ['', ''];
+  var nowS = Date.now() / 1000 - HLOAD.skew;
+  var age = Math.max(0, Math.min(HLOAD_STEP, nowS - times[times.length - 1]));
+  var dx = (w / (HLOAD_KEEP - 1)).toFixed(2);
+  return ['<g><animateTransform attributeName="transform" type="translate" from="0 0" to="-' + dx + ' 0" dur="'
+    + HLOAD_STEP + 's" begin="-' + age.toFixed(2) + 's" fill="freeze"/>', '</g>'];
+}
+function hlPts(part) { return part.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
+function hloadSpark(vals, max, cls, times) {
   var w = 56, h = 18, n = vals.length;
   var svg = '<svg class="hl-spark ' + (cls || '') + '" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" preserveAspectRatio="none" aria-hidden="true">';
   if (n > 1) {
-    var top = Math.max(max || 0, 1);
-    var pts = vals.map(function (v, i) { return (i * w / (HLOAD_KEEP - 1)).toFixed(1) + ',' + (h - 1 - (h - 2) * Math.min(1, (v || 0) / top)).toFixed(1); });
-    svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    var top = Math.max(max || 0, 1), g = hlSlide(w, times);
+    svg += g[0];
+    hlSeries(vals, times, w, h, top, 2).forEach(function (part) {
+      svg += '<polyline points="' + hlPts(part) + '" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    });
+    svg += g[1];
   }
   return svg + '</svg>';
 }
@@ -209,9 +242,16 @@ function hloadDraw(d, into, asLook) {
   if (preview) hist = hpSample().hist;
   else {
     HLOAD.last = d;
-    hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
-    var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
-    if (d.cpu !== undefined) { push('cpu', d.cpu); push('mem', mp); push('disk', (d.disk_rd || 0) + (d.disk_wr || 0)); push('net', (d.net_rx || 0) + (d.net_tx || 0)); }
+    if (d.hist) {
+      /* the daemon's own two minutes (1.0.81): the same on every page, after F5 too */
+      hist = HLOAD.hist = {cpu: [], mem: [], disk: [], net: [], at: []};
+      d.hist.forEach(function (x) { ['cpu', 'mem', 'disk', 'net'].forEach(function (k) { hist[k].push(x[k] || 0); }); hist.at.push(x.at); });
+      if (d.now) { HLOAD.skew = Date.now() / 1000 - d.now; HLOAD.skewAt = true; }
+    } else {
+      hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
+      var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
+      if (d.cpu !== undefined) { push('cpu', d.cpu); push('mem', mp); push('disk', (d.disk_rd || 0) + (d.disk_wr || 0)); push('net', (d.net_rx || 0) + (d.net_tx || 0)); }
+    }
   }
   var look = asLook || HLOAD.look || 'graphs';
   host.className = 'hload look-' + look + (preview ? ' hl-preview' : '');
@@ -262,7 +302,7 @@ function hloadDraw(d, into, asLook) {
       if (look === 'graphs') {
         var g = el('span', 'hl-g');
         var vals = hist[x[2]], max = x[4] || Math.max.apply(null, vals.concat([1024]));
-        g.innerHTML = hloadSpark(vals, max);
+        g.innerHTML = hloadSpark(vals, max, '', preview ? null : hist.at);
         c.appendChild(g);
       }
       heat(c, x[3]);
@@ -454,10 +494,14 @@ function hpArea(k, h, grid) {
   var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" preserveAspectRatio="none" aria-hidden="true">';
   if (grid) [0.25, 0.5, 0.75].forEach(function (g) { svg += '<line x1="0" x2="' + w + '" y1="' + h * g + '" y2="' + h * g + '" class="hp-grid" vector-effect="non-scaling-stroke"/>'; });
   if (vals.length > 1) {
-    var pts = vals.map(function (v, i) { return (i * w / (HLOAD_KEEP - 1)).toFixed(1) + ',' + (h - 1 - (h - 3) * Math.min(1, (v || 0) / top)).toFixed(1); });
-    var last = ((vals.length - 1) * w / (HLOAD_KEEP - 1)).toFixed(1);
-    svg += '<polygon points="0,' + h + ' ' + pts.join(' ') + ' ' + last + ',' + h + '" fill="currentColor" opacity=".16"/>';
-    svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    var times = (HLOAD.hist || {}).at, g = hlSlide(w, times);
+    svg += g[0];
+    hlSeries(vals, times, w, h, top, 3).forEach(function (part) {
+      var first = part[0][0].toFixed(1), end = part[part.length - 1][0].toFixed(1);
+      svg += '<polygon points="' + first + ',' + h + ' ' + hlPts(part) + ' ' + end + ',' + h + '" fill="currentColor" opacity=".16"/>';
+      svg += '<polyline points="' + hlPts(part) + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    });
+    svg += g[1];
   }
   box.innerHTML = svg + '</svg>';
   return box;
@@ -736,7 +780,7 @@ function hpTiles(p, k) {
   var big = el('div', 'hp-graph');
   var vals = (HLOAD.hist || {})[k] || [];
   var max = (k === 'cpu' || k === 'mem') ? 100 : Math.max.apply(null, vals.concat([1024]));
-  big.innerHTML = hloadSpark(vals, max).replace('width="56" height="18"', 'width="100%" height="54"');
+  big.innerHTML = hloadSpark(vals, max, '', (HLOAD.hist || {}).at).replace('width="56" height="18"', 'width="100%" height="54"');
   big.classList.add('hl-' + k);
   var scale = el('span', 'hp-scale muted small', k === 'cpu' || k === 'mem' ? '100 %' : hloadRate(max));
   head.appendChild(scale);
@@ -829,32 +873,14 @@ function hloadTick(now) {
   HLOAD.look = prefs().hload || 'off';
   if (HLOAD.look === 'off') { $('hload').hidden = true; return; }
   HLOAD.busy = true;
-  var withDetail = !!HLOAD.open, withHist = !HLOAD.histHad;
-  api('load' + (withDetail ? '&detail=1' : '') + (withHist ? '&hist=1' : '')).then(function (d) {
+  var withDetail = !!HLOAD.open;
+  api('load' + (withDetail ? '&detail=1' : '')).then(function (d) {
     if (d.detail) { HLOAD.detail = d.detail; HLOAD.detailAt = Date.now(); }
-    if (withHist && d.hist) { hloadHistFrom(d.hist, d.at); HLOAD.histHad = true; }
     hloadDraw(d);
   }).catch(function (e) {
     /* switched off for the whole server meanwhile (Settings - About): stop asking */
     if (e && e.status === 403) { HLOAD.gone = true; hloadStop(); }
   }).then(function () { HLOAD.busy = false; });
-}
-/* The graphs after F5 (1.0.78): the daemon keeps what the pages asked for in
-   the last two minutes; laid out here 3 s apart, ending just before now (the
-   reading of now is added by hloadDraw). A stretch nobody asked about is not
-   filled with made-up numbers: the graph starts after it. */
-function hloadHistFrom(list, at) {
-  var h = {cpu: [], mem: [], disk: [], net: []};
-  var got = false;
-  for (var i = HLOAD_KEEP - 1; i >= 1; i--) {
-    var want = at - i * 3, best = null;
-    list.forEach(function (x) { if (Math.abs(x.at - want) <= 1.6 && (!best || Math.abs(x.at - want) < Math.abs(best.at - want))) best = x; });
-    if (!best && !got) continue;
-    if (!best) { ['cpu', 'mem', 'disk', 'net'].forEach(function (k) { h[k].push(h[k][h[k].length - 1]); }); continue; }
-    got = true;
-    h.cpu.push(best.cpu || 0); h.mem.push(best.mem || 0); h.disk.push(best.disk || 0); h.net.push(best.net || 0);
-  }
-  if (got) HLOAD.hist = h;
 }
 function hloadLoop() {
   if (!$('hload')) return;
@@ -864,8 +890,8 @@ function hloadLoop() {
      the server reads nothing unless asked. Picking a look starts it. */
   if (HLOAD.gone || (prefs().hload || 'off') === 'off') { hloadStop(); return; }
   hloadTick();
-  setTimeout(hloadTick, 1200);      /* the first rate needs a second reading */
-  HLOAD.timer = setInterval(hloadTick, 3000);
+  /* every 5 s: the daemon's newest reading (it reads once for every page) */
+  HLOAD.timer = setInterval(hloadTick, HLOAD_STEP * 1000);
 }
 function hloadStop() {
   clearInterval(HLOAD.timer);
@@ -873,7 +899,6 @@ function hloadStop() {
   hloadPanelClose();
   HLOAD.last = HLOAD.detail = null;
   HLOAD.hist = null;
-  HLOAD.histHad = false;          /* switched on again: the last two minutes asked for anew */
   if ($('hload')) $('hload').hidden = true;
 }
 document.addEventListener('visibilitychange', function () { if (!document.hidden && HLOAD.timer) hloadTick(); });

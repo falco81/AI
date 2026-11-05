@@ -3,6 +3,18 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.81
+
+- **The load is watched by the daemon, once for every page**: while a page shows the meter the daemon reads the
+  kernel's counters once every 5 s - however many pages, tabs and devices ask, they all get that one reading - and
+  keeps the last two minutes in one small row of the database for this node (meta `load:<node>`), written every
+  5 s only while it is watched. Nobody asking for 45 s (every page closed, the meter switched off), the watching
+  ends by itself. The graphs come from the daemon's own two minutes, so they are the same on every page and outlive
+  F5 and a restart of the daemon.
+- **The graphs slide smoothly**: each graph moves by one SVG animation until the next reading; nothing is redrawn
+  on a timer, only when a reading comes (every 5 s). A stretch nobody watched breaks the line instead of being
+  filled in.
+
 ## 1.0.80
 
 - **The performance meter can be switched off for the whole server**: Settings → About → *The performance meter in

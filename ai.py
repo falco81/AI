@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.80'
+__version__ = '1.0.81'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9162,6 +9162,14 @@ LOAD_LAST = {'at': 0.0, 'raw': None, 'out': None}
 # Only what pages asked for anyway: no reading is made for it.
 LOAD_HIST = []
 LOAD_HIST_S = 130
+# Watching (1.0.81): while a page shows the meter, the daemon reads once every
+# LOAD_STEP_S seconds - however many pages ask, they all get that reading - and
+# keeps the last two minutes in one small row of the database for this node
+# (meta 'load:<node>'), so the graphs outlive a restart of the daemon too.
+# Nobody asking for LOAD_WATCH_S: the watching ends by itself.
+LOAD_STEP_S = 5.0
+LOAD_WATCH_S = 45.0
+LOAD_WATCH = {'seen': 0.0, 'thread': None, 'store': None}
 
 
 def _load_raw():
@@ -9536,16 +9544,61 @@ def server_load():
             for k in ('disk_rd', 'disk_wr', 'net_rx', 'net_tx'):
                 out[k] = rate(k)
             out['over_s'] = round(dt, 1)
-            if out.get('cpu') is not None:
-                mt = out.get('mem_total') or 0
-                LOAD_HIST.append({'at': round(now, 2), 'cpu': out['cpu'],
-                                  'mem': round(100.0 * (out.get('mem_used') or 0) / mt, 1) if mt else None,
-                                  'disk': (out.get('disk_rd') or 0) + (out.get('disk_wr') or 0),
-                                  'net': (out.get('net_rx') or 0) + (out.get('net_tx') or 0)})
-                while LOAD_HIST and now - LOAD_HIST[0]['at'] > LOAD_HIST_S:
-                    LOAD_HIST.pop(0)
         LOAD_LAST.update(at=now, raw=raw, out=out)
         return out
+
+
+def _load_keep(out):
+    """One reading into the last two minutes (the watcher's own, every LOAD_STEP_S)."""
+    if out.get('cpu') is None:
+        return
+    mt = out.get('mem_total') or 0
+    with LOAD_LOCK:
+        LOAD_HIST.append({'at': round(out['at'], 2), 'cpu': out['cpu'],
+                          'mem': round(100.0 * (out.get('mem_used') or 0) / mt, 1) if mt else None,
+                          'disk': (out.get('disk_rd') or 0) + (out.get('disk_wr') or 0),
+                          'net': (out.get('net_rx') or 0) + (out.get('net_tx') or 0)})
+        while LOAD_HIST and out['at'] - LOAD_HIST[0]['at'] > LOAD_HIST_S:
+            LOAD_HIST.pop(0)
+
+
+def _load_watcher():
+    st = LOAD_WATCH['store']
+    if not LOAD_HIST and st is not None:
+        # what was watched before the daemon started again, if it is recent
+        try:
+            got = st.meta_json('load:' + node_name(), None) or {}
+            now = time.time()
+            with LOAD_LOCK:
+                LOAD_HIST[:] = [h for h in (got.get('hist') or []) if isinstance(h, dict)
+                                and now - float(h.get('at') or 0) <= LOAD_HIST_S]
+        except Exception:                                   # noqa: BLE001
+            pass
+    nxt = time.time()
+    while time.time() - LOAD_WATCH['seen'] < LOAD_WATCH_S and CONFIG.get('perf_meter', True):
+        nxt += LOAD_STEP_S
+        try:
+            _load_keep(server_load())
+            if st is not None:
+                st.set_meta_json('load:' + node_name(), {'at': time.time(), 'hist': load_history()})
+        except Exception as e:                              # noqa: BLE001
+            log('the load could not be read: %s' % e)
+        time.sleep(max(0.5, nxt - time.time()))
+    LOAD_WATCH['thread'] = None
+
+
+def load_watch(store):
+    """A page is looking: the watching goes on (or starts) for LOAD_WATCH_S more."""
+    LOAD_WATCH['seen'] = time.time()
+    LOAD_WATCH['store'] = store
+    t = LOAD_WATCH['thread']
+    if t is None or not t.is_alive():
+        if not LOAD_LAST['out'] or time.time() - LOAD_LAST['at'] > 30:
+            server_load()                  # two readings a second apart: a rate at once
+            time.sleep(1.05)
+        t = threading.Thread(target=_load_watcher, name='ai-load', daemon=True)
+        LOAD_WATCH['thread'] = t
+        t.start()
 
 
 def load_history():
@@ -9560,11 +9613,16 @@ def api_load(c):
     if not CONFIG.get('perf_meter', True):
         # switched off for the whole server (Settings - About): nothing read at all
         raise Refused('the performance meter is switched off on this server (Settings - About)', 403)
-    out = dict(server_load())
+    load_watch(c.daemon.store)
+    # the watcher's last reading - nothing more is read for a page asking
+    with LOAD_LOCK:
+        last = LOAD_LAST['out']
+    out = dict(last if last and time.time() - LOAD_LAST['at'] < LOAD_STEP_S + 2 else server_load())
+    out['now'] = time.time()
+    out['step_s'] = LOAD_STEP_S
     if c.arg('detail'):
         out['detail'] = load_detail()
-    if c.arg('hist'):
-        out['hist'] = load_history()
+    out['hist'] = load_history()
     return out
 
 
