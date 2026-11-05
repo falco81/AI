@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.72
+
+- **How busy the server is, in the header beside *running***, for an administrator: CPU, RAM in use, the disks
+  read and written, the network in and out - every 3 s while the page is shown, nothing while it is hidden or
+  paused. The daemon reads the kernel's counters in /proc only when asked (no thread, nothing kept but the last
+  counters; pages asking within the same second share one reading - 200 asks take a third of a second). The
+  disks are counted whole (no partitions twice, no loop devices), the network as its cards (no loopback, no
+  bridges of containers). A pointer on each says more: the cores and the load, the swap.
+- **Four looks to choose from** in My account (*The load of the server in the header*): pills with a bar (as it
+  comes), one plain line, with a graph of the last two minutes, with rings - or not shown. A bar turns yellow
+  from 70 %, red from 90 %. On a narrower screen the graphs of the disks and the network make way; under
+  700 px the numbers make way for the rest.
+
 ## 1.0.71
 
 - **Passkeys are off until switched on** (Settings -> Signing in -> *Signing in with a passkey*): until then the

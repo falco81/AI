@@ -165,7 +165,111 @@ function tick() {
     }
   });
 }
+/* How busy the server is, beside running (1.0.72): every 3 s while the page
+   is shown and live, nothing while it is hidden; the daemon reads /proc only
+   when asked. CPU, memory, the disks, the network. */
+var HLOAD = {timer: null, busy: false};
+function hloadRate(n) {
+  if (n === null || n === undefined) return '–';
+  if (n < 1024) return Math.round(n) + ' B/s';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' kB/s';
+  return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB/s';
+}
+/* Four looks to choose from (1.0.72): pills with a bar, one plain line,
+   small graphs of the last two minutes, rings. */
+var HLOAD_KEEP = 40;
+function hloadSpark(vals, max, cls) {
+  var w = 56, h = 18, n = vals.length;
+  var svg = '<svg class="hl-spark ' + (cls || '') + '" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" preserveAspectRatio="none" aria-hidden="true">';
+  if (n > 1) {
+    var top = Math.max(max || 0, 1);
+    var pts = vals.map(function (v, i) { return (i * w / (HLOAD_KEEP - 1)).toFixed(1) + ',' + (h - 1 - (h - 2) * Math.min(1, (v || 0) / top)).toFixed(1); });
+    svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>';
+  }
+  return svg + '</svg>';
+}
+function hloadRing(pct) {
+  var r = 7, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
+  return '<svg class="hl-ring" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="' + r + '" class="hl-ring-bg"/>'
+    + '<circle cx="9" cy="9" r="' + r + '" class="hl-ring-fg" stroke-dasharray="' + (c * p / 100).toFixed(1) + ' ' + c.toFixed(1) + '" transform="rotate(-90 9 9)"/></svg>';
+}
+function hloadDraw(d) {
+  var host = $('hload');
+  if (!host) return;
+  HLOAD.last = d;
+  var hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
+  var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
+  var mp = d.mem_total ? 100 * d.mem_used / d.mem_total : null;
+  if (d.cpu !== undefined) { push('cpu', d.cpu); push('mem', mp); push('disk', (d.disk_rd || 0) + (d.disk_wr || 0)); push('net', (d.net_rx || 0) + (d.net_tx || 0)); }
+  var look = HLOAD.look || 'pills';
+  host.className = 'hload look-' + look;
+  clear(host);
+  var tips = {
+    cpu: 'The processor, busy over the last ' + (d.over_s || 3) + ' s, all ' + d.cores + ' core(s) together' + (d.load ? ' · load ' + d.load.join(' / ') : ''),
+    mem: 'Memory in use (without what the kernel keeps as cache and gives back)' + (d.swap_used ? ' · swap in use ' + bytes(d.swap_used) : ''),
+    disk: 'The disks: read ↓ and written ↑, every disk together',
+    net: 'The network cards: down ↓ (in) and up ↑ (out), every card together - not the loopback nor the bridges of containers'
+  };
+  var cpuV = d.cpu === undefined ? '…' : Math.round(d.cpu) + ' %';
+  var memV = d.mem_total ? bytes(d.mem_used) + ' / ' + bytes(d.mem_total) : '–';
+  var diskV = '↓' + hloadRate(d.disk_rd) + ' ↑' + hloadRate(d.disk_wr);
+  var netV = '↓' + hloadRate(d.net_rx) + ' ↑' + hloadRate(d.net_tx);
+  var heat = function (c, pct) { if (pct === null || pct === undefined) return; c.classList.toggle('hot', pct >= 90); c.classList.toggle('warm', pct >= 70 && pct < 90); };
+  if (look === 'line') {
+    var line = el('span', 'hl-line');
+    [['CPU', cpuV, 'cpu', d.cpu], ['RAM', memV, 'mem', mp], ['Disk', diskV, 'disk'], ['Net', netV, 'net']].forEach(function (x, i) {
+      if (i) line.appendChild(el('span', 'hl-sep', '·'));
+      var part = el('span', 'hl-part hl-' + x[2]);
+      part.appendChild(el('span', 'hl-k', x[0]));
+      part.appendChild(noI18n(el('span', 'hl-v', x[1])));
+      part.title = tips[x[2]];
+      heat(part, x[3]);
+      line.appendChild(part);
+    });
+    host.appendChild(line);
+  } else {
+    [['CPU', cpuV, 'cpu', d.cpu, 100], ['RAM', memV, 'mem', mp, 100], ['Disk', diskV, 'disk', null, null], ['Net', netV, 'net', null, null]].forEach(function (x) {
+      var c = el('span', 'hl hl-' + x[2]);
+      c.title = tips[x[2]];
+      if (look === 'rings' && x[3] !== null && x[3] !== undefined) {
+        var ring = el('span', 'hl-ringbox'); ring.innerHTML = hloadRing(x[3]); c.appendChild(ring);
+      }
+      c.appendChild(el('span', 'hl-k', x[0]));
+      c.appendChild(noI18n(el('span', 'hl-v', x[1])));
+      if (look === 'pills' && x[3] !== null && x[3] !== undefined) {
+        var bar = el('span', 'hl-bar'), fill = el('span', '');
+        fill.style.width = Math.max(2, Math.min(100, x[3])) + '%';
+        bar.appendChild(fill); c.appendChild(bar);
+      }
+      if (look === 'graphs') {
+        var g = el('span', 'hl-g');
+        var vals = hist[x[2]], max = x[4] || Math.max.apply(null, vals.concat([1024]));
+        g.innerHTML = hloadSpark(vals, max);
+        c.appendChild(g);
+      }
+      heat(c, x[3]);
+      host.appendChild(c);
+    });
+  }
+  host.hidden = false;
+}
+function hloadTick() {
+  if (!$('hload') || HLOAD.busy || document.hidden || !LIVE.on) return;
+  HLOAD.look = prefs().hload || 'pills';
+  if (HLOAD.look === 'off') { $('hload').hidden = true; return; }
+  HLOAD.busy = true;
+  api('load').then(hloadDraw).catch(function () { }).then(function () { HLOAD.busy = false; });
+}
+function hloadLoop() {
+  if (!$('hload')) return;
+  clearInterval(HLOAD.timer);
+  hloadTick();
+  setTimeout(hloadTick, 1200);      /* the first rate needs a second reading */
+  HLOAD.timer = setInterval(hloadTick, 3000);
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden) hloadTick(); });
 function liveLoop() {
+  hloadLoop();
   clearInterval(LIVE.timer);
   LIVE.timer = setInterval(function () {
     if (!LIVE.on || document.hidden) return;
@@ -274,6 +378,24 @@ function showMe() {
     rf.classList.add('span-2');
     g2.appendChild(rf);
     lsec.appendChild(g2);
+    if ($('hload')) {
+      /* The load of the server beside running (1.0.72): how it looks, or not at all. */
+      var hl = selectBox([['pills', 'pills with a bar'], ['line', 'one plain line'], ['graphs', 'with a graph of the last two minutes'],
+                          ['rings', 'with rings'], ['off', 'not shown']], prefs().hload || 'pills');
+      hl.onchange = function () {
+        savePrefs({hload: hl.value}).then(function () {
+          HLOAD.look = hl.value;
+          if (hl.value === 'off') $('hload').hidden = true; else if (HLOAD.last) hloadDraw(HLOAD.last); else hloadTick();
+          toast('kept', 'good');
+        }).catch(oops);
+      };
+      var g3 = el('div', 'formgrid');
+      g3.style.marginTop = '12px';
+      var hf = formField('The load of the server in the header (CPU, RAM, the disks, the network)', hl);
+      hf.classList.add('span-2');
+      g3.appendChild(hf);
+      lsec.appendChild(g3);
+    }
     body.appendChild(lsec);
 
     /* The columns of the tables - exactly otp's (isemon's). */

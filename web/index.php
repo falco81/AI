@@ -182,7 +182,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -400,6 +400,9 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <header>
   <h1 data-no-i18n><?= h($site ?: 'ai') ?> <span class="host"><?= h($host) ?></span></h1>
   <span id="state-pill" class="pill unknown"><span class="dot"></span><span>…</span></span>
+  <?php if (($me['role'] ?? '') === 'admin'): ?>
+  <div class="hload" id="hload" hidden aria-live="off"></div>
+  <?php endif; ?>
   <div class="spacer"></div>
   <div class="btnrow">
     <button type="button" class="btn small mebtn" id="me-btn" data-icon="person"

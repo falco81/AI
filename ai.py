@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.71'
+__version__ = '1.0.72'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9144,6 +9144,106 @@ def api_health(c):
             'passkeys': bool(CONFIG.get('passkeys', False) and passkeys_all(d.store))}
 
 
+# ---- how busy the server is, for the header (1.0.72) -------------------------
+# CPU, memory, the disks read and written, the network in and out - worked
+# out only when a page asks (every 3 s while it is shown), from the kernel's
+# counters in /proc: no thread of its own, nothing kept but the last
+# counters. Pages asking within the same second share one reading.
+LOAD_LOCK = threading.Lock()
+LOAD_LAST = {'at': 0.0, 'raw': None, 'out': None}
+
+
+def _load_raw():
+    raw = {'at': time.time()}
+    try:
+        with open('/proc/stat') as f:
+            parts = f.readline().split()[1:]
+        v = [int(x) for x in parts[:8]] + [0] * (8 - len(parts[:8]))
+        raw['cpu_idle'] = v[3] + v[4]
+        raw['cpu_all'] = sum(v)
+    except (OSError, ValueError):
+        pass
+    try:
+        mem = {}
+        with open('/proc/meminfo') as f:
+            for line in f:
+                k, _s, rest = line.partition(':')
+                mem[k] = int(rest.split()[0]) * 1024
+        raw['mem_total'] = mem.get('MemTotal', 0)
+        raw['mem_used'] = mem.get('MemTotal', 0) - mem.get('MemAvailable', mem.get('MemFree', 0))
+        raw['swap_used'] = mem.get('SwapTotal', 0) - mem.get('SwapFree', 0)
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        rd = wr = 0
+        whole = set(os.listdir('/sys/block'))
+        with open('/proc/diskstats') as f:
+            for line in f:
+                x = line.split()
+                # whole disks only (a partition is in its disk's numbers already),
+                # no loop devices, no RAM disks, no device-mapper twice over
+                if len(x) < 10 or x[2] not in whole or x[2].startswith(('loop', 'ram', 'dm-', 'zram', 'sr')):
+                    continue
+                rd += int(x[5]) * 512
+                wr += int(x[9]) * 512
+        raw['disk_rd'], raw['disk_wr'] = rd, wr
+    except (OSError, ValueError):
+        pass
+    try:
+        rx = tx = 0
+        with open('/proc/net/dev') as f:
+            for line in f.readlines()[2:]:
+                name, _s, rest = line.partition(':')
+                name = name.strip()
+                # the cards, not the loopback nor the bridges and pairs of containers
+                if name == 'lo' or name.startswith(('veth', 'docker', 'br-', 'virbr', 'podman', 'cni', 'flannel',
+                                                   'tun', 'tap', 'vnet')):
+                    continue
+                x = rest.split()
+                rx += int(x[0])
+                tx += int(x[8])
+        raw['net_rx'], raw['net_tx'] = rx, tx
+    except (OSError, ValueError, IndexError):
+        pass
+    return raw
+
+
+def server_load():
+    """{cpu %, mem used/total, disk read/write B/s, net in/out B/s, load}."""
+    with LOAD_LOCK:
+        now = time.time()
+        if LOAD_LAST['out'] and now - LOAD_LAST['at'] < 1.0:
+            return LOAD_LAST['out']
+        raw = _load_raw()
+        was = LOAD_LAST['raw']
+        out = {'at': now, 'cores': os.cpu_count() or 1, 'mem_total': raw.get('mem_total'),
+               'mem_used': raw.get('mem_used'), 'swap_used': raw.get('swap_used')}
+        try:
+            out['load'] = [round(x, 2) for x in os.getloadavg()]
+        except OSError:
+            out['load'] = None
+        if was:
+            dt = max(0.2, raw['at'] - was['at'])
+
+            def rate(k):
+                if k in raw and k in was and raw[k] >= was[k]:
+                    return round((raw[k] - was[k]) / dt)
+                return None
+            if raw.get('cpu_all') and was.get('cpu_all') and raw['cpu_all'] > was['cpu_all']:
+                busy = 1 - (raw['cpu_idle'] - was['cpu_idle']) / float(raw['cpu_all'] - was['cpu_all'])
+                out['cpu'] = round(max(0.0, min(1.0, busy)) * 100, 1)
+            for k in ('disk_rd', 'disk_wr', 'net_rx', 'net_tx'):
+                out[k] = rate(k)
+            out['over_s'] = round(dt, 1)
+        LOAD_LAST.update(at=now, raw=raw, out=out)
+        return out
+
+
+@route('GET', '/api/load', admin=True)
+def api_load(c):
+    return server_load()
+
+
 @route('POST', '/api/auth/login', anon=True)
 def api_login(c):
     token = c.daemon.auth.login(c.body.get('name'), c.body.get('password'), c.ip, c.body.get('agent') or '')
@@ -12414,7 +12514,7 @@ def put_user_cols(store, name, cols):
 
 
 PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins',
-             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right')
+             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right', 'hload')
 
 
 def clean_prefs(prefs):

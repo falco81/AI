@@ -307,5 +307,8 @@ check('a passkey\'s COSE key becomes PEM', ai.passkey_pem({1: 2, 3: -7, -1: 1, -
 
 check('passkeys are off until switched on', ai.DEFAULTS['passkeys'] is False and "CONFIG.get('passkeys', True)" not in _src)
 
+_l = ai.server_load()
+check('the load of the server is read from /proc', isinstance(_l.get('mem_total'), int) and _l.get('cores') >= 1)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

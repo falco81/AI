@@ -3251,9 +3251,33 @@ STRINGS = {
         'passkeys jsou tu vypnuté',
     'that is not what a passkey sends':
         'to není to, co posílá passkey',
+    # ---- 1.0.72: the load of the server in the header ----
+    'Net':
+        'Síť',
+    'pills with a bar':
+        'štítky s pruhem',
+    'one plain line':
+        'jeden prostý řádek',
+    'with a graph of the last two minutes':
+        's grafem posledních dvou minut',
+    'with rings':
+        's kroužky',
+    'not shown':
+        'nezobrazovat',
+    'The load of the server in the header (CPU, RAM, the disks, the network)':
+        'Vytížení serveru v záhlaví (CPU, RAM, disky, síť)',
+    'Memory in use (without what the kernel keeps as cache and gives back)':
+        'Použitá paměť (bez toho, co jádro drží jako cache a vrací zpět)',
+    'The disks: read ↓ and written ↑, every disk together':
+        'Disky: čtení ↓ a zápis ↑, všechny disky dohromady',
+    'The network cards: down ↓ (in) and up ↑ (out), every card together - not the loopback nor the bridges of containers':
+        'Síťové karty: příjem ↓ a odesílání ↑, všechny karty dohromady – bez loopbacku a mostů kontejnerů',
 }
 
 PATTERNS = {
+    'The processor, busy over the last {0} s, all {1} core(s) together · load {2}': 'Procesor, vytížení za posledních {0} s, všech {1} jader dohromady · load {2}',
+    'The processor, busy over the last {0} s, all {1} core(s) together': 'Procesor, vytížení za posledních {0} s, všech {1} jader dohromady',
+
     'It no longer signs {0} in. On the device it stays until taken away there (Settings - Passwords).':
         '{0} se jím už nepřihlásí. V zařízení zůstane, dokud ho tam neodeberete (Nastavení – Hesla).',
 

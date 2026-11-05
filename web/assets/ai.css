@@ -3772,3 +3772,35 @@ body.kb-up .term-keys{padding-top:5px}
 /* the sign-in with a passkey (1.0.70) */
 .pk-or{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:14px;text-align:center}
 .pk-or .btn{justify-content:center}
+/* how busy the server is, beside running (1.0.72) */
+.hload{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+.hl{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;
+  background:var(--panel);font-size:12px;line-height:1.3;white-space:nowrap;cursor:default}
+.hl-k{color:var(--tx-dim);font-weight:600;font-size:11px;letter-spacing:.03em}
+.hl-v{font-variant-numeric:tabular-nums;color:var(--tx)}
+.hl-bar{display:inline-block;width:34px;height:5px;border-radius:99px;background:var(--panel2);overflow:hidden}
+.hl-bar span{display:block;height:100%;background:var(--ok);border-radius:99px;transition:width .6s ease}
+.hl.warm .hl-bar span{background:var(--warn)}
+.hl.hot .hl-bar span{background:var(--crit)}
+.hl.hot{border-color:color-mix(in srgb,var(--crit) 55%,var(--line))}
+.hl-cpu .hl-v{min-width:3.2em;text-align:right}
+@media (max-width:1100px){.hl-disk,.hl-net{display:none}}
+@media (max-width:700px){.hload{display:none}}
+/* the looks of the header's numbers (1.0.72) */
+.hload.look-line .hl-line{display:inline-flex;align-items:center;gap:8px;font-size:12px;white-space:nowrap;
+  padding:3px 4px;color:var(--tx-dim)}
+.hload.look-line .hl-part{display:inline-flex;gap:5px;align-items:baseline}
+.hload.look-line .hl-part.warm .hl-v{color:var(--warn)}
+.hload.look-line .hl-part.hot .hl-v{color:var(--crit)}
+.hload.look-line .hl-sep{color:var(--tx-mut)}
+.hl-g{display:inline-flex;color:var(--info)}
+.hl-cpu .hl-g{color:var(--ok)} .hl-mem .hl-g{color:var(--violet,#a371f7)} .hl-disk .hl-g{color:var(--load,#f0883e)}
+.hl.warm .hl-g{color:var(--warn)} .hl.hot .hl-g{color:var(--crit)}
+.hl-spark{display:block}
+.hl-ringbox{display:inline-flex}
+.hl-ring-bg{fill:none;stroke:var(--panel2);stroke-width:3}
+.hl-ring-fg{fill:none;stroke:var(--ok);stroke-width:3;stroke-linecap:round;transition:stroke-dasharray .6s ease}
+.hl.warm .hl-ring-fg{stroke:var(--warn)} .hl.hot .hl-ring-fg{stroke:var(--crit)}
+@media (max-width:1100px){.hload.look-line .hl-disk,.hload.look-line .hl-net,.hload.look-line .hl-sep:nth-of-type(n+2){display:none}}
+@media (max-width:1300px){.hload.look-graphs .hl-disk .hl-g,.hload.look-graphs .hl-net .hl-g{display:none}}
+@media (max-width:1300px){.hload.look-graphs .hl-spark{width:34px}.hload .hl{padding:3px 7px;gap:5px}}
