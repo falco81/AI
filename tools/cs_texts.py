@@ -3402,6 +3402,8 @@ STRINGS = {
         'Tento pruh zmizí sám, jakmile to bude v pořádku.',
     'This band goes by itself once it is right - or with Done.':
         'Tento pruh zmizí sám, jakmile to bude v pořádku – nebo tlačítkem Hotovo.',
+    'What needs the administrator: Settings - Upgrades':
+        'Co potřebuje správce: Nastavení – Upgrady',
 }
 
 PATTERNS = {

@@ -7367,426 +7367,430 @@
    "text": "Co Let’s Encrypt přijímá: RSA 2048, 3072 nebo 4096 bitů, ECDSA P-256 nebo P-384. ECDSA je menší a rychlejší; RSA pro staré klienty. Oba: certifikát RSA výchozí a ECDSA klientům, kteří ho umí – to Let’s Encrypt doporučuje. Účet u CA má vlastní klíč."
   },
   "s1841": {
+   "source": "What needs the administrator: Settings - Upgrades",
+   "text": "Co potřebuje správce: Nastavení – Upgrady"
+  },
+  "s1842": {
    "source": "What people get from this server - the mails and the SMS of a code, in Czech and English. Click into a text to write; the blue parts are filled in when it is sent.",
    "text": "Co lidé od tohoto serveru dostávají – e-maily a SMS s kódem, česky i anglicky. Klikněte do textu a pište; modré části se doplní při odeslání."
   },
-  "s1842": {
+  "s1843": {
    "source": "What people get from this server - the mails and the SMS, in Czech and English.",
    "text": "Co lidé od tohoto serveru dostávají – e-maily a SMS, česky a anglicky."
   },
-  "s1843": {
+  "s1844": {
    "source": "What people get from this server - the mails and the SMS, in Czech and English. The words in braces are filled in when it is sent: {site} the name of these pages, {code} the code, {minutes} how long it is good for, {n} {what} {lines} {url} in a notice. An empty text is the built-in one.",
    "text": "Co lidé od tohoto serveru dostávají – e-maily a SMS, česky a anglicky. Slova ve složených závorkách se při odeslání doplní: {site} název těchto stránek, {code} kód, {minutes} jak dlouho platí, {n} {what} {lines} {url} v upozornění. Prázdný text je vestavěný."
   },
-  "s1844": {
+  "s1845": {
    "source": "What root said last",
    "text": "Co naposledy řekl root"
   },
-  "s1845": {
+  "s1846": {
    "source": "What runs in it is ended on the server - for every window looking at it. Its last screen stays in the list for a while.",
    "text": "Co v něm běží, se na serveru ukončí – pro všechna okna, která se na něj dívají. Jeho poslední obrazovka zůstane chvíli v seznamu."
   },
-  "s1846": {
+  "s1847": {
    "source": "What the chats used, day by day",
    "text": "Co chaty spotřebovaly, den po dni"
   },
-  "s1847": {
+  "s1848": {
    "source": "What the last upgrade said",
    "text": "Co vypsal poslední upgrade"
   },
-  "s1848": {
+  "s1849": {
    "source": "What the machine has now",
    "text": "Co má stroj teď"
   },
-  "s1849": {
+  "s1850": {
    "source": "What the other side said",
    "text": "Co odpověděla druhá strana"
   },
-  "s1850": {
+  "s1851": {
    "source": "What the pages call this server, beside its host name. Empty: the host name alone.",
    "text": "Jak stránky tento server nazývají, vedle názvu stroje. Prázdné: jen název stroje."
   },
-  "s1851": {
+  "s1852": {
    "source": "what the server offers",
    "text": "co server nabízí"
   },
-  "s1852": {
+  "s1853": {
    "source": "What they are told",
    "text": "Co se jim oznamuje"
   },
-  "s1853": {
+  "s1854": {
    "source": "what this conversation has cost",
    "text": "kolik tato konverzace stála"
   },
-  "s1854": {
+  "s1855": {
    "source": "What this program does",
    "text": "Co tento program dělá"
   },
-  "s1855": {
+  "s1856": {
    "source": "what this program noted about itself: sign-ins, terminals started and ended, changes, copies, starts and stops.",
    "text": "co si tento program zapsal o sobě: přihlášení, spuštěné a ukončené terminály, změny, kopie, starty a zastavení."
   },
-  "s1856": {
+  "s1857": {
    "source": "What to do with it",
    "text": "Co s ním"
   },
-  "s1857": {
+  "s1858": {
    "source": "What was sent",
    "text": "Co bylo odesláno"
   },
-  "s1858": {
+  "s1859": {
    "source": "What was there before the change comes back at once.",
    "text": "Co bylo před změnou, se hned vrátí."
   },
-  "s1859": {
+  "s1860": {
    "source": "What you may do",
    "text": "Co smíte"
   },
-  "s1860": {
+  "s1861": {
    "source": "Whatever no rule names is",
    "text": "Co žádné pravidlo nejmenuje, se"
   },
-  "s1861": {
+  "s1862": {
    "source": "Whatever only AI-IN let in (SSH, the pages) is then up to your own rules.",
    "text": "Co pouštěl jen AI-IN (SSH, stránky), pak závisí na vašich vlastních pravidlech."
   },
-  "s1862": {
+  "s1863": {
    "source": "When",
    "text": "Kdy"
   },
-  "s1863": {
+  "s1864": {
    "source": "When it is used",
    "text": "Kdy se použije"
   },
-  "s1864": {
+  "s1865": {
    "source": "When the model is busy (--fallback-model)",
    "text": "Když je model přetížený (--fallback-model)"
   },
-  "s1865": {
+  "s1866": {
    "source": "When to use it",
    "text": "Kdy ji použít"
   },
-  "s1866": {
+  "s1867": {
    "source": "When, as HH:MM - a quiet hour, away from the backups.",
    "text": "Kdy, jako HH:MM – v klidnou hodinu, mimo zálohy."
   },
-  "s1867": {
+  "s1868": {
    "source": "When, as HH:MM on this machine's clock.",
    "text": "Kdy, jako HH:MM podle hodin tohoto stroje."
   },
-  "s1868": {
+  "s1869": {
    "source": "When, how many, and the password",
    "text": "Kdy, kolik a heslo"
   },
-  "s1869": {
+  "s1870": {
    "source": "where",
    "text": "kde"
   },
-  "s1870": {
+  "s1871": {
    "source": "Where",
    "text": "Kde"
   },
-  "s1871": {
+  "s1872": {
    "source": "Where files given to Claude go",
    "text": "Kam jdou soubory předané Claude"
   },
-  "s1872": {
+  "s1873": {
    "source": "Where it starts. It is made if it is not there yet and the box below says so.",
    "text": "Kde začne. Pokud ještě neexistuje a přepínač níže to říká, vytvoří se."
   },
-  "s1873": {
+  "s1874": {
    "source": "Where new versions are looked for",
    "text": "Kde se hledají nové verze"
   },
-  "s1874": {
+  "s1875": {
    "source": "Where new versions are published - the address below - is looked at once a day. A newer ai found there is offered here, and put in with one click: fetched, its signature checked like a package sent by hand, then this server upgraded. Nothing is put in by itself unless the setting below says so.",
    "text": "Místo, kde vycházejí nové verze – adresa níže – se prohlíží jednou denně. Novější ai, které se tam najde, se nabídne zde a nasadí jedním kliknutím: stáhne se, podpis se zkontroluje jako u balíku poslaného ručně a pak se tento server upgraduje. Samo se nic nenasadí, pokud to neříká nastavení níže."
   },
-  "s1875": {
+  "s1876": {
    "source": "Where the message is sent. {to} is the number (+420…), {to_digits} the number without +, {text} the message, {token} the key below. https://sms.example.cz/api/send?to={to}&text={text}",
    "text": "Kam se zpráva posílá. {to} je číslo (+420…), {to_digits} číslo bez +, {text} zpráva, {token} klíč níže. https://sms.example.cz/api/send?to={to}&text={text}"
   },
-  "s1876": {
+  "s1877": {
    "source": "Where the record goes, example.cz. Empty: as the server finds it.",
    "text": "Kam záznam patří, example.cz. Prázdné: jak ji najde server."
   },
-  "s1877": {
+  "s1878": {
    "source": "Where the server may fetch its updates only through an HTTP proxy: the new versions of ai and the system updates (dnf, apt) go through it. Nothing else does - the terminals and Claude Code, mail, the SMS gateway, ACME, the backups and the database work as they do without it.",
    "text": "Kde server smí stahovat aktualizace jen přes HTTP proxy: nové verze ai a aktualizace systému (dnf, apt) jdou přes ni. Nic jiného – terminály a Claude Code, pošta, SMS brána, ACME, zálohy i databáze fungují stejně jako bez ní."
   },
-  "s1878": {
+  "s1879": {
    "source": "Where the server may go out through an HTTP proxy: each use is switched on by itself - the updates of ai and of the system, ACME, the SMS gateways, the terminals and Claude Code. All are off at first; with none on, nothing goes through it.",
    "text": "Kudy smí server ven přes HTTP proxy: každé použití se zapíná zvlášť – aktualizace ai a systému, ACME, SMS brány, terminály a Claude Code. Na začátku je vše vypnuté; když není zapnuté nic, nejde přes ni nic."
   },
-  "s1879": {
+  "s1880": {
    "source": "Where the server may reach the web only through an HTTP proxy: the new versions, the SMS gateway, the ACME CA and the system updates (dnf, apt) go through it. Mail and the database never do.",
    "text": "Kde server smí na web jen přes HTTP proxy: nové verze, SMS brána, ACME CA a aktualizace systému (dnf, apt) jdou přes ni. Pošta a databáze nikdy."
   },
-  "s1880": {
+  "s1881": {
    "source": "Where they go",
    "text": "Kam jdou"
   },
-  "s1881": {
+  "s1882": {
    "source": "Where to",
    "text": "Kam"
   },
-  "s1882": {
+  "s1883": {
    "source": "Where you are signed in",
    "text": "Kde jste přihlášeni"
   },
-  "s1883": {
+  "s1884": {
    "source": "Whether there is a newer version - it is only said, unless the next switch is on too.",
    "text": "Zda je venku novější verze – jen se to oznámí, pokud není zapnutý i další přepínač."
   },
-  "s1884": {
+  "s1885": {
    "source": "Which certificate",
    "text": "Který certifikát"
   },
-  "s1885": {
+  "s1886": {
    "source": "which command?",
    "text": "jaký příkaz?"
   },
-  "s1886": {
+  "s1887": {
    "source": "Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL server. Kept in config.json, not in the database - changed only by the steps of the card below (try it, set it up, carry everything across, start using it).",
    "text": "V jaké databázi je všechno uloženo: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL. Uloženo v config.json, ne v databázi – mění se jen kroky karty níže (vyzkoušet, nastavit, přenést všechno, začít používat)."
   },
-  "s1887": {
+  "s1888": {
    "source": "Which database everything is kept in: a SQLite file on this machine, or a MariaDB or a PostgreSQL server. Kept in config.json, not in the database. Another engine is reached only by Move to another database… below (or ai --db-move), which carries everything across first.",
    "text": "Ve které databázi je vše uloženo: soubor SQLite na tomto stroji, nebo server MariaDB či PostgreSQL. Uloženo v config.json, ne v databázi. Na jiný typ se přechází jen přes Přesunout do jiné databáze… (nebo ai --db-move), který nejdřív vše přenese."
   },
-  "s1888": {
+  "s1889": {
    "source": "Which database everything lives in, how big it is, copies of it, and how long things are kept.",
    "text": "V jaké databázi všechno je, jak je velká, její kopie a jak dlouho se co uchovává."
   },
-  "s1889": {
+  "s1890": {
    "source": "which MCP tool?",
    "text": "který nástroj MCP?"
   },
-  "s1890": {
+  "s1891": {
    "source": "Which modem sends - 1-1, 3-1… Empty: the one the gateway names first.",
    "text": "Který modem posílá – 1-1, 3-1… Prázdné: ten, který brána uvede první."
   },
-  "s1891": {
+  "s1892": {
    "source": "Which one it is",
    "text": "Která to je"
   },
-  "s1892": {
+  "s1893": {
    "source": "Which terminals the list shows.",
    "text": "Které terminály seznam ukazuje."
   },
-  "s1893": {
+  "s1894": {
    "source": "While this is on, the edge of any column’s heading can be dragged to size it and the heading itself to move it, and the right button on a heading hides a column, brings a hidden one back or adds an empty one for room; each change is kept the moment you let go. It is for this sign-in only: signing out or the sign-in running out turns it off again. Off, the tables are drawn as you left them and nothing can move them.",
    "text": "Dokud je to zapnuté, okraj záhlaví kteréhokoli sloupce jde tažením zúžit či rozšířit a samotné záhlaví přesunout; pravé tlačítko na záhlaví sloupec skryje, vrátí skrytý nebo přidá prázdný pro místo; každá změna se uloží, jakmile pustíte. Platí jen pro toto přihlášení: odhlášení nebo vypršení přihlášení to vypne. Vypnuté se tabulky kreslí, jak jste je nechali, a nic s nimi nepohne."
   },
-  "s1894": {
+  "s1895": {
    "source": "Who",
    "text": "Kdo"
   },
-  "s1895": {
+  "s1896": {
    "source": "Who may open these pages, what each of them may do, which Linux account their terminals run as, and who is signed in right now.",
    "text": "Kdo smí otevřít tyto stránky, co kdo smí, pod kterým účtem Linuxu běží jeho terminály a kdo je právě přihlášen."
   },
-  "s1896": {
+  "s1897": {
    "source": "Who may reach the pages waits to be kept",
    "text": "Kdo smí na stránky – čeká na potvrzení"
   },
-  "s1897": {
+  "s1898": {
    "source": "Who may reach the pages, and the machine's own firewall: what ai's functions need is let in by itself, and you add whatever else you want - for IPv4 and IPv6.",
    "text": "Kdo smí na stránky a vlastní firewall stroje: co potřebují funkce ai, se povolí samo, a vy přidáte cokoli dalšího – pro IPv4 i IPv6."
   },
-  "s1898": {
+  "s1899": {
    "source": "who may reach the pages: changed",
    "text": "kdo smí na stránky: změněno"
   },
-  "s1899": {
+  "s1900": {
    "source": "Who may reach these pages",
    "text": "Kdo smí na tyto stránky"
   },
-  "s1900": {
+  "s1901": {
    "source": "Who may reach these pages, and the server's firewall (iptables or firewalld).",
    "text": "Kdo smí na tyto stránky a firewall serveru (iptables nebo firewalld)."
   },
-  "s1901": {
+  "s1902": {
    "source": "Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.",
    "text": "Kdo se k těmto stránkám dostane; a firewall stroje (iptables nebo firewalld) – co ai potřebuje, se otevře samo."
   },
-  "s1902": {
+  "s1903": {
    "source": "Who may sign in to these pages, what each may do, which Linux account their terminals run as, and who is signed in right now.",
    "text": "Kdo se smí přihlásit k těmto stránkám, co kdo smí, pod jakým účtem Linuxu běží jeho terminály a kdo je právě přihlášen."
   },
-  "s1903": {
+  "s1904": {
    "source": "Whoever signs in here is this account on the server: its files, its rights, its Claude Code sign-in.",
    "text": "Kdo se tu přihlásí, je na serveru tímto účtem: jeho soubory, jeho práva, jeho přihlášení ke Claude Code."
   },
-  "s1904": {
+  "s1905": {
    "source": "Whose",
    "text": "Čí"
   },
-  "s1905": {
+  "s1906": {
    "source": "Whose Claude Code: its home holds its settings, memory and the rest.",
    "text": "Čí Claude Code: v jeho domovské složce je nastavení, paměť a další."
   },
-  "s1906": {
+  "s1907": {
    "source": "Whose conversations: the Linux account Claude Code ran as.",
    "text": "Čí konverzace: účet Linuxu, pod kterým Claude Code běžel."
   },
-  "s1907": {
+  "s1908": {
    "source": "Whose files it may change, whose Claude Code sign-in it uses.",
    "text": "Čí soubory smí měnit a čí přihlášení ke Claude Code používá."
   },
-  "s1908": {
+  "s1909": {
    "source": "Windows looking at it",
    "text": "Oken, která ho sledují"
   },
-  "s1909": {
+  "s1910": {
    "source": "with a graph of the last two minutes",
    "text": "s grafem posledních dvou minut"
   },
-  "s1910": {
+  "s1911": {
    "source": "With a key",
    "text": "Klíčem"
   },
-  "s1911": {
+  "s1912": {
    "source": "With a password",
    "text": "Heslem"
   },
-  "s1912": {
+  "s1913": {
    "source": "With everything in it. It cannot be undone.",
    "text": "Se vším, co v ní je. Nejde to vrátit."
   },
-  "s1913": {
+  "s1914": {
    "source": "With npm",
    "text": "Přes npm"
   },
-  "s1914": {
+  "s1915": {
    "source": "with rings",
    "text": "s kroužky"
   },
-  "s1915": {
+  "s1916": {
    "source": "with the ended ones",
    "text": "i s ukončenými"
   },
-  "s1916": {
+  "s1917": {
    "source": "With the ended ones",
    "text": "I s ukončenými"
   },
-  "s1917": {
+  "s1918": {
    "source": "With the private key",
    "text": "S privátním klíčem"
   },
-  "s1918": {
+  "s1919": {
    "source": "With the second step on, a passkey checked with the face, the finger or the PIN is both steps at once (as most services take it). Off: after it the code is asked for too.",
    "text": "Se zapnutým druhým krokem je passkey ověřený obličejem, prstem nebo PINem oba kroky najednou (jak to bere většina služeb). Vypnuto: po něm se ještě ptá na kód."
   },
-  "s1919": {
+  "s1920": {
    "source": "With the second step on, signing in with a passkey is both steps at once.",
    "text": "Se zapnutým druhým krokem je přihlášení přes passkey oba kroky najednou."
   },
-  "s1920": {
+  "s1921": {
    "source": "Without a project",
    "text": "Bez projektu"
   },
-  "s1921": {
+  "s1922": {
    "source": "Without accents (one SMS, not two)",
    "text": "Bez diakritiky (jedna SMS, ne dvě)"
   },
-  "s1922": {
+  "s1923": {
    "source": "Words added to every start of Claude Code, as on its command line - for example --model opus. Each new terminal can add its own.",
    "text": "Parametry přidané ke každému spuštění Claude Code, jako na jeho příkazové řádce – třeba --model opus. Každý nový terminál může přidat své."
   },
-  "s1923": {
+  "s1924": {
    "source": "words of it, a folder…",
    "text": "slova z ní, složka…"
   },
-  "s1924": {
+  "s1925": {
    "source": "Worked out from what is set up, and changed with it. What keeps the pages reachable from this machine cannot be turned off.",
    "text": "Odvozeno z toho, co je nastavené, a mění se s tím. Co drží stránky dosažitelné z tohoto stroje, nelze vypnout."
   },
-  "s1925": {
+  "s1926": {
    "source": "Working directory offered first",
    "text": "Nabízený pracovní adresář"
   },
-  "s1926": {
+  "s1927": {
    "source": "Write",
    "text": "Psát"
   },
-  "s1927": {
+  "s1928": {
    "source": "Write a longer text",
    "text": "Napsat delší text"
   },
-  "s1928": {
+  "s1929": {
    "source": "Write here - Ctrl+Enter sends it, with Enter after it",
    "text": "Pište sem – Ctrl+Enter odešle text i s Enterem"
   },
-  "s1929": {
+  "s1930": {
    "source": "Writes far more into /var/log/ai/ai.log.",
    "text": "Zapisuje mnohem víc do /var/log/ai/ai.log."
   },
-  "s1930": {
+  "s1931": {
    "source": "Written",
    "text": "Napsáno"
   },
-  "s1931": {
+  "s1932": {
    "source": "written",
    "text": "zápis"
   },
-  "s1932": {
+  "s1933": {
    "source": "Written by Claude",
    "text": "Napsal Claude"
   },
-  "s1933": {
+  "s1934": {
    "source": "Written to the cache",
    "text": "Zapsáno do cache"
   },
-  "s1934": {
+  "s1935": {
    "source": "wrong name or password",
    "text": "chybné jméno nebo heslo"
   },
-  "s1935": {
+  "s1936": {
    "source": "Wrong passwords before a pause",
    "text": "Chybných hesel před pauzou"
   },
-  "s1936": {
+  "s1937": {
    "source": "wrong passwords counted",
    "text": "počítaná chybná hesla"
   },
-  "s1937": {
+  "s1938": {
    "source": "XOAUTH2 (the password is the access token)",
    "text": "XOAUTH2 (heslo je přístupový token)"
   },
-  "s1938": {
+  "s1939": {
    "source": "yes",
    "text": "ano"
   },
-  "s1939": {
+  "s1940": {
    "source": "you",
    "text": "vy"
   },
-  "s1940": {
+  "s1941": {
    "source": "You may be signed in from several places at once - every one sees the same terminals, live. Signing out or closing the browser ends no terminal: Claude Code goes on working on the server.",
    "text": "Můžete být přihlášeni z více míst najednou – každé vidí stejné terminály, živě. Odhlášení ani zavření prohlížeče žádný terminál neukončí: Claude Code na serveru pracuje dál."
   },
-  "s1941": {
+  "s1942": {
    "source": "You will probably be signed out: who is signed in came with the file like everything else. The key that opens the secrets is taken from beside the file, or from inside a downloaded copy; where there is none, the key in use stays.",
    "text": "Pravděpodobně budete odhlášeni: kdo je přihlášen, přišlo se souborem jako všechno ostatní. Klíč k tajným údajům se vezme zpoza souboru nebo ze stažené kopie; kde žádný není, zůstane klíč, který se používá."
   },
-  "s1942": {
+  "s1943": {
    "source": "Your account",
    "text": "Váš účet"
   },
-  "s1943": {
+  "s1944": {
    "source": "Your domain at deSEC, example.dedyn.io (free) or one of your own whose DNS is there. The records go into it; your DNS has a CNAME to it for each name - In your DNS above says which.",
    "text": "Vaše doména u deSEC, example.dedyn.io (zdarma) nebo vlastní, jejíž DNS je tam. Záznamy jdou do ní; váš DNS má na ni pro každé jméno CNAME – které, říká Ve vašem DNS výše."
   },
-  "s1944": {
+  "s1945": {
    "source": "Your own /commands: a prompt kept in a file, with arguments.",
    "text": "Vlastní /příkazy: výzva uložená v souboru, s argumenty."
   },
-  "s1945": {
+  "s1946": {
    "source": "Your own certificate",
    "text": "Vlastní certifikát"
   },
-  "s1946": {
+  "s1947": {
    "source": "Your settings in a file",
    "text": "Vaše nastavení v souboru"
   }

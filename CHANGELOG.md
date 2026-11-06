@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.87
+
+- **The notices are in Settings → Upgrades**, not over every page: the top of the pages stays clear; the Settings tab
+  and Upgrades in its menu carry a count (red while a step is needed), and the state pill (*running - a step is
+  needed*) opens Upgrades with a click. Somebody who is not an administrator sees at the top only what stops their own
+  work (tmux missing).
+
 ## 1.0.86
 
 - **The notices look as isemon's**: a card each under the header instead of one bar - red with an ✕ for a step that

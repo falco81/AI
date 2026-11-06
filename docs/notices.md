@@ -2,7 +2,8 @@
 
 ai has one system for everything an administrator must know or do (1.0.85). Every notice is shown:
 
-- **on the pages** (1.0.86, as isemon's): a card each under the header - red with an ✕ for a step that is needed,
+- **on the pages** (1.0.86, as isemon's; in **Settings → Upgrades** since 1.0.87, the top of the pages stays clear -
+  a count on the Settings tab and on Upgrades, and the state pill opens it): a card each - red with an ✕ for a step that is needed,
   yellow with a ⚠ to mind, blue for information - its title, what happened and why, where to run the command
   ("As root, on the server:" or the notice's own `cli_where`), the command in a box with *Copy*, and when the card
   goes; on the right *Open it* (the place in Settings), *Done* (one a version added) and *Not now* (hidden in this

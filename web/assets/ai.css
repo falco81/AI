@@ -3946,8 +3946,8 @@ body.kb-up .term-keys{padding-top:5px}
 /* what was watched last, until the new reading (1.0.84) */
 .hload.hl-stale .hl-v,.hload.hl-stale .hl-g{opacity:.55;transition:opacity .3s}
 /* what needs the administrator (1.0.86): a card each under the header, as isemon's */
-#problems.notices{display:flex;flex-direction:column;gap:10px;background:none;border:0;padding:0;color:var(--tx);
-  font-weight:400;margin-bottom:16px}
+#upgrade-notices.notices{display:flex;flex-direction:column;gap:10px;color:var(--tx);font-weight:400;margin:0 0 16px}
+#upgrade-notices[hidden]{display:none}
 .nt-card{display:flex;gap:14px;align-items:flex-start;padding:16px 18px 16px 20px;border-radius:12px;
   border:1px solid var(--line);border-left:4px solid var(--info);background:linear-gradient(90deg,var(--info-bg),var(--panel) 70%)}
 .nt-card.nt-crit{border-color:rgba(248,81,73,.45);border-left-color:var(--crit);background:linear-gradient(90deg,rgba(248,81,73,.16),rgba(248,81,73,.05) 70%)}
@@ -3968,3 +3968,11 @@ body.kb-up .term-keys{padding-top:5px}
   font-family:var(--mono,ui-monospace,monospace);white-space:pre-wrap}
 @media (max-width:700px){.nt-card{flex-wrap:wrap}.nt-acts{flex-direction:row;width:100%}}
 p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:var(--warn);font-weight:600}
+/* the count of what needs the administrator (1.0.87): on Settings and on Upgrades */
+.tabs .count.warm{background:var(--warn-bg);color:var(--warn)}
+#ctl-nav .nav-count{display:inline-block;margin-left:auto;padding:0 7px;border-radius:999px;font-size:11px;font-weight:700;
+  background:var(--info-bg);color:var(--info);line-height:18px}
+#ctl-nav .nav-count:empty{display:none}
+#ctl-nav .nav-count.warm{background:var(--warn-bg);color:var(--warn)} #ctl-nav .nav-count.hot{background:var(--crit-bg);color:var(--crit)}
+.tabs button .count.hot,.tabs button[aria-selected="true"] .count.hot{background:var(--crit-bg);color:var(--crit)}
+.tabs button .count.warm,.tabs button[aria-selected="true"] .count.warm{background:var(--warn-bg);color:var(--warn)}

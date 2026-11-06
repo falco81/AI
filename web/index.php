@@ -433,7 +433,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
   <button role="tab" aria-selected="false" data-tab="events" data-icon="list"
           title="Every sign-in, every terminal started or ended, every change of a setting and of the machine.">Events</button>
   <button role="tab" aria-selected="false" data-tab="settings" data-icon="gear" class="admin-only"
-          title="Claude Code, the accounts, the certificate, the firewall, the network, the time, the system's updates, SSH keys and new versions of this program.">Settings</button>
+          title="Claude Code, the accounts, the certificate, the firewall, the network, the time, the system's updates, SSH keys and new versions of this program.">Settings<span class="count" id="tabn-settings"></span></button>
 </div>
 
 <!-- ===================== Terminals ===================== -->
@@ -672,7 +672,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="carry" data-icon="download" title="Everything that makes this installation what it is, as one file to carry to another machine.">Export and import</button>
     <div class="ctl-group">Monitoring and updates</div>
     <button type="button" data-pane="osup" data-icon="download" title="The operating system's packages updated, its output shown as it goes; a restart offered when one is needed.">System updates</button>
-    <button type="button" data-pane="upgrade" data-icon="up" title="A new version, put in from here: from the web or a package sent, or back to an older one.">Upgrades</button>
+    <button type="button" data-pane="upgrade" data-icon="up" title="A new version, put in from here: from the web or a package sent, or back to an older one.">Upgrades<span class="count nav-count" id="navn-upgrade"></span></button>
     <button type="button" data-pane="about" data-icon="info" title="Version, what is running, the language, the log.">About</button>
   </nav>
 
@@ -1133,6 +1133,8 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         - taken out of service first, so a monitor or a load balancer leaves it alone, and brought back
         only once it answers again. The terminals go on running. The command line
         (install.sh --upgrade) works as it always has.</p></div>
+    <!-- what needs the administrator (1.0.87): the notices, here rather than over every page -->
+    <div id="upgrade-notices" class="notices" hidden></div>
     <div class="card full">
       <h2>The nodes</h2>
       <p class="note">A server in maintenance starts no new terminal and lets in only administrators, and its

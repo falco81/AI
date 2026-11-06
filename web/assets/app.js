@@ -74,6 +74,10 @@ function paintHeader(s) {
   var needed = (s.notices || []).some(function (n) { return n.level === 'crit'; });
   if (needed && kind === 'warn' && s.upgrade_state !== 'running' && !inMaint) kind = 'crit';
   pill.className = 'pill ' + kind;
+  /* what needs the administrator is in Settings - Upgrades (1.0.87): the pill opens it */
+  var anyNotice = ADMIN && (s.notices || []).length;
+  pill.style.cursor = anyNotice ? 'pointer' : '';
+  pill.onclick = anyNotice ? function () { showTab('settings', 'upgrade'); } : null;
   pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
     : (inMaint ? 'in maintenance' : (kind === 'crit' ? 'running - a step is needed' : (kind === 'warn' ? 'running, with trouble' : 'running')));
   explain(pill, 'ai ' + s.version + ' on ' + s.host + '. ' + (s.terms_running || 0) + ' terminal(s) running.'
@@ -99,10 +103,32 @@ function noticeLater(n) {
   try { var t = parseFloat(localStorage.getItem(noticeLaterKey(n)) || '0'); return t && Date.now() / 1000 - t < NOTICE_LATER_S; } catch (e) { return false; }
 }
 function noticesDraw(s) {
-  var pr = $('problems');
-  if (!pr) return;
-  clear(pr);
+  /* For an administrator in Settings - Upgrades (1.0.87), with a count on the
+     Settings tab and on Upgrades in its menu, and the state pill that opens it;
+     the top of the pages stays clear. Somebody else sees there only what stops
+     their own work (tmux missing). */
   var all = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
+  var top = $('problems');
+  if (top) {
+    clear(top);
+    var theirs = ADMIN ? [] : all.filter(function (n) { return n.level === 'crit'; });
+    theirs.forEach(function (n) { top.appendChild(noI18n(el('div', '', txT(n.title)))); });
+    top.className = 'offline';
+    top.hidden = !theirs.length;
+  }
+  var needs = all.filter(function (n) { return n.level !== 'info'; }).length;
+  var hot = all.some(function (n) { return n.level === 'crit'; });
+  ['tabn-settings', 'navn-upgrade'].forEach(function (id) {
+    var c = $(id);
+    if (!c) return;
+    c.textContent = ADMIN && all.length ? num(needs || all.length) : '';
+    c.classList.toggle('hot', hot);
+    c.classList.toggle('warm', !hot && needs > 0);
+    c.title = ADMIN && all.length ? txT('What needs the administrator: Settings - Upgrades') : '';
+  });
+  var pr = $('upgrade-notices');
+  if (!pr || !ADMIN) return;
+  clear(pr);
   var list = all.filter(function (n) { return !noticeLater(n); });
   pr.className = 'notices';
   list.forEach(function (n) {
