@@ -90,47 +90,64 @@ function paintHeader(s) {
    certificate running out, tmux missing, a newer version. Each with what it is,
    the command that fixes it (copied with a click) and the place in Settings; one
    a version added is said to be done here (or with ai --notice-done ID). */
-var NOTICE_ICON = {crit: 'alert', warn: 'alert', info: 'info'};
+var NOTICE_ICON = {crit: 'close', warn: 'alert', info: 'info'};
+/* "Not now" (1.0.86): hidden in this browser for 8 hours - a step that is
+   needed comes back after it, a notice that changes its words comes back at once */
+var NOTICE_LATER_S = 8 * 3600;
+function noticeLaterKey(n) { return 'ai-notice-later:' + n.id + ':' + n.title; }
+function noticeLater(n) {
+  try { var t = parseFloat(localStorage.getItem(noticeLaterKey(n)) || '0'); return t && Date.now() / 1000 - t < NOTICE_LATER_S; } catch (e) { return false; }
+}
 function noticesDraw(s) {
   var pr = $('problems');
   if (!pr) return;
   clear(pr);
-  var list = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
-  var worst = list.some(function (n) { return n.level === 'crit'; }) ? 'crit' : (list.some(function (n) { return n.level === 'warn'; }) ? 'warn' : 'info');
-  pr.className = 'notices nt-' + worst;
+  var all = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
+  var list = all.filter(function (n) { return !noticeLater(n); });
+  pr.className = 'notices';
   list.forEach(function (n) {
-    var row = el('div', 'nt-row nt-' + n.level);
+    /* a card each, as isemon's: what, why, the command with Copy, when it goes */
+    var card = el('div', 'nt-card nt-' + n.level);
     var ic = el('span', 'nt-ic');
-    ic.innerHTML = iconMarkup(NOTICE_ICON[n.level] || 'info', 16);
-    row.appendChild(ic);
-    var words = el('div', 'nt-words');
-    words.appendChild(el('b', '', {crit: 'A step is needed: ', warn: 'Mind: ', info: ''}[n.level] || ''));
-    words.appendChild(noI18n(el('span', '', txT(n.title))));
+    ic.innerHTML = iconMarkup(NOTICE_ICON[n.level] || 'info', 18);
+    card.appendChild(ic);
+    var main = el('div', 'nt-main');
+    main.appendChild(noI18n(el('div', 'nt-title', txT(n.title))));
+    if (n.said) main.appendChild(noI18n(el('div', 'nt-said', txT(n.said))));
     if (n.cli) {
-      var c = noI18n(el('code', 'nt-cli', n.cli));
-      c.title = txT('Click: copied, to run as root on the server');
-      c.onclick = function () { copyText(n.cli); };
-      words.appendChild(c);
+      main.appendChild(noI18n(el('div', 'nt-where', txT(n.cli_where || 'As root, on the server:'))));
+      var box = el('div', 'nt-cmd');
+      box.appendChild(noI18n(el('code', '', n.cli)));
+      var cp = cmdButton('Copy', 'copy', 'small');
+      cp.onclick = function () { copyText(n.cli, box); };
+      box.appendChild(cp);
+      main.appendChild(box);
     }
-    row.appendChild(words);
+    var foot = n.kept ? (n.done_by === 'admin'
+      ? (n.check ? 'This band goes by itself once it is right - or with Done.' : 'Once it is done, say so with Done (or: ai --notice-done ' + n.id + ').')
+      : 'This band goes by itself once it is right.')
+      : (n.level === 'info' ? '' : 'This band goes by itself once it is right.');
+    if (foot) main.appendChild(el('div', 'nt-foot', foot));
+    card.appendChild(main);
     var acts = el('div', 'nt-acts');
-    if (ADMIN) {
-      var how = cmdButton('How to fix it', 'info', 'small');
-      how.onclick = function () { noticeShow(n); };
-      acts.appendChild(how);
-      if (n.link) {
-        var go = cmdButton('Open', 'arrow', 'small');
-        go.onclick = function () { var x = n.link.split('/'); showTab(x[0], x[1]); };
-        acts.appendChild(go);
-      }
-      if (n.kept && n.done_by === 'admin') {
-        var ok = cmdButton('Done', 'check', 'small');
-        ok.onclick = function () { noticeDone(n); };
-        acts.appendChild(ok);
-      }
+    if (ADMIN && n.link) {
+      var go = cmdButton('Open it', 'gear', 'small');
+      go.onclick = function () { var x = n.link.split('/'); showTab(x[0], x[1]); };
+      acts.appendChild(go);
     }
-    row.appendChild(acts);
-    pr.appendChild(row);
+    if (ADMIN && n.kept && n.done_by === 'admin') {
+      var ok = cmdButton('Done', 'check', 'small');
+      ok.onclick = function () { noticeDone(n); };
+      acts.appendChild(ok);
+    }
+    var later = cmdButton('Not now', 'close', 'small');
+    later.onclick = function () {
+      try { localStorage.setItem(noticeLaterKey(n), String(Date.now() / 1000)); } catch (e) { }
+      noticesDraw(STATUS || s);
+    };
+    acts.appendChild(later);
+    card.appendChild(acts);
+    pr.appendChild(card);
   });
   pr.hidden = !list.length;
 }

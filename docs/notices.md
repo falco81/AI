@@ -2,15 +2,18 @@
 
 ai has one system for everything an administrator must know or do (1.0.85). Every notice is shown:
 
-- **on the pages**: a bar under the header (red for a step that is needed, yellow for mind this, blue for
-  information), the state pill turning red (*running - a step is needed*), and *How to fix it*: a window with what
-  happened and why, the command for the command line (copied with a click) and the place in Settings;
+- **on the pages** (1.0.86, as isemon's): a card each under the header - red with an ✕ for a step that is needed,
+  yellow with a ⚠ to mind, blue for information - its title, what happened and why, where to run the command
+  ("As root, on the server:" or the notice's own `cli_where`), the command in a box with *Copy*, and when the card
+  goes; on the right *Open it* (the place in Settings), *Done* (one a version added) and *Not now* (hidden in this
+  browser for 8 hours; a card whose words change comes back at once). The state pill turns red (*running - a step is
+  needed*);
 - **on the command line**: `ai --notices` (exit 1 while a step is needed), `ai --status`, and in the console
   (`ai --console`) on signing in as root;
 - in the **events** (Events tab, `ai --events`): when it came, and who said it is done.
 
 A notice: `id`, `level` (`crit` a step is needed / `warn` mind / `info`), `title`, `said` (what and why), `cli` (the
-command that fixes it), `link` (a place in Settings, e.g. `settings/upgrade`), and for one a version added: `since`,
+command that fixes it), `cli_where` (where to run it, e.g. "As root, in the folder the package was unpacked in:"), `link` (a place in Settings, e.g. `settings/upgrade`), and for one a version added: `since`,
 `done_by` (`admin`: said done with *Done* or `ai --notice-done ID`; `''`: goes only by its check), `check`.
 
 ## Two kinds

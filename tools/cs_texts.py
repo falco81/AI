@@ -3394,9 +3394,18 @@ STRINGS = {
         'Novější verze, podepsaná, připravená k instalaci.',
     'SELinux is no longer enforcing':
         'SELinux už nevynucuje (není Enforcing)',
+    'Not now':
+        'Teď ne',
+    'As root, on the server:':
+        'Jako root, na serveru:',
+    'This band goes by itself once it is right.':
+        'Tento pruh zmizí sám, jakmile to bude v pořádku.',
+    'This band goes by itself once it is right - or with Done.':
+        'Tento pruh zmizí sám, jakmile to bude v pořádku – nebo tlačítkem Hotovo.',
 }
 
 PATTERNS = {
+    'Once it is done, say so with Done (or: ai --notice-done {0}).': 'Až to bude hotové, dejte Hotovo (nebo: ai --notice-done {0}).',
     'the certificate of the pages runs out {0}': 'certifikát stránek vyprší {0}',
     'ai {0} is out': 'vyšlo ai {0}',
     'Once it is done, say so with Done - or on the command line: ai --notice-done {0}': 'Až to bude hotové, dejte Hotovo – nebo na příkazové řádce: ai --notice-done {0}',

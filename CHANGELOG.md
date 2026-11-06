@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.86
+
+- **The notices look as isemon's**: a card each under the header instead of one bar - red with an ✕ for a step that
+  is needed, yellow with a ⚠ to mind, blue to know - with the title, what happened and why, where to run the command
+  and the command in a box with *Copy*, and when the card goes by itself. On the right: *Open it* (the place in
+  Settings), *Done* (for one a version added) and *Not now* (hidden in this browser for 8 hours).
+
 ## 1.0.85
 
 - **One system for what needs the administrator** (docs/notices.md): a version that needs something done after it is
