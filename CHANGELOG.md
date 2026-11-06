@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.89
+
+- **"To be done by hand" in Settings → Upgrades, as upsmon's**: one card, always there - green *Nothing is to be done
+  by hand* when nothing waits - with the notices in it: ✕ for a step that is needed, a flag for one waiting for
+  something, the command with *Copy*, when it goes, the time it came; *Look again* runs the checks at once, *Done* says
+  it is done. Under them *Done lately*: what, how (done, by itself), who, when. Upgrades in the settings menu has a red
+  badge with the count on its icon, seen with the menu shut too.
+- A notice can wait for a file: `check: 'file:/a/path'` - it goes by itself once that file is there.
+
 ## 1.0.88
 
 - **The alerts at the top of the pages are back as they were**: tmux missing, the certificate running out and a newer

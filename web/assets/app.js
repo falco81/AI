@@ -135,6 +135,9 @@ function noticesDraw(s) {
   ['tabn-settings', 'navn-upgrade'].forEach(function (id) {
     var c = $(id);
     if (!c) return;
+    /* on Upgrades in the menu a red badge on its icon (1.0.89), seen with the
+       menu shut too: it sits on the button itself, not in its words */
+    if (id === 'navn-upgrade') { var btn = c.closest('button'); if (btn && c.parentNode !== btn) btn.appendChild(c); }
     c.textContent = ADMIN && all.length ? num(needs || all.length) : '';
     c.classList.toggle('hot', hot);
     c.classList.toggle('warm', !hot && needs > 0);
@@ -143,13 +146,18 @@ function noticesDraw(s) {
   var pr = $('upgrade-notices');
   if (!pr || !ADMIN) return;
   clear(pr);
-  var list = all.filter(function (n) { return !noticeLater(n); });
-  pr.className = 'notices';
-  list.forEach(function (n) {
-    /* a card each, as isemon's: what, why, the command with Copy, when it goes */
+  var done = s.notices_done || [];
+  /* always there, as upsmon's: with nothing waiting it says so, in green */
+  /* as upsmon's (1.0.89): one card "To be done by hand", the notices in it, and
+     what was done lately under them */
+  pr.className = 'card full notices nt-box' + (all.some(function (n) { return n.level === 'crit'; }) ? ' nt-box-crit' : '');
+  pr.appendChild(el('h2', '', 'To be done by hand'));
+  pr.appendChild(el('p', 'note', 'What ai cannot do itself and somebody has to - a step a new version needs on the command line, SELinux no longer enforcing. Kept here, counted beside Upgrades in the menu and on the Settings tab, said by ai --notices and in the console until it is done. One that can be checked goes by itself once it is so.'));
+  if (!all.length) pr.appendChild(el('div', 'nt-none', 'Nothing is to be done by hand.'));
+  all.forEach(function (n) {
     var card = el('div', 'nt-card nt-' + n.level);
     var ic = el('span', 'nt-ic');
-    ic.innerHTML = iconMarkup(NOTICE_ICON[n.level] || 'info', 18);
+    ic.innerHTML = iconMarkup(n.level === 'crit' ? 'close' : (n.level === 'warn' ? 'flag' : 'info'), 18);
     card.appendChild(ic);
     var main = el('div', 'nt-main');
     main.appendChild(noI18n(el('div', 'nt-title', txT(n.title))));
@@ -163,33 +171,51 @@ function noticesDraw(s) {
       box.appendChild(cp);
       main.appendChild(box);
     }
-    var foot = n.kept ? (n.done_by === 'admin'
-      ? (n.check ? 'This band goes by itself once it is right - or with Done.' : 'Once it is done, say so with Done (or: ai --notice-done ' + n.id + ').')
-      : 'This band goes by itself once it is right.')
-      : (n.level === 'info' ? '' : 'This band goes by itself once it is right.');
-    if (foot) main.appendChild(el('div', 'nt-foot', foot));
+    var foot = n.check || !n.kept ? (n.check_words ? txT(n.check_words) : 'This band goes by itself once it is so.')
+      : 'Once it is done, press Done.';
+    main.appendChild(el('div', 'nt-foot', foot));
+    if (n.since) main.appendChild(noI18n(el('div', 'nt-when', new Date(n.since * 1000).toLocaleString(numLang()))));
     card.appendChild(main);
     var acts = el('div', 'nt-acts');
-    if (ADMIN && n.link) {
+    if (n.check || !n.kept) {
+      var look = cmdButton('Look again', 'refresh', 'small');
+      look.onclick = function () {
+        busy(look, true);
+        api('notices', {do: 'look'}).then(function (r) { noticesAfter(r); }).catch(oops).then(function () { busy(look, false); });
+      };
+      acts.appendChild(look);
+    }
+    if (n.link) {
       var go = cmdButton('Open it', 'gear', 'small');
       go.onclick = function () { var x = n.link.split('/'); showTab(x[0], x[1]); };
       acts.appendChild(go);
     }
-    if (ADMIN && n.kept && n.done_by === 'admin') {
+    if (n.kept && n.done_by === 'admin') {
       var ok = cmdButton('Done', 'check', 'small');
       ok.onclick = function () { noticeDone(n); };
       acts.appendChild(ok);
     }
-    var later = cmdButton('Not now', 'close', 'small');
-    later.onclick = function () {
-      try { localStorage.setItem(noticeLaterKey(n), String(Date.now() / 1000)); } catch (e) { }
-      noticesDraw(STATUS || s);
-    };
-    acts.appendChild(later);
     card.appendChild(acts);
     pr.appendChild(card);
   });
-  pr.hidden = !list.length;
+  if (done.length) {
+    pr.appendChild(el('div', 'nt-h', 'Done lately'));
+    pr.appendChild(listTable(['What', 'How', 'Who', 'When'], done, function (x) {
+      var tr = el('tr');
+      tr.appendChild(noI18n(el('td', '', txT(x.title || ''))));
+      tr.appendChild(el('td', 'muted', {done: 'done', 'by itself': 'by itself'}[x.how] || x.how || ''));
+      tr.appendChild(noI18n(el('td', '', x.who ? txT(x.who) : '–')));
+      tr.appendChild(stampCell(x.at));
+      return tr;
+    }));
+  }
+  pr.hidden = false;
+}
+function noticesAfter(r) {
+  if (!STATUS) return;
+  STATUS.notices = r.notices;
+  if (r.done) STATUS.notices_done = r.done;
+  paintHeader(STATUS);
 }
 function noticeShow(n) {
   modal(n.title, function (body) {
@@ -211,7 +237,7 @@ function noticeDone(n) {
   confirmThen('Is it done?', htmlText(n.title) + (n.cli ? '<br><code>' + htmlText(n.cli) + '</code>' : ''), 'It is done', function () {
     api('notices', {do: 'done', id: n.id}).then(function (r) {
       toast(r.message, 'good');
-      if (STATUS) { STATUS.notices = r.notices; noticesDraw(STATUS); paintHeader(STATUS); }
+      noticesAfter(r);
     }).catch(oops);
   }, false);
 }

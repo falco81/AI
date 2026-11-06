@@ -3404,6 +3404,24 @@ STRINGS = {
         'Tento pruh zmizí sám, jakmile to bude v pořádku – nebo tlačítkem Hotovo.',
     'What needs the administrator: Settings - Upgrades':
         'Co potřebuje správce: Nastavení – Upgrady',
+    'To be done by hand':
+        'Udělat ručně',
+    'What ai cannot do itself and somebody has to - a step a new version needs on the command line, SELinux no longer enforcing. Kept here, counted beside Upgrades in the menu and on the Settings tab, said by ai --notices and in the console until it is done. One that can be checked goes by itself once it is so.':
+        'Co ai samo neudělá a musí to udělat člověk – krok, který nová verze potřebuje v příkazové řádce, SELinux, který už nevynucuje. Drží se tady, počítá se u Upgradů v menu a u záložky Nastavení, hlásí ho ai --notices i konzole, dokud není hotový. Co se dá ověřit, zmizí samo, jakmile to platí.',
+    'Nothing is waiting to be done.':
+        'Nic nečeká na udělání.',
+    'This band goes by itself once it is so.':
+        'Tento pruh zmizí sám, jakmile to bude platit.',
+    'Once it is done, press Done.':
+        'Až to bude hotové, dejte Hotovo.',
+    'Done lately':
+        'Nedávno hotové',
+    'by itself':
+        'samo',
+    'looked again':
+        'podíváno znovu',
+    'Nothing is to be done by hand.':
+        'Nic není potřeba udělat ručně.',
 }
 
 PATTERNS = {

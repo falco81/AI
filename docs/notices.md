@@ -49,8 +49,9 @@ VERSION_NOTICES = [
 ```
 
 - `id` stays the same forever (a notice said done is not added again).
-- With a `check` it goes by itself once the check says so; add the check to `NOTICE_CHECKS` (it gets the store,
-  returns True when done). Without one it waits for *Done*.
+- With a `check` it goes by itself once the check says so: `file:/a/path` (done once that file is there), or a key
+  of `NOTICE_CHECKS` (it gets the store, returns True when done); `check_words` says on the card when it goes. Without
+  one it waits for *Done*. *Look again* on the card runs the checks at once.
 - A step that can be done for the administrator should rather be done by the upgrade itself; a notice is for what
   needs a person (a decision, a command with a password, a reboot).
 - Put the title and the words into `tools/cs_texts.py` too.

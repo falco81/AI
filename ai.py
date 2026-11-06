@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.88'
+__version__ = '1.0.89'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10318,6 +10318,21 @@ def notice_add(store, n, why=''):
     return True
 
 
+def notices_done_note(store, n, how, who=''):
+    """Kept for "Done lately" (1.0.89): the last 20 notices that went - done, by itself."""
+    try:
+        got = store.meta_json('notices:done', []) or []
+        got.insert(0, {'title': n.get('title'), 'id': n.get('id'), 'how': how, 'who': who, 'at': time.time()})
+        store.set_meta_json('notices:done', got[:20])
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
+def notices_done_list(store):
+    got = store.meta_json('notices:done', []) or []
+    return [x for x in got if isinstance(x, dict)][:10]
+
+
 def notice_done(store, nid, who='cli'):
     with NOTICES_LOCK:
         got = notices_kept(store)
@@ -10328,6 +10343,7 @@ def notice_done(store, nid, who='cli'):
             raise Refused('this one goes by itself once its cause is gone: %s' % (n.get('cli') or n.get('said') or ''))
         store.set_meta_json('notices', [x for x in got if x['id'] != nid])
     NOTICE_CACHE['out'] = None
+    notices_done_note(store, n, 'done', who)
     store.add_event('notice', '%s said it is done: %s' % (who, n.get('title')), 'info', who=who)
     return n
 
@@ -10366,7 +10382,9 @@ def notices_current(d, admin=True):
                 cached.append(sel)
             kept = notices_kept(st)
             for n in kept:
-                chk = NOTICE_CHECKS.get(n.get('check') or '')
+                ck = str(n.get('check') or '')
+                # 'file:/a/path' (1.0.89): done once that file is there
+                chk = (lambda _st, _p=ck[5:]: os.path.exists(_p)) if ck.startswith('file:') else NOTICE_CHECKS.get(ck)
                 try:
                     gone = bool(chk and chk(st))
                 except Exception:                           # noqa: BLE001
@@ -10374,6 +10392,7 @@ def notices_current(d, admin=True):
                 if gone:
                     with NOTICES_LOCK:
                         st.set_meta_json('notices', [x for x in notices_kept(st) if x['id'] != n['id']])
+                    notices_done_note(st, n, 'by itself')
                     st.add_event('notice', 'done by itself: %s' % n.get('title'), 'info')
                     continue
                 cached.append(dict(n, kept=True))
@@ -10402,6 +10421,7 @@ def status_view(c):
         'version': __version__, 'host': host_name(), 'node': node_name(), 'site': CONFIG.get('site_name') or '',
         'perf_meter': bool(CONFIG.get('perf_meter', True)),
         'who': user_view(c.who), 'problems': problems, 'notices': notices,
+        'notices_done': notices_done_list(d.store) if c.who['role'] == 'admin' else [],
         'trials': d.trials.view() if c.who['role'] == 'admin' else [],
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
@@ -10420,10 +10440,17 @@ def api_notices(c):
 
 @route('POST', '/api/notices', admin=True)
 def api_notices_do(c):
-    if str(c.body.get('do') or '') != 'done':
-        raise Refused('done is what can be said of a notice')
+    act = str(c.body.get('do') or '')
+    if act == 'look':
+        # "Look again" (1.0.89): the checks run now, not in a minute
+        NOTICE_CACHE['out'] = None
+        got = notices_current(c.daemon, True)
+        return {'message': 'looked again', 'notices': got, 'done': notices_done_list(c.daemon.store)}
+    if act != 'done':
+        raise Refused('done or look is what can be said of a notice')
     n = notice_done(c.daemon.store, str(c.body.get('id') or ''), c.name)
-    return {'message': 'noted as done: %s' % n.get('title'), 'notices': notices_current(c.daemon, True)}
+    return {'message': 'noted as done: %s' % n.get('title'), 'notices': notices_current(c.daemon, True),
+            'done': notices_done_list(c.daemon.store)}
 
 
 @route('GET', '/api/status')
