@@ -71,11 +71,11 @@ function paintHeader(s) {
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
   var inMaint = !!(s.maintenance && s.maintenance.on);
   if (s.upgrade_state === 'running' || inMaint) kind = 'warn';
-  var needed = (s.notices || []).some(function (n) { return n.level === 'crit'; });
+  var needed = (s.notices || []).some(function (n) { return n.level === 'crit' && (n.kept || n.id === 'selinux-off'); });
   if (needed && kind === 'warn' && s.upgrade_state !== 'running' && !inMaint) kind = 'crit';
   pill.className = 'pill ' + kind;
   /* what needs the administrator is in Settings - Upgrades (1.0.87): the pill opens it */
-  var anyNotice = ADMIN && (s.notices || []).length;
+  var anyNotice = ADMIN && (s.notices || []).some(function (n) { return n.kept || n.id === 'selinux-off'; });
   pill.style.cursor = anyNotice ? 'pointer' : '';
   pill.onclick = anyNotice ? function () { showTab('settings', 'upgrade'); } : null;
   pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
@@ -107,14 +107,28 @@ function noticesDraw(s) {
      Settings tab and on Upgrades in its menu, and the state pill that opens it;
      the top of the pages stays clear. Somebody else sees there only what stops
      their own work (tmux missing). */
-  var all = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
+  var every = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
+  /* Only what came with 1.0.85 goes to Upgrades - what a version needs done, and
+     SELinux no longer enforcing; the alerts that were at the top before (tmux
+     missing, the certificate running out, a newer version) stay there, as they were. */
+  var inUpgrades = function (n) { return !!n.kept || n.id === 'selinux-off'; };
+  var all = every.filter(inUpgrades);
   var top = $('problems');
   if (top) {
     clear(top);
-    var theirs = ADMIN ? [] : all.filter(function (n) { return n.level === 'crit'; });
-    theirs.forEach(function (n) { top.appendChild(noI18n(el('div', '', txT(n.title)))); });
-    top.className = 'offline';
-    top.hidden = !theirs.length;
+    top.className = 'offline warnish';
+    every.filter(function (n) { return !inUpgrades(n) && n.level !== 'info'; }).forEach(function (n, i) {
+      if (i) top.appendChild(el('br'));
+      top.appendChild(noI18n(document.createTextNode(txT(n.title) + (n.id === 'tmux' ? ' (dnf install tmux)' : ''))));
+    });
+    if (s.newer && ADMIN) {
+      if (top.childNodes.length) top.appendChild(el('br'));
+      var a = el('a', '', 'ai ' + s.newer + ' is out - Settings - Upgrades');
+      a.href = '#settings/upgrade';
+      a.onclick = function (e) { e.preventDefault(); showTab('settings', 'upgrade'); };
+      top.appendChild(a);
+    }
+    top.hidden = !top.childNodes.length;
   }
   var needs = all.filter(function (n) { return n.level !== 'info'; }).length;
   var hot = all.some(function (n) { return n.level === 'crit'; });

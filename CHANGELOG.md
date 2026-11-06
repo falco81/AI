@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.88
+
+- **The alerts at the top of the pages are back as they were**: tmux missing, the certificate running out and a newer
+  version are again in the yellow bar under the header, as before 1.0.85. Only what came with 1.0.85 - what a version
+  needs done after it is installed, and SELinux no longer enforcing - is in Settings → Upgrades, with its count on
+  Settings and Upgrades; the state pill turns red and opens Upgrades only for those.
+
 ## 1.0.87
 
 - **The notices are in Settings → Upgrades**, not over every page: the top of the pages stays clear; the Settings tab
