@@ -71,31 +71,93 @@ function paintHeader(s) {
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
   var inMaint = !!(s.maintenance && s.maintenance.on);
   if (s.upgrade_state === 'running' || inMaint) kind = 'warn';
+  var needed = (s.notices || []).some(function (n) { return n.level === 'crit'; });
+  if (needed && kind === 'warn' && s.upgrade_state !== 'running' && !inMaint) kind = 'crit';
   pill.className = 'pill ' + kind;
   pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
-    : (inMaint ? 'in maintenance' : (kind === 'warn' ? 'running, with trouble' : 'running'));
+    : (inMaint ? 'in maintenance' : (kind === 'crit' ? 'running - a step is needed' : (kind === 'warn' ? 'running, with trouble' : 'running')));
   explain(pill, 'ai ' + s.version + ' on ' + s.host + '. ' + (s.terms_running || 0) + ' terminal(s) running.'
     + (s.newer ? ' A newer version is out: ' + s.newer + ' (Settings - Upgrades).' : ''));
-  var pr = $('problems');
-  clear(pr);
-  (s.problems || []).forEach(function (p, i) {
-    if (i) pr.appendChild(el('br'));
-    pr.appendChild(document.createTextNode(p));
-  });
-  if (s.newer && ADMIN) {
-    if (pr.childNodes.length) pr.appendChild(el('br'));
-    var a = el('a', '', 'ai ' + s.newer + ' is out - Settings - Upgrades');
-    a.href = '#settings/upgrade';
-    a.onclick = function (e) { e.preventDefault(); showTab('settings', 'upgrade'); };
-    pr.appendChild(a);
-  }
-  pr.hidden = !pr.childNodes.length;
+  noticesDraw(s);
   drawTrials(s);
   $('updated-at').textContent = clockWords(new Date());
   $('tabn-terms').textContent = s.terms_running ? num(s.terms_running) : '';
   $('offline').hidden = true;
 }
 
+/* What needs the administrator (1.0.85): one bar under the header for all of it -
+   a step a version needs on the command line, SELinux no longer enforcing, the
+   certificate running out, tmux missing, a newer version. Each with what it is,
+   the command that fixes it (copied with a click) and the place in Settings; one
+   a version added is said to be done here (or with ai --notice-done ID). */
+var NOTICE_ICON = {crit: 'alert', warn: 'alert', info: 'info'};
+function noticesDraw(s) {
+  var pr = $('problems');
+  if (!pr) return;
+  clear(pr);
+  var list = s.notices || (s.problems || []).map(function (t, i) { return {id: 'p' + i, level: 'warn', title: t}; });
+  var worst = list.some(function (n) { return n.level === 'crit'; }) ? 'crit' : (list.some(function (n) { return n.level === 'warn'; }) ? 'warn' : 'info');
+  pr.className = 'notices nt-' + worst;
+  list.forEach(function (n) {
+    var row = el('div', 'nt-row nt-' + n.level);
+    var ic = el('span', 'nt-ic');
+    ic.innerHTML = iconMarkup(NOTICE_ICON[n.level] || 'info', 16);
+    row.appendChild(ic);
+    var words = el('div', 'nt-words');
+    words.appendChild(el('b', '', {crit: 'A step is needed: ', warn: 'Mind: ', info: ''}[n.level] || ''));
+    words.appendChild(noI18n(el('span', '', txT(n.title))));
+    if (n.cli) {
+      var c = noI18n(el('code', 'nt-cli', n.cli));
+      c.title = txT('Click: copied, to run as root on the server');
+      c.onclick = function () { copyText(n.cli); };
+      words.appendChild(c);
+    }
+    row.appendChild(words);
+    var acts = el('div', 'nt-acts');
+    if (ADMIN) {
+      var how = cmdButton('How to fix it', 'info', 'small');
+      how.onclick = function () { noticeShow(n); };
+      acts.appendChild(how);
+      if (n.link) {
+        var go = cmdButton('Open', 'arrow', 'small');
+        go.onclick = function () { var x = n.link.split('/'); showTab(x[0], x[1]); };
+        acts.appendChild(go);
+      }
+      if (n.kept && n.done_by === 'admin') {
+        var ok = cmdButton('Done', 'check', 'small');
+        ok.onclick = function () { noticeDone(n); };
+        acts.appendChild(ok);
+      }
+    }
+    row.appendChild(acts);
+    pr.appendChild(row);
+  });
+  pr.hidden = !list.length;
+}
+function noticeShow(n) {
+  modal(n.title, function (body) {
+    body.appendChild(el('p', 'nt-level nt-' + n.level, {crit: 'A step is needed - until it is done, something does not work or is not safe.',
+      warn: 'Mind this - it may be meant, but it is not what it was.', info: 'For your information.'}[n.level] || ''));
+    if (n.said) body.appendChild(noI18n(el('p', '', txT(n.said))));
+    if (n.cli) {
+      body.appendChild(el('h4', '', 'On the command line of the server, as root'));
+      var pre = noI18n(el('pre', 'nt-pre', n.cli));
+      pre.title = txT('Click: copied');
+      pre.onclick = function () { copyText(n.cli); };
+      body.appendChild(pre);
+    }
+    if (n.version) body.appendChild(noI18n(el('p', 'small muted', txT('Since ai') + ' ' + n.version)));
+    if (n.kept && n.done_by === 'admin') body.appendChild(el('p', 'small muted', 'Once it is done, say so with Done - or on the command line: ai --notice-done ' + n.id));
+  }, [{words: 'Close', close: true}].concat(n.kept && n.done_by === 'admin' ? [{words: 'Done', cls: 'primary', icon: 'check', go: function () { closeModal(); noticeDone(n); }}] : []));
+}
+function noticeDone(n) {
+  confirmThen('Is it done?', htmlText(n.title) + (n.cli ? '<br><code>' + htmlText(n.cli) + '</code>' : ''), 'It is done', function () {
+    api('notices', {do: 'done', id: n.id}).then(function (r) {
+      toast(r.message, 'good');
+      if (STATUS) { STATUS.notices = r.notices; noticesDraw(STATUS); paintHeader(STATUS); }
+    }).catch(oops);
+  }, false);
+}
 var TRIALS = {list: [], skew: 0, timer: null};
 var TRIAL_WORDS = {
   net: ['The new network waits to be kept', 'Not kept, the server goes back to its old network by itself. Keep it once the pages answer at the new address.'],

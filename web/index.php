@@ -182,7 +182,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'notices' => '/api/notices', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -195,6 +195,7 @@ if (isset($_GET['api'])) {
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
         'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy',
         'passkeys' => '/api/auth/passkeys', 'passkey-begin' => '/api/auth/passkey/begin', 'passkey-register' => '/api/auth/passkey/register',
+        'notices' => '/api/notices',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',

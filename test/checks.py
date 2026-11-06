@@ -377,5 +377,25 @@ check('the graphs slide by one animation of their SVG group, not redrawn on a ti
 check('a page coming back gets the last state at once, from the database', 'def load_saved(store):' in _src2
       and "out['stale'] = True" in _src2 and "'last': LOAD_LAST['out']" in _src2)
 
+class _NStore:
+    def __init__(s): s.m = {}; s.ev = []
+    def get_meta(s, k, d=None): return s.m.get(k, d)
+    def set_meta(s, k, v): s.m[k] = v
+    def meta_json(s, k, d=None): import json as _j; return _j.loads(s.m[k]) if k in s.m else d
+    def set_meta_json(s, k, v): import json as _j; s.m[k] = _j.dumps(v)
+    def add_event(s, *a, **k): s.ev.append(a[1])
+_ns, _was_vn = _NStore(), ai.VERSION_NOTICES
+ai.VERSION_NOTICES = [{'since': ai.__version__, 'id': 'v-step', 'level': 'crit', 'title': 'a step', 'cli': 'ai --x'},
+                      {'since': '0.0.1', 'id': 'v-old', 'level': 'warn', 'title': 'an old one'}]
+ai.notices_version_sync(_ns)                     # a fresh install: none of them
+_fresh = ai.notices_kept(_ns)
+_ns.set_meta('notices:version', '1.0.1')
+ai.notices_version_sync(_ns); ai.notices_version_sync(_ns)
+_after = [n['id'] for n in ai.notices_kept(_ns)]
+ai.notice_done(_ns, 'v-step', 'test')
+check('a version adds what it needs done once, after an upgrade only, until said done',
+      _fresh == [] and _after == ['v-step'] and ai.notices_kept(_ns) == [])
+ai.VERSION_NOTICES = _was_vn
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

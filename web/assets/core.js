@@ -485,6 +485,8 @@ var ICONS = {
   ban: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
   cancel: '<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4.5"/><path d="M12 17.5h.01"/>',
+  arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   spray: '<path d="M7 20h6v-9H7z"/><path d="M8 11V7h4v4"/><path d="M14 5h2M14 8h3"/>'
     + '<path d="M14 11h2M18 6h.01M19 10h.01"/>',

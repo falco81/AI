@@ -3354,9 +3354,53 @@ STRINGS = {
         'Passkey si přidá ten, koho přihlašuje, na svém zařízení: ve Vašem účtu',
     'A passkey signs this account in with the face, the finger or the PIN of its device - no name and no password typed. It is kept in that device; the server keeps only its public half. A lost device: take its passkey away here.':
         'Passkey přihlásí tento účet obličejem, prstem nebo PINem jeho zařízení – bez psaní jména a hesla. Je uložená v tom zařízení; server má jen její veřejnou část. Ztracené zařízení: jeho passkey odeberte tady.',
+    'A step is needed: ':
+        'Je potřeba krok: ',
+    'Mind: ':
+        'Pozor: ',
+    'How to fix it':
+        'Jak to opravit',
+    'Open':
+        'Otevřít',
+    'Done':
+        'Hotovo',
+    'Click: copied, to run as root on the server':
+        'Kliknutím se zkopíruje – spustit jako root na serveru',
+    'Click: copied':
+        'Kliknutím se zkopíruje',
+    'A step is needed - until it is done, something does not work or is not safe.':
+        'Je potřeba krok – dokud není hotový, něco nefunguje nebo není bezpečné.',
+    'Mind this - it may be meant, but it is not what it was.':
+        'Pozor – může to být záměr, ale není to, jak to bylo.',
+    'For your information.':
+        'Pro informaci.',
+    'On the command line of the server, as root':
+        'Na příkazové řádce serveru, jako root',
+    'Since ai':
+        'Od ai',
+    'Is it done?':
+        'Je to hotové?',
+    'It is done':
+        'Je hotovo',
+    'running - a step is needed':
+        'běží – je potřeba krok',
+    'tmux is not installed: no terminal can start':
+        'tmux není nainstalovaný: žádný terminál se nespustí',
+    'The terminals and Claude Code run in tmux.':
+        'Terminály i Claude Code běží v tmux.',
+    'Browsers refuse the pages once it has run out.':
+        'Jakmile vyprší, prohlížeče stránky odmítnou.',
+    'A newer version, signed, ready to install.':
+        'Novější verze, podepsaná, připravená k instalaci.',
+    'SELinux is no longer enforcing':
+        'SELinux už nevynucuje (není Enforcing)',
 }
 
 PATTERNS = {
+    'the certificate of the pages runs out {0}': 'certifikát stránek vyprší {0}',
+    'ai {0} is out': 'vyšlo ai {0}',
+    'Once it is done, say so with Done - or on the command line: ai --notice-done {0}': 'Až to bude hotové, dejte Hotovo – nebo na příkazové řádce: ai --notice-done {0}',
+    'It was Enforcing when ai first looked; it is {0} now - by an update, by hand or by another program. The server is less protected while it is so. If it was not meant: switch it back on (and in /etc/selinux/config, to stay on after a restart).': 'Když se ai podívalo poprvé, bylo Enforcing; teď je {0} – aktualizací, ručně nebo jiným programem. Server je tak méně chráněný. Pokud to nebyl záměr: zapněte ho znovu (a v /etc/selinux/config, aby zůstal zapnutý i po restartu).',
     'The processor, busy over the last {0} s, all {1} core(s) together · load {2}': 'Procesor, vytížení za posledních {0} s, všech {1} jader dohromady · load {2}',
     'The processor, busy over the last {0} s, all {1} core(s) together': 'Procesor, vytížení za posledních {0} s, všech {1} jader dohromady',
 

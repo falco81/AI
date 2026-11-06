@@ -3,6 +3,18 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.85
+
+- **One system for what needs the administrator** (docs/notices.md): a version that needs something done after it is
+  installed - a step on the command line, SELinux it changes, a restart by hand - lists it in the code, and once the
+  daemon runs on it the pages say so plainly: a red bar under the header (yellow to mind, blue to know), the state
+  pill red (*running - a step is needed*), and *How to fix it* - what and why, the command to run as root (copied with
+  a click), the place in Settings, and *Done*. The same on the command line: `ai --notices` (exit 1 while a step is
+  needed), `ai --notice-done ID`, `ai --status`, the console; and in the events. A notice is added once, after an
+  upgrade only (not on a fresh install), and stays until said done or until its check finds the cause gone.
+- The checks go through it too: tmux missing, the certificate running out (red within 3 days), a newer version, and
+  new: **SELinux no longer enforcing** when it was - by an update, by hand or by another program.
+
 ## 1.0.84
 
 - **The load is there at once when a page comes back**: the first ask after the watching had ended (a page left and

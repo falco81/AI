@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.84'
+__version__ = '1.0.85'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10233,22 +10233,176 @@ def status_chat_root(u):
         return chat_root_of(None)
 
 
+# ---- what needs the administrator (1.0.85) ---------------------------------------------
+# One system for everything an administrator must know or do: shown on the pages
+# (a bar under the header, the pill, a window with the fix), by `ai --status`,
+# `ai --notices` and in the console. Two kinds:
+#  - checks: worked out from the state of the server (tmux missing, the certificate
+#    running out, a newer version, SELinux no longer enforcing...), gone by
+#    themselves when the cause is;
+#  - kept ones (meta 'notices'): added by a version that needs something done after
+#    it is installed - a step on the command line, SELinux it changes - listed in
+#    VERSION_NOTICES below and added once, when the daemon first starts on that
+#    version; they stay until done (`ai --notice-done ID` or Done on the pages) or
+#    until their `check` says the cause is gone.
+# A notice: {id, level: 'crit' (a step is needed) | 'warn' | 'info', title, said
+# (what and why), cli (the command that fixes it), link (a place in Settings),
+# since, version, done_by (who may say it is done: 'admin' or '' = only its check)}.
+NOTICE_LEVELS = ('crit', 'warn', 'info')
+# What a version needs done once it is installed - added when the daemon first runs
+# on it (or on a later one, coming from an earlier). For example:
+#   {'since': '1.0.90', 'id': 'v1.0.90-relabel', 'level': 'crit',
+#    'title': 'SELinux labels have to be set again for ai 1.0.90',
+#    'said': 'The pages moved to /var/www/ai; until they are relabelled nginx may not read them.',
+#    'cli': 'restorecon -Rv /var/www/ai', 'check': 'selinux_labels'}
+VERSION_NOTICES = []
+NOTICES_LOCK = threading.Lock()
+NOTICE_CACHE = {'at': 0.0, 'out': None}
+
+
+def _notice_selinux_check(store):
+    """SELinux no longer what it was: enforcing when ai first looked, not now."""
+    if not which('getenforce'):
+        return None
+    try:
+        _rc, so, _se = run(['getenforce'], timeout=5)
+    except Exception:                                       # noqa: BLE001
+        return None
+    now = (so or '').strip()
+    if not now:
+        return None
+    was = store.get_meta('selinux:seen', '')
+    if not was:
+        store.set_meta('selinux:seen', now)
+        return None
+    if now == 'Enforcing' and was != 'Enforcing':
+        store.set_meta('selinux:seen', now)
+        return None
+    if was == 'Enforcing' and now != 'Enforcing':
+        return {'id': 'selinux-off', 'level': 'warn', 'title': 'SELinux is no longer enforcing',
+                'said': 'It was Enforcing when ai first looked; it is %s now - by an update, by hand or by another '
+                        'program. The server is less protected while it is so. If it was not meant: switch it back on '
+                        '(and in /etc/selinux/config, to stay on after a restart).' % now,
+                'cli': 'setenforce 1', 'link': ''}
+    return None
+
+
+# checks a kept notice may name: True when its cause is gone (then it goes by itself)
+NOTICE_CHECKS = {
+    'selinux_enforcing': lambda store: (run(['getenforce'], timeout=5)[1] or '').strip() == 'Enforcing'
+    if which('getenforce') else True,
+}
+
+
+def notices_kept(store):
+    got = store.meta_json('notices', []) or []
+    return [n for n in got if isinstance(n, dict) and n.get('id') and n.get('level') in NOTICE_LEVELS]
+
+
+def notice_add(store, n, why=''):
+    """A notice kept until done. Again with the same id: left as it is."""
+    n = dict(n)
+    n.setdefault('level', 'warn')
+    n.setdefault('since', time.time())
+    n.setdefault('version', __version__)
+    n.setdefault('done_by', 'admin')
+    with NOTICES_LOCK:
+        got = notices_kept(store)
+        if any(x['id'] == n['id'] for x in got):
+            return False
+        got.append(n)
+        store.set_meta_json('notices', got)
+    NOTICE_CACHE['out'] = None
+    store.add_event('notice', 'needs the administrator: %s%s' % (n.get('title'), (' (%s)' % why) if why else ''),
+                    'bad' if n['level'] == 'crit' else 'warn')
+    return True
+
+
+def notice_done(store, nid, who='cli'):
+    with NOTICES_LOCK:
+        got = notices_kept(store)
+        n = next((x for x in got if x['id'] == nid), None)
+        if not n:
+            raise Refused('there is no such notice (ai --notices lists them)', 404)
+        if n.get('done_by') != 'admin':
+            raise Refused('this one goes by itself once its cause is gone: %s' % (n.get('cli') or n.get('said') or ''))
+        store.set_meta_json('notices', [x for x in got if x['id'] != nid])
+    NOTICE_CACHE['out'] = None
+    store.add_event('notice', '%s said it is done: %s' % (who, n.get('title')), 'info', who=who)
+    return n
+
+
+def notices_version_sync(store):
+    """At the start of the daemon: the notices of the versions since the last one it ran."""
+    last = store.get_meta('notices:version', '')
+    if last != __version__:
+        if last:
+            for n in VERSION_NOTICES:
+                if ver_tuple(last) < ver_tuple(n.get('since') or '0') <= ver_tuple(__version__):
+                    notice_add(store, dict(n, version=n.get('since')), 'after the upgrade from %s' % last)
+        store.set_meta('notices:version', __version__)
+
+
+def notices_current(d, admin=True):
+    """Everything that needs the administrator now, the worst first."""
+    st = d.store
+    out = []
+    if not which('tmux'):
+        out.append({'id': 'tmux', 'level': 'crit', 'title': 'tmux is not installed: no terminal can start',
+                    'said': 'The terminals and Claude Code run in tmux.', 'cli': 'dnf install -y tmux', 'link': ''})
+    if admin:
+        now = time.time()
+        cached = NOTICE_CACHE['out'] if NOTICE_CACHE['out'] is not None and now - NOTICE_CACHE['at'] < 60 else None
+        if cached is None:
+            cached = []
+            cert = cert_facts()
+            if cert.get('until_ts') and cert['until_ts'] - now < 14 * 86400:
+                cached.append({'id': 'cert', 'level': 'crit' if cert['until_ts'] - now < 3 * 86400 else 'warn',
+                               'title': 'the certificate of the pages runs out %s' % cert.get('until'),
+                               'said': 'Browsers refuse the pages once it has run out.',
+                               'cli': 'ai --acme-order', 'link': 'settings/web'})
+            sel = _notice_selinux_check(st)
+            if sel:
+                cached.append(sel)
+            kept = notices_kept(st)
+            for n in kept:
+                chk = NOTICE_CHECKS.get(n.get('check') or '')
+                try:
+                    gone = bool(chk and chk(st))
+                except Exception:                           # noqa: BLE001
+                    gone = False
+                if gone:
+                    with NOTICES_LOCK:
+                        st.set_meta_json('notices', [x for x in notices_kept(st) if x['id'] != n['id']])
+                    st.add_event('notice', 'done by itself: %s' % n.get('title'), 'info')
+                    continue
+                cached.append(dict(n, kept=True))
+            online = st.meta_json('upgrade:online', {}) or {}
+            newest = online.get('newest') or {}
+            if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__):
+                cached.append({'id': 'newer', 'level': 'info', 'title': 'ai %s is out' % newest.get('version'),
+                               'said': 'A newer version, signed, ready to install.', 'cli': 'ai --upgrade-online',
+                               'link': 'settings/upgrade'})
+            NOTICE_CACHE.update(at=now, out=cached)
+        out.extend(cached)
+    rank = {'crit': 0, 'warn': 1, 'info': 2}
+    return sorted(out, key=lambda n: rank.get(n.get('level'), 3))
+
+
 def status_view(c):
     d = c.daemon
-    problems = []
-    if not which('tmux'):
-        problems.append('tmux is not installed: no terminal can start (dnf install tmux)')
+    notices = notices_current(d, c.who['role'] == 'admin')
+    # the words of 1.0.84 and before, for what still reads them
+    problems = [n['title'] for n in notices if n['level'] != 'info']
     st = d.upgrades.status()
     online = d.store.meta_json('upgrade:online', {}) or {}
     newest = online.get('newest') or {}
-    cert = cert_facts() if c.who['role'] == 'admin' else {}
-    if cert.get('until_ts') and cert['until_ts'] - time.time() < 14 * 86400:
-        problems.append('the certificate of the pages runs out %s' % cert.get('until'))
     terms = d.terms.list(c.who, ended=False)
     return {
         'version': __version__, 'host': host_name(), 'node': node_name(), 'site': CONFIG.get('site_name') or '',
         'perf_meter': bool(CONFIG.get('perf_meter', True)),
-        'who': user_view(c.who), 'problems': problems, 'trials': d.trials.view() if c.who['role'] == 'admin' else [],
+        'who': user_view(c.who), 'problems': problems, 'notices': notices,
+        'trials': d.trials.view() if c.who['role'] == 'admin' else [],
         'terms_running': len([t for t in terms if t['state'] != 'ended']),
         'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
         'upgrade_state': st.get('state') if st else '', 'started': d.started, 'now': time.time(),
@@ -10257,6 +10411,19 @@ def status_view(c):
         'mailq': mailq_counted(d.store) if c.who['role'] == 'admin' else {},
         'chat_root': status_chat_root(c.who),
     }
+
+
+@route('GET', '/api/notices', admin=True)
+def api_notices(c):
+    return {'notices': notices_current(c.daemon, True)}
+
+
+@route('POST', '/api/notices', admin=True)
+def api_notices_do(c):
+    if str(c.body.get('do') or '') != 'done':
+        raise Refused('done is what can be said of a notice')
+    n = notice_done(c.daemon.store, str(c.body.get('id') or ''), c.name)
+    return {'message': 'noted as done: %s' % n.get('title'), 'notices': notices_current(c.daemon, True)}
 
 
 @route('GET', '/api/status')
@@ -20797,6 +20964,10 @@ class Daemon:
             log('maintenance: %s' % e, 'warn')
         self.first_account()
         log('ai %s started: the API on 127.0.0.1:%d, the database %s' % (__version__, port, self.store.db.where()))
+        try:
+            notices_version_sync(self.store)
+        except Exception as e:                              # noqa: BLE001
+            log('the notices of the new version could not be added: %s' % e, 'warn')
         if not NO_SYSTEM:
             threading.Thread(target=lambda: (time.sleep(5), nginx_ipv6_sync(), acme_nginx_sync()), name='ai-nginx6',
                              daemon=True).start()
@@ -23980,6 +24151,8 @@ def build_parser():
                    metavar='status|on|off|pair|stop',
                    help='certificates from acme (acme push): how it stands, switched on or off, a pairing code '
                         '(15 minutes), the code taken back')
+    g.add_argument('--notices', action='store_true', help='what needs the administrator (also in --status)')
+    g.add_argument('--notice-done', metavar='ID', help='a notice of a version noted as done (its ID from --notices)')
     g.add_argument('--passkeys', nargs='?', const='', metavar='ACCOUNT',
                    help='the passkeys (Face ID, Touch ID...) of every account, or of one')
     g.add_argument('--passkey-forget', metavar='ID', help='a passkey taken away (its ID from --passkeys; all: every one)')
@@ -24067,12 +24240,8 @@ def status_row(d):
     terms = tm.list({'name': 'cli', 'role': 'admin'})
     online = st.meta_json('upgrade:online', {}) or {}
     newest = online.get('newest') or {}
-    problems = []
-    if not which('tmux'):
-        problems.append('tmux is not installed: no terminal can start')
-    cert = cert_facts()
-    if cert.get('until_ts') and cert['until_ts'] - time.time() < 14 * 86400:
-        problems.append('the certificate of the pages runs out %s' % cert.get('until'))
+    notices = notices_current(d, True)
+    problems = [n['title'] + (' - ' + n['cli'] if n.get('cli') else '') for n in notices if n['level'] != 'info']
     alive = daemon_alive()
     if not alive:
         problems.append('the daemon is not answering (systemctl status ai)')
@@ -24080,7 +24249,7 @@ def status_row(d):
             'terms': len([t for t in terms if t['state'] != 'ended']),
             'signed_in': len(st.q('SELECT id FROM sessions')), 'accounts': len(st.users()),
             'newer': newest.get('version') if newest and ver_tuple(newest.get('version')) > ver_tuple(__version__) else '',
-            'trials': d.trials.view(), 'problems': problems, 'term_list': terms,
+            'trials': d.trials.view(), 'problems': problems, 'notices': notices, 'term_list': terms,
             'upgrade_url': CONFIG.get('upgrade_url'), 'looked': online.get('at')}
 
 
@@ -24550,6 +24719,26 @@ def cli_main(argv):
                                   (' (%s, %s)' % (m.get('by') or '?', when(m.get('at'))) if m.get('at') else ''))
                     if m.get('on') else 'in service')))
             return 0
+        if a.notices or a.notice_done:
+            if a.notice_done:
+                n = notice_done(st, a.notice_done, 'the command line')
+                print(pal.ok_line('noted as done: %s' % n.get('title')))
+            got = notices_current(d, True)
+            if a.json:
+                say_json(got)
+                return 0
+            if not got:
+                print(pal.ok_line('nothing needs the administrator'))
+            for n in got:
+                line = {'crit': pal.bad_line, 'warn': pal.warn_line}.get(n['level'], pal.ok_line)
+                print(line('%s%s' % (n['title'], '  [%s]' % n['id'] if n.get('kept') else '')))
+                if n.get('said'):
+                    print('    ' + n['said'])
+                if n.get('cli'):
+                    print('    fix: %s' % pal.bold(n['cli']))
+                if n.get('kept') and n.get('done_by') == 'admin':
+                    print('    done: ai --notice-done %s' % n['id'])
+            return 1 if any(n['level'] == 'crit' for n in got) else 0
         if a.acme:
             v = acme_view(st)
             if a.json:
