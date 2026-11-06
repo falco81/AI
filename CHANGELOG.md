@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.83
+
+- **The passkeys of an account look and work the same everywhere**: in My account and in the card of an account
+  (Settings → Accounts) the same section - the words, the table, and on each row a pencil and a bin. The pencil
+  renames the passkey in place (Enter or leaving the box keeps it, Esc does not); *Add a passkey of this device* is
+  below the table in both. In the card of somebody else's account Add is there but off, saying why: a passkey is made
+  by the device of the one it signs in, in their own My account.
+
 ## 1.0.82
 
 - **The graphs of the load slide all the time**: the slide of 1.0.81 (an SVG `animateTransform`) moved one step and

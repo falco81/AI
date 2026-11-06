@@ -3348,6 +3348,12 @@ STRINGS = {
         'Měřič výkonu je na tomto serveru vypnutý (Nastavení – O programu).',
     'the performance meter is switched off on this server (Settings - About)':
         'měřič výkonu je na tomto serveru vypnutý (Nastavení – O programu)',
+    'A passkey is added by the one it signs in, on their own device: in My account.':
+        'Passkey si přidá ten, koho přihlašuje, na svém zařízení: ve Vašem účtu.',
+    'A passkey is added by the one it signs in, on their own device: in My account':
+        'Passkey si přidá ten, koho přihlašuje, na svém zařízení: ve Vašem účtu',
+    'A passkey signs this account in with the face, the finger or the PIN of its device - no name and no password typed. It is kept in that device; the server keeps only its public half. A lost device: take its passkey away here.':
+        'Passkey přihlásí tento účet obličejem, prstem nebo PINem jeho zařízení – bez psaní jména a hesla. Je uložená v tom zařízení; server má jen její veřejnou část. Ztracené zařízení: jeho passkey odeberte tady.',
 }
 
 PATTERNS = {

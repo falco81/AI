@@ -3935,3 +3935,11 @@ body.kb-up .term-keys{padding-top:5px}
 .hl-slide{transform-box:view-box;animation:hl-slide 30s linear forwards}
 @keyframes hl-slide{from{transform:translateX(0)}to{transform:translateX(-25%)}}
 @media (prefers-reduced-motion:reduce){.hl-slide{animation:none}}
+/* passkeys (1.0.83): the name renamed in place, the pencil and the bin on each row */
+.pk-sec td.pk-name{min-width:160px}
+.pk-sec input.pk-rename{width:100%;max-width:260px;padding:6px 9px;border-radius:8px;border:1px solid var(--info);
+  background:var(--panel2);color:var(--tx);font:inherit;box-shadow:0 0 0 2px var(--info-bg)}
+.pk-sec td.rowtools{white-space:nowrap;text-align:right}
+.pk-sec td.rowtools .btn + .btn{margin-left:6px}
+.pk-sec .me-acts{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pk-sec table + p,.pk-sec p + p{margin-top:8px}

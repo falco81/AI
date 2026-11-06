@@ -1117,17 +1117,7 @@ function showMe() {
     body.appendChild(mine);
 
     /* Passkeys (1.0.70): Face ID, Touch ID, Windows Hello. */
-    var pks = el('div', 'me-sec');
-    pks.appendChild(el('h3', '', 'Passkeys - Face ID, Touch ID'));
-    pks.appendChild(el('p', '', 'A passkey signs you in with the face, the finger or the PIN of this device - no name and no password typed. It is kept in the device (on an iPad and an iPhone in the iCloud Keychain, on your other Apple devices too); the server keeps only its public half.'));
-    var pkList = el('div');
-    pks.appendChild(pkList);
-    var pkActs = el('div', 'me-acts');
-    var pkAdd = cmdButton('Add a passkey of this device', 'key', 'small primary');
-    pkActs.appendChild(pkAdd);
-    pks.appendChild(pkActs);
-    body.appendChild(pks);
-    passkeysDraw(pkList, pkAdd, null);
+    passkeysSection(body, null);
     var ssec = el('div', 'me-sec');
     ssec.appendChild(el('h3', '', 'Where you are signed in'));
     ssec.appendChild(el('p', '', 'You may be signed in from several places at once - every one sees the same terminals, live. Signing out or closing the browser ends no terminal: Claude Code goes on working on the server.'));
@@ -1153,6 +1143,33 @@ $('me-btn').onclick = showMe;
 
 /* The passkeys of an account (1.0.70): its own in My account (and the button
    to add one there), anybody's for an administrator under Accounts. */
+/* The section of passkeys (1.0.83): the same in My account and in the card
+   of an account - the words, the table with a pencil and a bin on each row,
+   and Add below it. A passkey is made by the device of who signs in with it,
+   so in the card of somebody else's account Add says so instead. */
+function passkeysSection(body, name) {
+  var mine = !name || (ME && name === ME.name);
+  var pks = el('div', 'me-sec pk-sec');
+  pks.appendChild(el('h3', '', 'Passkeys - Face ID, Touch ID'));
+  pks.appendChild(el('p', '', mine
+    ? 'A passkey signs you in with the face, the finger or the PIN of this device - no name and no password typed. It is kept in the device (on an iPad and an iPhone in the iCloud Keychain, on your other Apple devices too); the server keeps only its public half.'
+    : 'A passkey signs this account in with the face, the finger or the PIN of its device - no name and no password typed. It is kept in that device; the server keeps only its public half. A lost device: take its passkey away here.'));
+  var list = el('div');
+  pks.appendChild(list);
+  var acts = el('div', 'me-acts');
+  var add = cmdButton('Add a passkey of this device', 'key', 'small primary');
+  acts.appendChild(add);
+  pks.appendChild(acts);
+  body.appendChild(pks);
+  if (!mine) {
+    /* made only by the device of who signs in with it: there, in My account */
+    add.disabled = true;
+    add.title = txT('A passkey is added by the one it signs in, on their own device: in My account');
+    acts.appendChild(el('span', 'small muted', 'A passkey is added by the one it signs in, on their own device: in My account.'));
+  }
+  passkeysDraw(list, mine ? add : null, mine ? null : name);
+  return pks;
+}
 function passkeysDraw(host, addBtn, name) {
   var draw = function (d) {
     clear(host);
@@ -1161,12 +1178,41 @@ function passkeysDraw(host, addBtn, name) {
     if (!rows.length) host.appendChild(el('p', 'small muted', name ? 'No passkey.' : 'None yet.'));
     else host.appendChild(listTable(['Passkey', 'For', 'Added', 'Last used', {words: '', cls: 'act'}], rows, function (p) {
       var tr = el('tr');
-      tr.appendChild(noI18n(el('td', '', p.name || '–')));
+      var nameTd = noI18n(el('td', 'pk-name', p.name || '–'));
+      tr.appendChild(nameTd);
       tr.appendChild(noI18n(el('td', 'mono small', p.host || '')));
       tr.appendChild(stampCell(p.created));
       tr.appendChild(p.last_used ? stampCell(p.last_used) : el('td', 'muted', 'never'));
       var act = el('td', 'rowtools');
-      var x = cmdButton('Take it away', 'trash', 'small danger');
+      /* renamed in place (1.0.83): Enter or leaving the box keeps it, Esc does not */
+      var ed = iconButton('edit', 'Rename');
+      ed.onclick = function () {
+        if (nameTd.querySelector('input')) return;
+        var box = el('input', 'pk-rename');
+        box.type = 'text';
+        box.maxLength = 60;
+        box.value = p.name || '';
+        box.setAttribute('aria-label', txT('Rename'));
+        clear(nameTd);
+        nameTd.appendChild(box);
+        box.focus();
+        box.select();
+        var done = false;
+        var keep = function () {
+          if (done) return;
+          done = true;
+          var v = box.value.trim();
+          if (!v || v === p.name) { load(); return; }
+          api('passkeys', {do: 'rename', id: p.id, name: v}).then(function (r) { toast(r.message, 'good'); load(); }).catch(function (e) { oops(e); load(); });
+        };
+        box.onkeydown = function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); keep(); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done = true; load(); }
+        };
+        box.onblur = keep;
+      };
+      act.appendChild(ed);
+      var x = iconButton('trash', 'Take it away');
       x.onclick = function () {
         confirmThen('Take this passkey away?', 'It no longer signs ' + (name ? htmlText(name) : 'you') + ' in. On the device it stays until taken away there (Settings - Passwords).', 'Take it away', function () {
           api('passkeys', {do: 'delete', id: p.id}).then(function (r) { toast(r.message, 'good'); load(); }).catch(oops);
@@ -4141,13 +4187,9 @@ function editUser(u) {
   }};
   modal('The account ' + u.name, function (body) {
     body._f = userForm(body, u);
-    /* Its passkeys (1.0.70): seen and taken away here - a lost iPad. */
-    var pk = el('div', 'me-sec');
-    pk.appendChild(el('h4', '', 'Passkeys'));
-    var host = el('div');
-    pk.appendChild(host);
-    body.appendChild(pk);
-    passkeysDraw(host, null, u.name);
+    /* Its passkeys (1.0.70): seen, renamed and taken away here - a lost iPad;
+       the same section as in My account (1.0.83). */
+    passkeysSection(body, u.name);
   }, (u.mfa ? [reset] : []).concat([
     {words: 'Take it away', cls: 'danger', icon: 'trash', go: function () {
       api('users', {do: 'drop', name: u.name}).then(function () { closeModal(); loadUsers(); }).catch(oops);
