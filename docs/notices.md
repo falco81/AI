@@ -55,3 +55,12 @@ VERSION_NOTICES = [
 - A step that can be done for the administrator should rather be done by the upgrade itself; a notice is for what
   needs a person (a decision, a command with a password, a reboot).
 - Put the title and the words into `tools/cs_texts.py` too.
+
+## Done lately and Clear (1.0.90)
+
+Under the notices, *Done lately*: the last 20 that went (10 shown) - what, how (*done*, *by itself*), who, when. Its
+heading has **Clear** at the right: it empties exactly the rows the page shows (the page sends their `[id, at]`), so a
+row come meanwhile stays; what is still to be done is never touched. With the list empty the table is not drawn, Clear
+with it. Written in the events: `"done lately" cleared by NAME (N)`. On the command line: `ai --notices-clear-done`
+(all of it).
+

@@ -3422,9 +3422,14 @@ STRINGS = {
         'podíváno znovu',
     'Nothing is to be done by hand.':
         'Nic není potřeba udělat ručně.',
+    'Clear':
+        'Vymazat',
+    'Empty this list - what is still to be done stays':
+        'Vyprázdnit tento seznam – co ještě čeká, zůstane',
 }
 
 PATTERNS = {
+    'done lately cleared ({0})': 'nedávno hotové vymazáno ({0})',
     'Once it is done, say so with Done (or: ai --notice-done {0}).': 'Až to bude hotové, dejte Hotovo (nebo: ai --notice-done {0}).',
     'the certificate of the pages runs out {0}': 'certifikát stránek vyprší {0}',
     'ai {0} is out': 'vyšlo ai {0}',

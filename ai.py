@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.89'
+__version__ = '1.0.90'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10322,10 +10322,33 @@ def notices_done_note(store, n, how, who=''):
     """Kept for "Done lately" (1.0.89): the last 20 notices that went - done, by itself."""
     try:
         got = store.meta_json('notices:done', []) or []
-        got.insert(0, {'title': n.get('title'), 'id': n.get('id'), 'how': how, 'who': who, 'at': time.time()})
+        got.insert(0, {'title': n.get('title'), 'id': n.get('id'), 'how': how, 'who': who, 'at': int(time.time())})
         store.set_meta_json('notices:done', got[:20])
     except Exception:                                       # noqa: BLE001
         pass
+
+
+def notices_done_clear(store, items=None, who=''):
+    """"Done lately" emptied (1.0.90): the entries the page shows ([id, at] each), or all
+    of it when none are named (the command line). What is still to be done is not touched."""
+    want = None
+    if items is not None:
+        want = set()
+        for one in list(items)[:200]:
+            if isinstance(one, (list, tuple)) and len(one) == 2:
+                try:
+                    want.add((str(one[0])[:80], int(float(one[1]))))
+                except (TypeError, ValueError):
+                    continue
+    with NOTICES_LOCK:
+        done = [x for x in (store.meta_json('notices:done', []) or []) if isinstance(x, dict)]
+        keep = [] if want is None else [x for x in done
+                                         if (str(x.get('id') or ''), int(float(x.get('at') or 0))) not in want]
+        gone = len(done) - len(keep)
+        store.set_meta_json('notices:done', keep)
+    store.add_event('notice', '"done lately" cleared by %s (%d)' % (who or 'the command line', gone), 'info',
+                    who=who or '')
+    return gone
 
 
 def notices_done_list(store):
@@ -10446,8 +10469,14 @@ def api_notices_do(c):
         NOTICE_CACHE['out'] = None
         got = notices_current(c.daemon, True)
         return {'message': 'looked again', 'notices': got, 'done': notices_done_list(c.daemon.store)}
+    if act == 'clear_done':
+        # Clear (1.0.90): what this page shows of "Done lately"; what waits stays
+        items = c.body.get('items') if isinstance(c.body.get('items'), list) else None
+        gone = notices_done_clear(c.daemon.store, items, c.name)
+        return {'message': 'done lately cleared (%d)' % gone, 'notices': notices_current(c.daemon, True),
+                'done': notices_done_list(c.daemon.store)}
     if act != 'done':
-        raise Refused('done or look is what can be said of a notice')
+        raise Refused('done, look or clear_done is what can be said of a notice')
     n = notice_done(c.daemon.store, str(c.body.get('id') or ''), c.name)
     return {'message': 'noted as done: %s' % n.get('title'), 'notices': notices_current(c.daemon, True),
             'done': notices_done_list(c.daemon.store)}
@@ -24180,6 +24209,7 @@ def build_parser():
                         '(15 minutes), the code taken back')
     g.add_argument('--notices', action='store_true', help='what needs the administrator (also in --status)')
     g.add_argument('--notice-done', metavar='ID', help='a notice of a version noted as done (its ID from --notices)')
+    g.add_argument('--notices-clear-done', action='store_true', help='"done lately" emptied (what is still to be done stays)')
     g.add_argument('--passkeys', nargs='?', const='', metavar='ACCOUNT',
                    help='the passkeys (Face ID, Touch ID...) of every account, or of one')
     g.add_argument('--passkey-forget', metavar='ID', help='a passkey taken away (its ID from --passkeys; all: every one)')
@@ -24746,7 +24776,9 @@ def cli_main(argv):
                                   (' (%s, %s)' % (m.get('by') or '?', when(m.get('at'))) if m.get('at') else ''))
                     if m.get('on') else 'in service')))
             return 0
-        if a.notices or a.notice_done:
+        if a.notices or a.notice_done or a.notices_clear_done:
+            if a.notices_clear_done:
+                print(pal.ok_line('done lately cleared (%d)' % notices_done_clear(st, None, 'the command line')))
             if a.notice_done:
                 n = notice_done(st, a.notice_done, 'the command line')
                 print(pal.ok_line('noted as done: %s' % n.get('title')))

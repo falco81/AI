@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.90
+
+- **Clear for "Done lately"** in Settings → Upgrades → To be done by hand: at the right of its heading, it empties exactly
+  the rows the page shows - a row come meanwhile stays, and what is still to be done is never touched; with the list
+  empty the table and Clear are not drawn. Written in the events (who, how many); on the command line
+  `ai --notices-clear-done`. The green *Nothing is to be done by hand* has its tick, and the time on each card is
+  written as in the tables.
+
 ## 1.0.89
 
 - **"To be done by hand" in Settings → Upgrades, as upsmon's**: one card, always there - green *Nothing is to be done

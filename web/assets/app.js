@@ -153,7 +153,12 @@ function noticesDraw(s) {
   pr.className = 'card full notices nt-box' + (all.some(function (n) { return n.level === 'crit'; }) ? ' nt-box-crit' : '');
   pr.appendChild(el('h2', '', 'To be done by hand'));
   pr.appendChild(el('p', 'note', 'What ai cannot do itself and somebody has to - a step a new version needs on the command line, SELinux no longer enforcing. Kept here, counted beside Upgrades in the menu and on the Settings tab, said by ai --notices and in the console until it is done. One that can be checked goes by itself once it is so.'));
-  if (!all.length) pr.appendChild(el('div', 'nt-none', 'Nothing is to be done by hand.'));
+  if (!all.length) {
+    var none = el('div', 'nt-none');
+    none.innerHTML = iconMarkup('check', 16);
+    none.appendChild(el('span', '', 'Nothing is to be done by hand.'));
+    pr.appendChild(none);
+  }
   all.forEach(function (n) {
     var card = el('div', 'nt-card nt-' + n.level);
     var ic = el('span', 'nt-ic');
@@ -174,7 +179,7 @@ function noticesDraw(s) {
     var foot = n.check || !n.kept ? (n.check_words ? txT(n.check_words) : 'This band goes by itself once it is so.')
       : 'Once it is done, press Done.';
     main.appendChild(el('div', 'nt-foot', foot));
-    if (n.since) main.appendChild(noI18n(el('div', 'nt-when', new Date(n.since * 1000).toLocaleString(numLang()))));
+    if (n.since) { var sd = new Date(n.since * 1000); main.appendChild(noI18n(el('div', 'nt-when', dayWords(sd) + ' ' + clockWords(sd)))); }
     card.appendChild(main);
     var acts = el('div', 'nt-acts');
     if (n.check || !n.kept) {
@@ -199,7 +204,20 @@ function noticesDraw(s) {
     pr.appendChild(card);
   });
   if (done.length) {
-    pr.appendChild(el('div', 'nt-h', 'Done lately'));
+    /* its heading with Clear at its right (1.0.90): exactly the rows shown here are
+       emptied - a row come meanwhile stays, and what waits is never touched; with
+       none left the table is not drawn, Clear with it */
+    var head = el('div', 'nt-done-head');
+    head.appendChild(el('div', 'nt-h', 'Done lately'));
+    var clr = cmdButton('Clear', 'trash', 'small');
+    clr.title = txT('Empty this list - what is still to be done stays');
+    clr.onclick = function () {
+      busy(clr, true);
+      api('notices', {do: 'clear_done', items: done.map(function (x) { return [x.id || '', x.at || 0]; })})
+        .then(function (r) { toast(r.message, 'good'); noticesAfter(r); }).catch(oops).then(function () { busy(clr, false); });
+    };
+    head.appendChild(clr);
+    pr.appendChild(head);
     pr.appendChild(listTable(['What', 'How', 'Who', 'When'], done, function (x) {
       var tr = el('tr');
       tr.appendChild(noI18n(el('td', '', txT(x.title || ''))));

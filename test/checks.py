@@ -397,5 +397,20 @@ check('a version adds what it needs done once, after an upgrade only, until said
       _fresh == [] and _after == ['v-step'] and ai.notices_kept(_ns) == [])
 ai.VERSION_NOTICES = _was_vn
 
+_cs = _NStore()
+ai.notice_add(_cs, {'id': 'still', 'level': 'crit', 'title': 'still to do'})
+for _i, _t in enumerate(('a', 'b', 'c')):
+    _cs.set_meta_json('notices:done', [{'id': _t + str(_j), 'title': _t, 'how': 'done', 'at': 1000 + _j}
+                                       for _j in range(_i + 1)] + (_cs.meta_json('notices:done', []) or []))
+_shown = [[x['id'], x['at']] for x in ai.notices_done_list(_cs)][:2]
+_gone = ai.notices_done_clear(_cs, _shown, 'test')
+_left = len(_cs.meta_json('notices:done', []))
+check('Clear empties exactly the rows the page shows, never what still waits', _gone == 2 and _left == 4
+      and [n['id'] for n in ai.notices_kept(_cs)] == ['still'])
+check('Clear without a list (the command line) empties all of it', ai.notices_done_clear(_cs, None) == 4
+      and _cs.meta_json('notices:done', []) == [] and len(ai.notices_kept(_cs)) == 1)
+check('the page has Clear only in the heading of Done lately, sending clear_done',
+      "do: 'clear_done', items: done.map" in _appjs and "'nt-done-head'" in _appjs)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

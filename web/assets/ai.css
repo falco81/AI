@@ -3989,3 +3989,7 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 .ctl-nav button[data-pane] > span.nav-count,.ctl-nav:not(.open):not(.pinned) button[data-pane] > span.nav-count{opacity:1}
 #upgrade-notices.nt-box .nt-none{margin-top:12px;padding:10px 14px;border-radius:8px;background:var(--ok-bg);
   border:1px solid rgba(63,185,80,.3);color:var(--ok);font-size:13px;max-width:760px}
+/* "Done lately" with Clear at its right (1.0.90) */
+#upgrade-notices.nt-box .nt-done-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:20px 0 6px}
+#upgrade-notices.nt-box .nt-done-head .nt-h{margin:0}
+#upgrade-notices.nt-box .nt-none{display:flex;align-items:center;gap:8px}
