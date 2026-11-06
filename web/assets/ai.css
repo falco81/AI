@@ -3943,3 +3943,5 @@ body.kb-up .term-keys{padding-top:5px}
 .pk-sec td.rowtools .btn + .btn{margin-left:6px}
 .pk-sec .me-acts{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pk-sec table + p,.pk-sec p + p{margin-top:8px}
+/* what was watched last, until the new reading (1.0.84) */
+.hload.hl-stale .hl-v,.hload.hl-stale .hl-g{opacity:.55;transition:opacity .3s}

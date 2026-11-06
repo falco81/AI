@@ -187,7 +187,9 @@ function hlSeries(vals, times, w, h, top, pad) {
   var y = function (v) { return h - 1 - (h - pad) * Math.min(1, (v || 0) / top); };
   var parts = [[]];
   if (times && times.length === vals.length && vals.length) {
-    var last = times[times.length - 1], span = HLOAD_STEP * (HLOAD_KEEP - 1);
+    /* the right edge is the daemon's "now" of this answer (1.0.84), not the newest
+       reading: every graph - of every node - on one time line, sliding together */
+    var last = HLOAD.anchor || times[times.length - 1], span = HLOAD_STEP * (HLOAD_KEEP - 1);
     vals.forEach(function (v, i) {
       if (i && times[i] - times[i - 1] > HLOAD_STEP * 2.5) parts.push([]);
       parts[parts.length - 1].push([w - (last - times[i]) / span * w, y(v)]);
@@ -208,7 +210,7 @@ var HLOAD_SLIDE_STEPS = 6;
 function hlSlide(w, times) {
   if (!times || !times.length || !HLOAD.skewAt) return ['', ''];
   var nowS = Date.now() / 1000 - HLOAD.skew;
-  var age = Math.max(0, Math.min(HLOAD_STEP * HLOAD_SLIDE_STEPS, nowS - times[times.length - 1]));
+  var age = Math.max(0, Math.min(HLOAD_STEP * HLOAD_SLIDE_STEPS, nowS - (HLOAD.anchor || times[times.length - 1])));
   return ['<g class="hl-slide" style="animation-delay:-' + age.toFixed(2) + 's">', '</g>'];
 }
 function hlPts(part) { return part.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
@@ -250,7 +252,7 @@ function hloadDraw(d, into, asLook) {
       /* the daemon's own two minutes (1.0.81): the same on every page, after F5 too */
       hist = HLOAD.hist = {cpu: [], mem: [], disk: [], net: [], at: []};
       d.hist.forEach(function (x) { ['cpu', 'mem', 'disk', 'net'].forEach(function (k) { hist[k].push(x[k] || 0); }); hist.at.push(x.at); });
-      if (d.now) { HLOAD.skew = Date.now() / 1000 - d.now; HLOAD.skewAt = true; }
+      if (d.now) { HLOAD.skew = Date.now() / 1000 - d.now; HLOAD.skewAt = true; HLOAD.anchor = d.now; }
     } else {
       hist = HLOAD.hist || (HLOAD.hist = {cpu: [], mem: [], disk: [], net: []});
       var push = function (k, v) { hist[k].push(v || 0); if (hist[k].length > HLOAD_KEEP) hist[k].shift(); };
@@ -258,7 +260,7 @@ function hloadDraw(d, into, asLook) {
     }
   }
   var look = asLook || HLOAD.look || 'graphs';
-  host.className = 'hload look-' + look + (preview ? ' hl-preview' : '');
+  host.className = 'hload look-' + look + (preview ? ' hl-preview' : '') + (!preview && d.stale ? ' hl-stale' : '');
   clear(host);
   var tips = {
     cpu: 'The processor, busy over the last ' + (d.over_s || 3) + ' s, all ' + d.cores + ' core(s) together' + (d.load ? ' · load ' + d.load.join(' / ') : ''),
@@ -881,6 +883,8 @@ function hloadTick(now) {
   api('load' + (withDetail ? '&detail=1' : '')).then(function (d) {
     if (d.detail) { HLOAD.detail = d.detail; HLOAD.detailAt = Date.now(); }
     hloadDraw(d);
+    /* what was watched last, shown at once (1.0.84): the new reading in a moment */
+    if (d.stale && HLOAD.timer) { clearTimeout(HLOAD.soon); HLOAD.soon = setTimeout(function () { hloadTick(true); }, 1500); }
   }).catch(function (e) {
     /* switched off for the whole server meanwhile (Settings - About): stop asking */
     if (e && e.status === 403) { HLOAD.gone = true; hloadStop(); }

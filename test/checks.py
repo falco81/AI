@@ -374,5 +374,8 @@ check('the load is read once every 5 s for every page, and the watching ends by 
 check('the graphs slide by one animation of their SVG group, not redrawn on a timer', 'hl-slide' in _appjs and
       'setInterval(hloadTick, HLOAD_STEP * 1000)' in open(os.path.join(HERE, 'web', 'assets', 'app.js')).read())
 
+check('a page coming back gets the last state at once, from the database', 'def load_saved(store):' in _src2
+      and "out['stale'] = True" in _src2 and "'last': LOAD_LAST['out']" in _src2)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

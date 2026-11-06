@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.84
+
+- **The load is there at once when a page comes back**: the first ask after the watching had ended (a page left and
+  opened again, a tab back after a while, a restart of the daemon) waited for two new readings. It is answered at once
+  now with what was watched last - the numbers and the two minutes of the graphs, from memory or from the row in the
+  database - shown dimmed, and the page asks again 1.5 s later for the new reading.
+- **The graphs slide together**: the right edge of every graph is the daemon's "now" of the answer, not each one's
+  newest reading, so every graph - of every node - is on one time line and slides in step.
+
 ## 1.0.83
 
 - **The passkeys of an account look and work the same everywhere**: in My account and in the card of an account

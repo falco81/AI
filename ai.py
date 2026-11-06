@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.83'
+__version__ = '1.0.84'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9562,18 +9562,30 @@ def _load_keep(out):
             LOAD_HIST.pop(0)
 
 
-def _load_watcher():
-    st = LOAD_WATCH['store']
-    if not LOAD_HIST and st is not None:
-        # what was watched before the daemon started again, if it is recent
-        try:
-            got = st.meta_json('load:' + node_name(), None) or {}
-            now = time.time()
-            with LOAD_LOCK:
+def load_saved(store):
+    """The row of this node in the database: {'at', 'last' (the summary), 'hist'} - what was
+    watched last, shown at once to a page coming back (1.0.84). The two minutes are taken
+    back into memory when there are none (the daemon started again)."""
+    if store is None:
+        return {}
+    try:
+        got = store.meta_json('load:' + node_name(), None) or {}
+    except Exception:                                       # noqa: BLE001
+        return {}
+    if not LOAD_HIST:
+        now = time.time()
+        with LOAD_LOCK:
+            if not LOAD_HIST:
                 LOAD_HIST[:] = [h for h in (got.get('hist') or []) if isinstance(h, dict)
                                 and now - float(h.get('at') or 0) <= LOAD_HIST_S]
-        except Exception:                                   # noqa: BLE001
-            pass
+    return got if isinstance(got, dict) else {}
+
+
+def _load_watcher():
+    st = LOAD_WATCH['store']
+    if not LOAD_LAST['out'] or time.time() - LOAD_LAST['at'] > 30:
+        server_load()                      # two readings a second apart: a rate at once
+        time.sleep(1.05)
     nxt = time.time()
     while time.time() - LOAD_WATCH['seen'] < LOAD_WATCH_S and CONFIG.get('perf_meter', True):
         nxt += LOAD_STEP_S
@@ -9581,7 +9593,8 @@ def _load_watcher():
             _load_keep(server_load())
             st = LOAD_WATCH['store'] or st
             if st is not None:
-                st.set_meta_json('load:' + node_name(), {'at': time.time(), 'hist': load_history()})
+                st.set_meta_json('load:' + node_name(), {'at': time.time(), 'last': LOAD_LAST['out'],
+                                                         'hist': load_history()})
         except Exception as e:                              # noqa: BLE001
             log('the load could not be read: %s' % e)
         time.sleep(max(0.5, nxt - time.time()))
@@ -9594,10 +9607,8 @@ def load_watch(store):
     LOAD_WATCH['store'] = store
     t = LOAD_WATCH['thread']
     if t is None or not t.is_alive():
-        if not LOAD_LAST['out'] or time.time() - LOAD_LAST['at'] > 30:
-            server_load()                  # two readings a second apart: a rate at once
-            time.sleep(1.05)
-            server_load()
+        # started in the background: the page is answered at once (1.0.84) - with
+        # what was watched last, from the database, until the first new reading
         t = threading.Thread(target=_load_watcher, name='ai-load', daemon=True)
         LOAD_WATCH['thread'] = t
         t.start()
@@ -9618,8 +9629,16 @@ def api_load(c):
     load_watch(c.daemon.store)
     # the watcher's last reading - nothing more is read for a page asking
     with LOAD_LOCK:
-        last = LOAD_LAST['out']
-    out = dict(last if last and time.time() - LOAD_LAST['at'] < LOAD_STEP_S + 2 else server_load())
+        last = LOAD_LAST['out'] if LOAD_LAST['out'] and LOAD_LAST['out'].get('cpu') is not None else None
+        fresh = bool(last) and time.time() - LOAD_LAST['at'] < LOAD_STEP_S + 2
+    if fresh:
+        out = dict(last)
+    else:
+        # nothing new yet (the watching has only begun): what was watched last, at
+        # once, marked so; the page asks again in a moment for the new one
+        saved = load_saved(c.daemon.store)
+        out = dict(last or saved.get('last') or {'at': time.time(), 'cores': os.cpu_count() or 1})
+        out['stale'] = True
     out['now'] = time.time()
     out['step_s'] = LOAD_STEP_S
     if c.arg('detail'):
