@@ -3426,9 +3426,268 @@ STRINGS = {
         'Vymazat',
     'Empty this list - what is still to be done stays':
         'Vyprázdnit tento seznam – co ještě čeká, zůstane',
+    # ---- SELinux, the system's trusted roots (1.0.91)
+    'SELinux':
+        'SELinux',
+    'SELinux: its mode, what ai needs of it, what it refused - made ready, enforcing, permissive again, step by step.':
+        'SELinux: jeho režim, co od něj ai potřebuje, co odmítl – připravit, vynucovat, zpět na permissive, krok za krokem.',
+    'SELinux confines every service of the machine to what its policy allows. Here it is seen how it stands, what ai needs of it - its own module, the labels of its files, the switches and ports - and what it has refused. It is switched on step by step, never by itself: made ready (permissive: nothing refused, only written down), then enforcing once nothing was refused, and back to permissive at once if something stops working. Every step is written into Events.':
+        'SELinux omezuje každou službu stroje na to, co dovoluje jeho politika. Tady je vidět, jak na tom je, co od něj ai potřebuje – vlastní modul, štítky svých souborů, přepínače a porty – a co odmítl. Zapíná se krok za krokem, nikdy sám: připravit (permissive: nic se neodmítá, jen zapisuje), pak vynucování, až nic odmítnuto nebylo, a hned zpět na permissive, kdyby něco přestalo fungovat. Každý krok se zapíše do Událostí.',
+    'Download the report':
+        'Stáhnout zprávu',
+    "What SELinux says here, packed as one .tar.gz: the mode, the labels of ai's files, the booleans and ports, ai's module, what was refused and why. Nothing secret, nothing changed to make it.":
+        'Co tu SELinux říká, zabalené jako jeden .tar.gz: režim, štítky souborů ai, booleany a porty, modul ai, co bylo odmítnuto a proč. Nic tajného a kvůli ní se nic nemění.',
+    'What SELinux refuses to the web server, the database and the rest when it is enforcing - and what ai needs of it. Nothing changes here unless asked: disabled stays disabled. On the server: ai --selinux-check.':
+        'Co SELinux ve vynucujícím režimu odmítá webovému serveru, databázi a ostatním – a co od něj ai potřebuje. Bez požádání se tu nic nemění: vypnutý zůstane vypnutý. Na serveru: ai --selinux-check.',
+    'making the report…':
+        'dělám zprávu…',
+    'the report was not made within 3 minutes':
+        'zpráva nevznikla do 3 minut',
+    'enforcing':
+        'vynucuje (enforcing)',
+    'permissive':
+        'jen zapisuje (permissive)',
+    'disabled':
+        'vypnutý',
+    'not on this machine':
+        'na tomto stroji není',
+    'not said yet':
+        'zatím neřečeno',
+    'Every file is labelled at the next start - it takes a few minutes before the machine answers.':
+        'Při příštím startu se označí každý soubor – chvíli potrvá, než stroj odpoví.',
+    "The kernel's command line has selinux=0 - it stays off whatever the configuration says.":
+        'Příkazová řádka jádra má selinux=0 – zůstane vypnutý, ať konfigurace říká cokoli.',
+    'making it ready…':
+        'připravuji…',
+    'switching to enforcing…':
+        'přepínám na vynucování…',
+    'switching to permissive…':
+        'přepínám na permissive…',
+    'asked…':
+        'požádáno…',
+    'Not said yet - it is looked at within seconds.':
+        'Zatím neřečeno – podívá se během pár sekund.',
+    'There is no SELinux on this machine - nothing to do.':
+        'Na tomto stroji SELinux není – není co dělat.',
+    'Made ready - waiting for a restart of the machine':
+        'Připraveno – čeká se na restart stroje',
+    'Restart it when it suits (Settings → Restart and power off). It comes up permissive; then look here again.':
+        'Restartujte ho, až se to hodí (Nastavení → Restart a vypnutí). Naběhne v režimu permissive; pak se sem podívejte znovu.',
+    "Disabled - ai runs as always. Made ready, it comes up permissive at the next restart of the machine: nothing is refused yet, only written down, and ai's own needs are put in. Enforcing comes after, once nothing was refused.":
+        'Vypnutý – ai běží jako vždy. Po přípravě naběhne při příštím restartu stroje v režimu permissive: zatím se nic neodmítá, jen zapisuje, a vloží se, co ai potřebuje. Vynucování přijde potom, až nic odmítnuto nebylo.',
+    "ai's module (ai_server) is not installed":
+        'modul ai (ai_server) není nainstalovaný',
+    "ai's module (ai_server) installed":
+        'modul ai (ai_server) je nainstalovaný',
+    'the folder of the API token':
+        'složka API tokenu',
+    'the API token the pages read':
+        'API token, který čtou stránky',
+    'the pages':
+        'stránky',
+    'PostgreSQL of this server listens on it':
+        'naslouchá na něm PostgreSQL tohoto serveru',
+    'MariaDB of this server listens on it':
+        'naslouchá na něm MariaDB tohoto serveru',
+    'nginx serves the pages on it':
+        'nginx na něm podává stránky',
+    'What SELinux refused cannot be read: ausearch is not on this machine (dnf install audit)':
+        'Co SELinux odmítl, nejde přečíst: ausearch na tomto stroji není (dnf install audit)',
+    "Nothing refused since ai's needs were put in":
+        'Od vložení toho, co ai potřebuje, nic odmítnuto',
+    'Nothing refused since the machine started':
+        'Od startu stroje nic odmítnuto',
+    'auditd does not run - what SELinux refuses is not written down (systemctl enable --now auditd)':
+        'auditd neběží – co SELinux odmítá, se nikam nezapisuje (systemctl enable --now auditd)',
+    'ai does not know this one yet':
+        'tohle ai zatím nezná',
+    'Everything ai knows it needs is in place - what was refused is something its module does not cover yet. "Put in what ai needs" changes nothing for it: download the report (top right) and send it, so that the module learns it.':
+        'Všechno, o čem ai ví, že potřebuje, je na místě – odmítnuto bylo něco, co jeho modul zatím nepokrývá. „Vložit, co ai potřebuje“ na tom nic nezmění: stáhněte zprávu (vpravo nahoře) a pošlete ji, aby se to modul naučil.',
+    'Enforcing - but something is not as ai needs it':
+        'Vynucuje – ale něco není tak, jak ai potřebuje',
+    'Enforcing - and everything ai needs is there':
+        'Vynucuje – a všechno, co ai potřebuje, je na místě',
+    'Ready for enforcing':
+        'Připraveno na vynucování',
+    'Not ready for enforcing yet':
+        'Na vynucování zatím není připraveno',
+    'Let it run a day or two as it is used - sign-ins, the pages, the terminals, an upgrade - then look again.':
+        'Nechte ho den dva běžet při běžném používání – přihlášení, stránky, terminály, upgrade – a pak se podívejte znovu.',
+    'Make it ready (permissive)':
+        'Připravit (permissive)',
+    'Put in what ai needs':
+        'Vložit, co ai potřebuje',
+    'Make SELinux ready?':
+        'Připravit SELinux?',
+    'Put in what ai needs?':
+        'Vložit, co ai potřebuje?',
+    "The configuration says permissive and every file is labelled at the next start of the machine; ai's module goes in. Nothing is refused while permissive - SELinux only writes down what it would refuse. The machine is not restarted now: restart it when it suits (Settings → Restart and power off).":
+        'Konfigurace bude říkat permissive a při příštím startu stroje se označí každý soubor; vloží se modul ai. V režimu permissive se nic neodmítá – SELinux jen zapisuje, co by odmítl. Stroj se teď nerestartuje: restartujte ho, až se to hodí (Nastavení → Restart a vypnutí).',
+    "ai's module, the labels of its files, the booleans and the ports it needs are put in. Still permissive: nothing is refused.":
+        'Vloží se modul ai, štítky jeho souborů, booleany a porty, které potřebuje. Pořád permissive: nic se neodmítá.',
+    'Make it ready':
+        'Připravit',
+    'Switch to enforcing':
+        'Přepnout na vynucování',
+    'Once nothing is missing and nothing was refused':
+        'Až nic nechybí a nic nebylo odmítnuto',
+    'Switch to enforcing?':
+        'Přepnout na vynucování?',
+    'From now on SELinux refuses what its policy does not allow - and stays enforcing after a restart. Nothing ai needs is missing and nothing was refused. If something stops working, "Back to permissive" here (or setenforce 0 on the machine) undoes it at once.':
+        'Od teď SELinux odmítá, co jeho politika nedovoluje – a vynucuje i po restartu. Nic, co ai potřebuje, nechybí a nic nebylo odmítnuto. Kdyby něco přestalo fungovat, „Zpět na permissive“ tady (nebo setenforce 0 na stroji) to hned vrátí.',
+    'Back to permissive':
+        'Zpět na permissive',
+    'Back to permissive?':
+        'Zpět na permissive?',
+    'SELinux no longer refuses anything - it only writes down what it would refuse - now and after a restart.':
+        'SELinux už nic neodmítá – jen zapisuje, co by odmítl – teď i po restartu.',
+    'asked: SELinux is looked at within seconds':
+        'požádáno: SELinux se prohlédne během pár sekund',
+    'asked: done within seconds':
+        'požádáno: hotovo během pár sekund',
+    'asked: SELinux switches to enforcing within seconds':
+        'požádáno: SELinux se během pár sekund přepne na vynucování',
+    'asked: SELinux switches to permissive within seconds':
+        'požádáno: SELinux se během pár sekund přepne na permissive',
+    'asked: the report is made within a minute':
+        'požádáno: zpráva bude do minuty',
+    'SELinux is enforcing, but not everything ai needs is there':
+        'SELinux vynucuje, ale není tu všechno, co ai potřebuje',
+    'SELinux is permissive, and stays so after a restart':
+        'SELinux je v režimu permissive a zůstane tak i po restartu',
+    'SELinux is enforcing, and stays so after a restart':
+        'SELinux vynucuje a zůstane tak i po restartu',
+    "ai's module installed":
+        'modul ai nainstalován',
+    'the files are labelled at the next start of the machine':
+        'soubory se označí při příštím startu stroje',
+    'restart the machine - it comes up permissive: nothing is refused yet, what would be is written down':
+        'restartujte stroj – naběhne v režimu permissive: zatím se nic neodmítá, co by se odmítlo, se zapíše',
+    'there is no SELinux on this machine':
+        'na tomto stroji SELinux není',
+    'SELinux is enforcing already':
+        'SELinux už vynucuje',
+    'SELinux is disabled - "prepare" makes it permissive':
+        'SELinux je vypnutý – „připravit“ ho přepne na permissive',
+    'no report yet - ask for it first':
+        'zatím žádná zpráva – nejdřív o ni požádejte',
+    'Trusted roots of the system':
+        'Důvěryhodné kořeny systému',
+    "Certificate authorities of your own - your company's root, an intermediate - trusted by the operating system as a whole: curl, dnf, git, LDAPS, SMTP, Claude Code's own connections, ai's own - every program that uses the system's trust. The distribution's own list stays as it is and keeps coming with the system's updates; these are added beside it, the way the system itself takes local additions (update-ca-trust on RHEL, AlmaLinux and Rocky, update-ca-certificates on Debian and Ubuntu), and stay there through those updates.":
+        'Vlastní certifikační autority – kořen vaší firmy, mezilehlá autorita – kterým důvěřuje celý operační systém: curl, dnf, git, LDAPS, SMTP, spojení samotného Claude Code i ai – každý program, který používá důvěru systému. Seznam distribuce zůstává, jak je, a dál přichází s aktualizacemi systému; tyto se přidávají vedle něj tak, jak systém sám přijímá místní doplňky (update-ca-trust na RHEL, AlmaLinuxu a Rocky, update-ca-certificates na Debianu a Ubuntu), a zůstávají tam i přes ty aktualizace.',
+    'Add an authority':
+        'Přidat autoritu',
+    'A root or an intermediate certificate authority of your own - pasted as PEM, or a .pem, .crt or .cer file; a file with a chain adds each authority in it.':
+        'Vlastní kořenová nebo mezilehlá certifikační autorita – vložená jako PEM, nebo soubor .pem, .crt či .cer; soubor s řetězem přidá každou autoritu v něm.',
+    "ai has added none - this server trusts its system's own list alone.":
+        'ai žádnou nepřidalo – tento server důvěřuje jen vlastnímu seznamu systému.',
+    'Authority':
+        'Autorita',
+    'Issued by':
+        'Vydal',
+    'Key':
+        'Klíč',
+    'SHA-256':
+        'SHA-256',
+    'root':
+        'kořen',
+    'intermediate':
+        'mezilehlá',
+    'ran out':
+        'vypršela',
+    "not in the system's trust yet":
+        'zatím není v důvěře systému',
+    'Download it (PEM)':
+        'Stáhnout (PEM)',
+    "Take it out of the system's trust":
+        'Odebrat z důvěry systému',
+    'the SHA-256 fingerprint is copied':
+        'otisk SHA-256 je zkopírovaný',
+    "ai's own connections (mail, SMS, ACME, the proxy, upgrades from the web) use the system's list too - what is added here reaches them at their next connection.":
+        'Vlastní spojení ai (pošta, SMS, ACME, proxy, upgrady z webu) používají také seznam systému – co se tu přidá, platí pro ně od dalšího spojení.',
+    'as wanted':
+        'jak má být',
+    'waiting':
+        'čeká',
+    'nothing added by ai':
+        'ai nic nepřidalo',
+    "The system's own list":
+        'Vlastní seznam systému',
+    'Its package':
+        'Jeho balíček',
+    'Made last':
+        'Naposledy vytvořen',
+    'Local additions in':
+        'Místní doplňky v',
+    "ai's additions there":
+        'Doplňky ai v ní',
+    'Read':
+        'Přečteno',
+    'Added by somebody else - ai leaves them as they are:':
+        'Přidal někdo jiný – ai je nechává, jak jsou:',
+    ' - a link':
+        ' – odkaz',
+    ' - no certificate read':
+        ' – žádný certifikát nepřečten',
+    'not an authority':
+        'není autorita',
+    "Add to the system's trust":
+        'Přidat do důvěry systému',
+    'Every program of this server trusts what they sign from then on.':
+        'Od té chvíle každý program tohoto serveru důvěřuje tomu, co podepíší.',
+    'Read a file…':
+        'Načíst soubor…',
+    'that file is far bigger than certificates are':
+        'ten soubor je mnohem větší, než bývají certifikáty',
+    'not taken':
+        'nepřijato',
+    'there already':
+        'už tam je',
+    'Add them':
+        'Přidat je',
+    "Take it out of the system's trust?":
+        'Odebrat z důvěry systému?',
+    'asked: read again within seconds':
+        'požádáno: přečte se znovu během pár sekund',
+    "taken away - out of the system's trust within seconds":
+        'odebráno – z důvěry systému zmizí během pár sekund',
+    'nothing added: every certificate in it is there already':
+        'nic nepřidáno: každý certifikát v něm už tam je',
+    "the system's trusted roots could not be put in":
+        'důvěryhodné kořeny systému se nepodařilo vložit',
+    'no certificate in it (-----BEGIN CERTIFICATE-----)':
+        'není v tom žádný certifikát (-----BEGIN CERTIFICATE-----)',
+    'no private key and nothing but certificates (-----BEGIN CERTIFICATE-----)':
+        'žádný soukromý klíč a nic než certifikáty (-----BEGIN CERTIFICATE-----)',
+    'neither PEM (-----BEGIN CERTIFICATE-----) nor one certificate in DER':
+        'ani PEM (-----BEGIN CERTIFICATE-----), ani jeden certifikát v DER',
+    'the certificates: PEM text, or a file':
+        'certifikáty: text PEM, nebo soubor',
+    'ai has added no certificate with that fingerprint':
+        'ai nepřidalo žádný certifikát s tímto otiskem',
+    'more than one certificate begins with that - give more of it':
+        'tak začíná víc certifikátů – zadejte ho víc',
+    'the SHA-256 fingerprint - 12 characters of it at least':
+        'otisk SHA-256 – aspoň 12 jeho znaků',
+    "it is not a certificate authority (CA:FALSE) - a server's own certificate does not go here":
+        'není to certifikační autorita (CA:FALSE) – vlastní certifikát serveru sem nepatří',
+    'it says nothing of being an authority (no basicConstraints CA:TRUE) - only a certificate authority goes here':
+        'neříká, že je autoritou (chybí basicConstraints CA:TRUE) – sem patří jen certifikační autorita',
+    'its key usage does not let it sign certificates (no keyCertSign)':
+        'použití klíče mu nedovoluje podepisovat certifikáty (chybí keyCertSign)',
+    "an intermediate without its root here: programs that take a partial chain (curl, Python 3.13 on) trust it by itself, others want its root too - add the root as well, unless the system's list has it":
+        'mezilehlá autorita bez svého kořene: programy, které berou částečný řetěz (curl, Python 3.13 a novější), jí důvěřují samotné, jiné chtějí i kořen – přidejte i kořen, pokud ho nemá seznam systému',
+    "its root is not among these - trusted by itself only where a partial chain is taken (curl, Python 3.13 on), unless the system's list has the root":
+        'její kořen mezi nimi není – samotné se důvěřuje jen tam, kde se bere částečný řetěz (curl, Python 3.13 a novější), pokud kořen nemá seznam systému',
 }
 
 PATTERNS = {
+    'not yet: what ai needs was missing and is put in now ({0}) - let it run permissive a while as it is used, then look again':
+        'zatím ne: chybělo, co ai potřebuje, a teď se to vložilo ({0}) – nechte ho chvíli běžet v režimu permissive při běžném používání a pak se podívejte znovu',
+    '{0} s ago': 'před {0} s',
+    '{0} min ago': 'před {0} min',
+    '{0} h ago': 'před {0} h',
+    '{0} days ago': 'před {0} dny',
     'done lately cleared ({0})': 'nedávno hotové vymazáno ({0})',
     'Once it is done, say so with Done (or: ai --notice-done {0}).': 'Až to bude hotové, dejte Hotovo (nebo: ai --notice-done {0}).',
     'the certificate of the pages runs out {0}': 'certifikát stránek vyprší {0}',
@@ -3699,6 +3958,53 @@ PATTERNS = {
     'asked for {0}': 'dotaz na {0}',
     'connected to {0}': 'připojeno k {0}',
     'straight because {0}': 'přímo, protože {0}',
+    # ---- SELinux, the system's trusted roots (1.0.91)
+    'Looked at {0}':
+        'Prohlédnuto {0}',
+    'After the next restart of the machine: {0}':
+        'Po příštím restartu stroje: {0}',
+    "The configuration says {0}, but the kernel does not start SELinux - it is not switched on for it (the kernel's command line, or the distribution's own step such as selinux-activate).":
+        'Konfigurace říká {0}, ale jádro SELinux nespouští – není pro něj zapnutý (příkazová řádka jádra nebo vlastní krok distribuce, např. selinux-activate).',
+    "SELinux refused {0} thing(s) since ai's needs were put in":
+        'SELinux od vložení toho, co ai potřebuje, odmítl {0}×',
+    'SELinux refused {0} thing(s) since the machine started':
+        'SELinux od startu stroje odmítl {0}×',
+    '{0} refused before, allowed now - by a newer ai_server or a boolean put in since; not counted':
+        '{0}× odmítnuto dřív, teď povoleno – novějším ai_server nebo booleanem vloženým od té doby; nepočítá se',
+    'What was refused ({0})':
+        'Co bylo odmítnuto ({0})',
+    'Downloaded: {0}':
+        'Staženo: {0}',
+    '{0} is labelled {1}, not {2} ({3})':
+        '{0} má štítek {1}, ne {2} ({3})',
+    'the boolean {0} is off ({1})':
+        'boolean {0} je vypnutý ({1})',
+    'port {0} is not labelled {1} ({2})':
+        'port {0} nemá štítek {1} ({2})',
+    'the pages ask the daemon on 127.0.0.1:{0}':
+        'stránky se ptají démona na 127.0.0.1:{0}',
+    '{0} authorities':
+        '{0} autorit',
+    '{0} days left':
+        'zbývá {0} dní',
+    'valid {0} – {1} · {2}':
+        'platí {0} – {1} · {2}',
+    '{0} (not on this machine)':
+        '{0} (na tomto stroji není)',
+    "added {0} - put into the system's trust within seconds":
+        'přidáno {0} – do důvěry systému se dostane během pár sekund',
+    'nothing added: {0}':
+        'nic nepřidáno: {0}',
+    'it ran out on {0} - nothing it signed is trusted':
+        'vypršela {0} – ničemu, co podepsala, se nedůvěřuje',
+    'it is valid only from {0}':
+        'platí až od {0}',
+    "its key has {0} bits - the system's crypto policy (DEFAULT) refuses fewer than 2048":
+        'její klíč má {0} bitů – kryptografická politika systému (DEFAULT) odmítá méně než 2048',
+    "it is signed with {0} - the system's crypto policy (DEFAULT) refuses it, and every chain through it":
+        'je podepsaná {0} – kryptografická politika systému (DEFAULT) ji odmítá, i každý řetěz přes ni',
+    "ai's own connections do not use the system's list here ({0}) - what is added here does not reach them.":
+        'Vlastní spojení ai tu seznam systému nepoužívají ({0}) – co se tu přidá, k nim nedojde.',
 }
 
 RICH = {
@@ -3728,4 +4034,7 @@ RICH = {
         'Názvy a adresy dostupné bez ní, oddělené čárkami: <code>.example.cz</code> je každý název pod ní, <code>10.0.0.0/8</code> síť.',
     '<code>http://proxy.example.cz:3128</code>':
         '<code>http://proxy.example.cz:3128</code>',
+    # ---- SELinux, the system's trusted roots (1.0.91)
+    'A certificate authority of your own - a root, or an intermediate - as PEM (<code>-----BEGIN CERTIFICATE-----</code>), or a <code>.pem</code>, <code>.crt</code> or <code>.cer</code> file. A chain adds every authority in it. Only authorities are taken (CA:TRUE), never a private key.':
+        'Vlastní certifikační autorita – kořenová nebo mezilehlá – jako PEM (<code>-----BEGIN CERTIFICATE-----</code>), nebo soubor <code>.pem</code>, <code>.crt</code> či <code>.cer</code>. Řetěz přidá každou autoritu v něm. Berou se jen autority (CA:TRUE), nikdy soukromý klíč.',
 }

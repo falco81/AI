@@ -3,6 +3,32 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.91
+
+- **SELinux** (Settings → Access → SELinux, after otp's): how it stands - enforcing, permissive, disabled, and what it
+  is after the next restart - what ai needs of it (its own module `ai_server`, the labels of `/run/ai` and the API
+  token the pages read, `httpd_can_network_connect`, the ports of a local database or of nginx outside the usual ones)
+  and what it refused since the machine started, or since ai's needs were last put in. Switched on step by step, never
+  by itself, each step confirmed and written in the events: *Make it ready* (disabled → permissive at the next start,
+  every file labelled then), *Put in what ai needs*, *Switch to enforcing* (only once nothing is missing and nothing
+  was refused; what is still missing is put in then, but never enforced in the same step), *Back to permissive*.
+  *Download the report*: what SELinux says here as one .tar.gz, nothing secret in it, for whoever writes the module.
+  Enforcing with something missing goes to Settings → Upgrades → To be done by hand. On the command line
+  `ai --selinux-check [--json]`, `ai --selinux prepare|enforce|permissive`, `ai --selinux-report [FILE]`.
+- `deploy/ai_server.cil`: `/run/ai` labelled for the pages (`httpd_var_run_t`), and systemd may hand it over. Put
+  into the policy by install.sh and every upgrade (only when it changed), taken out by `--uninstall`; on dnf systems
+  the SELinux tools and auditd are put in and started.
+- **Trusted roots of the system** (Settings → Certificates and TLS): certificate authorities of your own - a company's
+  root, an intermediate - put into the trust of the whole operating system (curl, dnf, git, LDAPS, Claude Code's and
+  ai's own connections), the system's own way: `update-ca-trust` on RHEL, AlmaLinux and Rocky, `update-ca-certificates`
+  on Debian and Ubuntu. The distribution's list stays as it is and keeps coming with the system's updates. ai writes and
+  removes only its own `ai-<sha256>.pem|.crt`; what somebody else put there is shown and left alone. Each one is read by
+  openssl first: a server's own certificate (CA:FALSE), one that may not sign certificates, a private key are refused;
+  run out, weak keys, SHA-1, an intermediate without its root are said. The add dialog checks as you type or read a
+  file (PEM, or DER from a .cer). Brought to the machine at once, at the start and every half hour; the tool runs only
+  when something changed and each one is looked for in the system's list after it. On the command line
+  `ai --os-roots [--json]`, `ai --os-roots-add FILE|-`, `ai --os-roots-remove SHA256`.
+
 ## 1.0.90
 
 - **Clear for "Done lately"** in Settings → Upgrades → To be done by hand: at the right of its heading, it empties exactly

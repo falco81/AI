@@ -182,7 +182,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'notices' => '/api/notices', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -195,7 +195,7 @@ if (isset($_GET['api'])) {
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
         'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy',
         'passkeys' => '/api/auth/passkeys', 'passkey-begin' => '/api/auth/passkey/begin', 'passkey-register' => '/api/auth/passkey/register',
-        'notices' => '/api/notices',
+        'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -660,6 +660,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <button type="button" data-pane="web" data-icon="lock" title="The certificate of these pages, and how TLS is spoken.">Certificates and TLS</button>
     <button type="button" data-pane="acme" data-icon="lock" title="The certificate ordered from Let's Encrypt (or another ACME CA) and renewed by itself.">Automatic certificates</button>
     <button type="button" data-pane="fw" data-icon="wall" title="Who may reach these pages; and the machine's firewall (iptables or firewalld) - what ai needs opens by itself.">Firewall and access</button>
+    <button type="button" data-pane="selinux" data-icon="shield" title="SELinux: its mode, what ai needs of it, what it refused - made ready, enforcing, permissive again, step by step.">SELinux</button>
     <button type="button" data-pane="sshkeys" data-icon="key" title="The keys that may sign in to the server as root over SSH: made here, added or taken away.">SSH keys of root</button>
     <div class="ctl-group">Server</div>
     <button type="button" data-pane="network" data-icon="net" title="The server's address, gateway, DNS servers, host name and IPv6.">Network</button>
@@ -875,6 +876,18 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         an upload above keeps it, and the Automatic certificates leave it alone from then on. Off until switched
         on; acme's address must be among those that may reach these pages.</p>
       <div id="web-push"></div>
+    </div>
+    <!-- The system's trusted roots (1.0.91): certificate authorities of one's own put into the
+         trust of the operating system, beside the distribution's list. -->
+    <div class="card full" id="osr-card">
+      <h2>Trusted roots of the system</h2>
+      <p class="note">Certificate authorities of your own - your company's root, an intermediate -
+        trusted by the operating system as a whole: curl, dnf, git, LDAPS, SMTP, Claude Code's own
+        connections, ai's own - every program that uses the system's trust. The distribution's own
+        list stays as it is and keeps coming with the system's updates; these are added beside it, the
+        way the system itself takes local additions (update-ca-trust on RHEL, AlmaLinux and Rocky,
+        update-ca-certificates on Debian and Ubuntu), and stay there through those updates.</p>
+      <div id="osr-host"></div>
     </div>
   </div>
 
@@ -1125,6 +1138,16 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         /root/.ssh/authorized_keys. A key made here is shown once, to be kept by you, and kept nowhere on the
         server; one of your own is put on by its public half. Every change is written into Events.</p></div>
     <div id="sk-host"></div>
+  </div>
+
+  <div class="ctl-pane" id="pane-selinux" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">SELinux</h2>
+      <p class="ctl-lede">SELinux confines every service of the machine to what its policy allows. Here it is
+        seen how it stands, what ai needs of it - its own module, the labels of its files, the switches and
+        ports - and what it has refused. It is switched on step by step, never by itself: made ready
+        (permissive: nothing refused, only written down), then enforcing once nothing was refused, and back
+        to permissive at once if something stops working. Every step is written into Events.</p></div>
+    <div id="se-host"></div>
   </div>
 
   <div class="ctl-pane" id="pane-upgrade" hidden>

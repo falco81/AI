@@ -178,3 +178,9 @@ after every change under Settings -> Network and when the daemon starts. The
 firewall's rules of ai are written for IPv4 and IPv6 alike. A database server
 on this machine can be kept to IPv4 under Settings -> The database -> *Only
 IPv4 (127.0.0.1)*: it then listens on 127.0.0.1 alone.
+
+## SELinux and the system's trusted roots
+
+SELinux is switched on step by step from Settings → Access → SELinux. ai's own module labels the API token for
+the pages. Certificate authorities of your own go into the trust of the whole operating system from Settings →
+Certificates and TLS. How both work: [selinux.md](selinux.md).

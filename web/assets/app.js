@@ -64,6 +64,9 @@ function onTab(name, sub) {
 }
 
 /* ---- the header, the live updates ------------------------------------------- */
+/* what goes to "To be done by hand" in Settings - Upgrades, not the bar on top (1.0.88, 1.0.91) */
+var NOTICE_BY_HAND = ['selinux-off', 'selinux-needs', 'osroots-failed'];
+function noticeByHand(n) { return !!n.kept || NOTICE_BY_HAND.indexOf(n.id) >= 0; }
 function paintHeader(s) {
   STATUS = s;
   if (s.mailq && typeof mailqBadge === 'function') mailqBadge(s.mailq);
@@ -71,11 +74,11 @@ function paintHeader(s) {
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
   var inMaint = !!(s.maintenance && s.maintenance.on);
   if (s.upgrade_state === 'running' || inMaint) kind = 'warn';
-  var needed = (s.notices || []).some(function (n) { return n.level === 'crit' && (n.kept || n.id === 'selinux-off'); });
+  var needed = (s.notices || []).some(function (n) { return n.level === 'crit' && noticeByHand(n); });
   if (needed && kind === 'warn' && s.upgrade_state !== 'running' && !inMaint) kind = 'crit';
   pill.className = 'pill ' + kind;
   /* what needs the administrator is in Settings - Upgrades (1.0.87): the pill opens it */
-  var anyNotice = ADMIN && (s.notices || []).some(function (n) { return n.kept || n.id === 'selinux-off'; });
+  var anyNotice = ADMIN && (s.notices || []).some(function (n) { return noticeByHand(n); });
   pill.style.cursor = anyNotice ? 'pointer' : '';
   pill.onclick = anyNotice ? function () { showTab('settings', 'upgrade'); } : null;
   pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
@@ -111,7 +114,7 @@ function noticesDraw(s) {
   /* Only what came with 1.0.85 goes to Upgrades - what a version needs done, and
      SELinux no longer enforcing; the alerts that were at the top before (tmux
      missing, the certificate running out, a newer version) stay there, as they were. */
-  var inUpgrades = function (n) { return !!n.kept || n.id === 'selinux-off'; };
+  var inUpgrades = noticeByHand;
   var all = every.filter(inUpgrades);
   var top = $('problems');
   if (top) {
@@ -3324,6 +3327,7 @@ function showPane(name) {
   if (name === 'power') loadPower();
   if (name === 'osup') loadOsup(); else if (typeof ouPoll === 'function') ouPoll(false);
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
+  if (name === 'selinux') loadSelinux(); else if (typeof sePoll === 'function') sePoll(false);
   if (name === 'upgrade') loadUpgrade();
   if (name === 'signin') loadArt();
   if (name === 'acme') loadAcme(); else if (typeof acPoll === 'function') acPoll(false);
@@ -4539,6 +4543,7 @@ function drawPush(d) {
 function loadWeb() {
   apiLatest('web', 'web').then(drawWeb).catch(oops);
   loadPush();
+  osrStart();
   clearInterval(WEB.timer);
   WEB.timer = setInterval(function () {
     if (!paneLive('web')) { clearInterval(WEB.timer); return; }

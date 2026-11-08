@@ -245,6 +245,9 @@ if [[ -n "$DO_UNINSTALL" ]]; then
     fi
     ASSUME_YES="" confirm "Go ahead?" n || { say "Nothing was changed."; exit 0; }
     run systemctl disable --now ai.service 2>/dev/null || true
+    if command -v semodule >/dev/null 2>&1 && semodule -l 2>/dev/null | awk '$1=="ai_server"{f=1} END{exit !f}'; then
+        run semodule -r ai_server >/dev/null 2>&1 && good "SELinux: ai's module (ai_server) taken out of the policy" || true
+    fi
     for one in "$UNIT_FILE" "$LOGROTATE_FILE" "$NGINX_CONF" "$BIN_LINK" /etc/php-fpm.d/ai.conf /etc/php/*/fpm/pool.d/ai.conf \
                /etc/profile.d/zz-ai-console.sh /etc/ai-console-login /etc/sysctl.d/80-ai-console.conf; do
         [[ -e "$one" ]] && run rm -f "$one"
@@ -597,6 +600,68 @@ php_pool_dir() {
     echo ""
 }
 
+selinux_tools() {      # what SELinux's steps here need (1.0.91) - dnf only
+    [[ "${PKG:-}" == "dnf" ]] || return 0
+    [[ -d /etc/selinux || -x /usr/sbin/getenforce ]] || return 0
+    local want=() p
+    for p in policycoreutils libselinux-utils policycoreutils-python-utils audit selinux-policy-targeted; do
+        rpm -q "$p" >/dev/null 2>&1 || want+=("$p")
+    done
+    if (( ${#want[@]} )); then
+        if run dnf install -y "${want[@]}" >/dev/null 2>&1; then
+            good "SELinux: put in ${want[*]}"
+        else
+            warn "SELinux: ${want[*]} could not be put in (no repository reached?) - dnf install -y ${want[*]}"
+        fi
+    fi
+    if command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce 2>/dev/null)" != "Disabled" ]] &&
+            command -v auditd >/dev/null 2>&1 && ! systemctl is-active --quiet auditd 2>/dev/null; then
+        # auditd refuses to be started by systemctl on some releases: service(8) then.
+        { run systemctl enable --now auditd >/dev/null 2>&1 || run service auditd start >/dev/null 2>&1; } &&
+            good "SELinux: auditd started - what SELinux refuses is written down" ||
+            warn "SELinux: auditd could not be started - systemctl enable --now auditd"
+    fi
+    return 0
+}
+
+selinux_module() {     # ai's module (ai_server) in the policy, the labels of /run/ai (1.0.91)
+    selinux_tools
+    [[ -f "$SOURCE_DIR/deploy/ai_server.cil" ]] || return 0
+    local had=""
+    # Compared with the one last put into the policy, not with the copy beside the program: a
+    # semodule that failed once would leave the copy new and the policy old for good.
+    cmp -s "$SOURCE_DIR/deploy/ai_server.cil" "$LIB_DIR/ai_server.cil.in-policy" 2>/dev/null && had=1
+    run install -D -m 0644 "$SOURCE_DIR/deploy/ai_server.cil" "$LIB_DIR/ai_server.cil"
+    command -v getenforce >/dev/null 2>&1 || return 0
+    command -v semodule >/dev/null 2>&1 || return 0
+    [[ "$(getenforce 2>/dev/null)" == "Disabled" ]] && return 0
+    if [[ -z "$had" ]] || ! semodule -l 2>/dev/null | awk '$1=="ai_server"{f=1} END{exit !f}'; then
+        if run semodule -i "$LIB_DIR/ai_server.cil" 2>/dev/null; then
+            run install -m 0644 "$LIB_DIR/ai_server.cil" "$LIB_DIR/ai_server.cil.in-policy"
+            good "SELinux: ai's module (ai_server) is in the policy"
+        else
+            warn "SELinux: ai's module could not be put in: semodule -i $LIB_DIR/ai_server.cil"
+        fi
+    fi
+    run setsebool -P httpd_can_network_connect 1 2>/dev/null || warn "could not set httpd_can_network_connect (nginx to the daemon)"
+    if command -v restorecon >/dev/null 2>&1; then
+        run restorecon -R "$WEB_DIR" "$CERT_DIR" 2>/dev/null || true
+        [[ -d /run/ai ]] && run restorecon -R /run/ai 2>/dev/null || true
+    fi
+    good "SELinux: nginx may reach the daemon on 127.0.0.1"
+    # Said when the policy does not label it: the pages could not read the API token under
+    # enforcing - Settings - SELinux says what else is missing.
+    if command -v matchpathcon >/dev/null 2>&1 && [[ -z "$DRY_RUN" ]]; then
+        local lab=""
+        lab="$(matchpathcon /run/ai 2>/dev/null || true)"
+        case "$lab" in
+            *httpd_var_run_t*|*httpd_runtime_t*) ;;
+            *) warn "SELinux: the policy does not label /run/ai for the pages (${lab:-nothing}) - ai --selinux-check";;
+        esac
+    fi
+    return 0
+}
+
 install_pages() {
     step "The pages"
     run install -d -m 0755 "$WEB_DIR" "$WEB_DIR/assets" "$WEB_DIR/assets/xterm" "$WEB_DIR/lang"
@@ -663,11 +728,7 @@ print(re.sub(r"(# AI-ALLOW-BEGIN\n).*?(\n[ \t]*# AI-ALLOW-END)", lambda m: m.gro
         fi
     fi
     # Debian's own site answers every name on 80 - left as it is; ours has a name.
-    if command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce 2>/dev/null)" != "Disabled" ]]; then
-        run setsebool -P httpd_can_network_connect 1 2>/dev/null || warn "could not set httpd_can_network_connect (nginx to the daemon)"
-        command -v restorecon >/dev/null && run restorecon -R "$WEB_DIR" "$CERT_DIR" 2>/dev/null || true
-        good "SELinux: nginx may reach the daemon on 127.0.0.1"
-    fi
+    selinux_module
 }
 
 open_firewall() {

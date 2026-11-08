@@ -359,6 +359,7 @@ _sh2.rmtree(_fs2, ignore_errors=True)
 check('free space is asked only of the kernel\'s own filesystems', 'nfs' not in ai.LOAD_FS_KINDS and
       'fuseblk' not in ai.LOAD_FS_KINDS and 'vfat' not in ai.LOAD_FS_KINDS and 'ext4' in ai.LOAD_FS_KINDS)
 _appjs = open(os.path.join(HERE, 'web', 'assets', 'app.js')).read()
+_indexphp = open(os.path.join(HERE, 'web', 'index.php')).read()
 check('bars of the load: nothing at 0 %, the real share of a process', 'Math.max(2, Math.min(100, x[3]))' not in _appjs
       and 'hlBar(100 * v / top' not in _appjs and 'function hlWidth(pct)' in _appjs)
 
@@ -411,6 +412,132 @@ check('Clear without a list (the command line) empties all of it', ai.notices_do
       and _cs.meta_json('notices:done', []) == [] and len(ai.notices_kept(_cs)) == 1)
 check('the page has Clear only in the heading of Done lately, sending clear_done',
       "do: 'clear_done', items: done.map" in _appjs and "'nt-done-head'" in _appjs)
+
+# ---- SELinux and the system's trusted roots (1.0.91): fake tools, fake folders ------------------
+import subprocess as _sp
+_SE = os.path.join(WORK, 'se'); _SB = os.path.join(_SE, 'bin'); os.makedirs(_SB)
+def _tool(name, body):
+    with open(os.path.join(_SB, name), 'w') as f:
+        f.write('#!/bin/sh\n' + body.replace('@', _SE) + '\n')
+    os.chmod(os.path.join(_SB, name), 0o755)
+_tool('getenforce', 'cat @/mode')
+_tool('setenforce', '[ "$1" = 1 ] && echo Enforcing > @/mode || echo Permissive > @/mode')
+_tool('semodule', 'case "$1" in -l) cat @/modules 2>/dev/null; echo base;; -i) echo ai_server >> @/modules;; esac')
+_tool('getsebool', 'grep -q "^$1$" @/bools 2>/dev/null && echo "$1 --> on" || echo "$1 --> off"')
+_tool('setsebool', 'echo "$2" >> @/bools')
+_tool('semanage', '[ "$2" = "-l" ] && { echo "http_port_t tcp 80, 443"; cat @/ports 2>/dev/null; exit 0; }; echo "$4 tcp $7" >> @/ports')
+_tool('ausearch', 'cat @/avc 2>/dev/null; exit 0')
+_tool('audit2why', 'cat; exit 0')
+_tool('restorecon', 'echo \'{"' + str(ai.RUN_DIR) + '": "httpd_var_run_t", "' + str(ai.TOKEN_FILE) + '": "httpd_var_run_t", "/var/www/ai": "httpd_sys_content_t"}\' > @/labels')
+_tool('update-ca-trust', 'cat @/anchors/*.pem > @/bundle.pem 2>/dev/null; echo x >> @/runs')
+def _put(n, s):
+    with open(os.path.join(_SE, n), 'w') as f:
+        f.write(s)
+_put('mode', 'Permissive\n'); _put('config', 'SELINUX=permissive\nSELINUXTYPE=targeted\n'); _put('cmdline', 'ro quiet\n')
+_put('labels', json.dumps({str(ai.RUN_DIR): 'var_run_t', str(ai.TOKEN_FILE): 'var_run_t', '/var/www/ai': 'httpd_sys_content_t'}))
+_put('avc', 'type=AVC msg=audit(1000.1:7): avc:  denied  { read } for  pid=9 comm="php-fpm" name="api-token" '
+            'scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:var_run_t:s0 tclass=file permissive=1\n')
+_was_path = os.environ['PATH']
+os.environ.update(PATH=_SB + ':' + _was_path, AI_SELINUX_LABELS=os.path.join(_SE, 'labels'), AI_SELINUX_AUDITD='active')
+ai.SE_CONFIG, ai.SE_CMDLINE, ai.SE_RELABEL = (os.path.join(_SE, x) for x in ('config', 'cmdline', 'autorelabel'))
+import shutil as _sh
+ai.SE_CIL = os.path.join(_SE, 'ai_server.cil')
+_sh.copyfile(os.path.join(HERE, 'deploy', 'ai_server.cil'), ai.SE_CIL)
+_r = ai.selinux_want()
+_c0 = ai.se_check(_r)
+check('SELinux: permissive, nothing of ai\'s in - not ready, and why',
+      _c0['mode'] == 'Permissive' and _c0['module'] is False and not _c0['ready'] and
+      any('not installed' in x for x in _c0['problems']) and _c0['denials']['total'] == 1)
+try:
+    ai.se_do(dict(_r, do='enforce'))
+    check('SELinux: enforcing refused while something is missing', False)
+except ai.Refused as _e:
+    check('SELinux: enforcing refused while something is missing - what is missing put in, never enforced at once',
+          'is put in now' in str(_e) and open(os.path.join(_SE, 'mode')).read().strip() == 'Permissive'
+          and ai.se_applied_at() > 0)
+_put('modules', ''); _put('bools', ''); os.unlink(os.path.join(WORK, ai.SE_APPLIED))
+_c1 = ai.se_do(dict(_r, do='prepare'))
+check('SELinux: "put in what ai needs" - module, boolean, labels; old refusals no longer count',
+      _c1['module'] is True and all(b['on'] for b in _c1['booleans']) and all(x['ok'] for x in _c1['labels'])
+      and _c1['denials']['total'] == 0 and _c1['ready'])
+_c2 = ai.se_do(dict(_r, do='enforce'))
+check('SELinux: enforcing, now and in the configuration',
+      _c2['mode'] == 'Enforcing' and 'SELINUX=enforcing' in open(ai.SE_CONFIG).read())
+_c3 = ai.se_do(dict(_r, do='permissive'))
+check('SELinux: back to permissive, the rest of the configuration as it was',
+      _c3['mode'] == 'Permissive' and open(ai.SE_CONFIG).read() == 'SELINUX=permissive\nSELINUXTYPE=targeted\n')
+_put('mode', 'Disabled\n')
+_c4 = ai.se_do(dict(_r, do='prepare'))
+check('SELinux: disabled made ready - permissive at the next start, every file labelled then',
+      os.path.exists(ai.SE_RELABEL) and any('restart the machine' in x for x in _c4['said']))
+try:
+    ai.se_want_checked({'booleans': [{'name': 'allow_execmem'}]})
+    check('SELinux: a boolean ai does not set is refused', False)
+except ai.Refused:
+    check('SELinux: a boolean ai does not set is refused', True)
+_snot = _NStore()
+_snot.set_meta_json('selinux:now', {'data': {'mode': 'Enforcing', 'problems': ['x is labelled y']}})
+check('SELinux: enforcing with something missing is a notice for "To be done by hand"',
+      (ai.selinux_notice(_snot) or {}).get('id') == 'selinux-needs' and "'selinux-needs'" in _appjs)
+
+_A = os.path.join(_SE, 'anchors'); os.makedirs(_A, 0o755)
+os.chmod(_A, 0o755)
+os.environ.update(AI_OSROOTS_FLAVOUR='rhel', AI_OSROOTS_DIR=_A, AI_OSROOTS_BUNDLE=os.path.join(_SE, 'bundle.pem'),
+                  AI_OSROOTS_EXTRACT=os.path.join(_SB, 'update-ca-trust'), AI_OSROOTS_PKG='echo ca-certificates-test')
+def _ca(name, ext, days=365, sign=None):
+    key, crt = os.path.join(_SE, name + '.key'), os.path.join(_SE, name + '.pem')
+    if sign:
+        _sp.run(['openssl', 'req', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', crt + '.csr', '-subj', '/CN=' + name],
+                capture_output=True, check=True)
+        with open(crt + '.ext', 'w') as f:
+            f.write(ext.replace(',', '\n', 1) if False else 'basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign\n')
+        _sp.run(['openssl', 'x509', '-req', '-in', crt + '.csr', '-CA', sign + '.pem', '-CAkey', sign + '.key', '-CAcreateserial',
+                 '-out', crt, '-days', str(days), '-extfile', crt + '.ext'], capture_output=True, check=True, cwd=_SE)
+    else:
+        _sp.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', crt, '-days', str(days),
+                 '-subj', '/CN=' + name, '-addext', ext], capture_output=True, check=True)
+    return open(crt).read()
+_root = _ca('Test Root', 'basicConstraints=critical,CA:TRUE')
+_int = _ca('Test Issuing', '', sign=os.path.join(_SE, 'Test Root'))
+_leaf = _ca('www.test', 'basicConstraints=CA:FALSE')
+_os = _NStore()
+_got = ai.osr_check(_os, _leaf + _int)
+check('trusted roots: a server\'s own certificate is not taken, an intermediate without its root is said',
+      _got[0]['refused'] and not _got[1]['refused'] and any('without its root' in w for w in _got[1]['warn']))
+try:
+    ai.osr_check(_os, _root + '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n')
+    check('trusted roots: a private key refuses the whole text', False)
+except ai.Refused:
+    check('trusted roots: a private key refuses the whole text', True)
+_add = ai.osr_add(_os, _root + _int, 'test')
+_row = ai.osr_run(_os, ai.osr_want(_os))
+_files = sorted(os.listdir(_A))
+check('trusted roots: both written as ai-<sha16>.pem, the tool run once, in the system\'s list',
+      len(_add['added']) == 2 and len(_files) == 2 and all(ai.OSR_NAME_RE.match(x) for x in _files)
+      and open(os.path.join(_SE, 'runs')).read().count('x') == 1 and _row['ok']
+      and all(x.get('in_bundle') for x in _row['state']['ours']))
+with open(os.path.join(_A, 'company.pem'), 'w') as f:
+    f.write(_leaf)
+ai.osr_run(_os, ai.osr_want(_os))
+check('trusted roots: nothing changed, the tool not run again; another\'s file shown, never touched',
+      open(os.path.join(_SE, 'runs')).read().count('x') == 1 and os.path.exists(os.path.join(_A, 'company.pem'))
+      and [o['file'] for o in ai.osr_view(_os)['nodes'][0]['others']] == ['company.pem'])
+_fp_root = [c['fp'] for c in ai.osr_want(_os)['certs'] if c['kind'] == 'root'][0]
+ai.osr_remove(_os, _fp_root[:12], 'test')
+_row = ai.osr_run(_os, ai.osr_want(_os))
+_v = ai.osr_view(_os)
+check('trusted roots: one taken away - its file gone, the tool run, the view applied',
+      len([x for x in os.listdir(_A) if x.startswith('ai-')]) == 1 and _v['nodes'][0]['status'] == 'applied'
+      and open(os.path.join(_SE, 'runs')).read().count('x') == 2 and len(_v['certs']) == 1)
+os.chmod(_A, 0o777)
+_row = ai.osr_run(_os, {'certs': [{'pem': _root, 'fp': _fp_root}], 'hash': 'h', 'v': 1})
+check('trusted roots: a folder others may write is never written into',
+      not _row['ok'] and 'root\'s alone' in _row['error'])
+os.chmod(_A, 0o755)
+os.environ['PATH'] = _was_path
+check('the relay lets selinux and osroots through, and the panes are on the page',
+      "'selinux' => '/api/selinux'" in _indexphp and "'osroots' => '/api/osroots'" in _indexphp
+      and 'id="se-host"' in _indexphp and 'id="osr-host"' in _indexphp)
 
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
