@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.92
+
+- **SELinux report**: `processes.txt` came out empty - `ps -eZo label,...` is refused by procps-ng on EL9 ("can not
+  use output modifiers with user-defined output") and the filter threw the error away. Now `ps -eo label,...`, and
+  what ps says when it fails stays in the file.
+
 ## 1.0.91
 
 - **SELinux** (Settings → Access → SELinux, after otp's): how it stands - enforcing, permissive, disabled, and what it

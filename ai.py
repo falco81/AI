@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.91'
+__version__ = '1.0.92'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10809,9 +10809,13 @@ def se_report_parts(r):
                 lab.append(_se_out(['ls', '-Za', p], 20, light=False).rstrip())
             lab.append('  policy says: ' + _se_out(['matchpathcon', p], 20, light=False).strip())
     parts['labels.txt'] = '\n'.join(lab) + '\n'
-    ps = _se_out(['ps', '-eZo', 'label,user,pid,comm,args'], 60, light=False)
-    parts['processes.txt'] = '\n'.join(x[:200] for x in ps.splitlines() if x.startswith('LABEL') or
-                                       any(c in x for c in SE_REPORT_COMMS)) + '\n'
+    # -o label alone: -Z with a format of its own is refused by procps-ng ("can not use output
+    # modifiers with user-defined output") - the file came out empty (1.0.92). What ps says when
+    # it fails is kept, never filtered away.
+    ps = _se_out(['ps', '-eo', 'label,user,pid,comm,args'], 60, light=False)
+    rows = ps.splitlines()
+    keep = [x[:200] for x in rows if x.startswith('LABEL') or any(c in x for c in SE_REPORT_COMMS)]
+    parts['processes.txt'] = '\n'.join(keep if len(keep) > 1 else rows[:60]) + '\n'
     ports = _se_out(['semanage', 'port', '-l'], 300)
     parts['ports.txt'] = '==== labelled\n' + '\n'.join(
         x for x in ports.splitlines() if x.split()[:1] and x.split()[0] in SE_REPORT_PORT_TYPES) + \

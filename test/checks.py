@@ -534,6 +534,9 @@ _row = ai.osr_run(_os, {'certs': [{'pem': _root, 'fp': _fp_root}], 'hash': 'h', 
 check('trusted roots: a folder others may write is never written into',
       not _row['ok'] and 'root\'s alone' in _row['error'])
 os.chmod(_A, 0o755)
+_parts = ai.se_report_parts(_r)
+check('SELinux report: the processes with their domains, never an empty file',
+      _parts['processes.txt'].startswith('LABEL') or 'rror' in _parts['processes.txt'])
 os.environ['PATH'] = _was_path
 check('the relay lets selinux and osroots through, and the panes are on the page',
       "'selinux' => '/api/selinux'" in _indexphp and "'osroots' => '/api/osroots'" in _indexphp
