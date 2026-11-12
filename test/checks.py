@@ -611,5 +611,8 @@ del os.environ['AI_CHAIN_ROOTS']
 check('chain: the card says complete or incomplete, and offers Complete the chain',
       "'Complete the chain'" in _appjs and 'certChainWords' in _appjs and "action: 'tls_chain'" in _appjs)
 
+check('chain: the certificate in place is looked at by itself, nginx touched only when a link is missing',
+      'tls_chain_tick(self)' in open(os.path.join(HERE, 'ai.py')).read() and ai.CHAIN_LOOK_EVERY == 6 * 3600)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

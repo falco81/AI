@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.93'
+__version__ = '1.0.94'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -6572,6 +6572,59 @@ def tls_apply_later(store, prof, by):
             TLS_STATE['progress'] = None
             TLS_LOCK.release()
     threading.Thread(target=go, daemon=True).start()
+
+
+CHAIN_LOOK = {'next': time.time() + 90, 'tried': ''}
+CHAIN_LOOK_EVERY = 6 * 3600
+
+
+def tls_chain_tick(daemon):
+    """The chain of the certificate in place looked at now and then (1.0.94): 90 s after the start,
+    then every 6 hours - one put in before 1.0.93 too, and a root taken out of the system's list
+    since. Complete: only what the card says is kept, nginx is not touched. A link missing: put in
+    again once for that certificate, which fetches it from "CA Issuers" and reloads nginx."""
+    if NO_SYSTEM or time.time() < CHAIN_LOOK['next']:
+        return
+    CHAIN_LOOK['next'] = time.time() + CHAIN_LOOK_EVERY
+    store = daemon.store
+
+    def go():
+        try:
+            prof = tls_prof(store) or {}
+            if not prof.get('cert') or not prof.get('key') or TLS_LOCK.locked():
+                return
+            look = json.loads(json.dumps(prof))
+            said = []
+            chain_fix_prof(look, said, force=True, fetch=False)
+            parts = [look] + ([look['alt']] if isinstance(look.get('alt'), dict) else [])
+            bad = [x for x in parts if (x.get('chain_state') or {}).get('ok') is False
+                   and not (x.get('chain_state') or {}).get('self_signed')]
+            key = '/'.join(str((x.get('chain_state') or {}).get('key') or '') for x in parts)
+            if bad and CHAIN_LOOK['tried'] != key:
+                CHAIN_LOOK['tried'] = key
+                prof['chain_again'] = True
+                log('the certificate of the pages does not reach a root of the system by its chain: put in '
+                    'again, the missing link fetched', 'warn')
+                tls_apply_later(store, prof, 'ai (the chain looked at)')
+                return
+            sc = tls_selfcheck(look)
+            # Kept into what is there now - a change made meanwhile wins.
+            now = tls_prof(store) or {}
+            if now.get('cert') != prof.get('cert'):
+                return
+            now['chain_state'] = look.get('chain_state')
+            if isinstance(now.get('alt'), dict) and isinstance(look.get('alt'), dict):
+                now['alt']['chain_state'] = look['alt'].get('chain_state')
+            was = (now.get('selfcheck') or {}).get('ok')
+            now['selfcheck'] = sc
+            store.set_meta_json('web:tls', now)
+            NOTICE_CACHE['out'] = None
+            if sc.get('ok') is False and was is not False:
+                store.add_event('system', 'the certificate of the pages is not trusted by a client that fetches '
+                                'nothing (curl, Python, acme): %s' % sc.get('said'), 'warn')
+        except Exception as e:                          # noqa: BLE001
+            log_sparing('chain-look', 'the chain of the pages\' certificate: %s' % e, 'warn')
+    threading.Thread(target=go, name='ai-chain', daemon=True).start()
 
 
 def tls_reapply_if_needed(store):
@@ -22718,6 +22771,7 @@ class Daemon:
                     log_sparing('selinux-tick', 'SELinux: %s' % e, 'warn')
                 try:
                     osroots_tick(self)          # the system's trusted roots (1.0.91)
+                    tls_chain_tick(self)        # the chain of the pages' certificate (1.0.94)
                 except Exception as e:          # noqa: BLE001
                     log_sparing('osroots-tick', 'the system\'s trusted roots: %s' % e, 'warn')
                 if n % 4 == 0:

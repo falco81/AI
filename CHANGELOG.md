@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.94
+
+- **The chain of the certificate in place is looked at by itself**: 90 s after the start, then every 6 hours - also
+  for a certificate put in before 1.0.93, whose card said only *Chain: 2 between it and the root*. Complete: the card
+  gets *Chain: complete (… up to …)* and *Checked from here*, and nginx is not touched. A link missing: put in again
+  once for that certificate, the intermediate fetched from *CA Issuers*. Not trusted by a client that fetches nothing
+  (also when a root left the system's list later): an event and the notice at the top.
+
 ## 1.0.93
 
 - **The certificate of the pages is sent with its whole chain, and checked as other programs check it** (after
