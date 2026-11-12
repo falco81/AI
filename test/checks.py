@@ -602,14 +602,54 @@ ai.chain_fix_prof(_prof, _said, fetch=True)
 _n = len(_asked)
 ai.chain_fix_prof(_prof, [], fetch=True)
 _prof2 = dict(_prof, chain='')
+ai.CHAIN_FETCHED.clear()
 ai.chain_fix_prof(_prof2, [], fetch=True)
 check('chain: kept with the profile, not fetched again - unless the same certificate comes again without its chain',
       _prof['chain'].count('BEGIN CERTIFICATE') == 1 and _prof['chain_state']['ok'] and len(_asked) == _n + 1
       and _prof2['chain'].count('BEGIN CERTIFICATE') == 1 and any('completed' in x for x in _said))
+_n = len(_asked)
+ai.chain_complete(_leaf, [])
+check('chain: what was fetched from a CA Issuers address is kept a day', len(_asked) == _n)
+check('chain: the card\'s words come from the server', _s.get('words', '').startswith('it leads to Chain Root')
+      and ai.chain_complete(_leaf, [_rd('i.pem')])[1]['words'].startswith('complete - 2 certificates up to Chain Root'))
+# Upload the missing authority (1.0.95): an intermediate by hand, a private root beside it.
+os.environ['AI_CHAIN_FETCH'] = '0'
+_hp = {'cert': _leaf, 'chain': '', 'root': '', 'info': ai.cert_info(_leaf)}
+try:
+    ai.chain_add(_hp, _rd('l.key'))
+    check('missing authority: a key is refused', False)
+except ai.Refused:
+    check('missing authority: a key is refused', True)
+try:
+    ai.chain_add(_hp, _rd('r.pem'))
+    check('missing authority: one that did not sign the last link is refused, naming the one wanted', False)
+except ai.Refused as _e:
+    check('missing authority: one that did not sign the last link is refused, naming the one wanted',
+          'Chain Issuing CA' in str(_e))
+_used = ai.chain_add(_hp, _rd('i.pem'))
+check('missing authority: the intermediate goes into the chain, and the chain is complete',
+      _used == ['Chain Issuing CA'] and _hp['chain_state']['ok'] and _hp['chain'].count('BEGIN') == 1)
+with open(_bundle, 'w') as f:
+    f.write('')
+_hp2 = {'cert': _leaf, 'chain': _rd('i.pem'), 'root': '', 'info': ai.cert_info(_leaf)}
+_used = ai.chain_add(_hp2, _rd('r.pem'))
+check('missing authority: a private root is kept beside the chain to check with, never sent',
+      _hp2['chain_state']['ok'] and _hp2['chain_state']['private'] and 'Chain Root' not in
+      ''.join(c['cn'] for c in _hp2['chain_info']) and _hp2['root'].count('BEGIN') == 1
+      and 'a private root' in _hp2['chain_state']['words'])
+try:
+    ai.chain_add(_hp2, _rd('r.pem'))
+    check('missing authority: one there already is said so', False)
+except ai.Refused as _e:
+    check('missing authority: one there already is said so', 'there already' in str(_e))
+del os.environ['AI_CHAIN_FETCH']
 ai.url_open = _was_open
 del os.environ['AI_CHAIN_ROOTS']
 check('chain: the card says complete or incomplete, and offers Complete the chain',
-      "'Complete the chain'" in _appjs and 'certChainWords' in _appjs and "action: 'tls_chain'" in _appjs)
+      "'Complete the chain'" in _appjs and "'Check the chain'" in _appjs and 'certChainWords' in _appjs
+      and "action: 'tls_chain'" in _appjs and "action: 'tls_chain_add'" in _appjs
+      and "'Upload the missing authority'" in _appjs and '.cert-kv dd .bad{color:var(--crit)}' in
+      open(os.path.join(HERE, 'web', 'assets', 'ai.css')).read())
 
 check('chain: the certificate in place is looked at by itself, nginx touched only when a link is missing',
       'tls_chain_tick(self)' in open(os.path.join(HERE, 'ai.py')).read() and ai.CHAIN_LOOK_EVERY == 6 * 3600)

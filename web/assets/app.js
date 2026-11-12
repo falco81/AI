@@ -4552,19 +4552,68 @@ function loadWeb() {
     apiLatest('web', 'web').then(function (d) { liveRun(function () { drawWeb(d); }); }).catch(function () {});
   }, 5000);
 }
-function certChainWords(cs) {
-  if (cs.self_signed) return el('span', 'dim', 'self-signed - no chain');
-  var s;
-  if (cs.ok) {
-    s = el('span', 'good', 'complete (' + cs.count + ' certificates up to ' + (cs.root || '?') + ')');
-    if (cs.private) s.appendChild(el('span', 'dim', ' - a root of your own, not of the system'));
-    if ((cs.fetched || []).length) explain(s, 'Completed from the authority: ' + cs.fetched.join(', ') + ' - it was not sent with the certificate. Now nginx sends it.');
-    return s;
-  }
-  s = el('span', 'bad', cs.root_missing ? 'the root ' + (cs.missing || '?') + ' is not among the system\'s roots'
-    : 'incomplete - the intermediate ' + (cs.missing || '?') + ' is not sent');
-  explain(s, (cs.said || '') + ((cs.tries || []).length ? ' · ' + cs.tries.join(' · ') : '') + ' - browsers fetch the missing link themselves, curl, Python, acme and the rest refuse the connection.');
+/* The line "Chain" (1.0.95): what nginx sends now first, as a client that fetches nothing checks
+   it; else what was found when it was put in. A private CA whose root was given: what was found
+   with its root counts - the file is checked against the system's roots alone. */
+function certChainBad(prof, now) {
+  var cs = prof.chain_state || {};
+  var priv = !!(cs.ok && prof.root_info && prof.root_info.length);
+  return (now.chain_ok === false && !priv) || cs.ok === false;
+}
+function certChainWords(prof, info, now) {
+  var cs = prof.chain_state || null;
+  var priv = !!(cs && cs.ok && prof.root_info && prof.root_info.length);
+  if (priv) now = {};
+  var s = el('span', '');
+  if (info.self_signed) { s.className = 'dim'; s.textContent = (cs && cs.words) || 'self-signed - no chain; whoever connects must trust this certificate itself'; }
+  else if (cs && cs.ok === false) { s.className = 'bad'; s.textContent = cs.words || ('incomplete - the authority ' + (cs.missing || '?') + ' is not sent'); }
+  else if (now.chain_ok === false) { s.className = 'bad'; s.textContent = 'incomplete - what nginx sends does not lead to a root of the system: curl, Python, acme and other clients refuse it'; if (now.chain_why) explain(s, now.chain_why); }
+  else if (cs && cs.ok) { s.className = 'good'; s.textContent = cs.words || ('complete - ' + cs.count + ' certificates up to ' + (cs.root || '?')); }
+  else if (now.chain_ok === true) { s.className = 'good'; s.textContent = 'complete - ' + (prof.chain_info || []).length + ' between it and the root'; }
+  else s.textContent = prof.chain_info ? (prof.chain_info.length + ' between it and the root') : '–';
   return s;
+}
+/* Upload the missing authority (1.0.95): only the certificate(s) of authorities. */
+function certChainAdd(target, prof) {
+  var cs = prof.chain_state || {};
+  var last = (prof.chain_info || []).length ? prof.chain_info[prof.chain_info.length - 1] : (prof.info || {});
+  var missing = cs.missing || cs.private_root || String(last.issuer || '').replace(/^.*?CN=/, '').split(',')[0] || '?';
+  var area;
+  modal('Upload the missing authority', function (body) {
+    var p = el('p', 'note');
+    p.appendChild(el('span', '', 'Missing in the chain:'));
+    p.appendChild(document.createTextNode(' '));
+    p.appendChild(noI18n(el('b', '', missing)));
+    body.appendChild(p);
+    body.appendChild(el('p', 'note', 'The certificate of that authority - the intermediate (or several) your certificate authority gives with the certificate, often called "CA bundle", "intermediate" or "chain" - as PEM or a .cer / .crt file. Only certificates of authorities, never a key; the certificate and its key stay as they are. A root is kept to check with and never sent.'));
+    area = noI18n(el('textarea', 'mono'));
+    area.rows = 8; area.spellcheck = false; area.placeholder = '-----BEGIN CERTIFICATE-----';
+    area.style.width = '100%';
+    body.appendChild(area);
+    var fr = el('div', 'btnrow');
+    fr.style.margin = '8px 0 0';
+    var pick = cmdButton('Read a file…', 'upload', 'small');
+    var input = el('input'); input.type = 'file'; input.hidden = true;
+    input.accept = '.pem,.crt,.cer,.der,.cert,.ca-bundle';
+    pick.onclick = function () { input.click(); };
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      if (f.size > 262144) { toast('that file is far bigger than certificates are', 'warn'); return; }
+      var r = new FileReader();
+      r.onload = function () { area.value = osrFileText(r.result); };
+      r.readAsArrayBuffer(f);
+    };
+    fr.appendChild(pick); fr.appendChild(input);
+    body.appendChild(fr);
+  }, [{words: 'Cancel', close: true}, {words: 'Add it to the chain', cls: 'primary', icon: 'add', go: function (b) {
+    busy(b, true);
+    api('web', {action: 'tls_chain_add', target: target, text: area.value.trim()}).then(function (x) {
+      closeModal();
+      toast(x.message, x.complete ? 'good' : 'warn');
+      setTimeout(loadWeb, 2500);
+    }).catch(function (e) { busy(b, false); oops(e); });
+  }}], 'medium');
 }
 function daysLeft(ts) { return ts ? Math.floor((ts - Date.now() / 1000) / 86400) : null; }
 function certTone(days) { return days === null ? 'dim' : (days < 0 ? 'crit' : (days < 21 ? 'warn' : 'ok')); }
@@ -4621,13 +4670,12 @@ function certCard(d, target) {
          authority where a link is missing - a server sending its certificate alone is trusted by
          browsers only. */
       var cs = prof.chain_state;
-      if (cs) facts.push(['Chain', certChainWords(cs)]);
-      else facts.push(['Chain', prof.chain_info ? (prof.chain_info.length + ' between it and the root') : '–']);
+      facts.push(['Chain', certChainWords(prof, info, (w && w.cert_now) || {})]);
       facts.push(['Root', prof.root_info && prof.root_info.length ? noI18n(el('span', '', prof.root_info[0].cn || 'given')) : 'not given']);
       if (!cs && prof.verify) facts.push(['Checked', prof.verify === 'ok' ? el('span', 'good', 'the chain leads to the root') : el('span', 'bad', prof.verify)]);
       var sc = prof.selfcheck;
       if (sc && sc.ok !== null && sc.ok !== undefined) {
-        var scs = el('span', sc.ok ? 'good' : 'bad', sc.ok ? 'trusted by a client that fetches nothing' : 'NOT trusted by a client that fetches nothing');
+        var scs = el('span', sc.ok ? 'good' : (sc.refused ? 'bad' : 'dim'), sc.ok ? 'trusted by a client that fetches nothing' : (sc.refused ? 'NOT trusted by a client that fetches nothing' : 'not checked: ' + sc.said));
         explain(scs, (sc.ok ? '' : sc.said + ' - ') + 'ai connected to itself as curl, Python or acme do: with the system\'s roots, fetching no missing link. Checked ' + ago(sc.at) + '.');
         facts.push(['Checked from here', scs]);
       }
@@ -4720,15 +4768,26 @@ function certCard(d, target) {
     if (bef && !bef.ran_out && typeof acmePutBackButton === 'function') tools.appendChild(acmePutBackButton(target, bef, function () { loadWeb(); }));
     /* Download whenever there is a certificate - one ai looks after, or the
        one nginx has from before (1.0.31). */
-    if (prof && prof.cert && prof.chain_state && !prof.chain_state.ok && !prof.chain_state.self_signed && !prof.chain_state.root_missing) {
-      var cc = cmdButton('Complete the chain', 'refresh', 'small primary');
-      explain(cc, 'The intermediates fetched from the address the certificate names (CA Issuers), as browsers do, until a root of the system is reached - then sent by nginx with the certificate.');
+    if (prof && prof.cert && !(prof.info || {}).self_signed) {
+      /* Complete / Check the chain (1.0.95): checked again against the system's roots, a missing
+         intermediate fetched from its CA Issuers address, as browsers do. */
+      var wnow = (w && w.cert_now) || {};
+      var bad = certChainBad(prof, wnow);
+      var cc = cmdButton(bad ? 'Complete the chain' : 'Check the chain', 'refresh', bad ? 'small primary' : 'small');
+      explain(cc, 'Checked against the system\'s root authorities; an intermediate the certificate did not come with is fetched from its CA Issuers address, as browsers do it - so that curl, Python, acme and other clients that fetch nothing take it too.');
       cc.onclick = function () {
         busy(cc, true);
-        api('web', {action: 'tls_chain', target: target}).then(function (x) { toast(x.message, 'good'); setTimeout(loadWeb, 2500); })
+        api('web', {action: 'tls_chain', target: target}).then(function (x) { toast(x.message, x.complete ? 'good' : 'warn'); setTimeout(loadWeb, 2500); })
           .catch(oops).then(function () { busy(cc, false); });
       };
       tools.appendChild(cc);
+      /* Or by hand: when it cannot be fetched - no CA Issuers address, no way out, a private
+         CA - only the missing authority, never the certificate and its key again. */
+      if (bad) {
+        var addc = cmdButton('Upload the missing authority', 'upload', 'small');
+        addc.onclick = function () { certChainAdd(target, prof); };
+        tools.appendChild(addc);
+      }
     }
     if ((prof && prof.cert) || info) {
       var dl = cmdButton('Download', 'download', 'small');

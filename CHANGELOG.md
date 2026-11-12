@@ -3,6 +3,27 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.95
+
+- **Upload the missing authority** (Settings → Certificates and TLS, the card of the certificate; after plexmon
+  2.9.8): when the intermediate cannot be fetched - no *CA Issuers* address, no way out, a private CA - only that
+  authority is uploaded, never the certificate and its key again. The dialog names what is missing, takes PEM or a
+  .cer / .crt / .der file (made PEM in the browser), refuses a key and an authority that did not sign the chain's
+  last link (naming the one wanted); an intermediate goes into the chain in order, a root beside it - kept to check
+  with, never sent. Each upload and check is written in the events.
+- The chain's button is **Check the chain** when it is complete and **Complete the chain** (primary) beside
+  *Upload the missing authority* when it is not; neither for a self-signed certificate. The action answers with
+  `complete`, never `ok: false`.
+- The card says what the server found, in its words: *complete - 2 certificates up to …*, *(fetched: …)*,
+  *- a private root: only clients that trust it take it*, *incomplete - the authority … is not sent and could not be
+  completed (why)*, *it leads to …, a root the system does not trust*, *self-signed - no chain*. Green and red really
+  are green and red on the card now.
+- What nginx sends **now** is checked too (the file in place, by its mtime, the system's roots, nothing fetched) -
+  a certificate put in before any of this shows red until its chain is complete.
+- From a *CA Issuers* address the certificate whose subject is the issuer wanted is taken (up to 256 kB, PEM, DER or
+  PKCS#7), kept a day. Only a refusal of the chain by a client that fetches nothing is an alert; any other failure
+  of the check from here is said, no more.
+
 ## 1.0.94
 
 - **The chain of the certificate in place is looked at by itself**: 90 s after the start, then every 6 hours - also

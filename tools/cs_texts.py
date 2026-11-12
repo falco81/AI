@@ -3700,9 +3700,50 @@ STRINGS = {
         'certifikátu stránek důvěřují jen prohlížeče',
     "the chain checked against the system's roots":
         'řetěz ověřen proti kořenům systému',
+    # ---- the missing authority (1.0.95)
+    'Check the chain':
+        'Zkontrolovat řetěz',
+    'Upload the missing authority':
+        'Nahrát chybějící autoritu',
+    'Missing in the chain:':
+        'V řetězu chybí:',
+    'The certificate of that authority - the intermediate (or several) your certificate authority gives with the certificate, often called "CA bundle", "intermediate" or "chain" - as PEM or a .cer / .crt file. Only certificates of authorities, never a key; the certificate and its key stay as they are. A root is kept to check with and never sent.':
+        'Certifikát té autority – mezilehlá autorita (nebo několik), kterou vaše certifikační autorita dává k certifikátu, často pod názvem „CA bundle“, „intermediate“ nebo „chain“ – jako PEM nebo soubor .cer / .crt. Jen certifikáty autorit, nikdy klíč; certifikát a jeho klíč zůstávají, jak jsou. Kořen se uloží ke kontrole a nikdy se neposílá.',
+    'Add it to the chain':
+        'Přidat do řetězu',
+    "Checked against the system's root authorities; an intermediate the certificate did not come with is fetched from its CA Issuers address, as browsers do it - so that curl, Python, acme and other clients that fetch nothing take it too.":
+        'Ověří se proti kořenovým autoritám systému; mezilehlá autorita, která s certifikátem nepřišla, se stáhne z jeho adresy CA Issuers, stejně jako to dělají prohlížeče – aby ho přijal i curl, Python, acme a další klienti, kteří nic nestahují.',
+    'incomplete - what nginx sends does not lead to a root of the system: curl, Python, acme and other clients refuse it':
+        'neúplný – to, co nginx posílá, nevede ke kořeni systému: curl, Python, acme a další klienti ho odmítnou',
+    'self-signed - no chain; whoever connects must trust this certificate itself':
+        'self-signed – bez řetězu; kdo se připojuje, musí důvěřovat přímo tomuto certifikátu',
+    'only the certificates of the authorities - no private key':
+        'jen certifikáty autorit – žádný soukromý klíč',
+    'no certificate in it (-----BEGIN CERTIFICATE-----, or a .cer file)':
+        'není v tom žádný certifikát (-----BEGIN CERTIFICATE-----, nebo soubor .cer)',
+    'every certificate in it is there already':
+        'každý certifikát v tom už tam je',
 }
 
 PATTERNS = {
+    'complete - {0} certificates up to {1}':
+        'úplný – {0} certifikáty až ke kořeni {1}',
+    'complete - {0} certificate up to {1}':
+        'úplný – {0} certifikát až ke kořeni {1}',
+    'complete - {0} certificates up to {1} - a private root: only clients that trust it take it':
+        'úplný – {0} certifikáty až ke kořeni {1} – soukromý kořen: přijmou ho jen klienti, kteří mu důvěřují',
+    'complete - {0} certificates up to {1} (fetched: {2} - it was not sent with the certificate)':
+        'úplný – {0} certifikáty až ke kořeni {1} (staženo: {2} – s certifikátem nepřišla)',
+    'complete - {0} between it and the root':
+        'úplný – {0} mezi ním a kořenem',
+    'incomplete - the authority {0} is not sent and could not be completed ({1}); curl, Python, acme, monitoring agents and mobile apps refuse it - only browsers fetch it themselves; send the certificate with its chain, or upload the missing authority':
+        'neúplný – autorita {0} se neposílá a nepodařilo se ji doplnit ({1}); curl, Python, acme, monitorovací agenti i mobilní aplikace ho odmítnou – jen prohlížeče si ji stáhnou samy; pošlete certifikát s jeho řetězem, nebo nahrajte chybějící autoritu',
+    'it leads to {0}, a root the system does not trust (a private CA?) - the chain is complete; the clients must trust that root, or upload it here with Upload the missing authority':
+        'vede ke kořeni {0}, kterému systém nedůvěřuje (soukromá CA?) – řetěz je úplný; klienti musí tomu kořeni důvěřovat, nebo ho sem nahrajte tlačítkem Nahrát chybějící autoritu',
+    "none of these is the authority that signed the chain's last certificate ({0})":
+        'žádný z nich není autorita, která podepsala poslední certifikát řetězu ({0})',
+    'not checked: {0}':
+        'neověřeno: {0}',
     'complete ({0} certificates up to {1})':
         'úplný ({0} certifikáty až ke kořeni {1})',
     'incomplete - the intermediate {0} is not sent':

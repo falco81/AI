@@ -129,3 +129,13 @@ openssl s_client -connect NAME:443 -servername NAME -showcerts </dev/null
 ```
 
 The output should list at least two certificates and end with `Verify return code: 0 (ok)`.
+
+### Upload the missing authority (1.0.95)
+
+Sometimes ai cannot fetch the intermediate: the certificate names no *CA Issuers* address, the machine has no
+way out, or the certificate is from a private CA. Then *Upload the missing authority* on the card of the
+certificate takes that authority alone (PEM, `.cer`, `.crt`, `.der`). The dialog names the authority that is
+missing. An intermediate goes into the chain in order from the certificate. A root is kept beside it to check
+with and is never sent; the card then says *a private root: only clients that trust it take it*. A private key,
+or an authority that did not sign the chain's last link, is refused. The button beside it is *Complete the
+chain* while the chain is incomplete and *Check the chain* once it is complete.
