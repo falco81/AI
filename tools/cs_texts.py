@@ -3679,9 +3679,44 @@ STRINGS = {
         'mezilehlá autorita bez svého kořene: programy, které berou částečný řetěz (curl, Python 3.13 a novější), jí důvěřují samotné, jiné chtějí i kořen – přidejte i kořen, pokud ho nemá seznam systému',
     "its root is not among these - trusted by itself only where a partial chain is taken (curl, Python 3.13 on), unless the system's list has the root":
         'její kořen mezi nimi není – samotné se důvěřuje jen tam, kde se bere částečný řetěz (curl, Python 3.13 a novější), pokud kořen nemá seznam systému',
+    # ---- the whole chain (1.0.93)
+    'Complete the chain':
+        'Doplnit řetěz',
+    'The intermediates fetched from the address the certificate names (CA Issuers), as browsers do, until a root of the system is reached - then sent by nginx with the certificate.':
+        'Mezilehlé autority stažené z adresy, kterou certifikát uvádí (CA Issuers), stejně jako to dělají prohlížeče, až po kořen systému – nginx je pak posílá spolu s certifikátem.',
+    'self-signed - no chain':
+        'self-signed – bez řetězu',
+    ' - a root of your own, not of the system':
+        ' – vlastní kořen, ne kořen systému',
+    'Checked from here':
+        'Ověřeno odsud',
+    'trusted by a client that fetches nothing':
+        'důvěřuje mu i klient, který nic nestahuje',
+    'NOT trusted by a client that fetches nothing':
+        'klient, který nic nestahuje, mu NEDŮVĚŘUJE',
+    'the chain is being checked and completed':
+        'řetěz se kontroluje a doplňuje',
+    'the certificate of the pages is trusted by browsers only':
+        'certifikátu stránek důvěřují jen prohlížeče',
+    "the chain checked against the system's roots":
+        'řetěz ověřen proti kořenům systému',
 }
 
 PATTERNS = {
+    'complete ({0} certificates up to {1})':
+        'úplný ({0} certifikáty až ke kořeni {1})',
+    'incomplete - the intermediate {0} is not sent':
+        'neúplný – mezilehlá autorita {0} se neposílá',
+    "the root {0} is not among the system's roots":
+        'kořen {0} není mezi kořeny systému',
+    'Completed from the authority: {0} - it was not sent with the certificate. Now nginx sends it.':
+        'Doplněno od autority: {0} – s certifikátem nepřišla. Teď ji nginx posílá.',
+    'The intermediate {0} is not sent with it. curl, Python, acme, monitoring and mobile apps refuse the connection.':
+        'Mezilehlá autorita {0} se s ním neposílá. curl, Python, acme, monitoring i mobilní aplikace spojení odmítnou.',
+    "The root {0} is not among the system's roots. curl, Python, acme, monitoring and mobile apps refuse the connection.":
+        'Kořen {0} není mezi kořeny systému. curl, Python, acme, monitoring i mobilní aplikace spojení odmítnou.',
+    "ai connected to itself as curl, Python or acme do: with the system's roots, fetching no missing link. Checked {0}.":
+        'ai se připojilo samo k sobě jako curl, Python nebo acme: s kořeny systému a bez stahování chybějícího článku. Ověřeno {0}.',
     'not yet: what ai needs was missing and is put in now ({0}) - let it run permissive a while as it is used, then look again':
         'zatím ne: chybělo, co ai potřebuje, a teď se to vložilo ({0}) – nechte ho chvíli běžet v režimu permissive při běžném používání a pak se podívejte znovu',
     '{0} s ago': 'před {0} s',

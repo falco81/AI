@@ -542,5 +542,74 @@ check('the relay lets selinux and osroots through, and the panes are on the page
       "'selinux' => '/api/selinux'" in _indexphp and "'osroots' => '/api/osroots'" in _indexphp
       and 'id="se-host"' in _indexphp and 'id="osr-host"' in _indexphp)
 
+# ---- the whole chain sent (1.0.93): completed from "CA Issuers" as browsers do --------------------
+_CH = os.path.join(WORK, 'chain'); os.makedirs(_CH)
+def _ossl(*a):
+    _sp.run(['openssl'] + list(a), capture_output=True, check=True, cwd=_CH)
+_ossl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'r.key', '-out', 'r.pem', '-days', '99', '-subj', '/CN=Chain Root',
+      '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign')
+_ossl('req', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'i.key', '-out', 'i.csr', '-subj', '/CN=Chain Issuing CA')
+with open(os.path.join(_CH, 'i.ext'), 'w') as f:
+    f.write('basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign\nauthorityInfoAccess=caIssuers;URI:http://ca.test/r.der\n')
+_ossl('x509', '-req', '-in', 'i.csr', '-CA', 'r.pem', '-CAkey', 'r.key', '-CAcreateserial', '-out', 'i.pem', '-days', '99', '-extfile', 'i.ext')
+_ossl('req', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'l.key', '-out', 'l.csr', '-subj', '/CN=www.chain.test')
+with open(os.path.join(_CH, 'l.ext'), 'w') as f:
+    f.write('basicConstraints=CA:FALSE\nsubjectAltName=DNS:www.chain.test\nauthorityInfoAccess=caIssuers;URI:http://ca.test/i.p7c\n')
+_ossl('x509', '-req', '-in', 'l.csr', '-CA', 'i.pem', '-CAkey', 'i.key', '-CAcreateserial', '-out', 'l.pem', '-days', '99', '-extfile', 'l.ext')
+_ossl('crl2pkcs7', '-nocrl', '-certfile', 'i.pem', '-outform', 'DER', '-out', 'i.p7c')
+_ossl('x509', '-in', 'r.pem', '-outform', 'DER', '-out', 'r.der')
+_rd = lambda n, m='r': open(os.path.join(_CH, n), m).read()
+_bundle = os.path.join(_CH, 'system.pem')
+with open(_bundle, 'w') as f:
+    f.write(_rd('r.pem'))
+os.environ['AI_CHAIN_ROOTS'] = _bundle
+_asked = []
+class _Got:
+    def __init__(s, data): s.data = data
+    def __enter__(s): return s
+    def __exit__(s, *a): return False
+    def read(s, n=-1): return s.data
+_was_open = ai.url_open
+def _fake_open(req, timeout=30, context=None, purpose=''):
+    _asked.append(req.full_url)
+    return _Got(_rd(req.full_url.rsplit('/', 1)[1], 'rb'))
+ai.url_open = _fake_open
+_leaf = _rd('l.pem')
+_c, _s = ai.chain_complete(_leaf, [], fetch=False)
+check('chain: a certificate sent alone does not reach the system\'s root - the intermediate is named',
+      not _s['ok'] and _s['missing'] == 'Chain Issuing CA')
+_c, _s = ai.chain_complete(_leaf, [])
+check('chain: completed from "CA Issuers" (PKCS#7) as browsers do - the root itself never sent',
+      _s['ok'] and _s['fetched'] == ['Chain Issuing CA'] and len(_c) == 1 and _s['root'] == 'Chain Root'
+      and _asked == ['http://ca.test/i.p7c'])
+_asked[:] = []
+_c, _s = ai.chain_complete(_leaf, [_rd('i.pem')])
+check('chain: a whole chain sent is taken as it is, nothing fetched', _s['ok'] and not _s['fetched'] and not _asked)
+with open(_bundle, 'w') as f:
+    f.write('')
+os.environ['AI_CHAIN_ROOTS'] = '/nonexistent'
+_c, _s = ai.chain_complete(_leaf, [_rd('i.pem')], roots=_rd('r.pem'))
+check('chain: a root of your own given with it is a private root', _s['ok'] and _s.get('private'))
+os.environ['AI_CHAIN_ROOTS'] = _bundle
+_c, _s = ai.chain_complete(_leaf, [])
+check('chain: a root that is not the system\'s is said as such, not as a missing intermediate',
+      not _s['ok'] and _s.get('root_missing') and _s['missing'] == 'Chain Root')
+with open(_bundle, 'w') as f:
+    f.write(_rd('r.pem'))
+_prof = {'cert': _leaf, 'chain': '', 'info': ai.cert_info(_leaf)}
+_said = []
+ai.chain_fix_prof(_prof, _said, fetch=True)
+_n = len(_asked)
+ai.chain_fix_prof(_prof, [], fetch=True)
+_prof2 = dict(_prof, chain='')
+ai.chain_fix_prof(_prof2, [], fetch=True)
+check('chain: kept with the profile, not fetched again - unless the same certificate comes again without its chain',
+      _prof['chain'].count('BEGIN CERTIFICATE') == 1 and _prof['chain_state']['ok'] and len(_asked) == _n + 1
+      and _prof2['chain'].count('BEGIN CERTIFICATE') == 1 and any('completed' in x for x in _said))
+ai.url_open = _was_open
+del os.environ['AI_CHAIN_ROOTS']
+check('chain: the card says complete or incomplete, and offers Complete the chain',
+      "'Complete the chain'" in _appjs and 'certChainWords' in _appjs and "action: 'tls_chain'" in _appjs)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

@@ -111,3 +111,21 @@ The folder, the system's list, the tool and the package can each be pointed else
 the same hooks: `AI_SELINUX_CONFIG`, `AI_SELINUX_RELABEL`, `AI_SELINUX_CMDLINE`, `AI_SELINUX_CIL`,
 `AI_SELINUX_LABELS`, `AI_SELINUX_AUDITD`. `test/checks.py` runs both against fake tools on `PATH` and never
 touches the machine's own trust or policy.
+
+## The whole chain of the pages' certificate (1.0.93)
+
+A web server that sends its certificate without the intermediate that signed it is trusted by browsers, which
+fetch the missing link themselves. Everything else refuses it: Python, curl, openssl, Java, Go, acme's pairing,
+monitoring agents, mobile apps (`unable to get local issuer certificate`). Before ai puts a certificate into nginx,
+it checks the chain against the system's roots. Uploaded, requested, ACME and acme push certificates are all
+checked, the ECDSA twin too. When a link is missing, ai fetches it from the certificate's
+*Authority Information Access → CA Issuers* address (DER, PEM or PKCS#7, up to 4 steps) and keeps it with the
+certificate. nginx then sends it. A root is never sent. After the reload, ai connects to `127.0.0.1:443` as a
+client that fetches nothing and records the result. If that client does not trust the certificate, ai writes an
+event and shows a notice at the top. Check it from anywhere:
+
+```
+openssl s_client -connect NAME:443 -servername NAME -showcerts </dev/null
+```
+
+The output should list at least two certificates and end with `Verify return code: 0 (ok)`.

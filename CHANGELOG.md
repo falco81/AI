@@ -3,6 +3,22 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.93
+
+- **The certificate of the pages is sent with its whole chain, and checked as other programs check it** (after
+  acme 1.0.88's note for isemon). A certificate uploaded without its intermediate is trusted by browsers - they
+  fetch the missing link themselves - and refused by curl, Python, Java, Go, acme's pairing, monitoring agents and
+  mobile apps ("unable to get local issuer certificate"). Before any certificate goes into nginx - uploaded, from
+  a request, from ACME, from acme push, its ECDSA twin too - its chain is checked against the system's roots; a
+  missing intermediate is fetched from the certificate's *CA Issuers* address (DER, PEM or PKCS#7, at most 4 steps,
+  through the proxy where ACME's use of it is on), kept with it and sent by nginx. The root itself is never sent.
+- The card in Settings → Certificates and TLS says *Chain: complete (2 certificates up to …)* in green, or
+  *incomplete - the intermediate … is not sent* / *the root … is not among the system's roots* in red, with
+  *Complete the chain*; a root of your own given with the certificate is said as such.
+- **Checked from here**: after nginx has reloaded, ai connects to itself as a client that fetches nothing (the
+  system's roots and the roots given with the certificate), waiting first until nginx answers with the new
+  certificate. Not trusted is an event and a notice at the top of the pages, not silence.
+
 ## 1.0.92
 
 - **SELinux report**: `processes.txt` came out empty - `ps -eZo label,...` is refused by procps-ng on EL9 ("can not

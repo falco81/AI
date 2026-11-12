@@ -4552,6 +4552,20 @@ function loadWeb() {
     apiLatest('web', 'web').then(function (d) { liveRun(function () { drawWeb(d); }); }).catch(function () {});
   }, 5000);
 }
+function certChainWords(cs) {
+  if (cs.self_signed) return el('span', 'dim', 'self-signed - no chain');
+  var s;
+  if (cs.ok) {
+    s = el('span', 'good', 'complete (' + cs.count + ' certificates up to ' + (cs.root || '?') + ')');
+    if (cs.private) s.appendChild(el('span', 'dim', ' - a root of your own, not of the system'));
+    if ((cs.fetched || []).length) explain(s, 'Completed from the authority: ' + cs.fetched.join(', ') + ' - it was not sent with the certificate. Now nginx sends it.');
+    return s;
+  }
+  s = el('span', 'bad', cs.root_missing ? 'the root ' + (cs.missing || '?') + ' is not among the system\'s roots'
+    : 'incomplete - the intermediate ' + (cs.missing || '?') + ' is not sent');
+  explain(s, (cs.said || '') + ((cs.tries || []).length ? ' · ' + cs.tries.join(' · ') : '') + ' - browsers fetch the missing link themselves, curl, Python, acme and the rest refuse the connection.');
+  return s;
+}
 function daysLeft(ts) { return ts ? Math.floor((ts - Date.now() / 1000) / 86400) : null; }
 function certTone(days) { return days === null ? 'dim' : (days < 0 ? 'crit' : (days < 21 ? 'warn' : 'ok')); }
 function webTargetWords(t) { return t === 'vip' ? 'the web address' : t; }
@@ -4603,9 +4617,20 @@ function certCard(d, target) {
                  ['Key', (info.key || '–') + (prof && prof.alt && prof.alt.info && prof.alt.info.key ? ' + ' + prof.alt.info.key + ' (a second certificate beside it)' : '')]];
     if (info.san && info.san.length) facts.push(['Names', noI18n(el('span', '', info.san.join(', ')))]);
     if (prof) {
-      facts.push(['Chain', prof.chain_info ? (prof.chain_info.length + ' between it and the root') : '–']);
+      /* The whole chain sent (1.0.93): checked against the system's roots, completed from the
+         authority where a link is missing - a server sending its certificate alone is trusted by
+         browsers only. */
+      var cs = prof.chain_state;
+      if (cs) facts.push(['Chain', certChainWords(cs)]);
+      else facts.push(['Chain', prof.chain_info ? (prof.chain_info.length + ' between it and the root') : '–']);
       facts.push(['Root', prof.root_info && prof.root_info.length ? noI18n(el('span', '', prof.root_info[0].cn || 'given')) : 'not given']);
-      if (prof.verify) facts.push(['Checked', prof.verify === 'ok' ? el('span', 'good', 'the chain leads to the root') : el('span', 'bad', prof.verify)]);
+      if (!cs && prof.verify) facts.push(['Checked', prof.verify === 'ok' ? el('span', 'good', 'the chain leads to the root') : el('span', 'bad', prof.verify)]);
+      var sc = prof.selfcheck;
+      if (sc && sc.ok !== null && sc.ok !== undefined) {
+        var scs = el('span', sc.ok ? 'good' : 'bad', sc.ok ? 'trusted by a client that fetches nothing' : 'NOT trusted by a client that fetches nothing');
+        explain(scs, (sc.ok ? '' : sc.said + ' - ') + 'ai connected to itself as curl, Python or acme do: with the system\'s roots, fetching no missing link. Checked ' + ago(sc.at) + '.');
+        facts.push(['Checked from here', scs]);
+      }
     }
     var kv = el('dl', 'cert-kv');
     facts.forEach(function (f) {
@@ -4695,6 +4720,16 @@ function certCard(d, target) {
     if (bef && !bef.ran_out && typeof acmePutBackButton === 'function') tools.appendChild(acmePutBackButton(target, bef, function () { loadWeb(); }));
     /* Download whenever there is a certificate - one ai looks after, or the
        one nginx has from before (1.0.31). */
+    if (prof && prof.cert && prof.chain_state && !prof.chain_state.ok && !prof.chain_state.self_signed && !prof.chain_state.root_missing) {
+      var cc = cmdButton('Complete the chain', 'refresh', 'small primary');
+      explain(cc, 'The intermediates fetched from the address the certificate names (CA Issuers), as browsers do, until a root of the system is reached - then sent by nginx with the certificate.');
+      cc.onclick = function () {
+        busy(cc, true);
+        api('web', {action: 'tls_chain', target: target}).then(function (x) { toast(x.message, 'good'); setTimeout(loadWeb, 2500); })
+          .catch(oops).then(function () { busy(cc, false); });
+      };
+      tools.appendChild(cc);
+    }
     if ((prof && prof.cert) || info) {
       var dl = cmdButton('Download', 'download', 'small');
       dl.title = 'The certificate in the form you choose - PEM, CRT, DER, PKCS#7, or with its private key (PEM, PFX)';

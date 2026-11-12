@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.92'
+__version__ = '1.0.93'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -6042,6 +6042,240 @@ def cert_bundle(cert='', key='', chain='', root='', pfx=b'', password='', pendin
             'root_info': [cert_info(c) for c in roots], 'verify': verify}
 
 
+# ---- the whole chain sent (1.0.93, after acme 1.0.88's note for isemon) --------------------
+# A server that sends its certificate without the intermediate that signed it is trusted by the
+# browsers - they fetch the missing link from the certificate's "CA Issuers" address or have it
+# from other sites - and refused by everything else: Python, curl, openssl, Java, Go, acme's
+# pairing, monitoring agents. Before a certificate goes into nginx its chain is checked against
+# the system's roots; one that does not reach a root is completed the browsers' way (at most
+# CHAIN_STEPS fetches, the root itself never sent) and kept so. After nginx has it, ai connects
+# to itself as a client that fetches nothing and keeps what it found.
+CHAIN_STEPS = 4
+CHAIN_FETCH_MOST = 65536
+
+
+def chain_roots_file():
+    """The system's own list of roots - where every program of the machine looks."""
+    if os.environ.get('AI_CHAIN_ROOTS'):               # tests
+        return os.environ['AI_CHAIN_ROOTS']
+    for f in OSR_SYSTEM_BUNDLES:
+        if os.path.isfile(f):
+            return f
+    try:
+        p = ssl.get_default_verify_paths()
+        if p.cafile and os.path.isfile(p.cafile):
+            return p.cafile
+    except Exception:                                   # noqa: BLE001
+        pass
+    return ''
+
+
+def chain_verify(leaf, chain, roots=''):
+    """(ok, the root it reached or why not) - openssl verify against the system's roots and the
+    roots given with the certificate (a company's own), the chain as untrusted links."""
+    with tempfile.TemporaryDirectory(prefix='ai-chain-') as t:
+        def put(name, text):
+            p = os.path.join(t, name)
+            with open(p, 'w') as f:
+                f.write(text)
+            return p
+        trust = ''
+        sysf = chain_roots_file()
+        try:
+            if sysf:
+                with open(sysf, encoding='ascii', errors='replace') as f:
+                    trust = f.read()
+        except OSError:
+            trust = ''
+        trust += '\n' + str(roots or '')
+        if '-----BEGIN CERTIFICATE-----' not in trust:
+            return False, 'no roots to check it against on this machine'
+        args = ['verify', '-show_chain', '-CAfile', put('roots.pem', trust)]
+        if chain:
+            args += ['-untrusted', put('chain.pem', ''.join(c.strip() + '\n' for c in chain))]
+        args.append(put('leaf.pem', leaf.strip() + '\n'))
+        got = subprocess.run(['openssl'] + args, capture_output=True, text=True, timeout=60)
+        out = (got.stdout or '') + (got.stderr or '')
+        if got.returncode == 0 and re.search(r'^\S*leaf\.pem: OK', out, re.M):
+            depth = re.findall(r'^depth=\d+: (.*?)(?: \(untrusted\))?$', out, re.M)
+            top = depth[-1] if depth else ''
+            cn = re.search(r'CN\s*=\s*([^,/]+)', top)
+            return True, (cn.group(1).strip() if cn else top.strip())[:200]
+        err = re.search(r'error \d+ at \d+ depth lookup: (.*)', out)
+        lines = out.strip().splitlines()
+        return False, (err.group(1).strip() if err else (lines[-1] if lines else 'openssl verify said no'))[:300]
+
+
+def _aia_issuers(pem):
+    """The "CA Issuers" addresses of a certificate (Authority Information Access)."""
+    try:
+        out = _openssl(['x509', '-noout', '-ext', 'authorityInfoAccess'], pem.encode(), what='AIA').decode()
+    except ValueError:
+        return []
+    return [u for u in re.findall(r'CA Issuers - URI:(\S+)', out) if re.match(r'^https?://', u)][:3]
+
+
+def _issuer_fetch(url):
+    """The certificates at a "CA Issuers" address - DER, PEM or PKCS#7 (.p7c) - as PEM."""
+    req = urllib.request.Request(url, headers={'User-Agent': 'ai/%s' % __version__})
+    with url_open(req, timeout=15, context=ssl.create_default_context(), purpose='acme') as r:
+        raw = r.read(CHAIN_FETCH_MOST + 1)
+    if len(raw) > CHAIN_FETCH_MOST:
+        raise ValueError('%s: more than %d bytes - not a certificate' % (url, CHAIN_FETCH_MOST))
+    if b'-----BEGIN CERTIFICATE-----' in raw:
+        return [m.group(0) for m in PEM_CERT.finditer(raw.decode('ascii', 'replace'))]
+    for args in (['x509', '-inform', 'DER'], ['pkcs7', '-inform', 'DER', '-print_certs']):
+        try:
+            text = _openssl(args, raw, what='DER').decode('ascii', 'replace')
+            got = [m.group(0) for m in PEM_CERT.finditer(text)]
+            if got:
+                return got
+        except ValueError:
+            continue
+    raise ValueError('%s: neither DER, PEM nor PKCS#7' % url)
+
+
+def chain_complete(leaf, chain, roots='', fetch=True):
+    """The chain checked against the system's roots and, when a link is missing, completed from
+    the "CA Issuers" addresses. (chain as PEM list, state for the pages)."""
+    chain = [c.strip() for c in chain or [] if c.strip()]
+    li = cert_info(leaf)
+    st = {'at': time.time(), 'for': li.get('fingerprint') or '', 'fetched': [], 'ok': False}
+    if li.get('self_signed'):
+        st.update(self_signed=True, said='self-signed - a client trusts it only when it trusts this very certificate')
+        return chain, st
+    ok, said = chain_verify(leaf, chain, roots)
+    tries = []
+    while not ok and fetch and len(st['fetched']) < CHAIN_STEPS:
+        last = chain[-1] if chain else leaf
+        if cert_info(last).get('self_signed'):
+            break
+        urls = _aia_issuers(last)
+        if not urls:
+            tries.append('%s names no CA Issuers address' % (cert_info(last).get('cn') or 'the last certificate'))
+            break
+        got = []
+        for u in urls:
+            try:
+                got = _issuer_fetch(u)
+                break
+            except Exception as e:                      # noqa: BLE001
+                tries.append(str(e)[:200])
+        got = [g.strip() for g in got if g.strip() not in chain and g.strip() != leaf.strip()]
+        if not got:
+            break
+        fi = cert_info(got[0])
+        if fi.get('self_signed'):
+            st['root_missing'] = True   # a root: never sent - the clients have it, or not
+            break
+        chain.append(got[0])
+        st['fetched'].append(fi.get('cn') or fi.get('subject') or '?')
+        ok, said = chain_verify(leaf, chain, roots)
+    st['ok'] = ok
+    st['count'] = len(chain) + 1
+    if ok:
+        st['root'] = said
+        st['private'] = bool(roots) and not chain_verify(leaf, chain, '')[0]
+    else:
+        st['said'] = said
+        st['missing'] = (cert_info(chain[-1]) if chain else li).get('issuer', '')
+        mm = re.search(r'(?:^|,)CN=([^,]+)', st['missing'])
+        st['missing'] = mm.group(1) if mm else st['missing']
+        if tries:
+            st['tries'] = tries[:4]
+    return chain, st
+
+
+def chain_fix_prof(prof, said, force=False, fetch=None):
+    """The certificate of a profile (and its ECDSA twin) with its whole chain - completed where a
+    link is missing, before it goes into nginx. Only when the certificate changed, or asked."""
+    if fetch is None:
+        fetch = os.environ.get('AI_CHAIN_FETCH', '1') != '0'
+    for part in [prof] + ([prof['alt']] if isinstance(prof.get('alt'), dict) else []):
+        if not part.get('cert'):
+            continue
+        leaf = PEM_CERT.search(part['cert'])
+        if not leaf:
+            continue
+        leaf = leaf.group(0)
+        chain = [m.group(0) for m in PEM_CERT.finditer(part.get('chain') or '')]
+        # The certificate and the chain kept with it: the same certificate uploaded again without
+        # its chain is looked at again.
+        fp = (part.get('info') or {}).get('fingerprint') or cert_info(leaf).get('fingerprint')
+        key = '%s/%s' % (fp, hashlib.sha256(''.join(chain).encode()).hexdigest()[:16])
+        old = part.get('chain_state') or {}
+        if not force and old.get('key') == key and (old.get('ok') or old.get('self_signed')):
+            continue
+        try:
+            new, st = chain_complete(leaf, chain, prof.get('root') or '', fetch=fetch)
+        except Exception as e:                          # noqa: BLE001
+            part['chain_state'] = {'at': time.time(), 'for': fp, 'ok': False, 'said': str(e)[:300]}
+            continue
+        st['key'] = '%s/%s' % (fp, hashlib.sha256(''.join(new).encode()).hexdigest()[:16])
+        if st['fetched']:
+            part['chain'] = ''.join(c + '\n' for c in new)
+            if part is prof:
+                prof['chain_info'] = [cert_info(c) for c in new]
+            said.append('the chain completed from the authority: %s' % ', '.join(st['fetched']))
+        if not st['ok'] and not st.get('self_signed'):
+            said.append(('the root %s is not among the system\'s roots' if st.get('root_missing') else
+                         'the chain does not reach a root of the system (%s is missing)') % (st.get('missing') or '?'))
+        part['chain_state'] = st
+
+
+def tls_selfcheck(prof):
+    """After nginx has it: connected to itself as a client that fetches nothing (Python's ssl,
+    the system's roots and the roots given with it) - what other programs will find."""
+    info = prof.get('info') or {}
+    if info.get('self_signed'):
+        return {'at': time.time(), 'ok': None, 'said': 'self-signed: not checked'}
+    port = next((p for p in selinux_nginx_ports() if p != 80), 443)
+    name = info.get('cn') or host_name()
+    if name.startswith('*.'):
+        name = 'ai' + name[1:]
+    ctx = ssl.create_default_context()
+    sysf = chain_roots_file()
+    if sysf:
+        ctx.load_verify_locations(cafile=sysf)
+    if prof.get('root'):
+        try:
+            ctx.load_verify_locations(cadata=prof['root'])
+        except ssl.SSLError:
+            pass
+    ctx.check_hostname = False
+    # Either of the two when an ECDSA one stands beside the RSA one: a client takes the one it prefers.
+    want = {str(x.get('fingerprint') or '').replace(':', '').lower()
+            for x in (info, ((prof.get('alt') or {}).get('info') or {})) if x.get('fingerprint')}
+    def served(context):
+        with socket.create_connection(('127.0.0.1', port), timeout=10) as s:
+            with context.wrap_socket(s, server_hostname=name) as tls:
+                return hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()
+    # First the certificate nginx answers with - the new one, after its reload - read without
+    # judging it; only then whether a client that fetches nothing trusts it.
+    look = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    look.check_hostname = False
+    look.verify_mode = ssl.CERT_NONE
+    said = 'no answer'
+    time.sleep(1.5)                 # systemctl reload returns before nginx's new workers answer
+    for _ in range(8):
+        try:
+            if not want or served(look) in want:
+                break
+            said = 'nginx still answers with the certificate from before - was it reloaded?'
+        except (OSError, ssl.SSLError) as e:
+            said = str(e)[:300]
+        time.sleep(1)
+    else:
+        return {'at': time.time(), 'ok': False, 'said': said}
+    try:
+        served(ctx)
+        return {'at': time.time(), 'ok': True, 'said': 'a client that fetches nothing trusts it (127.0.0.1:%d)' % port}
+    except ssl.SSLCertVerificationError as e:
+        return {'at': time.time(), 'ok': False, 'said': (e.verify_message or str(e))[:300]}
+    except (OSError, ssl.SSLError) as e:
+        return {'at': time.time(), 'ok': False, 'said': str(e)[:300]}
+
+
 def _san_ext(names):
     out = []
     for n in names:
@@ -6255,6 +6489,10 @@ def tls_apply(store, prof, by):
     conf = read_text(NGINX_CONF)
     head, block, tail = nginx_tls_block(conf)
     said = []
+    again = bool(prof.pop('chain_again', False))
+    if prof.get('cert') and prof.get('key') and not NO_SYSTEM:
+        tls_progress('the chain checked against the system\'s roots', 1)
+        chain_fix_prof(prof, said, force=again)
     if prof.get('cert') and prof.get('key'):
         key = unseal_secret(prof['key'], 'web:tls')
         if not key:
@@ -6301,10 +6539,18 @@ def tls_apply(store, prof, by):
     files[NGINX_CONF] = head + ('\n' if head else '') + block + ('\n' if tail else '') + tail
     tls_progress('nginx checks it and reloads', 3)
     nginx_swap(files)
+    if prof.get('cert') and not NO_SYSTEM:
+        sc = tls_selfcheck(prof)
+        prof['selfcheck'] = sc
+        if sc.get('ok') is False:
+            said.append('checked from here: NOT trusted - %s' % sc['said'])
+            store.add_event('system', 'the certificate of the pages is not trusted by a client that fetches nothing '
+                            '(curl, Python, acme): %s' % sc['said'], 'warn', who=by)
     said.append('%s; %s; DH %s%s' % (' '.join(t['protocols']), 'ciphers as set' if prof.get('preset') == 'custom'
                                      else (prof.get('preset') or 'standard'), t['dh'],
                                      '; HSTS %d s' % t['hsts'] if t['hsts'] else '; no HSTS'))
     tls_keep(store, prof, by)
+    NOTICE_CACHE['out'] = None
     store.add_event('system', '%s put the TLS of the pages into nginx: %s' % (by, '; '.join(said)), 'info', who=by)
     return said
 
@@ -11869,6 +12115,21 @@ def notices_current(d, admin=True):
                                'title': 'the certificate of the pages runs out %s' % cert.get('until'),
                                'said': 'Browsers refuse the pages once it has run out.',
                                'cli': 'ai --acme-order', 'link': 'settings/web'})
+            # The whole chain sent (1.0.93): browsers say nothing, every other client refuses.
+            try:
+                tp = tls_prof(st) or {}
+            except Exception:                               # noqa: BLE001
+                tp = {}
+            cs, sc = tp.get('chain_state') or {}, tp.get('selfcheck') or {}
+            if tp.get('cert') and ((cs and not cs.get('ok') and not cs.get('self_signed')) or sc.get('ok') is False):
+                cached.append({'id': 'cert-chain', 'level': 'warn',
+                               'title': 'the certificate of the pages is trusted by browsers only',
+                               'said': ('The root %s is not among the system\'s roots.' % cs.get('missing')
+                                        if cs.get('root_missing') else
+                                        'The intermediate %s is not sent with it.' % cs.get('missing')
+                                        if cs and not cs.get('ok') else (sc.get('said') or '')) +
+                                       ' curl, Python, acme, monitoring and mobile apps refuse the connection.',
+                               'cli': '', 'link': 'settings/web'})
             sel = _notice_selinux_check(st)
             if sel:
                 cached.append(sel)
@@ -17594,6 +17855,12 @@ def api_web_do(c):
             acme_care_set(st, None, False, c.name, 'a certificate was put in by hand')
             tls_apply_later(st, prof, c.name)
             return {'message': 'a self-signed certificate for %s is being put in' % b.get('cn')}
+        if act == 'tls_chain':
+            if not prof.get('cert'):
+                raise Refused('there is no certificate of the pages')
+            prof['chain_again'] = True
+            tls_apply_later(st, prof, c.name)
+            return {'message': 'the chain is being checked and completed'}
         if act == 'tls_policy':
             prof.update(tls_policy_checked(b))
             tls_apply_later(st, prof, c.name)
