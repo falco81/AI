@@ -2417,6 +2417,157 @@ function seRow(list, good, words, more) {
   r.appendChild(t);
   list.appendChild(r);
 }
+/* What SELinux refuses, sorted by what puts it right (1.0.97, after fake-igd's kit): each kind
+   a group with its count, the fixable ones ticked; the page sends only the ids - root works out
+   every fix again from the audit log. */
+var SE_KINDS = [
+  ['fixed', 'Put right just now', ''],
+  ['boolean', 'A boolean', 'A boolean of the policy allows it - setsebool -P turns it on.'],
+  ['label', 'A label', 'The file is not labelled as the policy says it should be - restorecon puts it right.'],
+  ['port', 'A port', 'The port is of no type of its own - semanage port labels it for the service that uses it.'],
+  ['rule', 'A rule of ai\'s', 'Nothing of the policy allows it: exactly this, and nothing more, goes into ai\'s own local module (ai_local).'],
+  ['nobutton', 'Not for a button', 'ai\'s, but what it would take is too much to allow from here - each says why, and what an admin could look at.'],
+  ['other', 'Not ai\'s', 'Other programs of this machine - shown, never put right here.']];
+var SE_FIXABLE = {boolean: 1, label: 1, port: 1, rule: 1};
+function seTimes(g) {
+  return (g.count === 1 ? txT('once') : txT(num(g.count) + ' times')) + ', ' + txT('last') + ' ' + txT(ago(g.last))
+    + (g.permissive ? ' ' + txT('(permissive: let through, written down)') : '');
+}
+function seFindings(fd, n) {
+  SE.sel = SE.sel || {};
+  var wrap = el('div', 'se-find');
+  var hd = el('div', 'se-find-h');
+  hd.appendChild(el('b', '', 'What SELinux refuses'));
+  hd.appendChild(el('span', 'muted small', fd.since ? 'since ai\'s needs were put in' : 'since the machine started'));
+  wrap.appendChild(hd);
+  var all = fd.findings || [];
+  if (!all.length) wrap.appendChild(el('p', 'muted small', 'Nothing - SELinux refused ai nothing.'));
+  var boxes = [];
+  var count = function () {
+    var k = boxes.filter(function (b) { return b.checked; }).length;
+    if (put) { put.lastChild.textContent = txT('Put in what is selected (' + k + ')'); put.disabled = !k || !!n.pending; }
+  };
+  SE_KINDS.forEach(function (kd) {
+    var items = all.filter(function (g) { return g.kind === kd[0]; });
+    if (!items.length) return;
+    var grp = el('div', 'se-grp se-k-' + kd[0]);
+    var gh = el('div', 'se-grp-h');
+    var fixable = !!SE_FIXABLE[kd[0]];
+    var gbox = null;
+    if (fixable) {
+      gbox = el('input'); gbox.type = 'checkbox';
+      explain(gbox, 'Select all of these');
+      gh.appendChild(gbox);
+    } else gh.appendChild(el('span', 'dot ' + (kd[0] === 'fixed' ? 'ok' : kd[0] === 'nobutton' ? 'bad' : 'dim')));
+    gh.appendChild(el('b', '', kd[1]));
+    gh.appendChild(el('span', 'count', num(items.length)));
+    if (kd[2]) gh.appendChild(el('span', 'muted small', kd[2]));
+    grp.appendChild(gh);
+    var mine = [];
+    items.forEach(function (g) {
+      var row = el('div', 'se-item');
+      var lead = el('div', 'se-item-lead');
+      if (fixable) {
+        var cb = el('input'); cb.type = 'checkbox';
+        cb.checked = SE.sel[g.id] !== false;
+        cb.onchange = function () { SE.sel[g.id] = cb.checked; if (gbox) gbox.checked = mine.every(function (x) { return x.checked; }); count(); };
+        cb.dataset.id = g.id;
+        boxes.push(cb); mine.push(cb);
+        lead.appendChild(cb);
+      } else {
+        var ic = el('span', 'se-ic');
+        ic.innerHTML = iconMarkup(kd[0] === 'fixed' ? 'check' : kd[0] === 'nobutton' ? 'cancel' : 'ban', 15);
+        lead.appendChild(ic);
+      }
+      row.appendChild(lead);
+      var body = el('div', 'se-item-b');
+      var top = el('div', 'se-item-top');
+      top.appendChild(noI18n(el('b', '', g.prog || '?')));
+      top.appendChild(noI18n(el('span', 'mono small' + (kd[0] === 'fixed' ? ' se-struck' : ''), (g.stype || '?') + ' → ' + (g.ttype || '?') + ' ' + g.tclass + ' { ' + g.perms + ' }')));
+      top.appendChild(noI18n(el('span', 'se-item-n', num(g.count) + '×')));
+      body.appendChild(top);
+      var sub = el('div', 'small muted');
+      if (g.where) { sub.appendChild(noI18n(el('span', 'mono', g.where))); sub.appendChild(document.createTextNode('  ')); }
+      sub.appendChild(document.createTextNode(seTimes(g)));
+      body.appendChild(sub);
+      if (g.cmd) {
+        var cmd = el('div', 'se-cmd small');
+        cmd.appendChild(document.createTextNode('→ '));
+        cmd.appendChild(noI18n(el('code', '', g.cmd)));
+        body.appendChild(cmd);
+      }
+      body.appendChild(el('div', 'small se-why se-why-' + kd[0], g.why || ''));
+      row.appendChild(body);
+      grp.appendChild(row);
+    });
+    if (gbox) {
+      gbox.checked = mine.every(function (x) { return x.checked; });
+      gbox.onchange = function () { mine.forEach(function (x) { x.checked = gbox.checked; SE.sel[x.dataset.id] = gbox.checked; }); count(); };
+    }
+    wrap.appendChild(grp);
+  });
+  var put = null;
+  if (fd.fixable) {
+    var pr = el('div', 'btnrow se-put');
+    put = cmdButton('Put in what is selected', 'shield', 'primary');
+    put.onclick = function () { seFixAsk(n, boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.id; }), put); };
+    pr.appendChild(put);
+    pr.appendChild(el('span', 'muted small', 'Under enforcing too - nothing has to be switched off for it. What was put right is looked at again at once.'));
+    wrap.appendChild(pr);
+    count();
+  }
+  var rules = fd.rules || [];
+  if (rules.length) {
+    var rl = el('div', 'se-grp se-rules');
+    var rh = el('div', 'se-grp-h');
+    rh.appendChild(el('b', '', 'ai\'s local rules'));
+    rh.appendChild(el('span', 'count', num(rules.length)));
+    rh.appendChild(el('span', 'muted small', 'ai_local, in the policy'));
+    rl.appendChild(rh);
+    rules.forEach(function (r) {
+      var row = el('div', 'se-item');
+      var body = el('div', 'se-item-b');
+      body.appendChild(noI18n(el('code', 'small', '(allow ' + r.fix.src + ' ' + r.fix.tgt + ' (' + r.fix.cls + ' (' + (r.fix.perms || []).join(' ') + ')))')));
+      body.appendChild(noI18n(el('div', 'small muted', (r.why || '') + ' - ' + txT('put in') + ' ' + new Date(Number(r.at || 0) * 1000).toLocaleString(numLang()) + (r.by ? ' · ' + r.by : ''))));
+      row.appendChild(body);
+      var tk = cmdButton('Take it away', 'cancel', 'small');
+      tk.disabled = !!n.pending;
+      tk.onclick = function () {
+        confirmThen('Take this rule away?', htmlText('(allow ' + r.fix.src + ' ' + r.fix.tgt + ' (' + r.fix.cls + ' (' + (r.fix.perms || []).join(' ') + ')))') + '<br><br>'
+          + htmlText('What it allowed is refused again from then on (under enforcing), or written down (permissive).'),
+          'Take it away', function () {
+            api('selinux', {action: 'rule_drop', rule: r.id}).then(function (x) { toast(x.message, 'good'); setTimeout(loadSelinux, 800); }).catch(oops);
+          }, true);
+      };
+      row.appendChild(tk);
+      rl.appendChild(row);
+    });
+    wrap.appendChild(rl);
+  }
+  return wrap;
+}
+/* The confirm says exactly what root will do - asked of root first, nothing done yet. */
+function seFixAsk(n, ids, btn) {
+  if (!ids.length) return;
+  busy(btn, true);
+  api('selinux', {action: 'fix_plan', ids: ids}).then(function (p) {
+    busy(btn, false);
+    var plan = p.plan || [];
+    if (!plan.length) { toast('nothing of it can be put right any more - looked at again', 'warn'); setTimeout(loadSelinux, 300); return; }
+    var html = '<span>' + htmlText(txT('Root does exactly this - nothing else - and looks again at once:')) + '</span><ul class="se-plan">';
+    plan.forEach(function (x) {
+      html += '<li><b>' + htmlText(txT({boolean: 'boolean', label: 'label', port: 'port', rule: 'rule'}[x.kind] || x.kind)) + '</b> <code>' + htmlText(x.cmd) + '</code><br><span class="muted">' + htmlText(x.what) + '</span></li>';
+    });
+    html += '</ul>';
+    (p.left || []).forEach(function (x) { html += '<div class="small muted">' + htmlText(x.id + ': ' + x.why) + '</div>'; });
+    html += '<span>' + htmlText(txT('The rules go into ai\'s own local module ai_local - each can be taken away again below. Every step is written in Events. It works under enforcing too.')) + '</span>';
+    confirmThen(txT('Put in what is selected on ' + n.name + '?'), html, 'Put it in', function () {
+      api('selinux', {action: 'fix', ids: plan.map(function (x) { return x.id; })}).then(function (x) {
+        toast(x.message, 'good'); setTimeout(loadSelinux, 800);
+      }).catch(oops);
+    }, false);
+  }).catch(function (e) { busy(btn, false); oops(e); });
+}
 function drawSelinux() {
   var host = $('se-host');
   if (!host || !SE.d) return;
@@ -2495,13 +2646,21 @@ function seNode(n) {
       seRow(list, x.labelled, x.why, noI18n(el('span', 'mono small se-what', x.port + '/' + x.proto + '  ' + x.type)));
     });
     var d = s.denials || {};
+    var fd = s.found || null;
+    if (fd) {
+      /* What SELinux refuses ai, sorted (1.0.97): the count of what is still to be put right. */
+      var fc = fd.counts || {}, left = (fd.fixable || 0) + (fc.nobutton || 0);
+      seRow(list, !left, left ? 'SELinux refused ai ' + num(left) + ' thing(s)' + (fd.since ? ' since ai\'s needs were put in' : ' since the machine started')
+        : 'Nothing of ai\'s refused' + (fd.since ? ' since ai\'s needs were put in' : ' since the machine started'));
+    } else
     seRow(list, d.tool ? !d.total : null, !d.tool ? 'What SELinux refused cannot be read: ausearch is not on this machine (dnf install audit)'
       : d.since ? (d.total ? 'SELinux refused ' + num(d.total) + ' thing(s) since ai\'s needs were put in' : 'Nothing refused since ai\'s needs were put in')
       : d.total ? 'SELinux refused ' + num(d.total) + ' thing(s) since the machine started' : 'Nothing refused since the machine started');
     if (d.tool && d.settled) seRow(list, true, num(d.settled) + ' refused before, allowed now - by a newer ai_server or a boolean put in since; not counted');
     if (s.auditd === false) seRow(list, false, 'auditd does not run - what SELinux refuses is not written down (systemctl enable --now auditd)');
     box.appendChild(list);
-    if ((d.groups || []).length) {
+    if (fd) box.appendChild(seFindings(fd, n));
+    if (!fd && (d.groups || []).length) {
       var det = el('details', 'se-avc');
       det.appendChild(el('summary', '', 'What was refused (' + num(d.groups.length) + ')'));
       var t = el('table', 'se-avc-t');
@@ -2521,7 +2680,7 @@ function seNode(n) {
     var known = s.module !== false && !(s.labels || []).some(function (x) { return x.ok === false; }) &&
       !(s.booleans || []).some(function (x) { return x.on === false; }) &&
       !(s.ports || []).some(function (x) { return x.labelled === false; });
-    if (d.total && known) {
+    if (!fd && d.total && known) {
       var hint = el('div', 'se-verdict bad');
       hint.appendChild(el('b', '', 'ai does not know this one yet'));
       hint.appendChild(el('span', 'small', 'Everything ai knows it needs is in place - what was refused is something its module does not cover yet. "Put in what ai needs" changes nothing for it: download the report (top right) and send it, so that the module learns it.'));
@@ -2530,6 +2689,12 @@ function seNode(n) {
     var verdict = el('div', 'se-verdict ' + (m === 'Enforcing' && !probs.length ? 'good' : s.ready ? 'ready' : probs.length ? 'bad' : ''));
     verdict.appendChild(el('b', '', m === 'Enforcing' ? (probs.length ? 'Enforcing - but something is not as ai needs it' : 'Enforcing - and everything ai needs is there')
       : s.ready ? 'Ready for enforcing' : 'Not ready for enforcing yet'));
+    if (m === 'Permissive' && !s.ready && fd && (fd.fixable || (fd.counts || {}).nobutton)) {
+      var vw = [];
+      if (fd.fixable) vw.push(txT(num(fd.fixable) + ' thing(s) SELinux refused can be put right here - "Put in what is selected" above.'));
+      if ((fd.counts || {}).nobutton) vw.push(txT(num(fd.counts.nobutton) + ' thing(s) are not for a button - each says why; the report is for whoever looks after ai\'s module.'));
+      verdict.appendChild(noI18n(el('span', 'small', vw.join(' '))));
+    }
     if (m === 'Permissive' && !s.ready) verdict.appendChild(el('span', 'small', 'Let it run a day or two as it is used - sign-ins, the pages, the terminals, an upgrade - then look again.'));
     if (m === 'Enforcing') probs.forEach(function (x) { verdict.appendChild(el('span', 'small', x)); });
     box.appendChild(verdict);

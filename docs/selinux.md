@@ -51,11 +51,46 @@ The daemon looks 2 minutes after it starts, then every half hour, and at once wh
 and something ai needs is missing, a card goes to **Settings → Upgrades → To be done by hand**
 (`selinux-needs`). SELinux switched off behind ai's back has its own card (`selinux-off`, 1.0.85).
 
+### What SELinux refuses, sorted (1.0.97)
+
+*Look again* reads every refusal since the machine started: AVC, USER_AVC and SELINUX_ERR, each with the
+records of its event (SYSCALL for the program, PATH for the whole path, the port). It groups them by what was
+refused and puts each group to `audit2why`. Each finding has an id, a hash of what was refused, so the same
+refusal keeps the same id at every look. The findings are sorted by what puts them right:
+
+| Kind | Put right by |
+|---|---|
+| allowed now | nothing; the policy loaded now allows it, so it is not counted |
+| a boolean | `setsebool -P NAME 1`. Never a boolean that allows far more (`*exec*`, `unconfined`, `*_all*`, `ptrace`, `deny_*`…) |
+| a label | `restorecon -R -v PATH`, when the file is not labelled as `matchpathcon` says |
+| a port | `semanage port -a -t TYPE`. Only for a port of no type of its own (`http_port_t` for nginx, `ssh_port_t`, `ntp_port_t`…) |
+| a rule of ai's | one rule in ai's own local module `ai_local`: `(optional ai_local_ID (allow SRC TGT (CLASS (PERMS))))` |
+| not for a button | never put right from the page; the card says why. This covers security-sensitive types, executing, capabilities, unsafe classes and writes to generic types |
+| not ai's | another program of the machine; shown only |
+
+A refusal counts as ai's when it comes from ai's own program (`/usr/local/lib/ai/ai.py`), from a tool ai runs
+(`chronyc_t`, `ssh_t`…), or from a confined service ai works with (`httpd_t`, `init_t`, `postgresql_t`…). For a
+service it counts only on one of ai's paths or ports.
+
+*Put in what is selected* sends only the ids. Root finds them again in the audit log and works out each fix
+itself. The confirm lists exactly what root will do. It works under enforcing too. What was put right is
+noted with its time, and a refusal from before that no longer counts. The rules of `ai_local` are listed on the
+card, each with *Take it away*. *Switch to enforcing* stays locked while anything fixable or not for a button
+is left.
+
+```
+ai --selinux-look [--json]          the findings, grouped, with their ids and fixes
+ai --selinux-fix ID... | all        lists what root will do, asks (or --yes)
+ai --selinux-rules                  the rules of ai_local
+ai --selinux-rule-drop ID           one taken away (the last one: semodule -r ai_local)
+```
+
 ### The report
 
 *Download the report* gives one `.tar.gz` with the mode, the configuration, the labels of ai's paths, the
 booleans and ports, the modules, what was refused (raw, grouped, `audit2why`, `audit2allow`) and the processes.
-It holds nothing secret. Send it to whoever writes the module when SELinux refuses something that ai's module
+It also has the whole machine under `os/`: every process, boolean, port type and module, what was changed
+locally (`semanage … -l -C`, `semanage export`), and every listening socket. It holds nothing secret. Send it to whoever writes the module when SELinux refuses something that ai's module
 does not cover yet. The page says so: *ai does not know this one yet*.
 
 ### Install, upgrade, uninstall

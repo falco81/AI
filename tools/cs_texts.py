@@ -3756,9 +3756,118 @@ STRINGS = {
         'ai a tyto stránky se restartují s novou verzí',
     'install.sh --upgrade runs (root)':
         'běží install.sh --upgrade (root)',
+    # ---- what SELinux refuses, sorted (1.0.97)
+    'What SELinux refuses':
+        'Co SELinux odmítá',
+    "since ai's needs were put in":
+        'od vložení toho, co ai potřebuje',
+    'since the machine started':
+        'od startu stroje',
+    'Nothing - SELinux refused ai nothing.':
+        'Nic – SELinux ai nic neodmítl.',
+    'Put right just now':
+        'Právě opraveno',
+    'A boolean':
+        'Boolean',
+    'A label':
+        'Štítek',
+    'A port':
+        'Port',
+    "A rule of ai's":
+        'Pravidlo ai',
+    'Not for a button':
+        'Ne na tlačítko',
+    "Not ai's":
+        'Není ai',
+    'A boolean of the policy allows it - setsebool -P turns it on.':
+        'Povoluje to boolean politiky – setsebool -P ho zapne.',
+    'The file is not labelled as the policy says it should be - restorecon puts it right.':
+        'Soubor nemá štítek, jaký má mít podle politiky – restorecon to opraví.',
+    'The port is of no type of its own - semanage port labels it for the service that uses it.':
+        'Port nemá vlastní typ – semanage port ho označí pro službu, která ho používá.',
+    "Nothing of the policy allows it: exactly this, and nothing more, goes into ai's own local module (ai_local).":
+        'Nic v politice to nepovoluje: přesně tohle a nic víc půjde do vlastního lokálního modulu ai (ai_local).',
+    "ai's, but what it would take is too much to allow from here - each says why, and what an admin could look at.":
+        'Patří ai, ale povolit to odsud by bylo příliš – u každého je proč a na co se může podívat správce.',
+    'Other programs of this machine - shown, never put right here.':
+        'Jiné programy tohoto stroje – jen se ukazují, tady se nikdy neopravují.',
+    'Select all of these':
+        'Vybrat všechny',
+    'once':
+        'jednou',
+    '(permissive: let through, written down)':
+        '(permissive: propuštěno, zapsáno)',
+    'Under enforcing too - nothing has to be switched off for it. What was put right is looked at again at once.':
+        'I při vynucování – nic se kvůli tomu nemusí vypínat. Co se opravilo, se hned znovu prohlédne.',
+    "ai's local rules":
+        'Lokální pravidla ai',
+    'ai_local, in the policy':
+        'ai_local, v politice',
+    'Take this rule away?':
+        'Odebrat toto pravidlo?',
+    'What it allowed is refused again from then on (under enforcing), or written down (permissive).':
+        'Co povolovalo, se od té chvíle zase odmítá (při vynucování), nebo zapisuje (permissive).',
+    'put in':
+        'vloženo',
+    'Root does exactly this - nothing else - and looks again at once:':
+        'Root udělá přesně tohle – nic jiného – a hned se znovu podívá:',
+    'boolean':
+        'boolean',
+    'label':
+        'štítek',
+    'port':
+        'port',
+    'rule':
+        'pravidlo',
+    "The rules go into ai's own local module ai_local - each can be taken away again below. Every step is written in Events. It works under enforcing too.":
+        'Pravidla jdou do vlastního lokálního modulu ai ai_local – každé se dá níže zase odebrat. Každý krok se zapíše do Událostí. Funguje to i při vynucování.',
+    'nothing of it can be put right any more - looked at again':
+        'nic z toho už nejde opravit – podívám se znovu',
+    'asked: put right within seconds, then looked at again':
+        'požádáno: opraví se během pár sekund a pak se znovu podívá',
+    'asked: the rule is taken away within seconds':
+        'požádáno: pravidlo se odebere během pár sekund',
+    'nothing is selected':
+        'nic není vybráno',
+    "nothing of the policy allows it: a rule of ai's own local module allows exactly this":
+        'nic v politice to nepovoluje: přesně tohle povolí pravidlo vlastního lokálního modulu ai',
+    'last':
+        'naposledy',
 }
 
 PATTERNS = {
+    'Put in what is selected ({0})':
+        'Vložit vybrané ({0})',
+    '{0} times':
+        '{0}×',
+    'SELinux refused ai {0} thing(s) since the machine started':
+        'SELinux od startu stroje odmítl ai {0}×',
+    "SELinux refused ai {0} thing(s) since ai's needs were put in":
+        'SELinux od vložení toho, co ai potřebuje, odmítl ai {0}×',
+    "Nothing of ai's refused since the machine started":
+        'Od startu stroje nic z ai neodmítnuto',
+    "Nothing of ai's refused since ai's needs were put in":
+        'Od vložení toho, co ai potřebuje, nic z ai neodmítnuto',
+    '{0} thing(s) SELinux refused can be put right here - "Put in what is selected" above.':
+        '{0} věcí, které SELinux odmítl, se dá opravit tady – „Vložit vybrané“ výše.',
+    "{0} thing(s) are not for a button - each says why; the report is for whoever looks after ai's module.":
+        '{0} věcí není na tlačítko – u každé je proč; zpráva je pro toho, kdo se stará o modul ai.',
+    'Put in what is selected on {0}?':
+        'Vložit vybrané na {0}?',
+    'SELinux refused ai {0} thing(s): {1} can be put right here, {2} not for a button':
+        'SELinux odmítl ai {0}×: {1} se dá opravit tady, {2} ne na tlačítko',
+    "SELinux refused ai {0} thing(s) since ai's needs were put in: {1} can be put right here, {2} not for a button":
+        'SELinux od vložení toho, co ai potřebuje, odmítl ai {0}×: {1} se dá opravit tady, {2} ne na tlačítko',
+    '{0} is security-sensitive ({1}) - never allowed from here':
+        '{0} je citlivé na bezpečnost ({1}) – odsud se nikdy nepovolí',
+    "not ai's: {0} ({1}) is another program of this machine - look at it with whoever looks after it":
+        'není ai: {0} ({1}) je jiný program tohoto stroje – podívejte se na to s tím, kdo se o něj stará',
+    'put right {0} - it goes at the next look':
+        'opraveno {0} – zmizí při příštím pohledu',
+    'a boolean of the policy allows it: {0}':
+        'povoluje to boolean politiky: {0}',
+    '{0} is labelled {1} - the policy says {2}':
+        '{0} má štítek {1} – politika říká {2}',
     'ai is being upgraded to {0}':
         'probíhá upgrade ai na {0}',
     'ai is being taken back to {0}':

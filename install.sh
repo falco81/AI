@@ -332,6 +332,10 @@ if [[ -n "$DO_UNINSTALL" ]]; then
     if command -v semodule >/dev/null 2>&1 && semodule -l 2>/dev/null | awk '$1=="ai_server"{f=1} END{exit !f}'; then
         run semodule -r ai_server >/dev/null 2>&1 && good "SELinux: ai's module (ai_server) taken out of the policy" || true
     fi
+    # ai's local rules (1.0.97, put in from Settings - SELinux) go with it; the mode, booleans and port labels stay.
+    if command -v semodule >/dev/null 2>&1 && semodule -l 2>/dev/null | awk '$1=="ai_local"{f=1} END{exit !f}'; then
+        run semodule -r ai_local >/dev/null 2>&1 && good "SELinux: ai's local rules (ai_local) taken out of the policy" || true
+    fi
     for one in "$UNIT_FILE" "$LOGROTATE_FILE" "$NGINX_CONF" "$BIN_LINK" /etc/php-fpm.d/ai.conf /etc/php/*/fpm/pool.d/ai.conf \
                /etc/profile.d/zz-ai-console.sh /etc/ai-console-login /etc/sysctl.d/80-ai-console.conf; do
         [[ -e "$one" ]] && run rm -f "$one"

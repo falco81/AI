@@ -480,6 +480,105 @@ _snot.set_meta_json('selinux:now', {'data': {'mode': 'Enforcing', 'problems': ['
 check('SELinux: enforcing with something missing is a notice for "To be done by hand"',
       (ai.selinux_notice(_snot) or {}).get('id') == 'selinux-needs' and "'selinux-needs'" in _appjs)
 
+# ---- what SELinux refuses, sorted by what puts it right (1.0.97) ----------------------------------
+_hx = lambda s: s.encode().hex().upper()
+_LBL = os.path.join(_SE, 'www', 'ai', 'assets'); os.makedirs(_LBL)
+_lf = os.path.join(_LBL, 'core.js'); open(_lf, 'w').close()
+_was_paths = ai.SE_AI_PATHS
+ai.SE_AI_PATHS = ai.SE_AI_PATHS + (os.path.join(_SE, 'www', 'ai'),)
+_ng = os.path.join(_SE, 'nginx-ai.conf')
+with open(_ng, 'w') as f:
+    f.write('server {\n    listen 443 ssl;\n    listen 8444 ssl;\n}\n')
+os.environ['AI_NGINX_CONF'] = _ng
+def _ev(n, avc, sysc='', path='', title=''):
+    out = ['----', 'time->Sun Nov  8 17:18:00 2026']
+    if title:
+        out.append('type=PROCTITLE msg=audit(1794154680.%03d:%d): proctitle=%s' % (n, n, title))
+    if path:
+        out.append('type=PATH msg=audit(1794154680.%03d:%d): item=0 name=%s inode=1' % (n, n, path))
+    if sysc:
+        out.append('type=SYSCALL msg=audit(1794154680.%03d:%d): arch=c000003e syscall=42 success=no %s' % (n, n, sysc))
+    out.append('type=AVC msg=audit(1794154680.%03d:%d): avc:  denied  { %s permissive=1' % (n, n, avc))
+    return '\n'.join(out)
+_fix = '\n'.join([
+    _ev(1, 'name_connect } for pid=1 comm="php-fpm" dest=9871 scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket',
+        'comm="php-fpm" exe="/usr/sbin/php-fpm"'),
+    _ev(2, 'read } for pid=2 comm="nginx" name="core.js" scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:default_t:s0 tclass=file',
+        'comm="nginx" exe="/usr/sbin/nginx"', '"%s"' % _lf),
+    _ev(3, 'name_bind } for pid=3 comm="nginx" src=8444 scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket',
+        'comm="nginx" exe="/usr/sbin/nginx"'),
+    _ev(4, 'write } for pid=4 comm="chronyc" path="pipe:[123]" scontext=system_u:system_r:chronyc_t:s0 tcontext=system_u:system_r:unconfined_service_t:s0 tclass=fifo_file',
+        'comm="chronyc" exe="/usr/bin/chronyc"'),
+    _ev(5, 'nnp_transition } for pid=5 comm="python3" scontext=system_u:system_r:unconfined_service_t:s0 tcontext=system_u:system_r:chronyc_t:s0 tclass=process2',
+        'comm="python3" exe="/usr/bin/python3.12"', '', _hx('/usr/bin/python3.12\x00/usr/local/lib/ai/ai.py\x00--daemon')),
+    _ev(6, 'read } for pid=6 comm="chronyc" name="shadow" scontext=system_u:system_r:chronyc_t:s0 tcontext=system_u:object_r:shadow_t:s0 tclass=file',
+        'comm="chronyc" exe="/usr/bin/chronyc"', '"/etc/shadow"'),
+    _ev(7, 'write } for pid=7 comm="smbd" name="share" scontext=system_u:system_r:smbd_t:s0 tcontext=system_u:object_r:home_root_t:s0 tclass=dir',
+        'comm="smbd" exe="/usr/sbin/smbd"'),
+    _ev(8, 'getattr } for pid=8 comm="nginx" path="/var/www/ai/x" scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:httpd_sys_content_t:s0 tclass=file',
+        'comm="nginx" exe="/usr/sbin/nginx"'),
+    _ev(9, 'nnp_transition } for pid=9 comm="python3" scontext=system_u:system_r:unconfined_service_t:s0 tcontext=system_u:system_r:chronyc_t:s0 tclass=process2',
+        'comm="python3" exe="/usr/bin/python3.12"', '', _hx('/usr/bin/python3.12\x00/usr/local/lib/ai/ai.py\x00--daemon')),
+]) + '\n'
+_put('avc', _fix)
+_put('mode', 'Permissive\n')
+with open(os.path.join(_SB, 'audit2why'), 'w') as f:
+    f.write('#!/usr/bin/python3\nimport sys\nfor l in sys.stdin:\n    print(l.rstrip())\n    print("\\n\\tWas caused by:")\n'
+            '    if "dest=9871" in l: print("\\t\\tThe boolean httpd_can_network_connect was set incorrectly.\\n\\t\\t# setsebool -P httpd_can_network_connect 1")\n'
+            '    elif ":8)" in l: print("\\t\\tUnknown - would be allowed by active policy")\n'
+            '    else: print("\\t\\tMissing type enforcement (TE) allow rule.")\n    print()\n')
+os.chmod(os.path.join(_SB, 'audit2why'), 0o755)
+_tool('matchpathcon', 'echo "$2\tsystem_u:object_r:httpd_sys_content_t:s0"')
+_tool('semodule', 'case "$1" in -l) cat @/modules 2>/dev/null; echo base;; -i) n=$(basename "$2" .cil); grep -qx "$n" @/modules 2>/dev/null || echo "$n" >> @/modules; cp "$2" @/last.cil;; -r) grep -vx "$2" @/modules > @/m2; mv @/m2 @/modules;; esac')
+_labels = json.load(open(os.path.join(_SE, 'labels'))); _labels[_lf] = 'default_t'
+_put('labels', json.dumps(_labels))
+try:
+    os.unlink(os.path.join(WORK, ai.SE_APPLIED))
+except OSError:
+    pass
+_fd = ai.se_find(0)
+_k = {g['kind']: g for g in _fd['findings']}
+_kinds = sorted(g['kind'] for g in _fd['findings'])
+check('SELinux findings: each refusal sorted - boolean, label, port, rule, not for a button, not ai\'s; allowed now not counted',
+      _kinds == ['boolean', 'label', 'nobutton', 'other', 'port', 'rule', 'rule'] and _fd['fixable'] == 5,
+      ) if True else None
+check('SELinux findings: the fix is worked out from what was refused',
+      _k['boolean']['cmd'] == 'setsebool -P httpd_can_network_connect 1' and _k['label']['cmd'] == 'restorecon -R -v ' + _lf
+      and _k['port']['cmd'] == 'semanage port -a -t http_port_t -p tcp 8444' and 'shadow_t' in _k['nobutton']['why']
+      and _k['other']['prog'] == 'smbd')
+_nnp = [g for g in _fd['findings'] if g['tclass'] == 'process2'][0]
+check('SELinux findings: ai\'s own program known by its proctitle (hex), the same refusal the same id at every look',
+      _nnp['mine'] and _nnp['prog'] == 'python3' and _nnp['id'] == [g for g in ai.se_find(0)['findings'] if g['tclass'] == 'process2'][0]['id']
+      and _nnp['cmd'] == '(allow unconfined_service_t chronyc_t (process2 (nnp_transition)))')
+_plan = ai.se_fix([_k['nobutton']['id'], _nnp['id'], 'zzz', _k['other']['id']], dry=True)
+check('SELinux fix: only ids, only what may be put right - not for a button and not ai\'s are left, with why',
+      [p['id'] for p in _plan['plan']] == [_nnp['id']] and len(_plan['left']) == 2)
+_res = ai.se_fix([g['id'] for g in _fd['findings']], by='test')
+_cil = open(os.path.join(_SE, 'last.cil')).read()
+check('SELinux fix: booleans, labels, ports, rules put in; the rules in ai\'s own local module, each optional',
+      'httpd_can_network_connect' in open(os.path.join(_SE, 'bools')).read() and 'http_port_t tcp 8444' in open(os.path.join(_SE, 'ports')).read()
+      and '(optional ai_local_%s' % _nnp['id'] in _cil and 'ai_local' in open(os.path.join(_SE, 'modules')).read()
+      and len(_res['done']) == 5 and len(ai.se_local_rules()) == 2)
+_fd2 = ai.se_find(0)
+check('SELinux fix: what was put right no longer counts - it is shown as put right until it goes',
+      _fd2['fixable'] == 0 and sum(1 for g in _fd2['findings'] if g['kind'] == 'fixed') == 5)
+ai.se_rule_drop(_nnp['id'])
+check('SELinux rules: one taken away - the module written again without it; it counts again',
+      len(ai.se_local_rules()) == 1 and _nnp['id'] not in open(os.path.join(_SE, 'last.cil')).read()
+      and [g for g in ai.se_find(0)['findings'] if g['id'] == _nnp['id']][0]['kind'] == 'rule')
+ai.se_rule_drop([r['id'] for r in ai.se_local_rules()][0])
+check('SELinux rules: the last taken away - ai_local out of the policy', 'ai_local' not in open(os.path.join(_SE, 'modules')).read())
+_c = ai.se_check(ai.selinux_want())
+check('SELinux check: the findings in the card, and enforcing locked while something is left',
+      _c['found'] and _c['found']['fixable'] >= 1 and any('can be put right here' in p for p in _c['problems']) and not _c['ready'])
+try:
+    ai.selinux_ask(type('D', (), {'store': _NStore()})(), 'fix', 'test', ids=['../../etc'])
+    check('SELinux fix: a request naming anything but finding ids is refused', False)
+except ai.Refused:
+    check('SELinux fix: a request naming anything but finding ids is refused', True)
+ai.SE_AI_PATHS = _was_paths
+del os.environ['AI_NGINX_CONF']
+
 _A = os.path.join(_SE, 'anchors'); os.makedirs(_A, 0o755)
 os.chmod(_A, 0o755)
 os.environ.update(AI_OSROOTS_FLAVOUR='rhel', AI_OSROOTS_DIR=_A, AI_OSROOTS_BUNDLE=os.path.join(_SE, 'bundle.pem'),

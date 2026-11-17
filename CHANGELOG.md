@@ -3,6 +3,26 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.97
+
+- **SELinux: what it refuses, found out and sorted by what puts it right** (Settings → SELinux; after fake-igd's
+  kit). Every AVC, USER_AVC and SELINUX_ERR since the machine started is read with the records of its event (the
+  program, the whole path, the port), grouped by what was refused, put to audit2why and sorted: *a boolean*,
+  *a label* (restorecon), *a port* (semanage port, never a port another service's type has), *a rule of ai's* (one
+  rule in ai's own local module `ai_local`, each in an optional block), *not for a button* (security-sensitive types,
+  executing, capabilities, unsafe classes, writes to generic types - each says why), *not ai's* (another program of the
+  machine). What the policy loaded now allows is not counted. A refusal is ai's when it is ai's own program, a tool it
+  runs, or a confined service it works with on one of ai's paths or ports.
+- **Put in what is selected**: the fixable ones come ticked; the page sends only finding ids - root works out every fix
+  again from the audit log; the confirm lists exactly what root will do; under enforcing too. What was put right is
+  noted with its time and no longer counts; ai's local rules are listed, each with *Take it away*. Enforcing stays locked
+  while something fixable or not-for-a-button is left.
+- The report has the whole machine beside ai's part: `os/` - every process, boolean, port type and module, what was
+  changed locally (`semanage … -l -C`, `semanage export`), every listening socket; and ai's local rules.
+- Command line: `ai --selinux-look [--json]`, `ai --selinux-fix ID…|all` (lists what root will do, asks, or --yes),
+  `ai --selinux-rules`, `ai --selinux-rule-drop ID`. `--uninstall` takes `ai_local` away with `ai_server`.
+- When the audit log cannot be sorted, the card counts what was refused as before.
+
 ## 1.0.96
 
 - **The pages stay with an upgrade that restarts them** (after fake-igd's upgrade kit). Root writes how far an

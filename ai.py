@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.96'
+__version__ = '1.0.97'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -10771,7 +10771,7 @@ SE_PORT_TYPES = ('postgresql_port_t', 'mysqld_port_t', 'http_port_t')
 # The programs whose refusals are ai's business.
 SE_DOMAINS = ('httpd_t', 'postgresql_t', 'mysqld_t', 'init_t', 'unconfined_service_t', 'logrotate_t',
               'chronyd_t', 'syslogd_t')
-SE_ACTIONS = ('check', 'prepare', 'enforce', 'permissive', 'report')
+SE_ACTIONS = ('check', 'prepare', 'enforce', 'permissive', 'report', 'fix', 'rule_drop')
 SE_APPLIED = 'selinux-applied'          # in the daemon's own folder (root's, 0711): when ai's needs went in
 SE_REPORT = 'selinux-report.tar.gz'
 SE_REPORT_KEEP_S = 3600
@@ -11007,6 +11007,482 @@ def se_allowed_now(lines):
     return sorted(now)
 
 
+# ---- what SELinux refuses, found out and sorted by what puts it right (1.0.97, after fake-igd's kit) ----
+# Every AVC, USER_AVC and SELINUX_ERR since the machine started, read with the records of its event
+# (SYSCALL: the program; PATH: the whole path; the port), grouped by what was refused, each group put
+# to audit2why and sorted into one kind: allowed now (not counted), a boolean, a label, a port, a rule
+# of ai's own local module (ai_local), not for a button (too much to allow from a page - with why), not
+# ai's (another program of the machine). A finding's id is a hash of what was refused: the same refusal
+# has the same id at every look, and the page names only ids - root works out every fix itself.
+SE_LOCAL = 'ai_local'
+SE_LOCAL_LIST = 'selinux-local.json'      # in the daemon's own folder (root's): the rules, one by one
+SE_FIXED = 'selinux-fixed.json'           # what was put right when: a refusal from before no longer counts
+SE_FIND_MOST = 200
+SE_HEX_FIELDS = ('proctitle', 'name', 'path', 'comm', 'exe', 'cwd')
+# The tools ai runs that have a domain of their own; what is refused to them is ai's.
+SE_TOOL_DOMAINS = ('chronyc_t', 'ifconfig_t', 'hostname_t', 'ssh_keygen_t', 'ssh_t', 'ping_t', 'rpm_t',
+                   'semanage_t', 'setfiles_t', 'load_policy_t', 'iptables_t', 'firewalld_t', 'NetworkManager_t',
+                   'systemd_hostnamed_t', 'mount_t', 'passwd_t')
+# The confined services ai works with: theirs only on one of ai's paths or ports.
+SE_SERVICE_DOMAINS = ('httpd_t', 'init_t', 'logrotate_t', 'postgresql_t', 'mysqld_t', 'sshd_t', 'chronyd_t',
+                      'syslogd_t', 'systemd_tmpfiles_t', 'certbot_t')
+SE_AI_PATHS = ('/run/ai', '/var/run/ai', '/var/www/ai', '/usr/local/lib/ai', '/var/lib/ai', '/var/log/ai', '/etc/ai',
+               '/etc/nginx/conf.d/ai.conf', '/etc/nginx/certs', '/etc/nginx/ai-backups', '/etc/php-fpm.d/ai.conf',
+               '/run/php-fpm/ai.sock', '/var/run/php-fpm/ai.sock', '/etc/logrotate.d/ai', '/usr/local/bin/ai',
+               '/etc/systemd/system/ai.service')
+SE_PORT_FOR = {'httpd_t': 'http_port_t', 'sshd_t': 'ssh_port_t', 'chronyd_t': 'ntp_port_t',
+               'postgresql_t': 'postgresql_port_t', 'mysqld_t': 'mysqld_port_t'}
+SE_FREE_PORT_TYPES = ('unreserved_port_t', 'port_t', 'hi_reserved_port_t', 'reserved_port_t', 'ephemeral_port_t')
+SE_BAD_BOOL = re.compile(r'(exec|unconfined|manage_all|read_all|ptrace|^deny_|secure_mode|_all_|selinuxuser_|'
+                         r'mmap_low|use_nfs_home|use_cifs_home|enable_homedirs|anon_write)')
+SE_BAD_TARGET = re.compile(r'^(shadow_t|passwd_file_t|security_t|kernel_t|load_policy_.*|semanage_.*|selinux_config_t|'
+                           r'default_context_t|file_context_t|policy_config_t|.*_key_t|ssh_home_t|user_home_t|'
+                           r'user_home_dir_t|admin_home_t|home_root_t|auditd_.*|audit_.*|sudo_.*|sysadm_.*|'
+                           r'boot_t|bootloader_.*|fixed_disk_device_t|memory_device_t|.*_exec_t)\Z')
+SE_BAD_PERMS = {'execute', 'execute_no_trans', 'entrypoint', 'execmod', 'execmem', 'execstack', 'execheap', 'transition',
+                'dyntransition', 'ptrace', 'relabelfrom', 'relabelto', 'setcurrent', 'setexec', 'setfscreate', 'mounton',
+                'load_policy', 'setenforce', 'setbool', 'sys_admin', 'dac_override', 'dac_read_search', 'sys_module',
+                'sys_rawio', 'sys_ptrace', 'setuid', 'setgid', 'net_admin', 'mac_admin', 'mac_override', 'fowner',
+                'fsetid', 'chown', 'sys_chroot', 'audit_control', 'audit_write'}
+SE_BAD_CLASSES = {'security', 'kernel_service', 'key', 'bpf', 'capability', 'capability2', 'cap_userns', 'cap2_userns',
+                  'system', 'service', 'perf_event', 'lockdown'}
+SE_GENERIC_TYPES = {'etc_t', 'usr_t', 'bin_t', 'var_t', 'default_t', 'tmp_t', 'root_t', 'lib_t', 'device_t', 'var_lib_t',
+                    'var_run_t', 'var_log_t', 'proc_t', 'sysfs_t', 'unlabeled_t'}
+SE_WRITE_PERMS = {'write', 'append', 'create', 'unlink', 'rename', 'setattr', 'add_name', 'remove_name', 'link', 'rmdir',
+                  'reparent'}
+SE_NAME_RE = re.compile(r'^[a-z][A-Za-z0-9_]{0,80}\Z')
+SE_KIND_ORDER = ('boolean', 'label', 'port', 'rule', 'nobutton', 'other', 'fixed')
+
+
+def _se_unhex(v):
+    v = str(v or '')
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        return v[1:-1]
+    if v and len(v) % 2 == 0 and re.match(r'^[0-9A-Fa-f]+\Z', v):
+        try:
+            return bytes.fromhex(v).decode('utf-8', 'replace').replace('\x00', ' ').strip()
+        except ValueError:
+            return v
+    return v
+
+
+def _se_fields(line):
+    """key=value of an audit record; quoted or hex-encoded strings opened (only where they are strings)."""
+    out = {}
+    for m in re.finditer(r'(\w+)=("[^"]*"|\S+)', line):
+        k, v = m.group(1), m.group(2)
+        out.setdefault(k, _se_unhex(v) if k in SE_HEX_FIELDS else v.strip('"'))
+    return out
+
+
+def se_events(raw):
+    """The events of `ausearch` (raw) as dicts: what was refused, by which program, on which path or port."""
+    out = []
+    for block in re.split(r'(?m)^----\s*$', raw or ''):
+        avcs, sysc, paths, title, errs = [], {}, [], '', []
+        for line in block.splitlines():
+            m = re.match(r'^type=(\w+) msg=audit\(([0-9.]+):(\d+)\):\s*(.*)$', line.strip())
+            if not m:
+                continue
+            kind, rest = m.group(1), m.group(4)
+            if kind in ('AVC', 'USER_AVC') and 'denied' in rest:
+                avcs.append((m.group(2), m.group(3), line.strip(), rest))
+            elif kind == 'SELINUX_ERR':
+                errs.append((m.group(2), m.group(3), line.strip(), rest))
+            elif kind == 'SYSCALL':
+                sysc = _se_fields(rest)
+            elif kind == 'PATH':
+                paths.append(_se_fields(rest))
+            elif kind == 'PROCTITLE':
+                title = _se_fields(rest).get('proctitle', '')
+        for when, serial, line, rest in avcs:
+            f = _se_fields(rest)
+            perms = re.search(r'denied\s+\{([^}]*)\}', rest)
+            sc, tc = f.get('scontext', ''), f.get('tcontext', '')
+            if not (perms and sc and tc and f.get('tclass')):
+                continue
+            path = f.get('path', '')
+            if not path.startswith('/'):
+                full = [p.get('name', '') for p in paths if str(p.get('name', '')).startswith('/')]
+                nm = f.get('name', '')
+                path = next((p for p in full if nm and p.endswith('/' + nm)), full[0] if full else (nm or ''))
+            port = f.get('src') if f.get('src', '').isdigit() else (f.get('dest') if f.get('dest', '').isdigit() else '')
+            if port and f.get('tclass') not in ('tcp_socket', 'udp_socket', 'sctp_socket', 'rawip_socket'):
+                port = ''
+            out.append({'at': float(when), 'serial': serial, 'line': line,
+                        'stype': (sc.split(':') + ['', '', ''])[2], 'ttype': (tc.split(':') + ['', '', ''])[2],
+                        'tclass': f['tclass'], 'perms': ' '.join(sorted(perms.group(1).split())),
+                        'comm': (sysc.get('comm') or f.get('comm') or '')[:60], 'exe': (sysc.get('exe') or f.get('exe') or '')[:200],
+                        'title': title[:300], 'path': str(path)[:300], 'port': port,
+                        'permissive': f.get('permissive') == '1'})
+        for when, serial, line, rest in errs:
+            f = _se_fields(rest)
+            out.append({'at': float(when), 'serial': serial, 'line': line, 'stype': '', 'ttype': '', 'tclass': 'selinux_err',
+                        'perms': '', 'comm': (sysc.get('comm') or '')[:60], 'exe': (sysc.get('exe') or '')[:200],
+                        'title': title[:300], 'path': '', 'port': '', 'permissive': False,
+                        'err': re.sub(r'\s+', ' ', rest)[:300]})
+    return out
+
+
+def _se_ai_path(p):
+    p = str(p or '')
+    return any(p == a or p.startswith(a.rstrip('/') + '/') or (a == '/etc/nginx/certs' and p.startswith(a)) for a in SE_AI_PATHS)
+
+
+def se_ai_ports():
+    out = set()
+    try:
+        out.add(int(CONFIG.get('api_port') or 9871))
+    except (TypeError, ValueError):
+        pass
+    out.update(selinux_nginx_ports())
+    try:
+        if _se_local_db(CONFIG.get('db_host')) and int(CONFIG.get('db_port') or 0):
+            out.add(int(CONFIG.get('db_port')))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def se_whose(e, ports=None):
+    """True when what was refused is ai's business: ai's own program, a tool it runs, or a confined
+    service it works with - that one only on one of ai's paths or ports."""
+    st = e.get('stype') or ''
+    if st == 'unconfined_service_t':
+        return bool(re.search(r'(^|/)ai\.py\b|/usr/local/lib/ai/', (e.get('exe') or '') + ' ' + (e.get('title') or '')))
+    if st in SE_TOOL_DOMAINS:
+        return True
+    if st in SE_SERVICE_DOMAINS:
+        if _se_ai_path(e.get('path')):
+            return True
+        try:
+            return bool(e.get('port')) and int(e['port']) in (ports if ports is not None else se_ai_ports())
+        except ValueError:
+            return False
+    return False
+
+
+def se_not_for_button(g):
+    """Why allowing this from a page would be too much - or '' when it is not."""
+    perms = set(g['perms'].split())
+    if g['tclass'] in SE_BAD_CLASSES:
+        return '%s is a class that is never allowed from here (%s)' % (g['tclass'], g['perms'])
+    if SE_BAD_TARGET.match(g['ttype'] or ''):
+        return '%s is security-sensitive (%s) - never allowed from here' % (g['ttype'], g['tclass'])
+    bad = sorted(perms & SE_BAD_PERMS)
+    if bad:
+        return '%s { %s } would let it run, change or reach far more than this - never allowed from here' % (
+            g['tclass'], ' '.join(bad))
+    if g['tclass'] == 'process' and perms - {'sigchld', 'signull', 'signal', 'getattr', 'getpgid', 'getsched', 'sigkill',
+                                             'sigstop', 'getsession', 'noatsecure', 'rlimitinh', 'siginh'}:
+        return 'process { %s } changes how a program runs - never allowed from here' % g['perms']
+    if g['tclass'] == 'process2' and perms - {'nnp_transition', 'nosuid_transition'}:
+        return 'process2 { %s } - never allowed from here' % g['perms']
+    if g['ttype'] in SE_GENERIC_TYPES and perms & SE_WRITE_PERMS:
+        return 'writing to %s (a type many files share) would let it write far more than this' % g['ttype']
+    if g['tclass'] == 'selinux_err':
+        return 'an error of the policy itself - for whoever writes the module (Download the report)'
+    if not (SE_NAME_RE.match(g['stype'] or '') and SE_NAME_RE.match(g['ttype'] or '') and SE_NAME_RE.match(g['tclass'])
+            and all(SE_NAME_RE.match(p) for p in perms)):
+        return 'not something a rule can name'
+    return ''
+
+
+def _se_why(lines):
+    """audit2why for each event line: {serial: ('allowed'|'boolean'|'te'|'', [booleans])}."""
+    if not lines or not which('audit2why'):
+        return {}
+    got = _se_run(['audit2why'], 300, light=True, data=''.join(x + '\n' for x in lines))
+    if got is None or got.returncode not in (0, 1):
+        return {}
+    out, cur = {}, None
+    for line in (got.stdout or '').splitlines():
+        m = re.search(r'msg=audit\([0-9.]+:(\d+)\)', line)
+        if m and 'avc:' in line:
+            cur = m.group(1)
+            out[cur] = ['', []]
+            continue
+        if cur is None:
+            continue
+        if 'would be allowed by active policy' in line:
+            out[cur][0] = 'allowed'
+        b = re.search(r'setsebool -P (\S+) (?:1|on|true)', line)
+        if b:
+            out[cur][0] = out[cur][0] or 'boolean'
+            out[cur][1].append(b.group(1))
+        if 'Missing type enforcement' in line and not out[cur][0]:
+            out[cur][0] = 'te'
+    return {k: (v[0], v[1]) for k, v in out.items()}
+
+
+def _se_matchpath(path):
+    got = _se_run(['matchpathcon', '-n', path], 30)
+    if got is None or got.returncode != 0:
+        return ''
+    parts = (got.stdout or '').strip().split(':')
+    return parts[2] if len(parts) >= 3 else ''
+
+
+def _se_state_json(name, default):
+    try:
+        fd = os.open(str(STATE_DIR / name), os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd) as f:
+            got = json.load(f)
+        return got if isinstance(got, type(default)) else default
+    except (OSError, ValueError):
+        return default
+
+
+def se_find(since=0.0, raw=None):
+    """The findings: [{id, kind, why, fix, ...}] - and how many of each kind. `raw` for the tests."""
+    if raw is None:
+        got = _se_run(['ausearch', '-m', 'AVC,USER_AVC,SELINUX_ERR', '-ts', 'boot'], 120, light=True)
+        if got is None:
+            return None
+        raw = got.stdout or ''
+    events = se_events(raw)
+    ports = se_ai_ports()
+    fixed = _se_state_json(SE_FIXED, {})
+    groups = {}
+    for e in events:
+        prog = e['comm'] or os.path.basename(e['exe'] or '') or '?'
+        where = ('port %s/%s' % (e['port'], 'udp' if e['tclass'].startswith('udp') else 'tcp')) if e['port'] else e['path']
+        key = '|'.join((e['stype'], e['ttype'], e['tclass'], e['perms'], prog, where, e.get('err', '')))
+        gid = hashlib.sha256(key.encode('utf-8', 'replace')).hexdigest()[:12]
+        g = groups.get(gid)
+        if g is None:
+            g = groups[gid] = {'id': gid, 'stype': e['stype'], 'ttype': e['ttype'], 'tclass': e['tclass'],
+                               'perms': e['perms'], 'prog': prog, 'exe': e['exe'], 'path': e['path'], 'port': e['port'],
+                               'where': where, 'count': 0, 'first': e['at'], 'last': e['at'], 'lines': [],
+                               'permissive': e['permissive'], 'mine': se_whose(e, ports), 'err': e.get('err', '')}
+        if since and e['at'] < since:
+            g.setdefault('before', 0)
+            g['before'] = g['before'] + 1
+            continue
+        g['count'] += 1
+        g['first'] = min(g['first'], e['at'])
+        g['last'] = max(g['last'], e['at'])
+        if len(g['lines']) < 3:
+            g['lines'].append((e['serial'], e['line']))
+    why = _se_why([ln for g in groups.values() for _s, ln in g['lines'][:1]])
+    out = []
+    for g in groups.values():
+        if not g['count']:
+            continue
+        lines = g.pop('lines')
+        w = why.get(lines[0][0], ('', [])) if lines else ('', [])
+        g['line'] = lines[0][1][:600] if lines else ''
+        done_at = float(fixed.get(g['id']) or 0)
+        if done_at and g['last'] <= done_at:
+            g.update(kind='fixed', why='put right %s - it goes at the next look' % time.strftime(
+                '%Y-%m-%d %H:%M', time.localtime(done_at)), fix=None)
+        elif w[0] == 'allowed':
+            continue                        # the policy loaded now allows it: not counted
+        elif not g['mine']:
+            g.update(kind='other', why='not ai\'s: %s (%s) is another program of this machine - look at it with '
+                                       'whoever looks after it' % (g['prog'], g['stype'] or '?'), fix=None)
+        else:
+            bad = se_not_for_button(g)
+            safe_bools = [b for b in w[1] if SE_NAME_RE.match(b) and not SE_BAD_BOOL.search(b)]
+            label_now = se_label(g['path']) if g['path'].startswith('/') and os.path.lexists(g['path']) else None
+            label_want = _se_matchpath(g['path']) if label_now and _se_ai_path(g['path']) else ''
+            want_port = SE_PORT_FOR.get(g['stype'])
+            if w[0] == 'boolean' and safe_bools:
+                g.update(kind='boolean', fix={'kind': 'boolean', 'name': safe_bools[0]},
+                         why='a boolean of the policy allows it: %s' % safe_bools[0])
+            elif bad:
+                g.update(kind='nobutton', why=bad, fix=None)
+            elif label_want and label_now and label_want != label_now and g['ttype'] == label_now:
+                g.update(kind='label', fix={'kind': 'label', 'path': g['path']},
+                         why='%s is labelled %s - the policy says %s' % (g['path'], label_now, label_want))
+            elif g['port'] and want_port and g['ttype'] in SE_FREE_PORT_TYPES and \
+                    set(g['perms'].split()) <= {'name_bind', 'name_connect'}:
+                g.update(kind='port', fix={'kind': 'port', 'type': want_port, 'port': int(g['port']),
+                                           'proto': 'udp' if g['tclass'].startswith('udp') else 'tcp'},
+                         why='port %s is of no type of its own - labelled %s, %s may use it' % (g['port'], want_port,
+                                                                                                g['prog']))
+            else:
+                g.update(kind='rule', fix={'kind': 'rule', 'src': g['stype'], 'tgt': g['ttype'], 'cls': g['tclass'],
+                                           'perms': g['perms'].split()},
+                         why='nothing of the policy allows it: a rule of ai\'s own local module allows exactly this')
+        g['cmd'] = se_fix_words(g.get('fix'))
+        out.append(g)
+    order = {k: i for i, k in enumerate(SE_KIND_ORDER)}
+    out.sort(key=lambda g: (order.get(g['kind'], 9), -g['last']))
+    out = out[:SE_FIND_MOST]
+    counts = {k: sum(1 for g in out if g['kind'] == k) for k in SE_KIND_ORDER}
+    return {'findings': out, 'counts': counts, 'events': len(events), 'since': since,
+            'fixable': sum(counts[k] for k in ('boolean', 'label', 'port', 'rule')),
+            'rules': se_local_rules()}
+
+
+def _se_rule_cil(fix):
+    return '(allow %s %s (%s (%s)))' % (fix['src'], fix['tgt'], fix['cls'], ' '.join(fix['perms']))
+
+
+def se_fix_words(fix):
+    """What root runs for a fix, as one line - the preview on the page and in the confirm."""
+    if not fix:
+        return ''
+    if fix['kind'] == 'boolean':
+        return 'setsebool -P %s 1' % fix['name']
+    if fix['kind'] == 'label':
+        return 'restorecon -R -v %s' % fix['path']
+    if fix['kind'] == 'port':
+        return 'semanage port -a -t %s -p %s %d' % (fix['type'], fix['proto'], fix['port'])
+    if fix['kind'] == 'rule':
+        return _se_rule_cil(fix)
+    return ''
+
+
+def se_local_rules():
+    rules = _se_state_json(SE_LOCAL_LIST, [])
+    return [r for r in rules if isinstance(r, dict) and r.get('id') and isinstance(r.get('fix'), dict)]
+
+
+def se_local_load(rules, said):
+    """ai's local module written from its list and put in - or taken away when the list is empty."""
+    if not rules:
+        if se_module_name_in(SE_LOCAL):
+            got = _se_run(['semodule', '-r', SE_LOCAL], 300)
+            if got is None or got.returncode != 0:
+                raise Refused('semodule -r %s: %s' % (SE_LOCAL, ((got.stderr or '') if got else '').strip()[-200:]))
+            said.append('ai\'s local module (%s) taken out of the policy - no rule left in it' % SE_LOCAL)
+        return
+    text = ['; ai\'s local rules (%s) - put in from Settings -> SELinux (Put in what is selected) or' % SE_LOCAL,
+            '; ai --selinux-fix, each exactly what SELinux refused here and nothing more. Taken away one by one',
+            '; on the same card (or ai --selinux-rules --take-away ID). Written by root, never edited by hand.', '']
+    for r in rules:
+        f = r['fix']
+        for k in ('src', 'tgt', 'cls'):
+            if not SE_NAME_RE.match(str(f.get(k) or '')):
+                raise Refused('a rule that names something no rule may name')
+        if not f.get('perms') or not all(SE_NAME_RE.match(str(p)) for p in f['perms']):
+            raise Refused('a rule that names something no rule may name')
+        text.append('; %s - %s (%s)' % (r['id'], re.sub(r'[\r\n]+', ' ', str(r.get('why') or ''))[:160],
+                                         time.strftime('%Y-%m-%d %H:%M', time.localtime(float(r.get('at') or 0)))))
+        text.append('(optional %s_%s\n    %s)' % (SE_LOCAL, r['id'], _se_rule_cil(f)))
+    folder = tempfile.mkdtemp(prefix='ai-selinux-')
+    try:
+        path = os.path.join(folder, SE_LOCAL + '.cil')
+        with open(path, 'w') as f:
+            f.write('\n'.join(text) + '\n')
+        got = _se_run(['semodule', '-i', path], 300)
+        if got is None or got.returncode != 0:
+            raise Refused('semodule -i %s: %s' % (SE_LOCAL, ((got.stderr or got.stdout) if got else '').strip()[-300:]))
+        write_atomic(STATE_DIR / (SE_LOCAL + '.cil.in-policy'), '\n'.join(text) + '\n', mode=0o600)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    said.append('ai\'s local module (%s) put into the policy - %d rule(s) in it' % (SE_LOCAL, len(rules)))
+
+
+def se_module_name_in(name):
+    got = _se_run(['semodule', '-l'], 120, light=True)
+    if got is None or got.returncode != 0:
+        return False
+    return any(line.split()[:1] == [name] for line in got.stdout.splitlines())
+
+
+def se_fix(ids, by='', dry=False):
+    """The findings named put right - each fix worked out here again from the audit log, never taken
+    from the request. (what was done, what was left with why). `dry`: only what would be done."""
+    if se_mode() not in ('Enforcing', 'Permissive'):
+        raise Refused('SELinux is not on: there is nothing to put right')
+    ids = [str(i) for i in ids or [] if re.match(r'^[0-9a-f]{12}\Z', str(i))][:100]
+    found = se_find(se_applied_at())
+    if found is None:
+        raise Refused('ausearch is not on this machine - what SELinux refused cannot be read (dnf install audit)')
+    by_id = {g['id']: g for g in found['findings']}
+    plan, left = [], []
+    for i in ids:
+        g = by_id.get(i)
+        if not g:
+            left.append({'id': i, 'why': 'not refused any more (or not found)'})
+        elif not g.get('fix') or g['kind'] not in ('boolean', 'label', 'port', 'rule'):
+            left.append({'id': i, 'why': g.get('why') or 'not for a button'})
+        else:
+            plan.append(g)
+    if dry:
+        return {'plan': [{'id': g['id'], 'kind': g['kind'], 'cmd': g['cmd'], 'what': '%s: %s -> %s %s { %s }%s' % (
+            g['prog'], g['stype'], g['ttype'], g['tclass'], g['perms'], (' ' + g['where']) if g['where'] else '')}
+            for g in plan], 'left': left}
+    said, done = [], {}
+    rules = se_local_rules()
+    rules_changed = False
+    known = None
+    for g in plan:
+        f = g['fix']
+        if f['kind'] == 'boolean':
+            got = _se_run(['setsebool', '-P', f['name'], '1'], 300)
+            if got is None or got.returncode != 0:
+                left.append({'id': g['id'], 'why': 'setsebool: %s' % ((got.stderr or '') if got else '?').strip()[-200:]})
+                continue
+            said.append('%s on' % f['name'])
+        elif f['kind'] == 'label':
+            if not os.path.lexists(f['path']):
+                left.append({'id': g['id'], 'why': '%s is not there any more' % f['path']})
+                continue
+            got = _se_run(['restorecon', '-R', '-v', f['path']], 300)
+            if got is None or got.returncode != 0:
+                left.append({'id': g['id'], 'why': 'restorecon: %s' % ((got.stderr or '') if got else '?').strip()[-200:]})
+                continue
+            said.append('%s labelled as the policy says' % f['path'])
+        elif f['kind'] == 'port':
+            if known is None:
+                known = se_ports() or {}
+            taken = [t for (t, pr), spans in known.items() if pr == f['proto'] and t not in SE_FREE_PORT_TYPES
+                     and any(lo <= f['port'] <= hi for lo, hi in spans)]
+            if taken and f['type'] not in taken:
+                left.append({'id': g['id'], 'why': 'port %d/%s is %s\'s in the policy - never taken from it'
+                                                   % (f['port'], f['proto'], taken[0])})
+                continue
+            if not taken:
+                got = _se_run(['semanage', 'port', '-a', '-t', f['type'], '-p', f['proto'], str(f['port'])], 300)
+                if got is None or got.returncode != 0:
+                    left.append({'id': g['id'], 'why': 'semanage port: %s' % ((got.stderr or '') if got else '?').strip()[-200:]})
+                    continue
+            said.append('port %d/%s labelled %s' % (f['port'], f['proto'], f['type']))
+        elif f['kind'] == 'rule':
+            if not any(r['id'] == g['id'] for r in rules):
+                rules.append({'id': g['id'], 'fix': f, 'why': '%s: %s' % (g['prog'], g['why']), 'at': time.time(), 'by': by,
+                              'what': '%s -> %s %s { %s }' % (g['stype'], g['ttype'], g['tclass'], g['perms'])})
+                rules_changed = True
+            said.append('rule %s: %s' % (g['id'], _se_rule_cil(f)))
+        done[g['id']] = time.time()
+    if rules_changed:
+        try:
+            se_local_load(rules, said)
+            write_atomic(STATE_DIR / SE_LOCAL_LIST, json.dumps(rules), mode=0o600)
+        except Refused as e:
+            for g in plan:
+                if g['kind'] == 'rule':
+                    done.pop(g['id'], None)
+                    left.append({'id': g['id'], 'why': str(e)})
+            said = [s for s in said if not s.startswith('rule ')]
+    if done:
+        fixed = _se_state_json(SE_FIXED, {})
+        fixed.update(done)
+        if len(fixed) > 2000:
+            fixed = dict(sorted(fixed.items(), key=lambda kv: -kv[1])[:1000])
+        write_atomic(STATE_DIR / SE_FIXED, json.dumps(fixed), mode=0o600)
+    return {'said': said, 'left': left, 'done': sorted(done)}
+
+
+def se_rule_drop(rule_id, by=''):
+    rules = se_local_rules()
+    keep = [r for r in rules if r['id'] != str(rule_id)]
+    if len(keep) == len(rules):
+        raise Refused('ai\'s local module has no rule %s' % str(rule_id)[:20])
+    said = []
+    se_local_load(keep, said)
+    write_atomic(STATE_DIR / SE_LOCAL_LIST, json.dumps(keep), mode=0o600)
+    fixed = _se_state_json(SE_FIXED, {})
+    if fixed.pop(str(rule_id), None) is not None:
+        write_atomic(STATE_DIR / SE_FIXED, json.dumps(fixed), mode=0o600)
+    said.insert(0, 'rule %s taken away' % rule_id)
+    return {'said': said}
+
+
 def _se_local_db(host):
     return str(host or '').strip().lower() in ('', '127.0.0.1', 'localhost', '::1')
 
@@ -11104,6 +11580,13 @@ def se_check(r):
     if on:
         out['denials'] = se_denials(se_applied_at())
         out['auditd'] = se_auditd()
+        # What is refused, sorted by what puts it right (1.0.97); the count above stays the word
+        # whenever this cannot be worked out.
+        try:
+            out['found'] = se_find(se_applied_at()) if out['denials'].get('tool') else None
+        except Exception as e:                          # noqa: BLE001
+            out['found'] = None
+            log_sparing('selinux-find', 'SELinux: what is refused could not be sorted: %s' % e, 'warn')
     probs = out['problems']
     if on:
         if out['module'] is False:
@@ -11116,7 +11599,15 @@ def se_check(r):
         if known is None and ports:
             probs.append('semanage is not on this machine - the ports cannot be checked '
                          '(dnf install policycoreutils-python-utils)')
-        if out['denials']['total']:
+        fd = out.get('found')
+        if fd is not None:
+            c = fd['counts']
+            n = fd['fixable'] + c.get('nobutton', 0)
+            if n:
+                probs.append('SELinux refused ai %d thing(s)%s: %d can be put right here, %d not for a button' % (
+                    n, ' since ai\'s needs were put in' if out['denials'].get('since') else '', fd['fixable'],
+                    c.get('nobutton', 0)))
+        elif out['denials']['total']:
             probs.append(('SELinux refused %d thing(s) since ai\'s needs were put in' if out['denials'].get('since')
                           else 'SELinux refused %d thing(s) since the machine started') % out['denials']['total'])
         if not out.get('auditd', True):
@@ -11187,6 +11678,12 @@ def se_do(r):
     said = list(left)
     if do == 'check':
         return se_check(r)
+    if do in ('fix', 'rule_drop'):
+        # What is selected put right / a rule of ai's taken away (1.0.97) - under enforcing too.
+        got = se_fix(r.get('ids') or [], r.get('by') or '') if do == 'fix' else se_rule_drop(r.get('rule'), r.get('by') or '')
+        out = se_check(r)
+        out['said'] = got['said'] + ['%s: %s' % (x['id'], x['why']) for x in got.get('left') or []]
+        return out
     if do == 'report':
         data = se_report_bytes(r)
         write_atomic(STATE_DIR / SE_REPORT, data, mode=0o600)
@@ -11336,6 +11833,18 @@ def se_report_parts(r):
     parts['modules.txt'] = '==== ai\n' + '\n'.join(x for x in mods.splitlines() if x.split()[:1] == [SE_MODULE]) + \
         '\n\n==== %s\n%s\n==== in the policy\n%s\n' % (SE_CIL, _se_read(SE_CIL) or '(not there)',
                                                      _se_read(SE_CIL + '.in-policy') or '(none put in yet)')
+    parts['modules.txt'] += '\n==== %s (ai\'s local rules)\n%s\n' % (
+        SE_LOCAL, _se_read(str(STATE_DIR / (SE_LOCAL + '.cil.in-policy'))) or '(none)')
+    # The whole machine (1.0.97): what whoever writes the module needs beside ai's part of it.
+    parts['os/processes.txt'] = ps
+    parts['os/booleans.txt'] = bools
+    parts['os/ports.txt'] = ports
+    parts['os/modules.txt'] = _se_out(['semodule', '-lfull'], 300)
+    parts['os/local-changes.txt'] = '\n'.join('==== semanage %s -l -C\n%s' % (k, _se_out(['semanage', k, '-l', '-C'], 120))
+                                              for k in ('boolean', 'port', 'fcontext', 'login', 'user', 'module',
+                                                        'permissive'))
+    parts['os/semanage-export.txt'] = _se_out(['semanage', 'export'], 300)
+    parts['os/listening.txt'] = _se_out(['ss', '-lntupZ'], 60, light=False)
     parts['README.txt'] = (
         'ai - what SELinux says on this server, for whoever writes ai\'s module (ai_server).\n'
         'Made %s. Nothing was changed to make it.\n\n'
@@ -11344,7 +11853,9 @@ def se_report_parts(r):
         'audit2why.txt   why; audit2allow.te: what would allow it - a hint, not to be loaded\n'
         'labels.txt      the labels of ai\'s files and what the policy says they should be\n'
         'processes.txt   the domains the programs run in; ports.txt, booleans.txt, modules.txt\n'
-        'system.txt      the system, the policy and the packages; ai.json: what ai uses here\n\n'
+        'system.txt      the system, the policy and the packages; ai.json: what ai uses here\n'
+        'os/             the whole machine: every process, boolean, port type and module, what was\n'
+        '                changed on it (semanage -l -C, semanage export), every listening socket\n\n'
         'No password, key or token of ai is in it. The audit log holds the command lines of the\n'
         'programs refused something: ai never puts a secret on one - other programs on this\n'
         'machine may (and the terminals run whatever their users type). Look through avc*.txt\n'
@@ -11382,25 +11893,34 @@ def selinux_view(store):
             'report': {k: rep.get(k) for k in ('at', 'bytes', 'error')} if rep else {}}
 
 
-def selinux_ask(daemon, action, by):
+def selinux_ask(daemon, action, by, ids=None, rule=None):
     store = daemon.store
     if action not in SE_ACTIONS:
-        raise Refused('check, prepare, enforce, permissive or report')
+        raise Refused('check, prepare, enforce, permissive, report, fix or rule_drop')
+    # What is to be put right is named by finding ids only (1.0.97): root works out each fix itself.
+    if action == 'fix':
+        ids = [str(i) for i in (ids or []) if re.match(r'^[0-9a-f]{12}\Z', str(i))][:100]
+        if not ids:
+            raise Refused('nothing is selected')
+    if action == 'rule_drop' and not re.match(r'^[0-9a-f]{12}\Z', str(rule or '')):
+        raise Refused('which rule - its id')
     # A step asked and not done yet is not put aside by a look or a report.
     was = store.meta_json('selinux:want', {}) or {}
     now = store.meta_json('selinux:now', {}) or {}
-    if action in ('check', 'report') and was.get('do') in ('prepare', 'enforce', 'permissive') and \
+    if action in ('check', 'report') and was.get('do') in ('prepare', 'enforce', 'permissive', 'fix', 'rule_drop') and \
             was.get('id') != now.get('done') and time.time() - float(was.get('at') or 0) < 3600:
         if action == 'check':
             return
         raise Refused('a step asked of SELinux is not done yet (%s) - ask for the report after it' % was.get('do'))
-    store.set_meta_json('selinux:want', {'id': secrets.token_hex(6), 'do': action, 'by': by, 'at': time.time()})
+    store.set_meta_json('selinux:want', {'id': secrets.token_hex(6), 'do': action, 'by': by, 'at': time.time(),
+                                         'ids': ids or [], 'rule': str(rule or '')})
     if action == 'report':
         store.add_event('settings', '%s asked for the SELinux report' % by, 'info', who=by)
     elif action != 'check':
         store.add_event('settings', '%s asked SELinux: %s' % (by, {
             'prepare': 'made ready, permissive (or what ai needs put in)', 'enforce': 'enforcing',
-            'permissive': 'permissive again'}[action]), 'warn', who=by)
+            'permissive': 'permissive again', 'fix': 'put right what is selected (%s)' % ', '.join(ids or []),
+            'rule_drop': 'take away the rule %s of ai\'s local module' % rule}[action]), 'warn', who=by)
     selinux_tick(daemon)
 
 
@@ -11434,7 +11954,8 @@ def selinux_tick(daemon):
             err, said = '', []
             data = now.get('data') if isinstance(now.get('data'), dict) and do != 'check' else {}
             try:
-                data = se_do(dict(selinux_want(), do=do))
+                data = se_do(dict(selinux_want(), do=do, ids=want.get('ids') or [], rule=want.get('rule') or '',
+                                  by=want.get('by') or ''))
                 said = data.pop('said', []) if isinstance(data, dict) else []
             except Refused as e:
                 err = str(e)[:400]
@@ -11480,12 +12001,18 @@ def api_selinux_do(c):
         return {'name': 'ai-selinux-report-%s-%s.tar.gz' % (re.sub(r'[^A-Za-z0-9._-]', '', node_name())[:60],
                                                            time.strftime('%Y%m%d-%H%M')),
                 'file': base64.b64encode(data).decode('ascii'), 'mime': 'application/gzip'}
-    selinux_ask(c.daemon, act, c.name)
+    if act == 'fix_plan':
+        # What root would do for what is selected (1.0.97) - worked out from the audit log, nothing done.
+        return se_fix(c.body.get('ids') if isinstance(c.body.get('ids'), list) else [], c.name, dry=True)
+    ids = c.body.get('ids') if isinstance(c.body.get('ids'), list) else None
+    selinux_ask(c.daemon, act, c.name, ids=ids, rule=c.body.get('rule'))
     return {'message': {'check': 'asked: SELinux is looked at within seconds',
                         'prepare': 'asked: done within seconds',
                         'enforce': 'asked: SELinux switches to enforcing within seconds',
                         'permissive': 'asked: SELinux switches to permissive within seconds',
-                        'report': 'asked: the report is made within a minute'}[act]}
+                        'report': 'asked: the report is made within a minute',
+                        'fix': 'asked: put right within seconds, then looked at again',
+                        'rule_drop': 'asked: the rule is taken away within seconds'}[act]}
 
 
 def se_words(c):
@@ -26252,6 +26779,12 @@ def build_parser():
     g.add_argument('--selinux', choices=('prepare', 'enforce', 'permissive'), metavar='prepare|enforce|permissive',
                    help='SELinux one step: prepare (disabled -> permissive at the next start; permissive -> what ai '
                         'needs put in), enforce, permissive (asks, or --yes)')
+    g.add_argument('--selinux-look', action='store_true',
+                   help='SELinux: everything it refuses ai, sorted by what puts it right, with the ids (--json)')
+    g.add_argument('--selinux-fix', nargs='+', metavar='ID',
+                   help='SELinux: the findings named (or all) put right - what root will do is listed (asks, or --yes)')
+    g.add_argument('--selinux-rules', action='store_true', help='SELinux: the rules of ai\'s own local module (ai_local)')
+    g.add_argument('--selinux-rule-drop', metavar='ID', help='SELinux: one rule of ai_local taken away (asks, or --yes)')
     g.add_argument('--selinux-report', nargs='?', const='', metavar='FILE',
                    help='SELinux: what it says here, packed (.tar.gz) for whoever writes ai\'s module')
     g.add_argument('--os-roots', action='store_true',
@@ -26636,6 +27169,8 @@ def cli_selinux(st, a, pal):
     if os.geteuid() != 0:
         raise Refused('as root (sudo ai ...)')
     r = selinux_want()
+    if a.selinux_look or a.selinux_fix or a.selinux_rules or a.selinux_rule_drop:
+        return cli_selinux_find(st, a, pal)
     if a.selinux_report is not None:
         data = se_report_bytes(r)
         name = a.selinux_report or 'ai-selinux-report-%s-%s.tar.gz' % (
@@ -26676,6 +27211,86 @@ def cli_selinux(st, a, pal):
         return 0
     print(se_words(c))
     return 0 if c['mode'] in ('absent', 'Disabled') or not c.get('problems') else 1
+
+
+SE_KIND_WORDS = {'boolean': 'A boolean', 'label': 'A label', 'port': 'A port', 'rule': 'A rule of ai\'s',
+                 'nobutton': 'Not for a button', 'other': 'Not ai\'s', 'fixed': 'Put right just now'}
+
+
+def cli_selinux_find(st, a, pal):
+    """`ai --selinux-look | --selinux-fix ID... | --selinux-rules | --selinux-rule-drop ID` (1.0.97)."""
+    by = 'the command line'
+    if a.selinux_rule_drop:
+        if not _cli_sure(a, 'the rule %s of ai\'s local module taken away' % a.selinux_rule_drop):
+            return 1
+        got = se_rule_drop(a.selinux_rule_drop, by)
+        st.add_event('settings', 'SELinux (the command line): %s' % '; '.join(got['said']), 'warn', who=by)
+        for s in got['said']:
+            print(pal.ok_line(s))
+        return 0
+    if a.selinux_rules:
+        rules = se_local_rules()
+        if a.json:
+            say_json(rules)
+            return 0
+        print(pal.head('ai\'s local rules (%s): %d' % (SE_LOCAL, len(rules))))
+        for r in rules:
+            print('  %s  %s' % (r['id'], se_fix_words(r['fix'])))
+            print('      %s - %s, by %s' % (r.get('why') or '', time.strftime('%Y-%m-%d %H:%M', time.localtime(float(r.get('at') or 0))),
+                                         r.get('by') or '?'))
+        return 0
+    if a.selinux_fix:
+        found = se_find(se_applied_at())
+        if found is None:
+            raise Refused('ausearch is not on this machine - what SELinux refused cannot be read (dnf install audit)')
+        ids = [g['id'] for g in found['findings'] if g['kind'] in ('boolean', 'label', 'port', 'rule')] \
+            if a.selinux_fix == ['all'] else a.selinux_fix
+        plan = se_fix(ids, by, dry=True)
+        if not plan['plan']:
+            for x in plan['left']:
+                print(pal.warn_line('%s: %s' % (x['id'], x['why'])))
+            print(pal.ok_line('nothing to put right'))
+            return 0
+        print(pal.head('root does exactly this - nothing else:'))
+        for p in plan['plan']:
+            print('  %-9s %s' % (p['kind'], p['cmd']))
+            print('            %s' % p['what'])
+        for x in plan['left']:
+            print(pal.warn_line('left: %s - %s' % (x['id'], x['why'])))
+        if not _cli_sure(a, 'put in'):
+            return 1
+        got = se_fix([p['id'] for p in plan['plan']], by)
+        st.add_event('settings', 'SELinux (the command line): %s' % ('; '.join(got['said']) or 'nothing'), 'warn', who=by)
+        for s in got['said']:
+            print(pal.ok_line(s))
+        for x in got['left']:
+            print(pal.bad_line('%s: %s' % (x['id'], x['why'])))
+        return 0 if not got['left'] else 1
+    found = se_find(se_applied_at())
+    if found is None:
+        raise Refused('ausearch is not on this machine - what SELinux refused cannot be read (dnf install audit)')
+    if a.json:
+        say_json(found)
+        return 0
+    if not found['findings']:
+        print(pal.ok_line('SELinux refused ai nothing%s' % (' since ai\'s needs were put in' if found['since'] else '')))
+    kind = None
+    for g in found['findings']:
+        if g['kind'] != kind:
+            kind = g['kind']
+            print(pal.head('%s (%d)' % (SE_KIND_WORDS.get(kind, kind), found['counts'].get(kind, 0))))
+        line = '%s  %s %s -> %s %s { %s }  %dx' % (g['id'], g['prog'], g['stype'], g['ttype'], g['tclass'], g['perms'],
+                                                  g['count'])
+        print((pal.bad_line if kind == 'nobutton' else pal.warn_line if kind in ('boolean', 'label', 'port', 'rule')
+               else pal.ok_line)(line))
+        if g.get('where'):
+            print('      %s' % g['where'])
+        if g.get('cmd'):
+            print('      -> %s' % g['cmd'])
+        print('      %s' % g['why'])
+    if found['fixable']:
+        print('put right: ai --selinux-fix ID... (or all)')
+    return 0
 
 
 def cli_osroots(st, a, pal):
@@ -26948,7 +27563,8 @@ def cli_main(argv):
                                   (' (%s, %s)' % (m.get('by') or '?', when(m.get('at'))) if m.get('at') else ''))
                     if m.get('on') else 'in service')))
             return 0
-        if a.selinux_check or a.selinux or a.selinux_report is not None:
+        if a.selinux_check or a.selinux or a.selinux_report is not None or a.selinux_look or a.selinux_fix \
+                or a.selinux_rules or a.selinux_rule_drop:
             return cli_selinux(st, a, pal)
         if a.os_roots or a.os_roots_add or a.os_roots_remove:
             return cli_osroots(st, a, pal)
