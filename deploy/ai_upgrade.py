@@ -239,6 +239,28 @@ def write_here(name, text):
     os.replace(tmp, path)
 
 
+PAGES_FILE = os.environ.get('AI_UPGRADE_PAGES', '/var/www/ai/.upgrade.json')
+
+
+def pages_failed(said):
+    """The file the pages follow an upgrade by (1.0.96) told it failed - when it says running.
+    install.sh says it itself once it runs; this is for what goes wrong before or around it."""
+    try:
+        with open(PAGES_FILE, encoding='utf-8') as f:
+            row = json.load(f)
+        if not isinstance(row, dict) or row.get('state') != 'running':
+            return
+        row.update(state='failed', said=str(said)[:300], at=time.time())
+        folder = os.path.dirname(PAGES_FILE)
+        fd, tmp = tempfile.mkstemp(prefix='.upgrade.', dir=folder)
+        with os.fdopen(fd, 'w') as f:
+            f.write(json.dumps(row))
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, PAGES_FILE)
+    except (OSError, ValueError):
+        pass
+
+
 def status(**fields):
     fields['at'] = time.time()
     write_here('status.json', json.dumps(fields))
@@ -337,12 +359,16 @@ def job(package, by, floor=''):
         rc, info = put_in(package, by, log_to, floor)
         status(state='done' if rc == 0 else 'failed', rc=rc, version=info['version'], by=by,
                tail=lines[-40:])
+        if rc != 0:
+            pages_failed('install.sh --upgrade ended with %d' % rc)
     except Refused as e:
         log_to('refused: %s' % e)
         status(state='failed', rc=-1, said=str(e), by=by, tail=lines[-40:])
+        pages_failed(str(e))
     except Exception as e:                       # noqa: BLE001 - said, never lost
         log_to('broke: %s' % e)
         status(state='failed', rc=-2, said='the upgrade broke: %s' % e, by=by, tail=lines[-40:])
+        pages_failed('the upgrade broke: %s' % e)
     finally:
         write_here('last.log', '\n'.join(lines[-4000:]) + '\n')
         try:

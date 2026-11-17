@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.95'
+__version__ = '1.0.96'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -90,6 +90,9 @@ CONFIG_FILE = Path(os.environ.get('AI_CONFIG', '/etc/ai/config.json'))
 STATE_DIR = Path(os.environ.get('AI_STATE', '/var/lib/ai'))
 DB_FILE = STATE_DIR / 'ai.db'
 UPGRADE_DIR = STATE_DIR / 'upgrade'
+# How far an upgrade is, for the pages (1.0.96): beside them, so that PHP reads it while the
+# daemon restarts; a dot name nginx never serves. Root's, 0644, nothing secret in it.
+UPGRADE_PAGES = Path(os.environ.get('AI_UPGRADE_PAGES', '/var/www/ai/.upgrade.json'))
 JOBS_DIR = STATE_DIR / 'jobs'
 TMUX_DIR = STATE_DIR / 'tmux'
 RUN_DIR = Path(os.environ.get('AI_RUN', '/run/ai'))
@@ -8963,6 +8966,54 @@ def maintenance_settle(store):
     maintenance_set(store, False, 'the upgrade is over', MAINT_BY_UPGRADE)
 
 
+UPG_STATES = ('running', 'done', 'failed')
+UPG_PARTS = 7           # root checks it, then install.sh --upgrade's steps: Upgrading, Packages,
+                        # The program, The pages, Starting, Done (one more for each it adds)
+
+
+def upgrade_pages_read():
+    try:
+        got = json.loads(read_text(UPGRADE_PAGES, 20000) or '{}')
+    except (ValueError, OSError):
+        return {}
+    return got if isinstance(got, dict) and got.get('state') in UPG_STATES else {}
+
+
+def upgrade_tell(**fields):
+    """How far an upgrade is, written for the pages: one file, temp + rename, never half written.
+    What is not given is kept from the file when it is about the same upgrade. Never raises."""
+    try:
+        was = upgrade_pages_read()
+        row = dict(was) if was and was.get('id') == fields.get('id', was.get('id')) else {}
+        row.update({k: v for k, v in fields.items() if v is not None})
+        row['at'] = time.time()
+        if row.get('state') not in UPG_STATES:
+            return
+        if not UPGRADE_PAGES.parent.is_dir():
+            return
+        write_atomic(UPGRADE_PAGES, json.dumps(row), mode=0o644, uid=0 if os.geteuid() == 0 else None,
+                     gid=0 if os.geteuid() == 0 else None)
+    except Exception as e:                              # noqa: BLE001 - the upgrade goes on regardless
+        log_sparing('upgrade-pages', 'how far the upgrade is could not be written for the pages: %s' % e, 'warn')
+
+
+def upgrade_pages_sync(status):
+    """The pages' file brought to how the upgrade this daemon started ended (1.0.96): an older
+    helper, or a package refused before its install.sh ran, says it in status.json only."""
+    u = upgrade_pages_read()
+    if not u or u.get('state') != 'running' or not status or status.get('state') == 'running':
+        return
+    if str(u.get('id') or '') != str(status.get('at_id') or status.get('started') or ''):
+        return
+    if status.get('state') == 'done':
+        upgrade_tell(id=u['id'], state='done', part=u.get('parts') or UPG_PARTS,
+                     words='ai %s runs' % (status.get('version') or u.get('version') or '?'))
+    else:
+        said = str(status.get('said') or '') or ('install.sh --upgrade ended with %s' % status.get('rc')
+                                                  if status.get('rc') not in (None, '') else 'it stopped saying how it goes')
+        upgrade_tell(id=u['id'], state='failed', said=said[:300])
+
+
 class Upgrades:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -8997,6 +9048,14 @@ class Upgrades:
             st = {}
         if st.get('state') == 'running' and time.time() - float(st.get('at') or 0) > 1800:
             st['state'] = 'lost'
+        # Which run it is (1.0.96): the helper writes status.json afresh, without what the daemon
+        # wrote when it started it - kept beside it.
+        try:
+            started = json.loads(read_text(UPGRADE_DIR / 'started.json') or '{}')
+        except ValueError:
+            started = {}
+        if isinstance(started, dict) and started.get('id') and float(st.get('at') or 0) >= float(started.get('at') or 0) - 1:
+            st['at_id'] = started['id']
         return st
 
     def view(self):
@@ -9069,6 +9128,14 @@ class Upgrades:
         one = {'name': node_name(), 'state': step, 'said': said, 'at': st.get('at'), 'asked': st.get('at'),
                'tail': [x for x in lines if x.strip()][-12:], 'part': len(parts),
                'part_words': parts[-1].strip().lstrip('=> ').strip() if parts else ''}
+        # How far, as install.sh itself counts it (1.0.96), when the file for the pages is this run's.
+        u = upgrade_pages_read()
+        if u and st.get('at_id') and u.get('id') == st.get('at_id'):
+            try:
+                one.update(part=int(u.get('part') or 0), parts=int(u.get('parts') or 0) or UPG_PARTS,
+                           part_words=str(u.get('words') or one['part_words'])[:120])
+            except (TypeError, ValueError):
+                pass
         return {'id': str(st.get('at')), 'version': st.get('version'), 'by': st.get('by'), 'at': st.get('at'),
                 'state': {'running': 'running', 'done': 'done'}.get(state, 'failed'),
                 'downgrade': bool(st.get('downgrade')), 'steps': [one], 'drain_s': 0}
@@ -9164,9 +9231,16 @@ class Upgrades:
             self.busy = True
         try:
             info = self.take(path, by, older)
+            began = time.time()
             write_atomic(UPGRADE_DIR / 'status.json', json.dumps({'state': 'running', 'version': info['version'],
-                                                                  'by': by, 'at': time.time(),
+                                                                  'by': by, 'at': began,
                                                                   'downgrade': bool(info.get('older'))}), mode=0o600)
+            # The pages follow it from here (1.0.96) - also while the daemon and PHP restart.
+            run_id = 'u%d' % int(began * 1000)
+            write_atomic(UPGRADE_DIR / 'started.json', json.dumps({'id': run_id, 'at': began}), mode=0o600)
+            upgrade_tell(state='running', id=run_id, version=info['version'], **{'from': __version__},
+                         by=str(by or 'the pages')[:100], part=1, parts=UPG_PARTS, words='root checks the package',
+                         started=began, said='', downgrade=bool(info.get('older')))
             self.store.x('DELETE FROM meta WHERE k = ?', ('upgrade:held',))
             write_atomic(UPGRADE_DIR / 'last.log', '', mode=0o600)
             cmd = [sys.executable if os.path.exists(sys.executable) else '/usr/bin/python3', '-I', upgrader(),
@@ -9187,11 +9261,15 @@ class Upgrades:
                 if info.get('older') else ''), 'warn', who=by)
             if NO_SYSTEM:
                 return info
-            if systemd_here():
-                run(['systemd-run', '--unit', 'ai-upgrade-%d' % time.time(), '--collect', '--quiet',
-                     '--description', 'ai: putting in version %s' % info['version']] + cmd, timeout=30, check=True)
-            else:
-                subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                if systemd_here():
+                    run(['systemd-run', '--unit', 'ai-upgrade-%d' % time.time(), '--collect', '--quiet',
+                         '--description', 'ai: putting in version %s' % info['version']] + cmd, timeout=30, check=True)
+                else:
+                    subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:                      # noqa: BLE001 - said on the pages, then as before
+                upgrade_tell(id=run_id, state='failed', said='root\'s helper could not be started: %s' % str(e)[:200])
+                raise
             return info
         finally:
             self.busy = False
@@ -22918,6 +22996,10 @@ class Daemon:
                     osup_sched_tick(self)       # updates and restarts on a schedule (1.0.37)
                 except Exception as e:          # noqa: BLE001
                     log_sparing('osup-sched', 'the schedule of updates: %s' % e, 'warn')
+                try:
+                    upgrade_pages_sync(self.upgrades.status())   # how an upgrade ended, for the pages (1.0.96)
+                except Exception as e:          # noqa: BLE001
+                    log_sparing('upgrade-sync', 'the upgrade\'s file for the pages: %s' % e, 'warn')
                 try:
                     selinux_tick(self)          # SELinux - what is wanted, and how it stands (1.0.91)
                 except Exception as e:          # noqa: BLE001

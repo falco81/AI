@@ -65,7 +65,7 @@ if [[ -t 1 ]]; then
 else
     C_HEAD=""; C_OK=""; C_WARN=""; C_BAD=""; C_DIM=""; C_OFF=""
 fi
-step()  { printf '\n%s==> %s%s\n' "$C_HEAD" "$1" "$C_OFF"; }
+step()  { printf '\n%s==> %s%s\n' "$C_HEAD" "$1" "$C_OFF"; upgrade_step "$1" || true; }
 say()   { printf '    %s\n' "$1"; }
 note()  { printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; }
 good()  { printf '    %s%s%s\n' "$C_OK" "$1" "$C_OFF"; }
@@ -73,6 +73,90 @@ warn()  { printf '    %s%s%s\n' "$C_WARN" "$1" "$C_OFF"; }
 fail()  { printf '\n%sERROR: %s%s\n' "$C_BAD" "$1" "$C_OFF" >&2; exit 1; }
 # Where it stopped, if a command it did not expect to fail failed (as otp's).
 trap 'printf "\n%sERROR: line %s: %s%s\n" "$C_BAD" "$LINENO" "$BASH_COMMAND" "$C_OFF" >&2' ERR
+
+# ---------------------------------------------------------------------------
+# How far an upgrade is, for the pages (1.0.96)
+# ---------------------------------------------------------------------------
+# One small file beside the pages (a dot name nginx never serves) that PHP reads straight from
+# disk, so the pages can say how far it is while ai.service, nginx and PHP restart. Only with
+# --upgrade of an installed ai; each step is a part, "running" until the end, "done" after
+# "Done", "failed" from the EXIT trap - also when killed (INT, HUP, TERM). Nothing here may stop
+# the upgrade itself: every write is allowed to fail.
+UPG_ON=""
+UPG_PART=1                      # 1 is root checking the package, before this runs
+UPG_PARTS=7
+UPG_WORDS=""
+UPG_DONE=""
+UPG_FILE="${AI_UPGRADE_PAGES:-/var/www/ai/.upgrade.json}"
+upgrade_tell() {    # upgrade_tell STATE [WORDS] [SAID]
+    [[ -n "$UPG_ON" ]] || return 0
+    [[ -d "$(dirname -- "$UPG_FILE")" ]] || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 -I - "$UPG_FILE" "$1" "$UPG_PART" "$UPG_PARTS" "${2:-}" "${3:-}" "$AI_VERSION" "${HAD:-}" \
+            "${AI_UPGRADE_BY:-the command line}" <<'PY' >/dev/null 2>&1 || true
+import json, os, sys, tempfile, time
+path, state, part, parts, words, said, version, had, by = sys.argv[1:10]
+now = time.time()
+row = {}
+try:
+    with open(path, encoding='utf-8') as f:
+        was = json.load(f)
+    # The same upgrade: what the daemon wrote when it began it (its id, who asked) is kept.
+    if isinstance(was, dict) and was.get('state') == 'running' and now - float(was.get('at') or 0) < 1800 \
+            and str(was.get('version') or '') == version:
+        row = was
+except (OSError, ValueError, TypeError):
+    pass
+if not row:
+    row = {'id': 'sh%d' % int(now * 1000), 'started': now, 'by': by[:100], 'from': had,
+           'downgrade': False}
+row.update(state=state, version=version, part=int(part), parts=int(parts), at=now)
+if words:
+    row['words'] = words[:120]
+row['said'] = said[:300] if state == 'failed' else ''
+row.setdefault('from', had)
+fd, tmp = tempfile.mkstemp(prefix='.upgrade.', dir=os.path.dirname(path))
+with os.fdopen(fd, 'w') as f:
+    f.write(json.dumps(row))
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+PY
+    return 0
+}
+upgrade_step() {
+    [[ -n "$UPG_ON" ]] || return 0
+    UPG_PART=$((UPG_PART + 1))
+    UPG_WORDS="$1"
+    case "$1" in
+        Done:*) UPG_DONE="yes"; UPG_PART=$UPG_PARTS ;;
+        *) if (( UPG_PART >= UPG_PARTS )); then UPG_PARTS=$((UPG_PART + 1)); fi ;;
+    esac
+    upgrade_tell running "$1"
+    return 0
+}
+upgrade_exit() {
+    local rc="$1"
+    [[ -n "$UPG_ON" ]] || return 0
+    if [[ "$rc" == "0" && -n "$UPG_DONE" ]]; then
+        UPG_PART=$UPG_PARTS
+        upgrade_tell done "ai $AI_VERSION runs"
+    elif [[ "$rc" != "0" ]]; then
+        upgrade_tell failed "$UPG_WORDS" "install.sh --upgrade stopped (exit $rc) at: ${UPG_WORDS:-the start}"
+    else
+        upgrade_tell failed "$UPG_WORDS" "install.sh --upgrade ended before it was done (at: ${UPG_WORDS:-the start})"
+    fi
+    return 0
+}
+upgrade_watch() {   # from here on the pages are told; the end said whatever it is
+    [[ -z "$DRY_RUN" || -n "${AI_UPGRADE_PAGES:-}" ]] || return 0
+    UPG_ON="yes"
+    [[ -n "$WITH_CLAUDE" ]] && UPG_PARTS=$((UPG_PARTS + 1))
+    trap 'upgrade_exit $?' EXIT
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
+    trap 'exit 143' TERM
+    return 0
+}
 
 run() {
     if [[ -n "$DRY_RUN" ]]; then
@@ -264,8 +348,10 @@ if [[ -n "$DO_UNINSTALL" ]]; then
 fi
 
 if [[ -n "$DO_UPGRADE" ]]; then
-    step "Upgrading ai to $AI_VERSION"
     HAD="$(sed -n "s/^__version__ = '\(.*\)'.*/\1/p" "$LIB_DIR/ai.py" 2>/dev/null | head -n1 || true)"
+    # The pages follow an upgrade of an installed ai from its first step (1.0.96).
+    [[ -n "$HAD" ]] && upgrade_watch
+    step "Upgrading ai to $AI_VERSION"
     [[ -n "$HAD" ]] && say "installed now: $HAD" || warn "ai is not installed here yet - installing it whole"
     [[ -z "$HAD" ]] && DO_UPGRADE=""
 else

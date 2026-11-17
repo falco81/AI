@@ -199,6 +199,8 @@ function apiLatest(key, what, body) {
 }
 function oops(e) {
   if (e && e.stopped) return;           /* somebody stopped it: not a fault */
+  /* Nothing answering while an upgrade restarts it all (1.0.96): the band says so. */
+  if (e && (e.unreachable || e.upgrading) && typeof upgradeExpected === 'function' && upgradeExpected()) return;
   /* An account that must set its own password first: every page answers
      "change your password first" - said once, by its own form (1.0.103). */
   if (typeof ME === 'object' && ME && ME.must_change && e && e.status === 403) return;
@@ -1207,6 +1209,16 @@ function api(what, body, wait) {
         }
         if (r.status === 413) throw new Error('that is more than the server takes');
         throw new Error('the page got something that is not an answer');
+      }
+      /* Being upgraded (1.0.96): the daemon restarts on purpose - expected, said in the band
+         under the header, never a red word; "not reached" for whatever asks again. */
+      if (r.status === 503 && data && data.upgrading) {
+        var up = new Error(data.error || 'ai is being upgraded - back in a moment');
+        up.unreachable = true;
+        up.upgrading = data.upgrading;
+        up.status = 503;
+        if (typeof upgradeHeard === 'function') { try { upgradeHeard(data.upgrading, true); } catch (e2) { } }
+        throw up;
       }
       if (!r.ok || data.ok === false) {
         var err = new Error(data.error || ('HTTP ' + r.status));

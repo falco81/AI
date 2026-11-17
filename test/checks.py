@@ -654,5 +654,74 @@ check('chain: the card says complete or incomplete, and offers Complete the chai
 check('chain: the certificate in place is looked at by itself, nginx touched only when a link is missing',
       'tls_chain_tick(self)' in open(os.path.join(HERE, 'ai.py')).read() and ai.CHAIN_LOOK_EVERY == 6 * 3600)
 
+# ---- an upgrade, followed by the pages (1.0.96) ----------------------------------------------------
+_UP = os.path.join(WORK, 'pages'); os.makedirs(_UP)
+ai.UPGRADE_PAGES = ai.Path(os.path.join(_UP, '.upgrade.json'))
+ai.UPGRADE_DIR.mkdir(parents=True, exist_ok=True)
+ai.upgrade_tell(state='running', id='u1', version='9.9.9', part=1, parts=7, words='root checks the package', started=1.0)
+_u = ai.upgrade_pages_read()
+check('upgrade: the pages\' file - running, 0644, written whole', _u.get('state') == 'running' and _u.get('id') == 'u1'
+      and (os.stat(str(ai.UPGRADE_PAGES)).st_mode & 0o777) == 0o644)
+ai.upgrade_tell(id='u1', state='running', part=3, words='Packages')
+_u = ai.upgrade_pages_read()
+check('upgrade: a later step keeps what the start said (version, who, when)', _u.get('version') == '9.9.9'
+      and _u.get('part') == 3 and _u.get('started') == 1.0)
+ai.upgrade_tell(state='bogus', id='u1')
+check('upgrade: a state that is not running, done or failed is never written', ai.upgrade_pages_read().get('state') == 'running')
+with open(os.path.join(str(ai.UPGRADE_DIR), 'started.json'), 'w') as f:
+    f.write(json.dumps({'id': 'u1', 'at': 100.0}))
+with open(os.path.join(str(ai.UPGRADE_DIR), 'status.json'), 'w') as f:
+    f.write(json.dumps({'state': 'running', 'at': time.time()}))
+_ups = ai.Upgrades.__new__(ai.Upgrades)
+ai.upgrade_pages_sync(_ups.status())
+check('upgrade: while root\'s helper runs, the pages\' file is left as install.sh writes it',
+      ai.upgrade_pages_read().get('state') == 'running')
+with open(os.path.join(str(ai.UPGRADE_DIR), 'status.json'), 'w') as f:
+    f.write(json.dumps({'state': 'failed', 'rc': -1, 'said': 'not signed by a trusted key', 'at': time.time()}))
+ai.upgrade_pages_sync(_ups.status())
+_u = ai.upgrade_pages_read()
+check('upgrade: refused before install.sh ran (an older helper says it in status.json only) - failed, with why',
+      _u.get('state') == 'failed' and 'not signed' in _u.get('said', ''))
+ai.upgrade_tell(state='running', id='sh1', version='9.9.9', part=4, parts=7, words='The program')
+ai.upgrade_pages_sync(_ups.status())
+check('upgrade: one run by hand (install.sh --upgrade) is never ended by an old status.json',
+      ai.upgrade_pages_read().get('state') == 'running')
+with open(str(ai.UPGRADE_PAGES), 'w') as f:
+    f.write('not json{')
+check('upgrade: a broken file is as no file', ai.upgrade_pages_read() == {})
+_php = open(os.path.join(HERE, 'web', 'ai-api.php')).read()
+_idx = open(os.path.join(HERE, 'web', 'index.php')).read()
+check('upgrade: PHP - 503 with how far it is while the daemon is away, believed 30 min running / 10 min ended',
+      "'upgrading' => $u" in _php and "=== 'running' ? 1800 : 600" in _php and "$what === 'upgrade-state'" in _idx
+      and 'id="upband"' in _idx and 'signin-upband' in _idx)
+_core = open(os.path.join(HERE, 'web', 'assets', 'core.js')).read()
+check('upgrade: the page - 503 + upgrading expected, no red words; reloaded once, never over changes not saved',
+      'data.upgrading' in _core and 'upgradeExpected()' in _core and "'ai-upg-reloaded:'" in _appjs
+      and 'Object.keys(DIRTY || {}).length' in _appjs)
+_ish = open(os.path.join(HERE, 'install.sh')).read()
+check('upgrade: install.sh tells each step, and how it ended from its EXIT trap - also when killed',
+      "trap 'upgrade_exit $?' EXIT" in _ish and "trap 'exit 143' TERM" in _ish and 'upgrade_step "$1" || true' in _ish
+      and '[[ -n "$HAD" ]] && upgrade_watch' in _ish)
+
+class _UpD:
+    pass
+_upd = _UpD(); _upd.store = st
+_upg = ai.Upgrades(_upd)
+_upg.take = lambda path, by, older=False: {'version': '9.9.10', 'signed_by': 'test.pub'}
+_was_upgrader = ai.upgrader
+ai.upgrader = lambda: '/nonexistent/ai_upgrade.py'
+_info = _upg.install('/nonexistent/pkg.tar.gz', 'tester')
+ai.upgrader = _was_upgrader
+_u = ai.upgrade_pages_read()
+_s = _upg.status()
+check('upgrade: putting one in tells the pages at once, as running, with the run\'s own id that the end is matched by',
+      _u.get('state') == 'running' and _u.get('version') == '9.9.10' and _u.get('from') == ai.__version__
+      and _u.get('by') == 'tester' and _u.get('part') == 1 and _s.get('at_id') == _u.get('id'))
+with open(os.path.join(str(ai.UPGRADE_DIR), 'status.json'), 'w') as f:
+    f.write(json.dumps({'state': 'done', 'rc': 0, 'version': '9.9.10', 'at': time.time()}))
+ai.upgrade_pages_sync(_upg.status())
+check('upgrade: done by root\'s helper (an older one) - the pages\' file says done', ai.upgrade_pages_read().get('state') == 'done')
+ai.maintenance_set(st, False, 'test', 'test')
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

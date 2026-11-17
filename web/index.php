@@ -60,6 +60,16 @@ if (isset($_GET['api'])) {
     if ($what === 'lang' && !$post) {
         ai_serve_lang();
     }
+    if ($what === 'upgrade-state' && !$post) {
+        /* How far an upgrade is (1.0.96), without the daemon: what root writes beside the pages,
+           the version of the pages on disk now, and whether the daemon answers now. */
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        [$hs] = ai_call('/api/health', 'GET', null, 3.0);
+        echo json_encode(['ok' => true, 'upgrading' => ai_upgrading(), 'pages' => AI_VERSION,
+                          'api' => $hs === 200], JSON_INVALID_UTF8_SUBSTITUTE);
+        exit;
+    }
     if ($what === 'logo' && !$post) {
         ai_serve_logo();
     }
@@ -105,8 +115,7 @@ if (isset($_GET['api'])) {
         ], 30.0);
         if ($status === 0) {
             http_response_code(503);
-            echo json_encode(['ok' => false, 'error' =>
-                'the daemon is not answering — is ai.service running?']);
+            echo json_encode(ai_down_reply(), JSON_INVALID_UTF8_SUBSTITUTE);
             exit;
         }
         $data = json_decode($body, true);
@@ -130,7 +139,7 @@ if (isset($_GET['api'])) {
         [$status, $body] = ai_call('/api/auth/passkey/login', 'POST', $sent, 30.0);
         if ($status === 0) {
             http_response_code(503);
-            echo json_encode(['ok' => false, 'error' => 'the daemon is not answering — is ai.service running?']);
+            echo json_encode(ai_down_reply(), JSON_INVALID_UTF8_SUBSTITUTE);
             exit;
         }
         $data = json_decode($body, true);
@@ -155,8 +164,7 @@ if (isset($_GET['api'])) {
         [$status, $body] = ai_call('/api/auth/mfa', 'POST', $sent, 90.0);
         if ($status === 0) {
             http_response_code(503);
-            echo json_encode(['ok' => false, 'error' =>
-                'the daemon is not answering — is ai.service running?']);
+            echo json_encode(ai_down_reply(), JSON_INVALID_UTF8_SUBSTITUTE);
             exit;
         }
         $data = json_decode($body, true);
@@ -222,6 +230,30 @@ if (isset($_GET['api'])) {
     }
     $query = $_GET;
     unset($query['api']);
+    if ($what === 'status' && !$query && ai_upgrading() !== null && ai_token() !== null) {
+        /* The status with how far an upgrade is (1.0.96), so the band is there at once - before
+           anything restarts, and whichever version of the daemon answers. */
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        [$status, $body] = ai_call('/api/status', 'GET', null, 60.0);
+        if ($status === 0) {
+            http_response_code(503);
+            echo json_encode(ai_down_reply(), JSON_INVALID_UTF8_SUBSTITUTE);
+            exit;
+        }
+        $data = json_decode($body, true);
+        if ($status === 200 && is_array($data)) {
+            $data['upgrading'] = ai_upgrading();
+            $out = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE);
+            if ($out !== false) {
+                echo ai_squeeze($out);
+                exit;
+            }
+        }
+        http_response_code($status);
+        echo ai_squeeze($body);
+        exit;
+    }
     ai_relay($reads[$what] . ($query ? '?' . http_build_query($query) : ''), 'GET', null, 60.0);
     exit;
 }
@@ -249,6 +281,9 @@ if (!$me && !ai_local()) {
                'passkeys' => !empty($health['passkeys'])];
 }
 $initial = $me ? (ai_get('/api/status', 8.0) ?: null) : null;
+if (is_array($initial)) {
+    $initial['upgrading'] = ai_upgrading();     /* how far an upgrade is, from the first paint (1.0.96) */
+}
 $host    = (string) ($_SERVER['HTTP_HOST'] ?? php_uname('n'));
 $site    = (string) ($initial['site'] ?? '');
 $title   = $site !== '' ? $site . ' · ai' : 'ai';
@@ -259,6 +294,9 @@ if ($me && ($_COOKIE['ai_lang'] ?? '') !== $lang) {
               'secure' => ai_https(), 'httponly' => false, 'samesite' => 'Strict']);
 }
 $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
+/* An upgrade going on (1.0.96): the sign-in page says so itself, from root's file. */
+$upg = ai_upgrading();
+$upg_on = $upg !== null && $upg['state'] === 'running';
 ?>
 <!doctype html>
 <html lang="<?= h($lang) ?>" class="app-shell-root<?= $load ? ' i18n-wait' : '' ?>">
@@ -283,6 +321,13 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
         On the server:<br>
         <span class="mono">usermod -a -G ai-web <?= h($web_user) ?></span><br>
         <span class="mono">systemctl restart php-fpm nginx</span>
+      </div>
+    <?php elseif ($upg_on): ?>
+      <div class="offline upband signin-upband" id="signin-upband" data-away="<?= $alive ? '0' : '1' ?>">
+        <div class="upband-head"><b><?= h(($upg['downgrade'] ? 'ai is being taken back to ' : 'ai is being upgraded to ') . ($upg['version'] ?: '?')) ?></b></div>
+        <div class="going up-bar wide"><div class="bar"><span style="width:<?= (int) round(100 * max(0, $upg['part'] - 1) / max(1, $upg['parts'])) ?>%"></span></div></div>
+        <div class="upband-sub"><span id="signin-upband-words"><?= h($upg['words'] ?: '…') ?></span> · <span id="signin-upband-step"><?= h('step ' . $upg['part'] . ' of ' . $upg['parts']) ?></span></div>
+        <div class="upband-sub">ai.service and these pages restart once - this page loads again by itself when they are back.</div>
       </div>
     <?php elseif (!$alive): ?>
       <div class="offline">The daemon is not answering. Nobody can sign in until
@@ -326,6 +371,29 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
 <script nonce="<?= h($nonce) ?>" src="/assets/core.js?v=<?= h(AI_VERSION) ?>"></script>
 <script nonce="<?= h($nonce) ?>">
 (function () {
+  /* An upgrade going on (1.0.96): asked every 2 s how far it is; loaded again once the daemon
+     answers - only when it did not answer as this page was made, so it never loops. */
+  var ub = $('signin-upband');
+  if (ub) {
+    var away = ub.getAttribute('data-away') === '1', ask = function () {
+      fetch('?api=upgrade-state', {credentials: 'same-origin', cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (x) {
+        var u = x && x.upgrading;
+        if (away && x && x.api) { location.reload(); return; }
+        if (u && u.state === 'running') {
+          var s = $('signin-upband-step'), w = $('signin-upband-words'), bar = ub.querySelector('.bar span');
+          var tr = function (x) { var g = typeof i18nText === 'function' ? i18nText(String(x)) : null; return g == null ? String(x) : g; };
+          if (w) w.textContent = tr(u.words || '…');
+          if (s) s.textContent = tr('step ' + u.part + ' of ' + u.parts);
+          if (bar) bar.style.width = Math.round(100 * Math.max(0, u.part - 1) / Math.max(1, u.parts)) + '%';
+        } else if (!u || u.state !== 'running') {
+          if (away) { location.reload(); return; }
+          ub.hidden = true; return;
+        }
+        setTimeout(ask, 2000);
+      }).catch(function () { setTimeout(ask, 2000); });
+    };
+    setTimeout(ask, 2000);
+  }
   var form = $('signin-form'), said = $('in-said'), go = $('in-go');
   var host = $('langpick');
   if (host && window.AI_LANGS && window.AI_LANGS.length > 1) {
@@ -414,6 +482,7 @@ $admin = is_array($me) && ($me['role'] ?? '') === 'admin';
     <b>live</b><br><span id="updated-at">…</span></div>
 </header>
 
+<div id="upband" class="offline upband" hidden aria-live="polite"></div>
 <div id="offline" class="offline" hidden></div>
 <div id="phpsafety" class="offline" hidden></div>
 <div id="problems" class="offline warnish" hidden></div>
@@ -1274,7 +1343,7 @@ ai --upgrade-status             # an upgrade started on these pages</pre>
 <div class="toast" id="toast"></div>
 <script nonce="<?= h($nonce) ?>">
 var ME = <?= json_encode($me, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
-var STATUS = <?= $initial ? json_encode($initial, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) : 'null' ?>;
+var STATUS = <?= $initial ? json_encode($initial, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) : 'null' ?>;
 var PHP_SAFETY = <?= $admin ? json_encode(ai_php_safety(), JSON_HEX_TAG | JSON_HEX_AMP) : 'null' ?>;
 </script>
 <script nonce="<?= h($nonce) ?>" src="/assets/core.js?v=<?= h(AI_VERSION) ?>"></script>

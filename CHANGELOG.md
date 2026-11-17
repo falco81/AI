@@ -3,6 +3,28 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.96
+
+- **The pages stay with an upgrade that restarts them** (after fake-igd's upgrade kit). Root writes how far an
+  upgrade is into one small file beside the pages (`/var/www/ai/.upgrade.json`, a dot name nginx never serves, 0644,
+  written whole): the daemon when it starts one ("root checks the package"), install.sh at each of its steps
+  (*Upgrading*, *Packages*, *The program*, *The pages*, *Starting*, *Done* - step N of M), and how it ended: done after
+  *Done*, failed from its EXIT trap - also when it is killed (INT, HUP, TERM). An upgrade root's helper refused before
+  install.sh ran is ended by the daemon from status.json. Only with `--upgrade` of an installed ai; a fresh install and
+  everything else write nothing, and no write may stop the upgrade.
+- PHP reads the file straight from disk: while the daemon does not answer, every call of the pages gets
+  `503 {"upgrading": …}` ("ai is being upgraded to X - back in a moment") instead of "the daemon is not answering";
+  `?api=upgrade-state` says how far it is and whether the daemon answers, without the daemon; the status carries it;
+  `/healthz` says `maintenance …: being upgraded to X`, not `down`. Believed for 30 minutes while running, 10 after
+  it ended; anything else in the file is as no file.
+- One band under the header: *ai is being upgraded to X* - from, asked by, how long so far, a bar, the step and its
+  words, and what it means now (the API restarting - not answering for N s; nginx and PHP restarting; asked again
+  every two seconds). The pill says *being upgraded*; no red bar and no red words while it is expected. When it is
+  done the page loads the new version by itself, once (never in a loop, never over settings not saved - then a
+  link). Failed: a red band with the reason and *Open Upgrades*, hidden with ×. Settings → Upgrades draws the plan
+  from the file while the daemon is away, and for an upgrade run by hand on the command line.
+- The sign-in page says it too, from the file, and loads again by itself once the daemon answers.
+
 ## 1.0.95
 
 - **Upload the missing authority** (Settings → Certificates and TLS, the card of the certificate; after plexmon

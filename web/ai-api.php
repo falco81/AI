@@ -213,6 +213,67 @@ function ai_get(string $path, float $timeout = 30.0): ?array
     return is_array($data) ? $data : null;
 }
 
+/**
+ * How far an upgrade is (1.0.96) - read straight from the file root writes beside the pages, so
+ * that it is known while the daemon, nginx and PHP restart. null when there is none, or it is
+ * not to be believed: "running" for 30 minutes after it was last written, "done" and "failed"
+ * for 10; anything else, or a time in the future, as if there were no file. Who asked, why it
+ * failed and its id only for a page that has a session cookie.
+ */
+function ai_upgrading(bool $full = false): ?array
+{
+    static $got = false;
+    if ($got === false) {
+        $got = null;
+        $raw = @file_get_contents(__DIR__ . '/.upgrade.json', false, null, 0, 20000);
+        $u = is_string($raw) ? json_decode($raw, true) : null;
+        if (is_array($u) && in_array($u['state'] ?? '', ['running', 'done', 'failed'], true)) {
+            $at = (float) ($u['at'] ?? 0);
+            $age = time() - $at;
+            $fresh = $u['state'] === 'running' ? 1800 : 600;
+            if ($at > 0 && $age > -60 && $age < $fresh) {
+                /* No mbstring needed: cut by characters with a regular expression, and a text that
+                   is not UTF-8 at all is dropped rather than breaking the JSON of the answer. */
+                $txt = static function ($v, int $n): string {
+                    $s = preg_replace('/[\x00-\x1f\x7f]/u', ' ', (string) $v) ?? '';
+                    return preg_match('/^.{0,' . $n . '}/us', $s, $m) ? $m[0] : '';
+                };
+                $ver = static fn ($v): string => preg_match('/^[0-9]+(\.[0-9]+){1,3}$/', (string) $v) ? (string) $v : '';
+                $got = [
+                    'state' => (string) $u['state'], 'version' => $ver($u['version'] ?? ''),
+                    'from' => $ver($u['from'] ?? ''), 'part' => max(0, min(99, (int) ($u['part'] ?? 0))),
+                    'parts' => max(1, min(99, (int) ($u['parts'] ?? 1))), 'words' => $txt($u['words'] ?? '', 120),
+                    'started' => (float) ($u['started'] ?? 0), 'at' => $at,
+                    'downgrade' => !empty($u['downgrade']),
+                    'id' => $txt($u['id'] ?? '', 40), 'by' => $txt($u['by'] ?? '', 100),
+                    'said' => $txt($u['said'] ?? '', 300),
+                ];
+            }
+        }
+    }
+    if ($got === null) {
+        return null;
+    }
+    if ($full || ai_session() !== '') {
+        return $got;
+    }
+    $out = $got;
+    unset($out['by'], $out['said']);
+    $out['id'] = substr(hash('sha256', $got['id']), 0, 12);     // tells one upgrade from the next, says nothing
+    return $out;
+}
+
+/** The words for a daemon that does not answer - an upgrade going on, or it is down. */
+function ai_down_reply(): array
+{
+    $u = ai_upgrading();
+    if ($u !== null && $u['state'] === 'running') {
+        return ['ok' => false, 'upgrading' => $u,
+                'error' => 'ai is being upgraded to ' . ($u['version'] ?: 'a new version') . ' - back in a moment'];
+    }
+    return ['ok' => false, 'error' => 'the daemon is not answering — is ai.service running?'];
+}
+
 /** Pass a daemon reply straight through to the browser. */
 function ai_relay(string $path, string $method = 'GET', array|object|null $payload = null,
                       float $timeout = 30.0): void
@@ -222,6 +283,12 @@ function ai_relay(string $path, string $method = 'GET', array|object|null $paylo
 
     if (ai_token() === null) {
         http_response_code(503);
+        /* Being upgraded (1.0.96): said so, with how far it is - expected, not "down". */
+        $down = ai_down_reply();
+        if (isset($down['upgrading'])) {
+            echo json_encode($down);
+            return;
+        }
         /* Where the token lives is for whoever is on the machine; from
            anywhere else it is a daemon that is not answering. */
         echo json_encode(['ok' => false, 'error' => ai_local()
@@ -233,8 +300,7 @@ function ai_relay(string $path, string $method = 'GET', array|object|null $paylo
     [$status, $body] = ai_call($path, $method, $payload, $timeout);
     if ($status === 0) {
         http_response_code(503);
-        echo json_encode(['ok' => false, 'error' =>
-            'the daemon is not answering — is ai.service running?']);
+        echo json_encode(ai_down_reply());
         return;
     }
     /* A 401 is no longer taken as the end of the session here (1.0.73): while

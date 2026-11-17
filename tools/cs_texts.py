@@ -3723,9 +3723,78 @@ STRINGS = {
         'není v tom žádný certifikát (-----BEGIN CERTIFICATE-----, nebo soubor .cer)',
     'every certificate in it is there already':
         'každý certifikát v tom už tam je',
+    # ---- an upgrade, followed (1.0.96)
+    'root checks the package':
+        'root kontroluje balíček',
+    'Packages':
+        'Balíčky',
+    'The program':
+        'Program',
+    'Starting':
+        'Spouštění',
+    'Database drivers':
+        'Ovladače databáze',
+    'Claude Code, for root':
+        'Claude Code pro roota',
+    'Load it again':
+        'Načíst znovu',
+    'Loading the pages of the new version…':
+        'Načítám stránky nové verze…',
+    'ai.service and these pages restart once - for a few seconds nothing answers; the terminals go on running. This page follows it and loads the new version by itself.':
+        'ai.service a tyto stránky se jednou restartují – na pár sekund nic neodpovídá; terminály běží dál. Tato stránka upgrade sleduje a novou verzi načte sama.',
+    'ai.service and these pages restart once - this page loads again by itself when they are back.':
+        'ai.service a tyto stránky se jednou restartují – tato stránka se sama načte znovu, až budou zpět.',
+    'What install.sh said is in Settings - Upgrades.':
+        'Co vypsal install.sh, je v Nastavení – Upgrady.',
+    'Open Upgrades':
+        'Otevřít Upgrady',
+    'Hide it - it is in Settings - Upgrades':
+        'Skrýt – zůstane v Nastavení – Upgrady',
+    'it stopped':
+        'zastavilo se',
+    'ai and these pages are restarting with the new version':
+        'ai a tyto stránky se restartují s novou verzí',
+    'install.sh --upgrade runs (root)':
+        'běží install.sh --upgrade (root)',
 }
 
 PATTERNS = {
+    'ai is being upgraded to {0}':
+        'probíhá upgrade ai na {0}',
+    'ai is being taken back to {0}':
+        'ai se vrací na {0}',
+    'ai {0} is in':
+        'ai {0} je nainstalované',
+    'The upgrade to ai {0} failed':
+        'Upgrade na ai {0} selhal',
+    'Going back to ai {0} failed':
+        'Návrat na ai {0} selhal',
+    'from {0}':
+        'z {0}',
+    'asked by {0}':
+        'spustil {0}',
+    '{0} s so far':
+        'zatím {0} s',
+    '{0} min {1} s so far':
+        'zatím {0} min {1} s',
+    '{0} %':
+        '{0} %',
+    'step {0} of {1}':
+        'krok {0} z {1}',
+    'Upgrading ai to {0}':
+        'Upgrade ai na {0}',
+    'Done: ai {0}':
+        'Hotovo: ai {0}',
+    'ai {0} runs':
+        'ai {0} běží',
+    'nginx and PHP are restarting - the page itself cannot be reached for {0} s, asked again every two seconds; the page comes back by itself.':
+        'nginx a PHP se restartují – samotná stránka je nedostupná už {0} s, ptám se znovu každé dvě sekundy; stránka se vrátí sama.',
+    'The API of these pages is restarting with the new version - not answering for {0} s, asked again every two seconds; the page comes back by itself.':
+        'API těchto stránek se restartuje s novou verzí – neodpovídá už {0} s, ptám se znovu každé dvě sekundy; stránka se vrátí sama.',
+    'This page is still the one of {0} - something here is not saved yet.':
+        'Tato stránka je pořád z verze {0} – něco tu ještě není uložené.',
+    'ai is being upgraded to {0} - back in a moment':
+        'probíhá upgrade ai na {0} – za chvíli zpět',
     'complete - {0} certificates up to {1}':
         'úplný – {0} certifikáty až ke kořeni {1}',
     'complete - {0} certificate up to {1}':

@@ -69,6 +69,8 @@ var NOTICE_BY_HAND = ['selinux-off', 'selinux-needs', 'osroots-failed'];
 function noticeByHand(n) { return !!n.kept || NOTICE_BY_HAND.indexOf(n.id) >= 0; }
 function paintHeader(s) {
   STATUS = s;
+  /* How far an upgrade is (1.0.96), from root's file beside the pages - PHP puts it in. */
+  upgradeHeard(s.upgrading || null, false);
   if (s.mailq && typeof mailqBadge === 'function') mailqBadge(s.mailq);
   var pill = $('state-pill');
   var kind = s.problems && s.problems.length ? 'warn' : 'ok';
@@ -81,7 +83,9 @@ function paintHeader(s) {
   var anyNotice = ADMIN && (s.notices || []).some(function (n) { return noticeByHand(n); });
   pill.style.cursor = anyNotice ? 'pointer' : '';
   pill.onclick = anyNotice ? function () { showTab('settings', 'upgrade'); } : null;
-  pill.lastChild.textContent = s.upgrade_state === 'running' ? 'being upgraded'
+  if (upgradeRunning()) kind = 'warn';
+  pill.className = 'pill ' + kind;
+  pill.lastChild.textContent = s.upgrade_state === 'running' || upgradeRunning() ? 'being upgraded'
     : (inMaint ? 'in maintenance' : (kind === 'crit' ? 'running - a step is needed' : (kind === 'warn' ? 'running, with trouble' : 'running')));
   explain(pill, 'ai ' + s.version + ' on ' + s.host + '. ' + (s.terms_running || 0) + ' terminal(s) running.'
     + (s.newer ? ' A newer version is out: ' + s.newer + ' (Settings - Upgrades).' : ''));
@@ -324,12 +328,154 @@ function trialDo(t, action, button) {
 
 function tick() {
   return api('status').then(paintHeader).catch(function (e) {
+    if (e && e.upgrading) return;              /* heard in api(): the band says it */
     if (e && e.unreachable) {
-      var off = $('offline');
-      off.textContent = 'The server is not answering just now (' + e.message + ') - asking again.';
-      off.hidden = false;
+      /* Nothing answers: an upgrade restarting it all? PHP knows without the daemon (1.0.96). */
+      return upgradeAsk().then(function (known) {
+        if (known) return;
+        var off = $('offline');
+        off.textContent = 'The server is not answering just now (' + e.message + ') - asking again.';
+        off.hidden = false;
+      });
     }
   });
+}
+
+/* ---- an upgrade, followed (1.0.96, as fake-igd's) ----------------------------
+   Root writes how far it is into a file beside the pages; PHP reads it straight from disk,
+   so it is known while ai.service, nginx and PHP restart. One band under the header says
+   it; nothing answering is expected meanwhile - no red bar, no red words; asked every 2 s;
+   once it is done the page loads the new version by itself, once. */
+var UPG = {u: null, away: 0, phpAway: false, saw: {}, timer: null, busy: false, reloading: false};
+function upgradeRunning() { return !!(UPG.u && UPG.u.state === 'running'); }
+function upgradeExpected() { return upgradeRunning() || UPG.reloading; }
+function upgradeHeard(u, apiAway) {
+  /* Heard at all: PHP answers again, whatever the daemon does. */
+  UPG.phpAway = false;
+  UPG.u = u && u.state ? u : null;
+  if (apiAway) { if (!UPG.away) UPG.away = Date.now(); }
+  else UPG.away = 0;
+  if (upgradeRunning()) UPG.saw[UPG.u.id] = true;
+  upgradeTimer();
+  upgradeDraw();
+  if (UPG.u && UPG.u.state === 'done' && !apiAway) upgradeDone();
+}
+/* What PHP says without the daemon: true when it knows of an upgrade going on. */
+function upgradeAsk() {
+  return api('upgrade-state', undefined, 6).then(function (x) {
+    var u = x.upgrading || null;
+    upgradeHeard(u, !x.api);
+    return !!(u && (u.state === 'running' || UPG.saw[u.id]));
+  }).catch(function () {
+    /* the page itself cannot be reached: nginx and PHP restart */
+    if (!upgradeRunning()) return false;
+    UPG.phpAway = true;
+    if (!UPG.away) UPG.away = Date.now();
+    upgradeDraw();
+    return true;
+  });
+}
+function upgradeTimer() {
+  var on = upgradeRunning();
+  if (on && !UPG.timer) {
+    UPG.timer = setInterval(function () {
+      if (UPG.busy) return;
+      UPG.busy = true;
+      tick().then(function () { UPG.busy = false; }, function () { UPG.busy = false; });
+    }, 2000);
+  }
+  if (!on && UPG.timer) { clearInterval(UPG.timer); UPG.timer = null; }
+}
+function upgradePercent(u) {
+  if (u.state !== 'running') return 100;
+  return Math.max(2, Math.min(99, Math.round(100 * Math.max(0, Number(u.part || 1) - 1) / Math.max(1, Number(u.parts || 1)))));
+}
+function upgradeSoFar(since) {
+  var s = Math.max(0, Math.round(Date.now() / 1000 - Number(since || 0)));
+  return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+}
+function upgradeHidden(u) { try { return localStorage.getItem('ai-upg-hide:' + u.id) === '1'; } catch (e) { return false; } }
+/* The end: loaded again once, onto the new pages - never in a loop, never over changes not saved. */
+function upgradeDone() {
+  var u = UPG.u;
+  if (!u || !UPG.saw[u.id] || UPG.reloading) return;
+  if (u.version && u.version === VERSION_LOADED) return;      /* this page is the new one already */
+  var key = 'ai-upg-reloaded:' + u.id, done = false;
+  try { done = sessionStorage.getItem(key) === '1'; } catch (e) { done = false; }
+  if (done) return;
+  if (Object.keys(DIRTY || {}).length) { upgradeDraw(); return; }  /* the band offers it */
+  try { sessionStorage.setItem(key, '1'); } catch (e) { }
+  UPG.reloading = true;
+  upgradeDraw();
+  setTimeout(function () { location.reload(); }, 1200);
+}
+function upgradeDraw() {
+  var band = $('upband');
+  if (!band) return;
+  var u = UPG.u;
+  var show = u && (u.state === 'running' || (u.state === 'done' && UPG.saw[u.id] && u.version !== VERSION_LOADED)
+                   || (u.state === 'failed' && !upgradeHidden(u)));
+  if (!show) { band.hidden = true; clear(band); upgradePill(); return; }
+  if (upgradeExpected() && $('offline')) $('offline').hidden = true;
+  clear(band);
+  band.className = 'offline upband' + (u.state === 'failed' ? ' bad' : (u.state === 'done' ? ' good' : ''));
+  var head = el('div', 'upband-head');
+  var to = u.version || '?';
+  if (u.state === 'running') head.appendChild(el('b', '', (u.downgrade ? 'ai is being taken back to ' : 'ai is being upgraded to ') + to));
+  else if (u.state === 'done') head.appendChild(el('b', '', 'ai ' + to + ' is in'));
+  else head.appendChild(el('b', '', (u.downgrade ? 'Going back to ai ' : 'The upgrade to ai ') + to + ' failed'));
+  var bits = [];
+  if (u.from) bits.push('from ' + u.from);
+  if (u.by) bits.push('asked by ' + u.by);
+  if (u.state === 'running' && u.started) bits.push(upgradeSoFar(u.started) + ' so far');
+  if (bits.length) head.appendChild(noI18n(el('span', 'upband-sub', bits.map(function (b) { return txT(b); }).join(' · '))));
+  if (u.state === 'failed') {
+    var x = iconButton('close', 'Hide it - it is in Settings - Upgrades');
+    x.classList.add('upband-x');
+    x.onclick = function () { try { localStorage.setItem('ai-upg-hide:' + u.id, '1'); } catch (e) { } upgradeDraw(); };
+    head.appendChild(x);
+  }
+  band.appendChild(head);
+  var pc = upgradePercent(u);
+  band.appendChild(upBar(pc, u.state === 'failed' ? 'bad' : (u.state === 'done' ? 'good' : ''), '', true));
+  var line = el('div', 'upband-sub');
+  if (u.state === 'running') line.appendChild(noI18n(document.createTextNode(txT(pc + ' %') + ' · ' + txT(u.words || '…') + ' · ' + txT('step ' + u.part + ' of ' + u.parts))));
+  else if (u.state === 'failed') line.appendChild(noI18n(document.createTextNode(u.said || txT('it stopped'))));
+  if (line.childNodes.length) band.appendChild(line);
+  var mean = el('div', 'upband-sub');
+  var away = UPG.away ? Math.round((Date.now() - UPG.away) / 1000) : 0;
+  if (u.state === 'running') {
+    if (UPG.phpAway) mean.textContent = txT('nginx and PHP are restarting - the page itself cannot be reached for ' + away + ' s, asked again every two seconds; the page comes back by itself.');
+    else if (UPG.away) mean.textContent = txT('The API of these pages is restarting with the new version - not answering for ' + away + ' s, asked again every two seconds; the page comes back by itself.');
+    else mean.textContent = txT('ai.service and these pages restart once - for a few seconds nothing answers; the terminals go on running. This page follows it and loads the new version by itself.');
+  } else if (u.state === 'done') {
+    if (UPG.reloading) mean.textContent = txT('Loading the pages of the new version…');
+    else {
+      mean.appendChild(document.createTextNode(txT('This page is still the one of ' + (VERSION_LOADED || '?') + ' - something here is not saved yet.') + ' '));
+      var a = el('a', '', 'Load it again');
+      a.href = '#';
+      a.onclick = function (e) { e.preventDefault(); location.reload(); };
+      mean.appendChild(a);
+    }
+  } else {
+    mean.appendChild(document.createTextNode(txT('What install.sh said is in Settings - Upgrades.') + ' '));
+    if (ADMIN) {
+      var o = el('a', '', 'Open Upgrades');
+      o.href = '#settings/upgrade';
+      o.onclick = function (e) { e.preventDefault(); showTab('settings', 'upgrade'); };
+      mean.appendChild(o);
+    }
+  }
+  band.appendChild(mean);
+  band.hidden = false;
+  upgradePill();
+}
+/* The pill while nothing answers: being upgraded, not "not answering". */
+function upgradePill() {
+  var pill = $('state-pill');
+  if (!pill || !upgradeRunning() || !UPG.away) return;
+  pill.className = 'pill warn';
+  pill.lastChild.textContent = 'being upgraded';
 }
 /* How busy the server is, beside running (1.0.72): every 3 s while the page
    is shown and live, nothing while it is hidden; the daemon reads /proc only
@@ -5399,6 +5545,9 @@ function maintenanceAsk(n, on, then) {
       }}], true);
 }
 function drawUpgrade(d) {
+  /* An upgrade the daemon did not start (install.sh --upgrade by hand) has no plan here -
+     root's file says how far it is (1.0.96). */
+  if (d && !d.plan && upgradeRunning()) d = upPlanFromFile(d) || d;
   d = upSteady(d);
   UP.last = d;
   /* The nodes. */
@@ -5525,7 +5674,8 @@ function drawUpgrade(d) {
     }));
   }
   });
-  $('up-cancel').hidden = !running;
+  /* Stopped only by the daemon that started it - never one drawn from root's file alone (1.0.96). */
+  $('up-cancel').hidden = !running || !!(plan && plan.fromFile);
   /* Each node's own install.sh output (1.0.70), kept as it comes - the
      answering node changes behind the web address, and the one card showed
      one node's, then the other's. */
@@ -5569,7 +5719,8 @@ function upPercent(st, plan) {
       return Math.round(3 + 17 * Math.min(1, since / Math.max(1, Number(plan.drain_s || 20))));
     case 'installing':
       var asked = now - Number(st.asked || st.at || now);
-      return Math.round(Math.min(92, 5 + 85 * Math.min(1, Number(st.part || 0) / 13) + Math.min(2, asked / 60)));
+      /* by install.sh's own count of its steps where it gives one (1.0.96) */
+      return Math.round(Math.min(92, 5 + 85 * Math.min(1, Number(st.part || 0) / Math.max(1, Number(st.parts || 13))) + Math.min(2, asked / 60)));
     case 'checking': return Math.round(85 + Math.min(10, since / 3));
     default: return 0;
   }
@@ -5611,12 +5762,30 @@ function loadUpgrade(live) {
     UP.misses = (UP.misses || 0) + 1;
     if (running || e.unreachable || UP.misses <= 3) {
       if ($('up-retry')) $('up-retry').textContent = ('The daemon is starting again with the new version - asking again…');
+      /* The plan from root's file while nothing answers (1.0.96): how far it is goes on. */
+      var fromFile = upPlanFromFile();
+      if (fromFile) { try { drawUpgrade(fromFile); } catch (e2) { } }
       upgradeAgain(Math.min(2000 * UP.misses, 6000));
       return;
     }
     oops(e);
     upgradeAgain(15000);
   });
+}
+/* The Upgrades pane as the last answer had it, its plan made from root's file (1.0.96). */
+function upPlanFromFile(base) {
+  var u = UPG.u;
+  base = base || UP.last;
+  if (!u || u.state !== 'running' || !base) return null;
+  var was = base.plan || {};
+  var d = {};
+  Object.keys(base).forEach(function (k) { d[k] = base[k]; });
+  d.plan = {id: was.id || u.id, version: u.version || was.version, by: u.by || was.by, at: Math.max(Number(was.at || 0), Number(u.started || 0)),
+            state: 'running', downgrade: !!u.downgrade, drain_s: 0, fromFile: true,
+            steps: [{name: base.node || ((was.steps || [])[0] || {}).name || '?', state: 'installing',
+                     said: UPG.away ? 'ai and these pages are restarting with the new version' : 'install.sh --upgrade runs (root)',
+                     at: u.at, asked: u.started, part: u.part, parts: u.parts, part_words: u.words, tail: ((was.steps || [])[0] || {}).tail || []}]};
+  return d;
 }
 /* Whether an upgrade is under way, as far as this page knows (1.0.73): the
    plan says so, or a step is not finished, or it ended a short while ago -
