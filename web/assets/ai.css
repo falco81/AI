@@ -3997,7 +3997,7 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 #upgrade-notices.nt-box .nt-done-head .nt-h{margin:0}
 #upgrade-notices.nt-box .nt-none{display:flex;align-items:center;gap:8px}
 /* SELinux (1.0.91, after otp's) */
-.se-node{border:1px solid var(--line);border-radius:14px;background:var(--panel2);padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0;margin-top:12px;max-width:900px}
+.se-node{border:1px solid var(--line);border-radius:14px;background:var(--panel2);padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0;margin-top:12px}
 .se-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .se-name{display:flex;align-items:center;gap:8px;font-size:15px;min-width:0}
 .se-mode{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--tx-dim)}
@@ -4067,3 +4067,10 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 .se-rules code{overflow-wrap:anywhere}
 .se-plan{margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 .se-plan code{overflow-wrap:anywhere}
+/* As fake-igd's card (1.0.98): the whole width, ticks in the page's blue, the calm green state */
+.se-find input[type=checkbox]{accent-color:var(--info);width:15px;height:15px;margin:2px 0 0;cursor:pointer}
+.se-none{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid rgba(63,185,80,.45);border-radius:10px;background:var(--ok-bg)}
+.se-none .se-none-ic{flex:0 0 auto;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(63,185,80,.18);color:var(--ok)}
+.se-none b{display:block;font-size:14px}
+.se-none span{font-size:13px;color:var(--tx-dim)}
+.se-name .tag{font-size:10.5px}

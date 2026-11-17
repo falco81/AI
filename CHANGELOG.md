@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.98
+
+- **Settings → SELinux looks as fake-igd's card**: the server's card across the whole width (it stopped at 900 px),
+  *this one* beside its name, the ticks in the page's blue, and nothing refused said as the calm green box
+  (*SELinux refused ai nothing on this server*) instead of a grey line.
+
 ## 1.0.97
 
 - **SELinux: what it refuses, found out and sorted by what puts it right** (Settings → SELinux; after fake-igd's

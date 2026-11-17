@@ -3833,6 +3833,12 @@ STRINGS = {
         'nic v politice to nepovoluje: přesně tohle povolí pravidlo vlastního lokálního modulu ai',
     'last':
         'naposledy',
+    'SELinux refused ai nothing on this server':
+        'SELinux na tomto serveru ai nic neodmítl',
+    "Nothing since ai's needs were put in.":
+        'Nic od vložení toho, co ai potřebuje.',
+    'Nothing since the machine started.':
+        'Nic od startu stroje.',
 }
 
 PATTERNS = {

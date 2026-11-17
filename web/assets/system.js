@@ -2441,7 +2441,17 @@ function seFindings(fd, n) {
   hd.appendChild(el('span', 'muted small', fd.since ? 'since ai\'s needs were put in' : 'since the machine started'));
   wrap.appendChild(hd);
   var all = fd.findings || [];
-  if (!all.length) wrap.appendChild(el('p', 'muted small', 'Nothing - SELinux refused ai nothing.'));
+  if (!all.length) {
+    var none = el('div', 'se-none');
+    var ic = el('span', 'se-none-ic');
+    ic.innerHTML = iconMarkup('check', 18);
+    none.appendChild(ic);
+    var nt = el('div', '');
+    nt.appendChild(el('b', '', 'SELinux refused ai nothing on this server'));
+    nt.appendChild(el('span', '', fd.since ? 'Nothing since ai\'s needs were put in.' : 'Nothing since the machine started.'));
+    none.appendChild(nt);
+    wrap.appendChild(none);
+  }
   var boxes = [];
   var count = function () {
     var k = boxes.filter(function (b) { return b.checked; }).length;
@@ -2601,6 +2611,7 @@ function seNode(n) {
   var head = el('div', 'se-head');
   var nm = el('div', 'se-name');
   nm.appendChild(noI18n(el('b', '', n.name)));
+  nm.appendChild(el('span', 'tag info', 'this one'));
   head.appendChild(nm);
   head.appendChild(el('span', 'se-mode', seModeWords(m)));
   box.appendChild(head);
