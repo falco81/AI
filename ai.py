@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.98'
+__version__ = '1.0.99'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -6333,13 +6333,27 @@ def chain_add(prof, text):
     return [cert_info(x).get('cn') or '?' for x in useful]
 
 
+def tls_listen_where():
+    """Where nginx answers the pages over TLS, to connect to itself (1.0.99): 127.0.0.1 unless every
+    TLS listen line names an address of its own - then the first of those."""
+    text = _se_read(os.environ.get('AI_NGINX_CONF') or str(NGINX_CONF)) or ''
+    for m in re.finditer(r'(?m)^\s*listen\s+(\[[^\]]*\]:|[0-9.]+:)?(\d{1,5})\b([^;\n]*);', text):
+        addr, port, rest = (m.group(1) or '').rstrip(':'), int(m.group(2)), m.group(3)
+        if port == 80 or ('ssl' not in rest and port != 443):
+            continue
+        if not addr or addr in ('0.0.0.0', '[::]', '*', '127.0.0.1', '[::1]'):
+            return '127.0.0.1', port
+        return addr.strip('[]'), port
+    return '127.0.0.1', 443
+
+
 def tls_selfcheck(prof):
     """After nginx has it: connected to itself as a client that fetches nothing (Python's ssl,
     the system's roots and the roots given with it) - what other programs will find."""
     info = prof.get('info') or {}
     if info.get('self_signed'):
         return {'at': time.time(), 'ok': None, 'said': 'self-signed: not checked'}
-    port = next((p for p in selinux_nginx_ports() if p != 80), 443)
+    host, port = tls_listen_where()
     name = (info.get('san') or [None])[0] or info.get('cn') or host_name()
     if name.startswith('*.'):
         name = 'ai' + name[1:]
@@ -6357,7 +6371,7 @@ def tls_selfcheck(prof):
     want = {str(x.get('fingerprint') or '').replace(':', '').lower()
             for x in (info, ((prof.get('alt') or {}).get('info') or {})) if x.get('fingerprint')}
     def served(context):
-        with socket.create_connection(('127.0.0.1', port), timeout=10) as s:
+        with socket.create_connection((host, port), timeout=10) as s:
             with context.wrap_socket(s, server_hostname=name) as tls:
                 return hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()
     # First the certificate nginx answers with - the new one, after its reload - read without
@@ -6380,7 +6394,7 @@ def tls_selfcheck(prof):
     try:
         served(ctx)
         return {'at': time.time(), 'ok': True,
-                'said': 'checked as a client that fetches nothing: the whole chain is sent (127.0.0.1:%d)' % port}
+                'said': 'checked as a client that fetches nothing: the whole chain is sent (%s:%d)' % (host, port)}
     except ssl.SSLCertVerificationError as e:
         # Only this is an alert: what nginx sends is refused. Anything else is said, no more.
         return {'at': time.time(), 'ok': False, 'refused': True, 'said': (e.verify_message or str(e))[:300]}
@@ -6714,8 +6728,12 @@ def tls_chain_tick(daemon):
             bad = [x for x in parts if (x.get('chain_state') or {}).get('ok') is False
                    and not (x.get('chain_state') or {}).get('self_signed')]
             key = '/'.join(str((x.get('chain_state') or {}).get('key') or '') for x in parts)
-            if bad and CHAIN_LOOK['tried'] != key:
+            # Tried once for this certificate and chain - also across restarts of the daemon (1.0.99):
+            # one that cannot be completed reloaded nginx after every start.
+            tried = CHAIN_LOOK['tried'] or str(store.get_meta('tls:chain-tried', '') or '')
+            if bad and tried != key:
                 CHAIN_LOOK['tried'] = key
+                store.set_meta('tls:chain-tried', key)
                 prof['chain_again'] = True
                 log('the certificate of the pages does not reach a root of the system by its chain: put in '
                     'again, the missing link fetched', 'warn')
@@ -6774,7 +6792,13 @@ def cert_now_info():
     nothing checks it (1.0.95): the system's roots, nothing fetched. Kept by the file's mtime."""
     try:
         st = os.stat(str(CERT_FILE))
-        mark = (st.st_mtime, st.st_size)
+        # The system's roots count too (1.0.99): a root added since (Trusted roots, update-ca-trust)
+        # makes the same file complete.
+        try:
+            roots = os.stat(chain_roots_file()).st_mtime
+        except (OSError, TypeError):
+            roots = 0
+        mark = (st.st_mtime, st.st_size, roots)
         got = CERT_NOW.get(str(CERT_FILE))
         if got and got[0] == mark:
             return dict(got[1]) if got[1] else None
@@ -9237,38 +9261,47 @@ class Upgrades:
                                                                   'downgrade': bool(info.get('older'))}), mode=0o600)
             # The pages follow it from here (1.0.96) - also while the daemon and PHP restart.
             run_id = 'u%d' % int(began * 1000)
-            write_atomic(UPGRADE_DIR / 'started.json', json.dumps({'id': run_id, 'at': began}), mode=0o600)
-            upgrade_tell(state='running', id=run_id, version=info['version'], **{'from': __version__},
-                         by=str(by or 'the pages')[:100], part=1, parts=UPG_PARTS, words='root checks the package',
-                         started=began, said='', downgrade=bool(info.get('older')))
-            self.store.x('DELETE FROM meta WHERE k = ?', ('upgrade:held',))
-            write_atomic(UPGRADE_DIR / 'last.log', '', mode=0o600)
-            cmd = [sys.executable if os.path.exists(sys.executable) else '/usr/bin/python3', '-I', upgrader(),
-                   '--job', str(path), '--by', by or 'the pages']
-            if info.get('older'):
-                cmd += ['--floor', downgrade_floor(self.store)]
-                # A copy of the database first: what the newer one wrote, kept.
-                try:
-                    make_backup(self.store, 'before going back to %s, by %s' % (info['version'], by))
-                except Exception as e:                  # noqa: BLE001
-                    log('a copy before going back could not be made: %s' % e, 'warn')
-            # Out of service first, as otp takes a node out: back once the new
-            # version runs, or the upgrade failed (maintenance_settle).
-            if not maintenance_row(self.store).get('on'):
-                maintenance_set(self.store, True, 'upgrade to %s' % info['version'], MAINT_BY_UPGRADE)
-            self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)%s' % (
-                by, info['version'], info.get('signed_by'), ' - going back from %s' % __version__
-                if info.get('older') else ''), 'warn', who=by)
-            if NO_SYSTEM:
-                return info
+            # Whatever fails before root's helper runs ends it here (1.0.99): status.json and the pages'
+            # file said "running" for 30 minutes, and every other upgrade was refused meanwhile.
             try:
+                write_atomic(UPGRADE_DIR / 'started.json', json.dumps({'id': run_id, 'at': began}), mode=0o600)
+                upgrade_tell(state='running', id=run_id, version=info['version'], **{'from': __version__},
+                             by=str(by or 'the pages')[:100], part=1, parts=UPG_PARTS, words='root checks the package',
+                             started=began, said='', downgrade=bool(info.get('older')))
+                self.store.x('DELETE FROM meta WHERE k = ?', ('upgrade:held',))
+                write_atomic(UPGRADE_DIR / 'last.log', '', mode=0o600)
+                cmd = [sys.executable if os.path.exists(sys.executable) else '/usr/bin/python3', '-I', upgrader(),
+                       '--job', str(path), '--by', by or 'the pages']
+                if info.get('older'):
+                    cmd += ['--floor', downgrade_floor(self.store)]
+                    # A copy of the database first: what the newer one wrote, kept.
+                    try:
+                        make_backup(self.store, 'before going back to %s, by %s' % (info['version'], by))
+                    except Exception as e:                  # noqa: BLE001
+                        log('a copy before going back could not be made: %s' % e, 'warn')
+                # Out of service first, as otp takes a node out: back once the new
+                # version runs, or the upgrade failed (maintenance_settle).
+                if not maintenance_row(self.store).get('on'):
+                    maintenance_set(self.store, True, 'upgrade to %s' % info['version'], MAINT_BY_UPGRADE)
+                self.store.add_event('upgrades', '%s is putting ai %s in (signed by %s)%s' % (
+                    by, info['version'], info.get('signed_by'), ' - going back from %s' % __version__
+                    if info.get('older') else ''), 'warn', who=by)
+                if NO_SYSTEM:
+                    return info
                 if systemd_here():
                     run(['systemd-run', '--unit', 'ai-upgrade-%d' % time.time(), '--collect', '--quiet',
                          '--description', 'ai: putting in version %s' % info['version']] + cmd, timeout=30, check=True)
                 else:
                     subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception as e:                      # noqa: BLE001 - said on the pages, then as before
-                upgrade_tell(id=run_id, state='failed', said='root\'s helper could not be started: %s' % str(e)[:200])
+            except Exception as e:                      # noqa: BLE001 - said, then as before
+                said = 'it could not be started: %s' % (str(e)[:200] or e.__class__.__name__)
+                try:
+                    write_atomic(UPGRADE_DIR / 'status.json', json.dumps({
+                        'state': 'failed', 'rc': -3, 'said': said, 'version': info['version'], 'by': by,
+                        'at': time.time(), 'downgrade': bool(info.get('older'))}), mode=0o600)
+                except OSError:
+                    pass
+                upgrade_tell(id=run_id, state='failed', said=said)
                 raise
             return info
         finally:
@@ -10778,6 +10811,7 @@ SE_REPORT_KEEP_S = 3600
 SE_REPORT_MOST = 2 * 1024 * 1024        # each part at most, before it is packed
 SE_EVERY = 1800
 SE_WORK = {'busy': False, 'seen': time.time() - SE_EVERY + 120, 'tried': ''}
+SE_LOCK = threading.Lock()
 # The TCP ports the policy lets httpd bind already: http_port_t and http_cache_port_t, as
 # Fedora/RHEL ship them - nothing asked of semanage for those.
 SE_HTTPD_TCP = ((80, 81), (443, 443), (488, 488), (8008, 8009), (8443, 8443), (9000, 9000),
@@ -11938,15 +11972,18 @@ def selinux_tick(daemon):
                 pass
     except Exception:                                   # noqa: BLE001
         pass
-    want = store.meta_json('selinux:want', {}) or {}
-    now = store.meta_json('selinux:now', {}) or {}
-    asked = bool(want) and want.get('id') != now.get('done') and want.get('id') != SE_WORK['tried']
-    if SE_WORK['busy'] or not (asked or time.time() - SE_WORK['seen'] > SE_EVERY):
-        return
-    SE_WORK['busy'] = True
-    SE_WORK['seen'] = time.time()
-    if asked:
-        SE_WORK['tried'] = want.get('id') or ''
+    # One at a time, whichever thread asks (1.0.99): the page's request and the daemon's loop both
+    # call this - two steps at once could write over each other what was done.
+    with SE_LOCK:
+        want = store.meta_json('selinux:want', {}) or {}
+        now = store.meta_json('selinux:now', {}) or {}
+        asked = bool(want) and want.get('id') != now.get('done') and want.get('id') != SE_WORK['tried']
+        if SE_WORK['busy'] or not (asked or time.time() - SE_WORK['seen'] > SE_EVERY):
+            return
+        SE_WORK['busy'] = True
+        SE_WORK['seen'] = time.time()
+        if asked:
+            SE_WORK['tried'] = want.get('id') or ''
     do = want.get('do') if asked and want.get('do') in SE_ACTIONS else 'check'
 
     def go():
@@ -11972,9 +12009,10 @@ def selinux_tick(daemon):
                     # what ai itself switched is not "SELinux no longer enforcing" (notices)
                     if data.get('mode') in ('Enforcing', 'Permissive'):
                         store.set_meta('selinux:seen', data['mode'])
+            was_done = (store.meta_json('selinux:now', {}) or {}).get('done')     # as it is now, not as it was
             store.set_meta_json('selinux:now', {
                 'data': data if isinstance(data, dict) else {}, 'at': time.time(),
-                'done': want.get('id') if asked else now.get('done'), 'error': err, 'said': said, 'action': do})
+                'done': want.get('id') if asked else was_done, 'error': err, 'said': said, 'action': do})
             NOTICE_CACHE['out'] = None
         except Exception as e:                          # noqa: BLE001
             log_sparing('selinux', 'SELinux: %s' % e, 'warn')
@@ -12915,8 +12953,10 @@ def notices_current(d, admin=True):
                 cached.append({'id': 'cert-chain', 'level': 'warn',
                                'title': 'the certificate of the pages is trusted by browsers only',
                                'said': ('The root %s is not among the system\'s roots.' % cs.get('missing')
-                                        if cs.get('root_missing') else
+                                        if cs.get('root_missing') and cs.get('missing') else
                                         'The intermediate %s is not sent with it.' % cs.get('missing')
+                                        if cs.get('ok') is False and cs.get('missing') else
+                                        (str(cs.get('words') or cs.get('said') or '') + '.')
                                         if cs.get('ok') is False else (sc.get('said') or '')) +
                                        ' curl, Python, acme, monitoring and mobile apps refuse the connection.',
                                'cli': '', 'link': 'settings/web'})

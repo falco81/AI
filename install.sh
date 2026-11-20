@@ -150,7 +150,7 @@ upgrade_exit() {
 upgrade_watch() {   # from here on the pages are told; the end said whatever it is
     [[ -z "$DRY_RUN" || -n "${AI_UPGRADE_PAGES:-}" ]] || return 0
     UPG_ON="yes"
-    [[ -n "$WITH_CLAUDE" ]] && UPG_PARTS=$((UPG_PARTS + 1))
+    [[ "$WITH_CLAUDE" == "yes" ]] && UPG_PARTS=$((UPG_PARTS + 1))
     trap 'upgrade_exit $?' EXIT
     trap 'exit 130' INT
     trap 'exit 129' HUP
@@ -723,9 +723,12 @@ selinux_module() {     # ai's module (ai_server) in the policy, the labels of /r
     cmp -s "$SOURCE_DIR/deploy/ai_server.cil" "$LIB_DIR/ai_server.cil.in-policy" 2>/dev/null && had=1
     run install -D -m 0644 "$SOURCE_DIR/deploy/ai_server.cil" "$LIB_DIR/ai_server.cil"
     command -v getenforce >/dev/null 2>&1 || return 0
-    command -v semodule >/dev/null 2>&1 || return 0
     [[ "$(getenforce 2>/dev/null)" == "Disabled" ]] && return 0
-    if [[ -z "$had" ]] || ! semodule -l 2>/dev/null | awk '$1=="ai_server"{f=1} END{exit !f}'; then
+    # The module only where semodule is; the boolean and the labels whenever SELinux is on (1.0.99:
+    # without semodule they were left out, and nginx could not reach the daemon).
+    if ! command -v semodule >/dev/null 2>&1; then
+        warn "SELinux: semodule is not here, ai's module is not put in (dnf install policycoreutils)"
+    elif [[ -z "$had" ]] || ! semodule -l 2>/dev/null | awk '$1=="ai_server"{f=1} END{exit !f}'; then
         if run semodule -i "$LIB_DIR/ai_server.cil" 2>/dev/null; then
             run install -m 0644 "$LIB_DIR/ai_server.cil" "$LIB_DIR/ai_server.cil.in-policy"
             good "SELinux: ai's module (ai_server) is in the policy"

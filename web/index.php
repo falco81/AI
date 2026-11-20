@@ -66,7 +66,9 @@ if (isset($_GET['api'])) {
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
         [$hs] = ai_call('/api/health', 'GET', null, 3.0);
-        echo json_encode(['ok' => true, 'upgrading' => ai_upgrading(), 'pages' => AI_VERSION,
+        /* Who asked and why it failed only for a session the daemon confirms (1.0.99). */
+        $sure = $hs === 200 && ai_session() !== '' && ai_whoami() !== null;
+        echo json_encode(['ok' => true, 'upgrading' => ai_upgrading($sure), 'pages' => AI_VERSION,
                           'api' => $hs === 200], JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }
@@ -243,7 +245,7 @@ if (isset($_GET['api'])) {
         }
         $data = json_decode($body, true);
         if ($status === 200 && is_array($data)) {
-            $data['upgrading'] = ai_upgrading();
+            $data['upgrading'] = ai_upgrading(true);    /* the daemon answered: the session is real */
             $out = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE);
             if ($out !== false) {
                 echo ai_squeeze($out);
@@ -282,7 +284,7 @@ if (!$me && !ai_local()) {
 }
 $initial = $me ? (ai_get('/api/status', 8.0) ?: null) : null;
 if (is_array($initial)) {
-    $initial['upgrading'] = ai_upgrading();     /* how far an upgrade is, from the first paint (1.0.96) */
+    $initial['upgrading'] = ai_upgrading(true); /* how far an upgrade is, from the first paint (1.0.96) */
 }
 $host    = (string) ($_SERVER['HTTP_HOST'] ?? php_uname('n'));
 $site    = (string) ($initial['site'] ?? '');

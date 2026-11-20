@@ -3,6 +3,28 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.99
+
+Bugs found by a review of 1.0.91 - 1.0.98, each one fixed:
+
+- **Security**: `?api=upgrade-state` (asked without signing in) gave who started an upgrade and why it failed to any
+  request with a cookie that merely looked like a session. Those two now go only to a session the daemon confirms; the
+  upgrade's id is always said as a hash.
+- An upgrade that could not be started (the database busy, the helper missing…) after it was marked running left
+  status.json and the pages' file "running" for 30 minutes - the band on every page, /healthz in maintenance, and every
+  other upgrade refused meanwhile. Now it is marked failed at once, with why.
+- install.sh: on a machine with SELinux on and no `semodule`, `httpd_can_network_connect` and `restorecon` were left out
+  since 1.0.91 - nginx could not reach the daemon. They are done whenever SELinux is on; only the module needs semodule.
+- SELinux: a step asked from the page while the half-hourly look ran could run beside it, and the step stayed "pending"
+  for an hour. One at a time now (a lock), and what was done is re-read before it is written.
+- Certificates: *Chain* stayed "incomplete" after the missing root was added to the system's trust - the file in place was
+  checked again only when the certificate file changed; the system's roots count now too.
+- The notice "trusted by browsers only" could say "The intermediate None is not sent" when the chain could not be checked.
+- A chain that cannot be completed reloaded nginx after every start of the daemon - tried once per certificate now, kept
+  across restarts.
+- *Checked from here* connected to 127.0.0.1 even when nginx listens on an address of its own only.
+- The upgrade's steps counted one too many with `--no-claude`.
+
 ## 1.0.98
 
 - **Settings → SELinux looks as fake-igd's card**: the server's card across the whole width (it stopped at 900 px),

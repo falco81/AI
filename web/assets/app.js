@@ -352,6 +352,12 @@ function upgradeExpected() { return upgradeRunning() || UPG.reloading; }
 function upgradeHeard(u, apiAway) {
   /* Heard at all: PHP answers again, whatever the daemon does. */
   UPG.phpAway = false;
+  /* Who asked and why it failed come only with a session the daemon confirms (1.0.99): kept from
+     what this page already heard of the same upgrade while the daemon is away. */
+  if (u && UPG.u && u.id === UPG.u.id) {
+    if (!u.by && UPG.u.by) u.by = UPG.u.by;
+    if (!u.said && UPG.u.said) u.said = UPG.u.said;
+  }
   UPG.u = u && u.state ? u : null;
   if (apiAway) { if (!UPG.away) UPG.away = Date.now(); }
   else UPG.away = 0;

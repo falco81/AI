@@ -217,8 +217,8 @@ function ai_get(string $path, float $timeout = 30.0): ?array
  * How far an upgrade is (1.0.96) - read straight from the file root writes beside the pages, so
  * that it is known while the daemon, nginx and PHP restart. null when there is none, or it is
  * not to be believed: "running" for 30 minutes after it was last written, "done" and "failed"
- * for 10; anything else, or a time in the future, as if there were no file. Who asked, why it
- * failed and its id only for a page that has a session cookie.
+ * for 10; anything else, or a time in the future, as if there were no file. Who asked and why
+ * it failed only with $full - for a session the daemon has confirmed.
  */
 function ai_upgrading(bool $full = false): ?array
 {
@@ -254,12 +254,14 @@ function ai_upgrading(bool $full = false): ?array
     if ($got === null) {
         return null;
     }
-    if ($full || ai_session() !== '') {
-        return $got;
-    }
+    /* The id is always said the same way (a hash): it tells one upgrade from the next, says
+       nothing. Who asked and why it failed only where the daemon has confirmed the session -
+       never on a cookie that merely looks like one (1.0.99). */
     $out = $got;
-    unset($out['by'], $out['said']);
-    $out['id'] = substr(hash('sha256', $got['id']), 0, 12);     // tells one upgrade from the next, says nothing
+    $out['id'] = substr(hash('sha256', $got['id']), 0, 12);
+    if (!$full) {
+        unset($out['by'], $out['said']);
+    }
     return $out;
 }
 
