@@ -3,6 +3,27 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.100
+
+Bugs found by a review of 1.0.58 - 1.0.90 (acme push, passkeys, the load, the notices), each one fixed:
+
+- **Security - passkeys**:
+  - an account taken away left its passkeys behind: a new account given the same name later could be signed into with
+    them, no password. They go with the account now.
+  - taking a passkey away (what the pages offer for a lost device) did not end the sign-ins it had opened - the device
+    stayed signed in for up to a week. They end with it now (from the pages and from `ai --passkey-forget`).
+  - registering a passkey could take over, or wipe, another account's passkey by naming its id. Refused now.
+  - a stale passkey pressed a few times locked the whole address out of password sign-in (everybody behind the same NAT).
+    Its failures are counted apart now.
+- **acme push**: the twin (alt) certificate was put in unchecked - it now has to hold the same names and the other kind
+  of key (one RSA, one ECDSA), as an upload's.
+- A ZIP holding one PFX was refused with "is the password right?" - the ZIP itself was read as the PFX.
+- `ai --set KEY=VALUE --get KEY` printed the old value and saved nothing; now it saves, then prints the new value.
+- Two pages asking for the load at once could start two watchers (doubled readings), and a page asking in the moment the
+  watching ended was left without readings.
+- A notice said done on the command line stayed on the pages for a minute, and Done on it said "no such notice".
+- The header's disk rates read the real `/sys/block` where the details read the configured sysfs.
+
 ## 1.0.99
 
 Bugs found by a review of 1.0.91 - 1.0.98, each one fixed:

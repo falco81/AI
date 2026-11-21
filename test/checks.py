@@ -822,5 +822,25 @@ ai.upgrade_pages_sync(_upg.status())
 check('upgrade: done by root\'s helper (an older one) - the pages\' file says done', ai.upgrade_pages_read().get('state') == 'done')
 ai.maintenance_set(st, False, 'test', 'test')
 
+# ---- passkeys: what a removed account, a removed passkey and failures leave behind (1.0.100) ------
+_pa = ai.Auth(st)
+_pa.add_user('pkuser', 'a good long password 1', 'user', '')
+st.set_meta_json('passkeys', [{'id': 'cidA', 'user': 'pkuser', 'name': 'iPad', 'pem': 'x', 'alg': -7},
+                              {'id': 'cidB', 'user': 'alice', 'name': 'Mac', 'pem': 'x', 'alg': -7}])
+_t1 = _pa.session_new('pkuser', '127.0.0.1', 'iPad', {'passkey': 'cidA'})
+_t2 = _pa.session_new('pkuser', '127.0.0.1', 'Firefox', {})
+check('passkeys: taking one away ends the sign-ins it opened, and only those',
+      ai.passkey_sessions_end(st, ['cidA']) == 1 and _pa.who(_t1) is None and _pa.who(_t2) is not None)
+_pa.drop_user('pkuser', 'test')
+check('passkeys: an account taken away takes its passkeys with it (a new account of the name gets none)',
+      [p['id'] for p in ai.passkeys_all(st)] == ['cidB'])
+for _i in range(int(ai.CONFIG.get('login_max_fails') or 8) + 1):
+    _pa.failed('passkey:stale', '10.9.9.9', 'passkey')
+check('passkeys: failures with a stale passkey never lock the address out of password sign-ins',
+      _pa.locked('passkey:stale', '10.9.9.9', 'passkey') > 0 and _pa.locked('someone', '10.9.9.9') == 0)
+_ai_src = open(os.path.join(HERE, 'ai.py')).read()
+check('passkeys: registering refuses a passkey id that belongs to another account',
+      "that passkey belongs to another account here" in _ai_src)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.99'
+__version__ = '1.0.100'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -3978,6 +3978,12 @@ class Auth:
             raise Refused('this is the last administrator: make another one first')
         self.store.x('DELETE FROM users WHERE name=?', (name,))
         self.store.x('DELETE FROM sessions WHERE name=?', (name,))
+        # Its passkeys go with it (1.0.100): a new account of the same name was signed into with them.
+        with PASSKEY_LOCK:
+            keys = passkeys_all(self.store)
+            left = [p for p in keys if p['user'] != name]
+            if len(left) != len(keys):
+                self.store.set_meta_json('passkeys', left)
         self.store.add_event('accounts', '%s took the account %s away (its terminals go on '
                              'running)' % (by, name), 'warn', who=by)
 
@@ -3994,22 +4000,24 @@ class Auth:
                              if by != name else '%s changed their password' % name, 'info', who=by)
 
     # -- signing in ---------------------------------------------------------
-    def _fail_keys(self, name, ip):
-        return ['ip:' + str(ip or '?'), 'name:' + str(name or '').lower()]
+    def _fail_keys(self, name, ip, kind=''):
+        # A passkey's failures are counted apart (1.0.100): a stale passkey pressed a few times locked
+        # every password sign-in from that address - everybody behind the same NAT too.
+        return [('pkip:' if kind == 'passkey' else 'ip:') + str(ip or '?'), 'name:' + str(name or '').lower()]
 
-    def locked(self, name, ip):
+    def locked(self, name, ip, kind=''):
         now = time.time()
-        for k in self._fail_keys(name, ip):
+        for k in self._fail_keys(name, ip, kind):
             r = self.store.one('SELECT * FROM fails WHERE k=?', (k,))
             if r and r['until_ts'] and r['until_ts'] > now:
                 return int(r['until_ts'] - now)
         return 0
 
-    def failed(self, name, ip):
+    def failed(self, name, ip, kind=''):
         now = time.time()
         most = int(CONFIG.get('login_max_fails') or 8)
         pause = int(CONFIG.get('login_lock_min') or 15) * 60
-        for k in self._fail_keys(name, ip):
+        for k in self._fail_keys(name, ip, kind):
             r = self.store.one('SELECT * FROM fails WHERE k=?', (k,))
             if not r or now - (r['first'] or 0) > pause:
                 n, first = 1, now
@@ -9713,6 +9721,7 @@ LOAD_HIST_S = 130
 LOAD_STEP_S = 5.0
 LOAD_WATCH_S = 45.0
 LOAD_WATCH = {'seen': 0.0, 'thread': None, 'store': None}
+LOAD_WATCH_LOCK = threading.Lock()      # one watcher, whoever asks at once (1.0.100)
 
 
 def _load_raw():
@@ -9738,7 +9747,7 @@ def _load_raw():
         pass
     try:
         rd = wr = 0
-        whole = set(os.listdir('/sys/block'))
+        whole = set(os.listdir(os.path.join(LOAD_SYS, 'block')))   # as the details read it (1.0.100)
         with open('/proc/diskstats') as f:
             for line in f:
                 x = line.split()
@@ -10130,7 +10139,16 @@ def _load_watcher():
         server_load()                      # two readings a second apart: a rate at once
         time.sleep(1.05)
     nxt = time.time()
-    while time.time() - LOAD_WATCH['seen'] < LOAD_WATCH_S and CONFIG.get('perf_meter', True):
+    me = threading.current_thread()
+    while True:
+        # Ended under the lock (1.0.100): a page asking in the moment it ended found it still
+        # alive, started none, and was left without readings.
+        with LOAD_WATCH_LOCK:
+            if LOAD_WATCH['thread'] is not me:
+                return
+            if time.time() - LOAD_WATCH['seen'] >= LOAD_WATCH_S or not CONFIG.get('perf_meter', True):
+                LOAD_WATCH['thread'] = None
+                return
         nxt += LOAD_STEP_S
         try:
             _load_keep(server_load())
@@ -10141,20 +10159,20 @@ def _load_watcher():
         except Exception as e:                              # noqa: BLE001
             log('the load could not be read: %s' % e)
         time.sleep(max(0.5, nxt - time.time()))
-    LOAD_WATCH['thread'] = None
 
 
 def load_watch(store):
     """A page is looking: the watching goes on (or starts) for LOAD_WATCH_S more."""
-    LOAD_WATCH['seen'] = time.time()
-    LOAD_WATCH['store'] = store
-    t = LOAD_WATCH['thread']
-    if t is None or not t.is_alive():
-        # started in the background: the page is answered at once (1.0.84) - with
-        # what was watched last, from the database, until the first new reading
-        t = threading.Thread(target=_load_watcher, name='ai-load', daemon=True)
-        LOAD_WATCH['thread'] = t
-        t.start()
+    with LOAD_WATCH_LOCK:
+        LOAD_WATCH['seen'] = time.time()
+        LOAD_WATCH['store'] = store
+        t = LOAD_WATCH['thread']
+        if t is None or not t.is_alive():
+            # started in the background: the page is answered at once (1.0.84) - with
+            # what was watched last, from the database, until the first new reading
+            t = threading.Thread(target=_load_watcher, name='ai-load', daemon=True)
+            LOAD_WATCH['thread'] = t
+            t.start()
 
 
 def load_history():
@@ -10362,6 +10380,24 @@ def passkeys_all(store):
     return [p for p in got if isinstance(p, dict) and p.get('id') and p.get('user')]
 
 
+def passkey_sessions_end(store, ids):
+    """The sign-ins a passkey opened end with it (1.0.100): taking away the passkey of a lost device
+    is what the pages offer for it - and the device stayed signed in."""
+    ids = set(str(i) for i in ids or [])
+    if not ids:
+        return 0
+    n = 0
+    for r in store.q('SELECT id, data FROM sessions'):
+        try:
+            d = json.loads(r['data'] or '{}')
+        except (TypeError, ValueError):
+            continue
+        if isinstance(d, dict) and str(d.get('passkey') or '') in ids:
+            store.x('DELETE FROM sessions WHERE id=?', (r['id'],))
+            n += 1
+    return n
+
+
 def passkeys_of(store, name):
     return [p for p in passkeys_all(store) if p['user'] == name]
 
@@ -10465,7 +10501,12 @@ def api_passkey_register(c):
     if len(mine) >= PASSKEYS_MOST:
         raise Refused('%d passkeys at most for one account - take one away first' % PASSKEYS_MOST)
     with PASSKEY_LOCK:
-        keys = [p for p in passkeys_all(st) if p['id'] != cid]
+        every = passkeys_all(st)
+        # Only one's own passkey is put in again (1.0.100): with attestation "none" the id is the
+        # browser's word - another account's passkey was replaced, or wiped, with it.
+        if any(p['id'] == cid and p['user'] != name for p in every):
+            raise Refused('that passkey belongs to another account here', 409)
+        keys = [p for p in every if p['id'] != cid]
         label = clean_line(str(b.get('name') or ''), 60) or ('passkey %d' % (len(mine) + 1))
         keys.append({'id': cid, 'user': name, 'name': label, 'pem': pem, 'alg': alg, 'count': count,
                      'created': time.time(), 'last_used': 0, 'host': rec['host'], 'backed_up': bool(flags & 0x10)})
@@ -10493,7 +10534,7 @@ def api_passkey_login(c):
         raise Refused('passkeys are switched off here', 403)
     st, b, auth = c.daemon.store, c.body, c.daemon.auth
     cid = str(b.get('id') or '')
-    wait = auth.locked('passkey:' + cid[:40], c.ip)
+    wait = auth.locked('passkey:' + cid[:40], c.ip, 'passkey')
     if wait:
         raise Refused('too many tries - again in %d min' % max(1, wait // 60 + 1), 429)
     rec = passkey_client(c, 'login', b.get('clientDataJSON'))
@@ -10502,12 +10543,12 @@ def api_passkey_login(c):
     raw_client = _pk_unb64u(b.get('clientDataJSON'))
     sig = _pk_unb64u(b.get('signature'))
     if not p:
-        auth.failed('passkey:' + cid[:40], c.ip)
+        auth.failed('passkey:' + cid[:40], c.ip, 'passkey')
         st.add_event('sign-in', 'a sign-in from %s with a passkey not known here was refused' % c.ip, 'warn')
         raise Refused('this passkey is not known here (taken away, or of another server)', 401)
     flags, count, _c, _k = passkey_auth_data(raw_auth, rec['host'])
     if not passkey_verify(p['pem'], p['alg'], raw_auth + hashlib.sha256(raw_client).digest(), sig):
-        auth.failed('passkey:' + cid[:40], c.ip)
+        auth.failed('passkey:' + cid[:40], c.ip, 'passkey')
         st.add_event('sign-in', 'a sign-in as %s with a passkey from %s was refused (the signature)' % (p['user'], c.ip),
                      'warn', who=p['user'])
         raise Refused('the passkey\'s signature does not match', 401)
@@ -10573,6 +10614,7 @@ def api_passkeys_do(c):
         if act == 'delete':
             left = [x for x in keys if x['id'] != pid]
             st.set_meta_json('passkeys', left)
+            passkey_sessions_end(st, [pid])
             st.add_event('sign-in', '%s took the passkey %s of %s away' % (c.name, p.get('name') or '?', p['user']),
                          'warn', who=c.name)
             return {'message': 'the passkey is taken away', 'passkeys':
@@ -12993,7 +13035,10 @@ def notices_current(d, admin=True):
                                'said': 'A newer version, signed, ready to install.', 'cli': 'ai --upgrade-online',
                                'link': 'settings/upgrade'})
             NOTICE_CACHE.update(at=now, out=cached)
-        out.extend(cached)
+        # A kept notice said done meanwhile - also by the command line, another process - is gone at
+        # once (1.0.100): it stayed for up to a minute, and Done on it then said "no such notice".
+        kept_now = {n['id'] for n in notices_kept(st)}
+        out.extend(n for n in cached if not n.get('kept') or n['id'] in kept_now)
     rank = {'crit': 0, 'warn': 1, 'info': 2}
     return sorted(out, key=lambda n: rank.get(n.get('level'), 3))
 
@@ -18321,6 +18366,15 @@ def push_install(store, body, key, box):
     twin, twin_fp = None, ''
     if isinstance(body.get('alt'), dict):
         twin, twin_fp = _push_one(body['alt'], box, 'its twin (alt)')
+        # The twin as an upload's is checked (1.0.100): the same names, the other kind of key - nginx
+        # gave it to every client that takes only that kind.
+        if set(_push_names(twin['info'])) != set(names):
+            raise PushNo('names', 422, 'its twin (alt) is for %s, the certificate for %s - the same names, or no twin'
+                         % (', '.join(_push_names(twin['info'])) or '?', ', '.join(names)))
+        kinds = {str(x.get('key') or '').split(' ')[0] for x in (got['info'], twin['info'])}
+        if kinds != {'RSA', 'EC'}:
+            raise PushNo('bad_cert', 422, 'a twin (alt) is the other kind of key: one RSA, one ECDSA (here: %s and %s)'
+                         % (got['info'].get('key') or '?', twin['info'].get('key') or '?'))
     acme_name = None
     kk = next((k for k in push_keys(store) if k['key_id'] == key['key_id']), {})
     acme_name = kk.get('name') or kk.get('comment') or key['key_id']
@@ -18626,10 +18680,11 @@ def api_web_do(c):
             # A ZIP among them (1.0.62) - Download's "both", or one of your
             # own: what is in it taken as if each file had been sent.
             sent_text, binaries = cert_zip_open(b.get('cert') or '', ([pfx] if pfx else []) + more)
-            if sent_text != (b.get('cert') or '') or len(binaries) != len(([pfx] if pfx else []) + more):
-                b = dict(b, cert=sent_text)
-                pfx = binaries[0] if binaries else b''
-                more = binaries[1:]
+            # Always what came out of it (1.0.100): a ZIP with one PFX in it changed neither the text nor
+            # the count, and the ZIP itself was then read as the PFX ("is the password right?").
+            b = dict(b, cert=sent_text)
+            pfx = binaries[0] if binaries else b''
+            more = binaries[1:]
             pair = cert_pair_sent(b.get('cert') or '', ([pfx] if pfx else []) + more, b.get('password') or '')
             if pair:
                 # Two certificates with their two keys (1.0.61): an RSA one and
@@ -27659,6 +27714,7 @@ def cli_main(argv):
                 if len(left) == len(keys):
                     raise Refused('no passkey starts so (ai --passkeys)')
                 st.set_meta_json('passkeys', left)
+                passkey_sessions_end(st, [k['id'] for k in keys if k not in left])
                 st.add_event('sign-in', 'the command line took %d passkey(s) away' % (len(keys) - len(left)), 'warn')
                 print(pal.ok_line('%d passkey(s) taken away' % (len(keys) - len(left))))
                 return 0
@@ -27965,9 +28021,10 @@ def cli_main(argv):
                               else json.dumps(r['value']), r['source']] for r in rows],
                             ['key', 'pane', 'value', 'from']))
             return 0
-        if a.get:
-            return cli_get(st, a, pal)
         sets = list(a.set) + (['%s=%s' % tuple(a.setting)] if a.setting else [])
+        # --get after any --set of the same command (1.0.100): a --set beside it was skipped, silently.
+        if a.get and not sets:
+            return cli_get(st, a, pal)
         if sets:
             for one in sets:
                 k, sep, v = one.partition('=')
@@ -27985,6 +28042,9 @@ def cli_main(argv):
                                                 else '(hidden)' if secret_key(k) else json.dumps(v))))
             st.add_event('settings', 'the command line changed: %s' % ', '.join(s.split('=')[0] for s in sets), 'info')
             print(pal.dim('  the running daemon takes it within a minute'))
+            if a.get:
+                config_rebuild(st)          # what was just set, not what this process read at its start
+                return cli_get(st, a, pal)
             return 0
         # ---- the firewall ---------------------------------------------------------------
         if a.fw:
