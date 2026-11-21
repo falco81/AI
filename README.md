@@ -56,12 +56,14 @@ In colour (colorama), `--json` for scripts; the console and every command:
 | data | SQLite, MariaDB or PostgreSQL, moved from one to another and back by a wizard on the pages (or `ai --db-move`), every table counted on both sides; a dump by the engine's own program every night and portable copies, with the key its secrets are sealed with, downloaded and put back; the database server tuned for its machine; backups to a folder, FTP, FTPS, SFTP, SCP or SMB, locked (AES-256), on a schedule, put back from the pages; the whole configuration exported and imported |
 | the server | otp's own panes: firewall (iptables or firewalld) and who may reach the pages, network (NetworkManager), time (chrony), system updates (dnf/apt, followed live), root's SSH keys, restart and power off - changes that could cut you off go back by themselves unless kept |
 | upgrades | signed packages (Ed25519) from `https://github.com/falco81/AI/tree/main/release`, the last ten kept there; looked for daily, put in on a click or by themselves; or a package sent from the pages; back to an older version only where that is safe; the terminals go on running through it |
+| Ollama | a chat with a model of Ollama instead of Claude - on this server or elsewhere on the network, its models found by themselves, chosen with the model of a new chat |
 | languages | Czech and English, chosen per person |
 
 Installing it: [INSTALL.md](INSTALL.md). How it is put together:
 [docs/how-it-works.md](docs/how-it-works.md). The terminals in detail:
 [docs/terminals.md](docs/terminals.md). The Claude Code tab:
-[docs/claude-code.md](docs/claude-code.md). Signing in, the second step, mail, SMS and TLS:
+[docs/claude-code.md](docs/claude-code.md). Chats with a model of Ollama instead of Claude:
+[docs/ollama.md](docs/ollama.md). Signing in, the second step, mail, SMS and TLS:
 [docs/security.md](docs/security.md). Copies, backups and putting them back:
 [docs/backups.md](docs/backups.md). New versions and how they are made:
 [docs/releases.md](docs/releases.md).

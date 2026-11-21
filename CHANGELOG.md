@@ -3,6 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.101
+
+**Chats with Ollama** - a chat can talk to a model of Ollama instead of Claude ([docs/ollama.md](docs/ollama.md)):
+
+- **Settings → Ollama**: switched on or off, for every account or administrators only, Ollama on this server (its
+  port) or elsewhere on the network (its address, a key when a proxy in front asks for one), the model offered
+  first and the one for the small tasks. *Try it* asks Ollama with what is written, before it is saved.
+- **What Ollama has**, found by itself: its version (0.14 and newer has the Anthropic API Claude Code needs), its
+  models with their size, parameters, context, and whether they use tools (Claude Code works by tools).
+- **A new chat**: the model chip lists Claude (subscription) and Ollama's models; *Every option…* too. The chat
+  runs the same Claude Code, pointed at Ollama (`ANTHROPIC_BASE_URL`, the model for every part), past the proxy.
+  It keeps the choice when started again; *Change…* moves it between Ollama's models and Claude's, the
+  conversation with it. A model Ollama does not have is refused before anything changes.
+- On the server: `ai --ollama` (what Ollama has), `ai --new DIR --ollama [MODEL]`.
+
 ## 1.0.100
 
 Bugs found by a review of 1.0.58 - 1.0.90 (acme push, passkeys, the load, the notices), each one fixed:

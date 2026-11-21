@@ -192,7 +192,7 @@ if (isset($_GET['api'])) {
     $reads = [
         'status' => '/api/status', 'overview' => '/api/overview', 'whoami' => '/api/auth/whoami',
         'terms' => '/api/terms', 'term' => '/api/term', 'history' => '/api/history',
-        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
+        'claude' => '/api/claude', 'cc' => '/api/cc', 'usage' => '/api/usage', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'passkeys' => '/api/auth/passkeys', 'load' => '/api/load', 'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots', 'ollama' => '/api/ollama', 'proxy' => '/api/proxy', 'settings' => '/api/settings', 'users' => '/api/users',
         'events' => '/api/events', 'log' => '/api/log', 'machine' => '/api/machine',
         'net' => '/api/net', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup',
@@ -205,7 +205,7 @@ if (isset($_GET['api'])) {
         'password' => '/api/auth/password', 'prefs' => '/api/auth/prefs',
         'terms' => '/api/terms', 'history' => '/api/history', 'claude' => '/api/claude', 'cc' => '/api/cc', 'art' => '/api/art', 'acme' => '/api/acme', 'acme-push' => '/api/acme-push', 'proxy' => '/api/proxy',
         'passkeys' => '/api/auth/passkeys', 'passkey-begin' => '/api/auth/passkey/begin', 'passkey-register' => '/api/auth/passkey/register',
-        'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots',
+        'notices' => '/api/notices', 'selinux' => '/api/selinux', 'osroots' => '/api/osroots', 'ollama' => '/api/ollama',
         'settings' => '/api/settings', 'users' => '/api/users', 'net' => '/api/net',
         'trial' => '/api/trial', 'firewall' => '/api/firewall', 'cert' => '/api/cert',
         'sshkeys' => '/api/sshkeys', 'osup' => '/api/osup', 'ntp' => '/api/ntp',
@@ -719,6 +719,7 @@ $upg_on = $upg !== null && $upg['state'] === 'running';
     </div>
     <div class="ctl-group">Claude Code</div>
     <button type="button" data-pane="claude" data-icon="terminal" title="Claude Code itself: installed for which accounts, signed in or not, updated; how every terminal starts it.">Claude Code</button>
+    <button type="button" data-pane="ollama" data-icon="sparkle" title="Chats with a model of Ollama instead of Claude: where Ollama runs - this server or another machine - and the models it has.">Ollama</button>
     <div class="ctl-group">Signing in</div>
     <button type="button" data-pane="codes" data-icon="phone" title="Codes sent after the password, by e-mail or SMS: how long they last, how many, and the SMS gateway.">Codes by e-mail and SMS</button>
     <button type="button" data-pane="texts" data-icon="edit" title="Every word people get from this server - the mails and the SMS of a code - in Czech and in English, edited as they will look.">Message texts</button>
@@ -758,6 +759,16 @@ $upg_on = $upg !== null && $upg['state'] === 'running';
     <div class="card full"><h2>The accounts <span class="right"><button class="btn small cmd" id="cc-look" data-icon="refresh">Look again</button></span></h2>
       <div id="cc-table"></div></div>
     <div class="card full"><div id="sect-claude"></div></div>
+  </div>
+
+  <div class="ctl-pane" id="pane-ollama" hidden>
+    <div class="ctl-head"><h2 class="ctl-title">Ollama</h2>
+      <p class="ctl-lede">A chat can talk to a model of Ollama instead of Claude: the same Claude Code, pointed at
+        Ollama (its Anthropic API, Ollama 0.14 and newer). Which one is chosen with the model, when the chat is
+        started. Ollama on this server, or on another machine of the network.</p></div>
+    <div class="card full"><h2>What Ollama has <span class="right"><button class="btn small cmd" id="ol-look" data-icon="refresh">Look again</button></span></h2>
+      <div id="ol-host"></div></div>
+    <div class="card full"><div id="sect-ollama"></div></div>
   </div>
 
   <div class="ctl-pane" id="pane-signin" hidden>

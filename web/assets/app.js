@@ -1805,7 +1805,8 @@ function drawTermList() {
     row.appendChild(top);
     row.appendChild(noI18n(el('div', 'tl-path mono', t.path || t.cwd)));
     var meta = el('div', 'tl-meta muted');
-    meta.appendChild(document.createTextNode(kindWords(t.kind) + ' · ' + t.run_as
+    var ol = t.kind === 'claude' && t.opts && t.opts.backend === 'ollama';
+    meta.appendChild(document.createTextNode((ol ? 'Ollama' + (t.opts.model ? ' ' + t.opts.model : '') : kindWords(t.kind)) + ' · ' + t.run_as
       + (ADMIN && t.owner && t.owner !== ME.name ? ' · ' + t.owner : '') + ' · ' + ago(t.activity)));
     row.appendChild(meta);
     var dots = el('button', 'tl-dots');
@@ -1922,7 +1923,36 @@ $('te-hist').onclick = function () { showTab('history'); };
 /* ---- the start, as claude.ai starts (1.0.9): a box to write the task in,
    the folder, the model, the mode and the effort as chips under it, and the
    chats going on below. Enter starts Claude Code on it in that folder. */
-var CX = {cwd: '', model: '', mode: '', effort: ''};
+var CX = {cwd: '', model: '', mode: '', effort: '', backend: ''};
+/* Ollama (1.0.101): what it has, asked of the server (never of Ollama from the browser), kept 30 s. */
+var OL = {d: null, at: 0, asking: null};
+function olOn() { return !!(STATUS && STATUS.ollama); }
+function olGet(fresh) {
+  if (!olOn()) return Promise.resolve({on: false, models: []});
+  if (!fresh && OL.d && Date.now() - OL.at < 30000) return Promise.resolve(OL.d);
+  if (OL.asking && !fresh) return OL.asking;
+  OL.asking = api('ollama' + (fresh ? '&fresh=1' : '')).then(function (d) {
+    OL.d = d; OL.at = Date.now(); OL.asking = null; return d;
+  }, function (e) { OL.asking = null; throw e; });
+  return OL.asking;
+}
+function olModelWords(m) {
+  var bits = [m.params, m.quant].filter(Boolean).join(' ');
+  return m.name + (bits ? ' · ' + bits : '');
+}
+/* The model menu's Ollama part: its models, each choosing Ollama with it. */
+function olMenuItems(d, isNow, choose) {
+  var out = ['sep', {head: 'Ollama'}];
+  if (!d || !d.on) return [];
+  if (!d.ok) { out.push({icon: 'alert', words: txT('Ollama does not answer') + (d.error ? ': ' + d.error : ''), disabled: true}); return out; }
+  if (!d.models.length) { out.push({words: 'Ollama has no model yet (ollama pull …)', disabled: true}); return out; }
+  d.models.forEach(function (m) {
+    out.push({icon: isNow(m.name) ? 'check' : (m.tools === false ? 'alert' : ''),
+              words: olModelWords(m) + (m.tools === false ? ' - ' + txT('no tools') : ''),
+              go: function () { choose(m.name); }});
+  });
+  return out;
+}
 function cxWords(list, v) { var x = list.filter(function (o) { return o[0] === v; })[0]; return x ? x[1] : v; }
 function cxChip(b, icon, words, title) {
   b.innerHTML = iconMarkup(icon, 14);
@@ -1940,9 +1970,13 @@ function cxDraw() {
     CX.model = prefs().model || '';
     CX.mode = prefs().mode || '';
     CX.effort = (prefs().cc_opts || {}).effort || '';
+    CX.backend = prefs().backend === 'ollama' && olOn() ? 'ollama' : '';
+    if (prefs().backend === 'ollama' && !CX.backend) CX.model = '';
   }
+  if (CX.backend === 'ollama' && !olOn()) { CX.backend = ''; CX.model = ''; }
   cxChip($('cx-dir'), 'folder', CX.cwd ? baseName(CX.cwd) : txT('the home folder'), CX.cwd || '');
-  cxChip($('cx-model'), 'sparkle', CX.model ? cxWords(MODELS, CX.model) : txT('Model'));
+  if (CX.backend === 'ollama') cxChip($('cx-model'), 'sparkle', 'Ollama · ' + (CX.model || txT('its first model')), txT('A chat with a model of Ollama'));
+  else cxChip($('cx-model'), 'sparkle', CX.model ? cxWords(MODELS, CX.model) : txT('Model'));
   cxChip($('cx-mode'), 'shield', CX.mode ? cxWords(MODES, CX.mode) : txT('ask before changes'));
   cxChip($('cx-effort'), 'bolt', CX.effort ? txT('effort') + ': ' + CX.effort : txT('effort'));
   var name = (ME && ME.name) || '';
@@ -1956,9 +1990,10 @@ function cxStart() {
   if (CX.model) opts.model = CX.model;
   if (CX.mode) opts.mode = CX.mode;
   if (CX.effort) opts.effort = CX.effort;
+  if (CX.backend === 'ollama') opts.backend = 'ollama';
   var title = text ? text.replace(/\s+/g, ' ').slice(0, 48) : '';
   busy($('cx-send'), true);
-  startTerm({kind: 'claude', cwd: CX.cwd, title: title, opts: opts, keep: {model: CX.model, mode: CX.mode, args: prefs().args || ''}})
+  startTerm({kind: 'claude', cwd: CX.cwd, title: title, opts: opts, keep: {model: CX.model, mode: CX.mode, args: prefs().args || '', backend: CX.backend}})
     .then(function (ok) { if (ok) $('cx-text').value = ''; }).then(function () { busy($('cx-send'), false); });
 }
 (function () {
@@ -1977,7 +2012,22 @@ function cxStart() {
     }));
   };
   $('cx-dir').onclick = function () { pickFolder(CX.cwd, function (p) { CX.cwd = p; cxDraw(); }); };
-  $('cx-model').onclick = function () { menu($('cx-model'), MODELS, 'model'); };
+  $('cx-model').onclick = function () {
+    var b = $('cx-model');
+    var claude = function () {
+      return [{head: txT('Claude (subscription)')}].concat(MODELS.map(function (o) {
+        return {icon: !CX.backend && CX.model === o[0] ? 'check' : '', words: o[1], go: function () { CX.backend = ''; CX.model = o[0]; cxDraw(); }};
+      }));
+    };
+    var open = function (d) {
+      var r = b.getBoundingClientRect();
+      ctxMenu(r.left, r.bottom + 4, claude().concat(olMenuItems(d, function (n) { return CX.backend === 'ollama' && CX.model === n; },
+        function (n) { CX.backend = 'ollama'; CX.model = n; cxDraw(); })));
+    };
+    if (!olOn()) { menu(b, MODELS, 'model'); return; }
+    busy(b, true);
+    olGet().then(open, function (e) { open({on: true, ok: false, error: e.message}); }).then(function () { busy(b, false); });
+  };
   $('cx-mode').onclick = function () { menu($('cx-mode'), MODES, 'mode'); };
   $('cx-effort').onclick = function () {
     menu($('cx-effort'), [['', 'as Claude Code decides'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'extra high'], ['max', 'max']], 'effort');
@@ -2195,7 +2245,23 @@ function newTermAsk(kind, cwd) {
     g2.appendChild(formField('Start with', start));
     var nameBox = textBox('', 'shown in the prompt box and in /resume');
     g2.appendChild(formField('Its name in Claude Code (--name)', nameBox));
-    var model = selectBox(MODELS.concat([['*', 'another… (written below)']]), prefs().model || '');
+    var olFirst = prefs().backend === 'ollama' && olOn();
+    var model = selectBox(MODELS.concat([['*', 'another… (written below)']]), olFirst ? '' : (prefs().model || ''));
+    /* Ollama's models in it too (1.0.101), once the server has said what Ollama has. */
+    if (olOn()) olGet().then(function (d) {
+      if (!d.on || !d.models || !d.models.length) return;
+      var grp = document.createElement('optgroup');
+      grp.label = 'Ollama';
+      d.models.forEach(function (m) {
+        var o = el('option', '', olModelWords(m) + (m.tools === false ? ' - ' + txT('no tools') : ''));
+        o.value = '@ollama ' + m.name;
+        noI18n(o);
+        grp.appendChild(o);
+      });
+      model.appendChild(grp);
+      if (olFirst) model.value = '@ollama ' + (prefs().model || d['default'] || d.models[0].name);
+      if (!model.value) model.value = '@ollama ' + d.models[0].name;
+    }).catch(function () { });
     var modelOwn = textBox('', 'claude-opus-5-5', 'mono');
     noI18n(modelOwn);
     modelOwn.hidden = model.value !== '*';
@@ -2295,6 +2361,8 @@ function newTermAsk(kind, cwd) {
       if (start.value === 'continue') opts.continue = true;
       if (start.value === 'pick') opts.pick = true;
       var m = model.value === '*' ? modelOwn.value.trim() : model.value;
+      var backend = '';
+      if (m.indexOf('@ollama ') === 0) { backend = 'ollama'; m = m.slice(8); opts.backend = 'ollama'; }
       if (m) opts.model = m;
       if (mode.value) opts.mode = mode.value;
       if (effort.value) opts.effort = effort.value;
@@ -2319,7 +2387,7 @@ function newTermAsk(kind, cwd) {
       var keepNow = null;
       if (remember._get()) { keepNow = Object.assign({}, cc); if (effort.value) keepNow.effort = effort.value; }
       return {kind: st.kind, cwd: dir.value.trim(), title: title.value.trim(), opts: opts,
-              run_as: asSel ? asSel.value : '', keep: {model: m, mode: mode.value, args: args.value.trim()}, ccKeep: keepNow};
+              run_as: asSel ? asSel.value : '', keep: {model: m, mode: mode.value, args: args.value.trim(), backend: backend}, ccKeep: keepNow};
     };
   }, [{words: 'Close', close: true},
       {words: 'Start it', cls: 'primary', icon: 'play', go: function (b) {
@@ -2339,7 +2407,7 @@ function startTerm(want) {
       p.recent = rec;
       p.last_cwd = want.cwd;
     }
-    if (want.keep) { p.model = want.keep.model; p.mode = want.keep.mode; p.args = want.keep.args; }
+    if (want.keep) { p.model = want.keep.model; p.mode = want.keep.mode; p.args = want.keep.args; p.backend = want.keep.backend || ''; }
     if (want.ccKeep) p.cc_opts = want.ccKeep;
     savePrefs(p).catch(function () { });
     if (TAB !== 'terms') showTab('terms');
@@ -3479,6 +3547,7 @@ function showPane(name) {
   if (name === 'power') loadPower();
   if (name === 'osup') loadOsup(); else if (typeof ouPoll === 'function') ouPoll(false);
   if (name === 'sshkeys') loadSshKeys(); else if (typeof skPoll === 'function') skPoll(false);
+  if (name === 'ollama') loadOllama();
   if (name === 'selinux') loadSelinux(); else if (typeof sePoll === 'function') sePoll(false);
   if (name === 'upgrade') loadUpgrade();
   if (name === 'signin') loadArt();
@@ -3606,6 +3675,17 @@ var TALL = {sms_body: 1, sms_headers: 1, claude_env: 1};
    and what only one choice uses in a panel of its own that is there only
    while that choice is made - not a page of greyed-out boxes. */
 var PANE_LAYOUT = {
+  ollama: [
+    {title: 'Chats with Ollama', icon: 'sparkle', keys: ['ollama_on', 'ollama_who', 'ollama_where'], wide: {ollama_where: 2},
+     master: 'ollama_where', subs: [
+       {when: 'local', title: 'Ollama on this server', icon: 'terminal',
+        lede: 'Asked at 127.0.0.1. Ollama is put in apart (ollama.com/download) and runs as its own service.',
+        keys: ['ollama_port'], extra: olTryExtra},
+       {when: 'remote', title: 'Ollama elsewhere on the network', icon: 'net',
+        lede: 'Another machine - a GPU box, a NAS. Ollama there listens on the network (OLLAMA_HOST=0.0.0.0); the chats ask it from this server.',
+        keys: ['ollama_url', 'ollama_key'], wide: {ollama_url: 2, ollama_key: 2}, extra: olTryExtra}]},
+    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small'], wide: {ollama_model: 2, ollama_small: 2}}
+  ],
   codes: [
     {title: 'The codes', icon: 'token', cols: 5, keys: ['code_digits', 'code_ttl_s', 'code_tries', 'code_send_max', 'code_send_window_min']},
     {title: 'What they say', icon: 'globe', keys: ['code_lang', 'code_mail_fmt'], wide: {code_lang: 2, code_mail_fmt: 2}},
@@ -3707,6 +3787,101 @@ function applySubs() {
 /* Try the gateway (1.0.113): reached, signed in, its modems and what each
    says about the network - nothing is sent. With what is saved: changes not
    saved yet are asked to be saved first. */
+/* ---- Ollama (1.0.101): what it has, and the address tried before it is saved ---- */
+function olSetVal(key) {
+  var m = $('set-' + key);
+  if (!m) return '';
+  return String(m._get ? m._get() : m.value);
+}
+function olTryExtra() {
+  var box = el('div', 'set-ca tel-test');
+  var head = el('div', 'set-ca-head');
+  var hi = el('span', 'set-sec-icon'); hi.innerHTML = iconMarkup('pulse', 15);
+  head.appendChild(hi);
+  head.appendChild(el('b', '', 'Does it answer?'));
+  var go = cmdButton('Try it', 'play', 'small admin-only');
+  go.classList.add('right');
+  head.appendChild(go);
+  box.appendChild(head);
+  box.appendChild(el('div', 'says set-sub-lede', 'Asks Ollama with what is written above, saved or not: its version and its models.'));
+  var out = el('div', 'tel-out');
+  box.appendChild(out);
+  go.onclick = function () {
+    var key = olSetVal('ollama_key');
+    var body = {action: 'try', where: olSetVal('ollama_where') || 'local', url: olSetVal('ollama_url'), port: olSetVal('ollama_port'),
+                key: key, key_saved: !key};
+    busy(go, true);
+    clear(out);
+    out.appendChild(el('p', 'note', 'Asking Ollama…'));
+    api('ollama', body).then(function (d) { clear(out); out.appendChild(olFacts(d, true)); }, function (e) {
+      clear(out); out.appendChild(el('p', 'note bad', String((e && e.message) || e)));
+    }).then(function () { busy(go, false); });
+  };
+  return box;
+}
+function olFacts(d, tried) {
+  var f = el('div', 'ol-facts');
+  var line = function (ok, words, said) {
+    var r = el('div', 'tel-step ' + (ok === true ? 'good' : (ok === false ? 'bad' : '')));
+    r.appendChild(el('span', 'tel-mark', ok === true ? '✓' : (ok === false ? '✗' : '•')));
+    r.appendChild(el('b', '', words));
+    if (said) { r.appendChild(document.createTextNode(' – ')); r.appendChild(noI18n(el('span', 'small' + (ok === false ? ' bad' : ' muted'), said))); }
+    f.appendChild(r);
+  };
+  if (d.here) {
+    line(d.here.installed ? true : null, d.here.installed ? 'Ollama is installed on this server' : 'Ollama is not installed on this server',
+         d.here.service ? txT('its service') + ': ' + d.here.service : '');
+  }
+  if (d.base) line(null, 'Asked at', d.base);
+  if (!d.ok) { line(false, 'Ollama does not answer', d.error || ''); return f; }
+  line(d.new_enough !== false, txT('Ollama') + ' ' + (d.version || '?'),
+       d.new_enough === false ? txT('Claude Code needs Ollama 0.14 or newer (its Anthropic API)') : '');
+  line((d.models || []).length ? true : false, txT('Models') + ': ' + (d.models || []).length,
+       (d.models || []).length ? '' : txT('none yet - ollama pull qwen3-coder (or another) on the machine of Ollama'));
+  if ((d.models || []).length) f.appendChild(olTable(d.models, d['default']));
+  return f;
+}
+function olTable(models, def) {
+  var tb = el('table', 'tbl ol-models');
+  var hr = el('tr');
+  ['Model', 'Size', 'Parameters', 'Context', 'Tools'].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+  var th = el('thead'); th.appendChild(hr); tb.appendChild(th);
+  var body = el('tbody');
+  models.forEach(function (m) {
+    var r = el('tr');
+    var n = el('td', 'mono');
+    n.appendChild(noI18n(el('span', '', m.name)));
+    if (def && (def === m.name || def + ':latest' === m.name)) { n.appendChild(document.createTextNode(' ')); n.appendChild(el('span', 'tag ok', 'offered first')); }
+    if (m.remote) { n.appendChild(document.createTextNode(' ')); n.appendChild(el('span', 'tag', 'in the cloud')); }
+    r.appendChild(n);
+    r.appendChild(noI18n(el('td', 'small', m.size ? bytes(m.size) : '')));
+    r.appendChild(noI18n(el('td', 'small', [m.params, m.quant].filter(Boolean).join(' · '))));
+    r.appendChild(noI18n(el('td', 'small', m.ctx ? (m.ctx >= 1024 ? Math.round(m.ctx / 1024) + 'k' : String(m.ctx)) : '')));
+    var tl = el('td', 'small');
+    if (m.tools === true) tl.appendChild(el('span', 'tag ok', 'yes'));
+    else if (m.tools === false) { tl.appendChild(el('span', 'tag warn', 'no')); tl.title = txT('Claude Code works with tools - a model without them only talks'); }
+    r.appendChild(tl);
+    body.appendChild(r);
+  });
+  tb.appendChild(body);
+  return tb;
+}
+function loadOllama(fresh) {
+  var host = $('ol-host');
+  if (!host) return;
+  clear(host);
+  host.appendChild(el('p', 'note', 'Asking Ollama…'));
+  /* Asked of the server whatever the status said last - it was just switched on, perhaps. */
+  api('ollama' + (fresh ? '&fresh=1' : '')).then(function (d) {
+    if (STATUS) STATUS.ollama = !!d.on;
+    if (d.on) { OL.d = d; OL.at = Date.now(); }
+    clear(host);
+    if (!d.on) { host.appendChild(el('p', 'note', 'Chats with Ollama are off - switch them on below and save; what Ollama has is shown here then.')); return; }
+    host.appendChild(olFacts(d));
+  }, function (e) { clear(host); host.appendChild(el('p', 'note bad', String((e && e.message) || e))); });
+}
+(function () { var b = $('ol-look'); if (b) b.onclick = function () { loadOllama(true); }; }());
+
 function smsTelExtra() {
   var f = document.createDocumentFragment();
   var box = el('div', 'set-ca tel-test');
@@ -4173,6 +4348,7 @@ $('set-save').onclick = function () {
       markDirtyCount();
       if (Object.keys(left).length) loadSettings(false); else loadSettings();
       if (paneLive('upgrade')) loadUpgrade();      /* the card to go back shown or not */
+      if (Object.keys(want).some(function (k) { return /^ollama_/.test(k); })) { OL.d = null; OL.at = 0; if (paneLive('ollama')) loadOllama(true); }
       if (paneLive('backup')) loadRbackup();       /* locked or not, the next one */
       return true;
     }).catch(function (e) {
@@ -9621,7 +9797,36 @@ function termEdit(t) {
     fd.classList.add('span-2');
     g.appendChild(fd);
     if (t.kind === 'claude') {
-      f.model = selectBox(withNow(MODELS, o.model), o.model || '');
+      var isOl = o.backend === 'ollama';
+      f.model = selectBox(isOl ? [] : withNow(MODELS, o.model), isOl ? '' : (o.model || ''));
+      /* A chat with Ollama (1.0.101) keeps to Ollama's models - or goes over to Claude, the conversation with it. */
+      if (isOl || olOn()) {
+        var grp = document.createElement('optgroup');
+        grp.label = 'Ollama';
+        if (isOl) {
+          var cur = el('option', '', o.model || '');
+          cur.value = '@ollama ' + (o.model || '');
+          noI18n(cur);
+          grp.appendChild(cur);
+        }
+        f.model.appendChild(grp);
+        if (isOl) {
+          var cg = document.createElement('optgroup');
+          cg.label = txT('Claude (subscription)');
+          MODELS.forEach(function (x) { var op = el('option', '', x[1]); op.value = x[0]; cg.appendChild(op); });
+          f.model.appendChild(cg);
+          f.model.value = '@ollama ' + (o.model || '');
+        }
+        olGet().then(function (d) {
+          (d.models || []).forEach(function (m) {
+            if (isOl && m.name === o.model) return;
+            var op = el('option', '', olModelWords(m));
+            op.value = '@ollama ' + m.name;
+            noI18n(op);
+            grp.appendChild(op);
+          });
+        }).catch(function () { });
+      }
       g.appendChild(formField('Model', f.model));
       f.effort = selectBox(EFFORTS, o.effort || '');
       g.appendChild(formField('Effort (--effort)', f.effort));
@@ -9641,7 +9846,12 @@ function termEdit(t) {
   }, [{words: 'Close', close: true},
       {words: 'Save and start it again', cls: 'primary', icon: 'refresh', go: function (b) {
         var body = {do: 'edit', id: t.id, title: f.title.value, cwd: f.cwd.value.trim()};
-        if (t.kind === 'claude') { body.model = f.model.value; body.effort = f.effort.value; body.mode = f.mode.value; body.args = f.args.value; }
+        if (t.kind === 'claude') {
+          var mv = f.model.value;
+          body.backend = mv.indexOf('@ollama ') === 0 ? 'ollama' : 'claude';
+          body.model = body.backend === 'ollama' ? mv.slice(8) : mv;
+          body.effort = f.effort.value; body.mode = f.mode.value; body.args = f.args.value;
+        }
         else if (f.cwd.value.trim() !== t.cwd) body.restart = true;
         busy(b, true);
         api('terms', body).then(function (d) {

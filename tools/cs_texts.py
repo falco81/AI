@@ -3839,6 +3839,113 @@ STRINGS = {
         'Nic od vložení toho, co ai potřebuje.',
     'Nothing since the machine started.':
         'Nic od startu stroje.',
+    # ---- Ollama for the chats (1.0.101)
+    'Going on':
+        'Běží',
+    'Ollama':
+        'Ollama',
+    'Chats with Ollama':
+        'Chaty s Ollama',
+    "On: a new chat can talk to a model of Ollama instead of Claude - chosen with the model when it is started. Claude Code stays what it is; it is pointed at Ollama (its Anthropic API, Ollama 0.14 and newer). Off: every chat is Claude, by the account's subscription or key.":
+        'Zapnuto: nový chat může místo s Claude mluvit s modelem z Ollama – vybírá se s modelem při jeho spuštění. Claude Code zůstává stejný, jen se nasměruje na Ollama (její Anthropic API, Ollama 0.14 a novější). Vypnuto: každý chat je Claude, přes předplatné nebo klíč účtu.',
+    'Where Ollama runs':
+        'Kde Ollama běží',
+    'On this server (127.0.0.1), or on another machine of the network - a GPU box, a NAS.':
+        'Na tomto serveru (127.0.0.1), nebo na jiném stroji v síti – stroj s GPU, NAS.',
+    'On this server':
+        'Na tomto serveru',
+    'Elsewhere on the network':
+        'Jinde v síti',
+    'Its port on this server':
+        'Její port na tomto serveru',
+    'Where Ollama listens on 127.0.0.1 - 11434 unless OLLAMA_HOST says otherwise.':
+        'Kde Ollama naslouchá na 127.0.0.1 – 11434, pokud OLLAMA_HOST neříká jinak.',
+    'Its address':
+        'Její adresa',
+    'http://192.168.1.50:11434, or https://ollama.example.lan behind a proxy of your own. Its models are listed from there; the chats ask it from the server, not from the browser.':
+        'http://192.168.1.50:11434, nebo https://ollama.example.lan za vlastní proxy. Odtud se načtou její modely; chaty se jí ptají ze serveru, ne z prohlížeče.',
+    'A key':
+        'Klíč',
+    'Only when something in front of Ollama asks for one (a proxy with a bearer token). Sent as the token of the Anthropic API; empty: "ollama". Whoever runs a chat with Ollama can read it in that chat\'s environment.':
+        'Jen když ho něco před Ollama vyžaduje (proxy s bearer tokenem). Posílá se jako token Anthropic API; prázdné: „ollama“. Kdo spustí chat s Ollama, může ho přečíst v prostředí toho chatu.',
+    'Model offered first':
+        'Model nabízený jako první',
+    'The one a new chat with Ollama starts with unless another is chosen. Empty: the first Ollama lists.':
+        'S tímto začne nový chat s Ollama, pokud se nevybere jiný. Prázdné: první, který Ollama vypíše.',
+    'Model for the small tasks':
+        'Model pro drobné úkoly',
+    "What Claude Code asks for its quick work on the side (titles, summaries - Haiku's part). A small, quick one; empty: the chat's own model.":
+        'Co Claude Code žádá pro rychlou práci bokem (názvy, shrnutí – úloha Haiku). Malý a rychlý; prázdné: vlastní model chatu.',
+    'Who may use it':
+        'Kdo ji smí používat',
+    'Every account, or administrators only.':
+        'Každý účet, nebo jen správci.',
+    'Every account':
+        'Každý účet',
+    'Administrators only':
+        'Jen správci',
+    'Chats with a model of Ollama instead of Claude: where Ollama runs - this server or another machine - and the models it has.':
+        'Chaty s modelem z Ollama místo Claude: kde Ollama běží – tento server nebo jiný stroj – a jaké má modely.',
+    'A chat can talk to a model of Ollama instead of Claude: the same Claude Code, pointed at Ollama (its Anthropic API, Ollama 0.14 and newer). Which one is chosen with the model, when the chat is started. Ollama on this server, or on another machine of the network.':
+        'Chat může místo s Claude mluvit s modelem z Ollama: stejný Claude Code, nasměrovaný na Ollama (její Anthropic API, Ollama 0.14 a novější). Volí se spolu s modelem při spuštění chatu. Ollama na tomto serveru, nebo na jiném stroji v síti.',
+    'What Ollama has':
+        'Co Ollama nabízí',
+    'Ollama on this server':
+        'Ollama na tomto serveru',
+    'Asked at 127.0.0.1. Ollama is put in apart (ollama.com/download) and runs as its own service.':
+        'Dotaz na 127.0.0.1. Ollama se instaluje zvlášť (ollama.com/download) a běží jako vlastní služba.',
+    'Ollama elsewhere on the network':
+        'Ollama jinde v síti',
+    'Another machine - a GPU box, a NAS. Ollama there listens on the network (OLLAMA_HOST=0.0.0.0); the chats ask it from this server.':
+        'Jiný stroj – s GPU, NAS. Ollama tam naslouchá v síti (OLLAMA_HOST=0.0.0.0); chaty se jí ptají z tohoto serveru.',
+    'The models':
+        'Modely',
+    'Does it answer?':
+        'Odpovídá?',
+    'Asks Ollama with what is written above, saved or not: its version and its models.':
+        'Zeptá se Ollama s tím, co je vyplněno výše, uložené či ne: na její verzi a modely.',
+    'Asking Ollama…':
+        'Ptám se Ollama…',
+    'Ollama is installed on this server':
+        'Ollama je na tomto serveru nainstalovaná',
+    'Ollama is not installed on this server':
+        'Ollama na tomto serveru není nainstalovaná',
+    'its service':
+        'její služba',
+    'Asked at':
+        'Dotaz na',
+    'Ollama does not answer':
+        'Ollama neodpovídá',
+    'Claude Code needs Ollama 0.14 or newer (its Anthropic API)':
+        'Claude Code potřebuje Ollama 0.14 nebo novější (její Anthropic API)',
+    'Models':
+        'Modely',
+    'none yet - ollama pull qwen3-coder (or another) on the machine of Ollama':
+        'zatím žádný – ollama pull qwen3-coder (nebo jiný) na stroji s Ollama',
+    'Parameters':
+        'Parametry',
+    'Context':
+        'Kontext',
+    'offered first':
+        'nabízí se první',
+    'in the cloud':
+        'v cloudu',
+    'no':
+        'ne',
+    'Claude Code works with tools - a model without them only talks':
+        'Claude Code pracuje s nástroji – model bez nich jen mluví',
+    'Chats with Ollama are off - switch them on below and save; what Ollama has is shown here then.':
+        'Chaty s Ollama jsou vypnuté – zapněte je níže a uložte; pak se tu ukáže, co Ollama nabízí.',
+    'Claude (subscription)':
+        'Claude (předplatné)',
+    'Ollama has no model yet (ollama pull …)':
+        'Ollama zatím nemá žádný model (ollama pull …)',
+    'no tools':
+        'bez nástrojů',
+    'its first model':
+        'její první model',
+    'A chat with a model of Ollama':
+        'Chat s modelem z Ollama',
 }
 
 PATTERNS = {

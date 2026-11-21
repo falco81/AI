@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.100'
+__version__ = '1.0.101'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -128,6 +128,15 @@ DEFAULTS = {
     'claude_args': '',
     'claude_env': '',
     'claude_classic': True,
+    # Ollama for the chats (1.0.101): a chat started with a model of Ollama instead of Claude
+    'ollama_on': False,
+    'ollama_where': 'local',
+    'ollama_port': 11434,
+    'ollama_url': '',
+    'ollama_key': '',
+    'ollama_model': '',
+    'ollama_small': '',
+    'ollama_who': 'all',
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
     'default_cwd': '',
@@ -264,7 +273,7 @@ DEFAULTS = {
     'rbackup_verify': 'off',
 }
 # Kept sealed in the database (secrets.key), never shown back to the pages.
-SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password', 'proxy_password',
+SEALED_KEYS = ('smtp_password', 'rbackup_password', 'sms_token', 'sms_tel_password', 'proxy_password', 'ollama_key',
                'acme_dns_tsig_secret', 'acme_dns_token', 'acme_dns_key', 'acme_desec_token')
 
 # The settings the pages show, pane by pane. Everything else in DEFAULTS is
@@ -290,6 +299,29 @@ SCHEMA = [
      'says goes into tmux\'s history - the scroll bar beside the terminal shows where you are, History '
      'shows all of it, a finger scrolls it on a tablet. Off: its full-screen look, which keeps the history '
      'itself (the bar is then only a jog wheel). /tui in Claude Code switches one chat.', {}),
+    ('ollama_on', 'ollama', 'bool', 'Chats with Ollama',
+     'On: a new chat can talk to a model of Ollama instead of Claude - chosen with the model when it is started. '
+     'Claude Code stays what it is; it is pointed at Ollama (its Anthropic API, Ollama 0.14 and newer). Off: every '
+     'chat is Claude, by the account\'s subscription or key.', {}),
+    ('ollama_where', 'ollama', 'choice', 'Where Ollama runs',
+     'On this server (127.0.0.1), or on another machine of the network - a GPU box, a NAS.',
+     {'choices': [['local', 'On this server'], ['remote', 'Elsewhere on the network']]}),
+    ('ollama_port', 'ollama', 'int', 'Its port on this server',
+     'Where Ollama listens on 127.0.0.1 - 11434 unless OLLAMA_HOST says otherwise.', {'min': 1, 'max': 65535}),
+    ('ollama_url', 'ollama', 'str', 'Its address',
+     'http://192.168.1.50:11434, or https://ollama.example.lan behind a proxy of your own. Its models are '
+     'listed from there; the chats ask it from the server, not from the browser.', {}),
+    ('ollama_key', 'ollama', 'password', 'A key',
+     'Only when something in front of Ollama asks for one (a proxy with a bearer token). Sent as the token of '
+     'the Anthropic API; empty: "ollama". Whoever runs a chat with Ollama can read it in that chat\'s environment.',
+     {}),
+    ('ollama_model', 'ollama', 'str', 'Model offered first',
+     'The one a new chat with Ollama starts with unless another is chosen. Empty: the first Ollama lists.', {}),
+    ('ollama_small', 'ollama', 'str', 'Model for the small tasks',
+     'What Claude Code asks for its quick work on the side (titles, summaries - Haiku\'s part). A small, '
+     'quick one; empty: the chat\'s own model.', {}),
+    ('ollama_who', 'ollama', 'choice', 'Who may use it',
+     'Every account, or administrators only.', {'choices': [['all', 'Every account'], ['admins', 'Administrators only']]}),
     ('term_lang', 'claude', 'str', 'Language and characters of the terminals',
      'LANG of every terminal. A UTF-8 one is needed for Claude Code to draw itself.', {}),
     ('default_run_as', 'claude', 'str', 'Runs as, unless the account says otherwise',
@@ -4336,7 +4368,7 @@ class Terms:
                 'cols': lv['cols'] if lv else 0, 'rows': lv['rows'] if lv else 0,
                 'pane_title': lv['pane_title'] if lv else '',
                 'opts': {k: opts.get(k) for k in ('model', 'mode', 'effort', 'resume', 'continue', 'args',
-                                                  'command') if opts.get(k)}}
+                                                  'command', 'backend') if opts.get(k)}}
 
     def merge(self, live):
         """One tile a conversation (1.0.17): before 1.0.16 picking one up again
@@ -4434,7 +4466,13 @@ class Terms:
             args += ['--add-dir', str(d)]
         args += cc_option_args(opts)
         try:
-            args += shlex.split(str(CONFIG.get('claude_args') or ''))
+            every = shlex.split(str(CONFIG.get('claude_args') or ''))
+            if opts.get('backend') == 'ollama':
+                # The model of Ollama it was started with (1.0.101) - never one of Claude's from the words of
+                # every chat (Settings - Claude Code - Always started with).
+                every = [w for i, w in enumerate(every) if w != '--model' and not w.startswith('--model=')
+                         and not (i and every[i - 1] == '--model')]
+            args += every
             args += shlex.split(str(opts.get('args') or ''))
         except ValueError as e:
             raise Refused('the words to start Claude Code with: %s' % e)
@@ -4490,6 +4528,15 @@ class Terms:
                     os.chown(cwd, pw.pw_uid, pw.pw_gid)
             else:
                 raise Refused('%s is not a folder on this server' % cwd)
+        # A chat with Ollama (1.0.101): Claude Code pointed at Ollama's Anthropic API - checked before
+        # anything of a tile started again is ended.
+        ol_env = {}
+        if opts.get('backend') not in (None, '', 'claude'):
+            if opts.get('backend') != 'ollama' or kind != 'claude':
+                raise Refused('a chat talks to Claude or to Ollama')
+            ol_env = ollama_env(u, opts)
+            if not title:
+                title = 'Ollama · %s · %s' % (opts['model'], os.path.basename(cwd.rstrip('/')) or '/')
         revive = bool(tid)
         tid = tid or secrets.token_hex(4)
         name = 'ai-' + tid
@@ -4510,8 +4557,14 @@ class Terms:
             self.tmux(pw, ['kill-session', '-t', name])
         env = env_lines(CONFIG.get('claude_env'))
         env.update({'AI_TERMINAL': tid, 'LANG': str(CONFIG.get('term_lang') or 'C.UTF-8')})
+        env.update(ol_env)
         # through the proxy (1.0.49): the terminals where Settings → Proxy says so
         env.update(proxy_env(proxy_use or ('terms' if kind in ('claude', 'shell') else '')))
+        if 'ANTHROPIC_BASE_URL' in env and env.get('NO_PROXY') is not None and opts.get('backend') == 'ollama':
+            # Ollama is asked straight, as the daemon asks it - never through the proxy of the terminals.
+            host = urllib.parse.urlsplit(env['ANTHROPIC_BASE_URL']).hostname or ''
+            no = ','.join(w for w in [env.get('NO_PROXY'), host] if w)
+            env.update(NO_PROXY=no, no_proxy=no)
         shell = pw.pw_shell if pw.pw_shell and os.path.exists(pw.pw_shell) and \
             not pw.pw_shell.endswith(('nologin', 'false')) else '/bin/bash'
         if kind == 'claude':
@@ -4540,7 +4593,7 @@ class Terms:
         # Claude Code's own options kept too (1.0.25), so that starting it again -
         # or with changes - starts it as it was chosen.
         keep = {k: v for k, v in opts.items() if k in ('model', 'mode', 'resume', 'continue', 'pick',
-                                                       'args', 'command', 'add_dirs') or k in CC_KEEP}
+                                                       'args', 'command', 'add_dirs', 'backend') or k in CC_KEEP}
         if sid:
             keep['sid'] = sid
         if upkeep:
@@ -4703,14 +4756,24 @@ class Terms:
         except ValueError:
             opts = {}
         extra = {}
-        for k in ('model', 'mode', 'effort', 'args'):
+        for k in ('model', 'mode', 'effort', 'args', 'backend'):
             if k in b:
                 v = str(b.get(k) or '').strip()
+                if k == 'backend':
+                    if v not in ('', 'claude', 'ollama'):
+                        raise Refused('a chat talks to Claude or to Ollama')
+                    v = '' if v == 'claude' else v
                 if k == 'effort' and v and v not in ('low', 'medium', 'high', 'xhigh', 'max'):
                     raise Refused('the effort is low, medium, high, xhigh or max')
-                if k == 'model' and v and not re.match(r'^[A-Za-z0-9._\[\]:-]{1,80}\Z', v):
+                if k == 'model' and v and not re.match(r'^[A-Za-z0-9._\[\]:/-]{1,120}\Z', v):
                     raise Refused('that is not a name of a model')
                 extra[k] = v or None
+        would = dict(opts)
+        would.update({k: v for k, v in extra.items() if v is not None})
+        for k in [k for k, v in extra.items() if v is None]:
+            would.pop(k, None)
+        if r['kind'] == 'claude' and would.get('backend') == 'ollama':
+            ollama_env(u, would)                # its model checked before anything is changed (1.0.101)
         title = clean_line(b.get('title'), 120) or r['title']
         if title != r['title']:
             self.store.x('UPDATE terms SET title=? WHERE id=?', (title, r['id']))
@@ -4739,7 +4802,8 @@ class Terms:
         self.store.x('UPDATE terms SET opts=? WHERE id=?', (json.dumps(opts), r['id']))
         r = dict(r, opts=json.dumps(opts), cwd=cwd)
         self.store.add_event('terminals', '%s changed "%s": %s' % (
-            u['name'], r['title'], ', '.join('%s %s' % (k, v or 'as Claude Code chooses') for k, v in extra.items())
+            u['name'], r['title'], ', '.join('%s %s' % (k, v or ('Claude' if k == 'backend' else 'as Claude Code chooses'))
+                                             for k, v in extra.items())
             + (' in %s' % cwd if cwd != was else '')), 'info', who=u['name'])
         if r['kind'] == 'claude' or b.get('restart'):
             return self.again(u, r, sid=sid or None)
@@ -9344,6 +9408,175 @@ class Upgrades:
 
 
 # ---------------------------------------------------------------------------
+# Ollama for the chats (1.0.101)
+# ---------------------------------------------------------------------------
+# Claude Code talks to any server that speaks the Anthropic API; Ollama does, from 0.14 on
+# (/v1/messages). A chat started "with Ollama" is the same Claude Code with ANTHROPIC_BASE_URL at
+# Ollama, ANTHROPIC_AUTH_TOKEN its key (or "ollama"), ANTHROPIC_API_KEY empty, and the model chosen
+# for every part Claude Code asks for. What Ollama has is read from it: /api/version, /api/tags,
+# /api/show of each model (its context, whether it can use tools - Claude Code cannot work without).
+OLLAMA_CACHE = {}
+OLLAMA_LOOK_S = 30
+OLLAMA_SHOW_MOST = 40
+OLLAMA_MIN = (0, 14, 0)
+OLLAMA_MODEL_RE = re.compile(r'^[A-Za-z0-9._\[\]:/-]{1,120}\Z')
+
+
+def ollama_base(where=None, url=None, port=None):
+    where = where if where is not None else CONFIG.get('ollama_where')
+    if where == 'remote':
+        u = str(url if url is not None else CONFIG.get('ollama_url') or '').strip().rstrip('/')
+        if not re.match(r'^https?://[A-Za-z0-9.\-\[\]:]+(:\d{1,5})?(/[A-Za-z0-9._~/-]*)?\Z', u):
+            raise Refused('the address of Ollama: http://host:11434 (or https://…)')
+        return re.sub(r'/v1$', '', u)
+    try:
+        p = int(port if port is not None else CONFIG.get('ollama_port') or 11434)
+    except (TypeError, ValueError):
+        p = 11434
+    if not 1 <= p <= 65535:
+        raise Refused('the port of Ollama: 1 to 65535')
+    return 'http://127.0.0.1:%d' % p
+
+
+def ollama_key():
+    k = unseal_secret(CONFIG.get('ollama_key') or '', 'setting:ollama_key') or ''
+    return k.strip()
+
+
+def _ollama_call(base, path, key='', body=None, timeout=6):
+    req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body is not None else None,
+                                 headers={'User-Agent': 'ai/%s' % __version__, 'Content-Type': 'application/json'})
+    if key:
+        req.add_header('Authorization', 'Bearer ' + key)
+    with url_open(req, timeout=timeout, context=ssl.create_default_context() if base.startswith('https') else None) as r:
+        raw = r.read(4 * 1048576)
+    got = json.loads(raw.decode('utf-8', 'replace') or '{}')
+    if not isinstance(got, dict):
+        raise ValueError('not what Ollama answers')
+    return got
+
+
+def _ver(v):
+    m = re.match(r'^v?(\d+)\.(\d+)\.(\d+)', str(v or ''))
+    return tuple(int(x) for x in m.groups()) if m else ()
+
+
+def ollama_look(base=None, key=None, fresh=False, detail=True):
+    """What Ollama there has: {ok, base, version, new_enough, models: [...], error, at} - kept 30 s.
+    detail: each model's context and whether it uses tools too (/api/show) - not needed to start a chat."""
+    base = base or ollama_base()
+    key = ollama_key() if key is None else key
+    ck = '%s %s' % (base, hashlib.sha256(key.encode()).hexdigest()[:12])
+    hit = OLLAMA_CACHE.get(ck)
+    if hit and not fresh and time.time() - hit['at'] < OLLAMA_LOOK_S and (hit.get('detail') or not detail):
+        return hit
+    out = {'base': base, 'at': time.time(), 'ok': False, 'version': '', 'new_enough': None, 'models': [], 'error': ''}
+    try:
+        out['version'] = str(_ollama_call(base, '/api/version', key).get('version') or '')
+        v = _ver(out['version'])
+        out['new_enough'] = bool(v) and v >= OLLAMA_MIN
+        tags = _ollama_call(base, '/api/tags', key, timeout=10).get('models') or []
+        models = []
+        for m in tags[:200]:
+            if not isinstance(m, dict) or not OLLAMA_MODEL_RE.match(str(m.get('name') or m.get('model') or '')):
+                continue
+            det = m.get('details') if isinstance(m.get('details'), dict) else {}
+            models.append({'name': str(m.get('name') or m.get('model')), 'size': int(m.get('size') or 0),
+                           'params': str(det.get('parameter_size') or '')[:20],
+                           'quant': str(det.get('quantization_level') or '')[:20],
+                           'family': str(det.get('family') or '')[:40], 'modified': str(m.get('modified_at') or '')[:40],
+                           'ctx': 0, 'tools': None, 'remote': bool(m.get('remote_host'))})
+        def show(m):
+            try:
+                sh = _ollama_call(base, '/api/show', key, {'model': m['name']}, timeout=6)
+            except Exception:                           # noqa: BLE001 - the list is what counts
+                return
+            caps = sh.get('capabilities') if isinstance(sh.get('capabilities'), list) else None
+            m['tools'] = ('tools' in caps) if caps is not None else None
+            info = sh.get('model_info') if isinstance(sh.get('model_info'), dict) else {}
+            ctx = [v for k, v in info.items() if str(k).endswith('.context_length') and isinstance(v, int)]
+            m['ctx'] = max(ctx) if ctx else 0
+        if detail:
+            # Each model asked at once, a few at a time - forty one after another would take minutes.
+            threads = []
+            for m in models[:OLLAMA_SHOW_MOST]:
+                th = threading.Thread(target=show, args=(m,), daemon=True)
+                threads.append(th)
+                th.start()
+                if len(threads) % 8 == 0:
+                    for x in threads[-8:]:
+                        x.join(8)
+            for x in threads:
+                x.join(8)
+        out['detail'] = bool(detail)
+        models.sort(key=lambda m: m['name'])
+        out.update(ok=True, models=models)
+    except urllib.error.HTTPError as e:
+        out['error'] = 'Ollama answered %d %s%s' % (e.code, e.reason, ' - is the key right?' if e.code in (401, 403) else '')
+    except Exception as e:                              # noqa: BLE001
+        out['error'] = str(getattr(e, 'reason', None) or e)[:300] or e.__class__.__name__
+    if len(OLLAMA_CACHE) > 20:
+        OLLAMA_CACHE.clear()
+    OLLAMA_CACHE[ck] = out
+    return out
+
+
+def ollama_here():
+    """Ollama installed on this server, and whether its service runs - said on the settings."""
+    out = {'installed': bool(which('ollama')), 'service': ''}
+    if systemd_here():
+        rc, so, _se = run(['systemctl', 'is-active', 'ollama'], timeout=5)
+        out['service'] = so.strip()
+    return out
+
+
+def ollama_allowed(u):
+    if not CONFIG.get('ollama_on'):
+        return False
+    return CONFIG.get('ollama_who') != 'admins' or (u or {}).get('role') == 'admin'
+
+
+def ollama_env(u, opts):
+    """The environment of a chat with Ollama - and the chat's model checked against what Ollama has."""
+    if not CONFIG.get('ollama_on'):
+        raise Refused('chats with Ollama are switched off (Settings - Ollama)')
+    if not ollama_allowed(u):
+        raise Refused('chats with Ollama are for administrators only here', 403)
+    base = ollama_base()
+    look = ollama_look(base, detail=False)
+    names = [m['name'] for m in look.get('models') or []]
+    model = str(opts.get('model') or CONFIG.get('ollama_model') or (names[0] if names else '')).strip()
+    if not model:
+        raise Refused('which model of Ollama? Ollama lists none%s' % (': %s' % look['error'] if look.get('error') else ''))
+    if not OLLAMA_MODEL_RE.match(model):
+        raise Refused('that is not a name of a model')
+    if look.get('ok') and names and model not in names and model + ':latest' not in names:
+        raise Refused('Ollama at %s has no model %s (it has: %s)' % (base, model, ', '.join(names[:12])))
+    opts['model'] = model
+    small = str(CONFIG.get('ollama_small') or '').strip()
+    small = small if small and OLLAMA_MODEL_RE.match(small) else model
+    return {'ANTHROPIC_BASE_URL': base, 'ANTHROPIC_AUTH_TOKEN': ollama_key() or 'ollama', 'ANTHROPIC_API_KEY': '',
+            'ANTHROPIC_MODEL': model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': model, 'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
+            'ANTHROPIC_DEFAULT_HAIKU_MODEL': small, 'ANTHROPIC_SMALL_FAST_MODEL': small,
+            'CLAUDE_CODE_SUBAGENT_MODEL': model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1'}
+
+
+def ollama_view(u, fresh=False):
+    if not ollama_allowed(u):
+        return {'on': False}
+    try:
+        look = ollama_look(fresh=fresh)
+    except Refused as e:
+        look = {'ok': False, 'error': str(e), 'models': [], 'version': '', 'base': ''}
+    out = {'on': True, 'ok': look.get('ok'), 'error': look.get('error') or '', 'version': look.get('version') or '',
+           'new_enough': look.get('new_enough'), 'models': look.get('models') or [], 'at': look.get('at'),
+           'default': CONFIG.get('ollama_model') or '', 'where': CONFIG.get('ollama_where') or 'local'}
+    if (u or {}).get('role') == 'admin':
+        out.update(base=look.get('base') or '', here=ollama_here(), small=CONFIG.get('ollama_small') or '')
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Claude Code itself: installed or not, for which accounts
 # ---------------------------------------------------------------------------
 CLAUDE_CACHE = {}
@@ -12792,6 +13025,26 @@ def osr_view(store):
             'python': osr_python_trust()}
 
 
+@route('GET', '/api/ollama')
+def api_ollama(c):
+    # Asked afresh only by an administrator (Look again): each time it asks Ollama about every model.
+    return ollama_view(c.who, fresh=bool(c.arg('fresh')) and c.who.get('role') == 'admin')
+
+
+@route('POST', '/api/ollama', admin=True)
+def api_ollama_do(c):
+    """Try an address and a key before they are saved (Settings - Ollama - Try it)."""
+    b = c.body
+    if str(b.get('action') or '') != 'try':
+        raise Refused('try')
+    base = ollama_base(str(b.get('where') or 'local'), b.get('url'), b.get('port'))
+    key = str(b.get('key') or '').strip()
+    if not key and b.get('key_saved', True):
+        key = ollama_key()
+    got = ollama_look(base, key, fresh=True)
+    return dict(got, here=ollama_here())
+
+
 @route('GET', '/api/osroots', admin=True)
 def api_osroots(c):
     return osr_view(c.daemon.store)
@@ -13065,6 +13318,7 @@ def status_view(c):
         'php': php_state() if c.who['role'] == 'admin' else None,
         'mailq': mailq_counted(d.store) if c.who['role'] == 'admin' else {},
         'chat_root': status_chat_root(c.who),
+        'ollama': ollama_allowed(c.who),
     }
 
 
@@ -15753,7 +16007,8 @@ def put_user_cols(store, name, cols):
 
 
 PREF_KEYS = ('lang', 'font', 'theme', 'favs', 'recent', 'files_hidden', 'rail', 'keys', 'paste', 'pins',
-             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right', 'hload', 'hpanel')
+             'model', 'mode', 'args', 'last_cwd', 'cc_opts', 'term_colors', 'term_right', 'hload', 'hpanel',
+             'backend')
 
 
 def clean_prefs(prefs):
@@ -26746,6 +27001,9 @@ def build_parser():
                    help='with --new: the last conversation of the folder')
     g.add_argument('--pick', action='store_true', help='with --new: choose one of its conversations')
     g.add_argument('--model', default='', help='with --new, --edit: the model (opus, sonnet, claude-opus-5-5…)')
+    g.add_argument('--ollama', nargs='?', const='', default=None, metavar='MODEL',
+                   help='alone: what Ollama has (Settings - Ollama, --json); with --new: a chat with Ollama, '
+                        'with MODEL or the one offered first')
     g.add_argument('--title', default='', help='with --new, --edit: its name')
     g.add_argument('--end', metavar='ID', help='end a terminal')
     g.add_argument('--restart-term', metavar='ID', help='start what ran in a terminal again')
@@ -27480,6 +27738,35 @@ def cli_db_ipv4(st, a, pal):
     return 0
 
 
+def cli_ollama(a, pal):
+    """`ai --ollama`: what Ollama has, as the settings show it."""
+    v = ollama_view({'name': 'cli', 'role': 'admin'}, fresh=True)
+    if a.json:
+        say_json(v)
+        return 0 if v.get('ok') else 1
+    if not v.get('on'):
+        print(pal.warn_line('chats with Ollama are off - ai --set ollama_on=1'))
+        return 1
+    here = v.get('here') or {}
+    print('Ollama        %s (%s)' % (v.get('base') or '?', 'on this server' if v.get('where') != 'remote' else 'elsewhere'))
+    print('on this server %s%s' % ('installed' if here.get('installed') else 'not installed',
+                                   ', its service %s' % here['service'] if here.get('service') else ''))
+    if not v.get('ok'):
+        print(pal.bad_line('does not answer: %s' % v.get('error')))
+        return 1
+    print((pal.ok_line if v.get('new_enough') is not False else pal.bad_line)(
+        'version %s%s' % (v.get('version') or '?', '' if v.get('new_enough') is not False
+                          else ' - Claude Code needs 0.14 or newer')))
+    for m in v.get('models') or []:
+        print('  %-40s %-14s %8s  %s%s' % (m['name'], ' '.join(x for x in (m['params'], m['quant']) if x),
+                                         ('%dk' % (m['ctx'] // 1024)) if m.get('ctx') else '',
+                                         {True: 'tools', False: 'NO TOOLS', None: ''}[m.get('tools')],
+                                         '   (offered first)' if m['name'] == v.get('default') else ''))
+    if not v.get('models'):
+        print(pal.warn_line('no model yet - ollama pull … on the machine of Ollama'))
+    return 0
+
+
 def cli_terms_new(d, a, pal):
     u = {'name': 'cli', 'role': 'admin', 'run_as': a.run_as or '', 'roots': '[]'}
     opts = {}
@@ -27489,6 +27776,10 @@ def cli_terms_new(d, a, pal):
         opts['pick'] = True
     if a.model:
         opts['model'] = a.model
+    if a.ollama is not None and not a.shell:
+        opts['backend'] = 'ollama'
+        if a.ollama:
+            opts['model'] = a.ollama
     if a.effort:
         opts['effort'] = a.effort
     if cli_mode(a.mode):
@@ -27663,6 +27954,8 @@ def cli_main(argv):
             return cli_selinux(st, a, pal)
         if a.os_roots or a.os_roots_add or a.os_roots_remove:
             return cli_osroots(st, a, pal)
+        if a.ollama is not None and not a.new:
+            return cli_ollama(a, pal)
         if a.notices or a.notice_done or a.notices_clear_done:
             if a.notices_clear_done:
                 print(pal.ok_line('done lately cleared (%d)' % notices_done_clear(st, None, 'the command line')))

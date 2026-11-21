@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+import threading
 import tempfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -841,6 +842,115 @@ check('passkeys: failures with a stale passkey never lock the address out of pas
 _ai_src = open(os.path.join(HERE, 'ai.py')).read()
 check('passkeys: registering refuses a passkey id that belongs to another account',
       "that passkey belongs to another account here" in _ai_src)
+
+# ---- Ollama for the chats (1.0.101): a fake Ollama answers what a real one does ------------------
+import http.server as _hs
+_OL = {'auth': [], 'version': '0.14.2'}
+class _OlH(_hs.BaseHTTPRequestHandler):
+    def log_message(s, *a): pass
+    def _send(s, obj, code=200):
+        b = json.dumps(obj).encode(); s.send_response(code); s.send_header('Content-Type', 'application/json')
+        s.send_header('Content-Length', str(len(b))); s.end_headers(); s.wfile.write(b)
+    def do_GET(s):
+        _OL['auth'].append(s.headers.get('Authorization') or '')
+        if s.path == '/api/version': return s._send({'version': _OL['version']})
+        if s.path == '/api/tags': return s._send({'models': [
+            {'name': 'qwen3-coder:30b', 'size': 18 * 2**30, 'details': {'parameter_size': '30.5B', 'quantization_level': 'Q4_K_M', 'family': 'qwen3moe'}},
+            {'name': 'gemma3:4b', 'size': 3 * 2**30, 'details': {'parameter_size': '4.3B'}},
+            {'name': 'bad name;rm', 'size': 1}]})
+        s._send({}, 404)
+    def do_POST(s):
+        body = json.loads(s.rfile.read(int(s.headers.get('Content-Length') or 0)) or b'{}')
+        if s.path == '/api/show':
+            if body.get('model') == 'qwen3-coder:30b':
+                return s._send({'capabilities': ['completion', 'tools'], 'model_info': {'qwen3moe.context_length': 262144}})
+            return s._send({'capabilities': ['completion', 'vision'], 'model_info': {'gemma3.context_length': 131072}})
+        s._send({}, 404)
+_ols = _hs.ThreadingHTTPServer(('127.0.0.1', 0), _OlH)
+threading.Thread(target=_ols.serve_forever, daemon=True).start()
+_olport = _ols.server_address[1]
+ai.CONFIG.update(ollama_on=True, ollama_where='local', ollama_port=_olport, ollama_url='', ollama_key='', ollama_model='',
+                 ollama_small='', ollama_who='all')
+ai.OLLAMA_CACHE.clear()
+_look = ai.ollama_look()
+_byname = {m['name']: m for m in _look['models']}
+check('ollama: its version, its models (a name that is no name left out), each one\'s context and tools',
+      _look['ok'] and _look['new_enough'] and sorted(_byname) == ['gemma3:4b', 'qwen3-coder:30b']
+      and _byname['qwen3-coder:30b']['tools'] is True and _byname['qwen3-coder:30b']['ctx'] == 262144
+      and _byname['gemma3:4b']['tools'] is False and _byname['qwen3-coder:30b']['params'] == '30.5B')
+_OL['version'] = '0.13.5'
+check('ollama: older than 0.14 said (no Anthropic API there)', ai.ollama_look(fresh=True)['new_enough'] is False)
+_OL['version'] = '0.14.2'
+_admin = {'name': 'admin', 'role': 'admin'}
+_user = {'name': 'bob', 'role': 'user'}
+_o = {'model': 'qwen3-coder:30b', 'backend': 'ollama'}
+_env = ai.ollama_env(_user, _o)
+check('ollama: a chat\'s environment points Claude Code at Ollama, its model for every part, no API key of Anthropic',
+      _env['ANTHROPIC_BASE_URL'] == 'http://127.0.0.1:%d' % _olport and _env['ANTHROPIC_AUTH_TOKEN'] == 'ollama'
+      and _env['ANTHROPIC_API_KEY'] == '' and _env['ANTHROPIC_MODEL'] == 'qwen3-coder:30b'
+      and _env['ANTHROPIC_DEFAULT_OPUS_MODEL'] == _env['ANTHROPIC_DEFAULT_SONNET_MODEL'] == 'qwen3-coder:30b'
+      and _env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] == 'qwen3-coder:30b' and _env['CLAUDE_CODE_SUBAGENT_MODEL'] == 'qwen3-coder:30b')
+ai.CONFIG['ollama_small'] = 'gemma3:4b'
+check('ollama: the model for the small tasks is Haiku\'s part', ai.ollama_env(_user, dict(_o))['ANTHROPIC_SMALL_FAST_MODEL'] == 'gemma3:4b')
+def _refused(f):
+    try:
+        f()
+    except ai.Refused as e:
+        return str(e)
+    return ''
+check('ollama: a model Ollama does not have is refused, naming what it has',
+      'gemma3:4b' in _refused(lambda: ai.ollama_env(_user, {'model': 'llama9', 'backend': 'ollama'})))
+_o2 = {'backend': 'ollama'}
+ai.ollama_env(_user, _o2)
+check('ollama: no model chosen - the first Ollama lists (or the one set first)', _o2['model'] == 'gemma3:4b')
+ai.CONFIG['ollama_model'] = 'qwen3-coder:30b'
+_o2 = {'backend': 'ollama'}
+ai.ollama_env(_user, _o2)
+check('ollama: no model chosen - the one Settings offers first', _o2['model'] == 'qwen3-coder:30b')
+ai.CONFIG['ollama_who'] = 'admins'
+check('ollama: for administrators only - refused to another account, the model list too',
+      'administrators' in _refused(lambda: ai.ollama_env(_user, dict(_o))) and ai.ollama_view(_user) == {'on': False}
+      and ai.ollama_view(_admin)['on'] and ai.ollama_env(_admin, dict(_o)))
+ai.CONFIG['ollama_who'] = 'all'
+_v = ai.ollama_view(_user)
+check('ollama: an account sees the models, never where Ollama is or its key', _v['on'] and len(_v['models']) == 2 and 'base' not in _v and 'here' not in _v)
+ai.CONFIG['ollama_on'] = False
+check('ollama: switched off - refused, nothing offered', 'switched off' in _refused(lambda: ai.ollama_env(_admin, dict(_o)))
+      and ai.ollama_view(_admin) == {'on': False})
+ai.CONFIG['ollama_on'] = True
+ai.CONFIG.update(ollama_where='remote', ollama_url='http://127.0.0.1:%d/v1/' % _olport)
+check('ollama: elsewhere on the network - its address (a /v1 at the end taken off)', ai.ollama_base() == 'http://127.0.0.1:%d' % _olport)
+check('ollama: an address that is not one is refused',
+      all(_refused(lambda u=u: ai.ollama_base('remote', u)) for u in ('ftp://x', 'http://a b', 'http://x/?q=1', '', 'javascript:x')))
+ai.CONFIG['ollama_key'] = ai.seal_secret('s3cret-token', 'setting:ollama_key') if hasattr(ai, 'seal_secret') else 's3cret-token'
+_OL['auth'][:] = []
+ai.OLLAMA_CACHE.clear()
+ai.ollama_look()
+_env = ai.ollama_env(_user, dict(_o))
+check('ollama: its key sent as a bearer token, and given to Claude Code as the token', 'Bearer s3cret-token' in _OL['auth']
+      and _env['ANTHROPIC_AUTH_TOKEN'] == 's3cret-token')
+ai.CONFIG['ollama_key'] = ''
+ai.CONFIG.update(ollama_where='remote', ollama_url='http://127.0.0.1:9/')
+ai.OLLAMA_CACHE.clear()
+_dead = ai.ollama_look()
+check('ollama: not answering - said, never a crash', _dead['ok'] is False and _dead['error'])
+_o3 = dict(_o)
+ai.ollama_env(_user, _o3)
+check('ollama: not answering - the chat still starts (Claude Code says what is wrong)', _o3['model'] == 'qwen3-coder:30b')
+ai.CONFIG.update(ollama_where='local', ollama_port=_olport)
+_was_args = ai.CONFIG.get('claude_args')
+ai.CONFIG['claude_args'] = '--model opus --verbose --model=sonnet'
+_sc = ai.Terms(None).claude_script({'model': 'qwen3-coder:30b', 'backend': 'ollama'})
+_sc2 = ai.Terms(None).claude_script({'model': 'opus'})
+ai.CONFIG['claude_args'] = _was_args
+check('ollama: Claude\'s --model of the words of every chat is never put over Ollama\'s model',
+      'qwen3-coder:30b' in _sc and 'sonnet' not in _sc and ' opus' not in _sc and '--verbose' in _sc and '--model=sonnet' in _sc2)
+check('ollama: a model name of Ollama (a tag, a namespace) goes through, a word of the shell does not',
+      ai.OLLAMA_MODEL_RE.match('hf.co/unsloth/Qwen3-GGUF:Q4_K_M') and not ai.OLLAMA_MODEL_RE.match('x;rm -rf'))
+check('ollama: the backend chosen is kept with the chat, and as the account\'s last choice',
+      "'add_dirs', 'backend')" in _ai_src and "'backend')" in _ai_src[_ai_src.index('PREF_KEYS = '):_ai_src.index('PREF_KEYS = ') + 400])
+_ols.shutdown()
+ai.CONFIG.update(ollama_on=False, ollama_where='local', ollama_port=11434, ollama_model='', ollama_small='')
 
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)
