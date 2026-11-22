@@ -64,3 +64,25 @@ ai --new DIR --ollama                     the model offered first
 ```
 
 The list of chats says *Ollama MODEL* under such a chat.
+
+## Context length (1.0.105)
+
+Claude Code sends a long system prompt and the descriptions of its tools with every question. Ollama keeps only
+as much of a chat as its context length, and its own default is small: 4096 tokens under 24 GB of VRAM, 32768
+from 24 GB, 262144 from 48 GB. With too little, the model loses the thread and writes on until Claude Code stops
+it: *Claude's response exceeded the 128000 output token maximum*. Ollama recommends at least 64000 for coding
+tools.
+
+- **What Ollama has** shows *Context now* for each loaded model (Ollama's `/api/ps`), in orange under 64000, and
+  whether the model runs partly on the CPU. A note says when the context is too little.
+- **Ollama on this server** (systemd): *Set it on this server's Ollama* writes
+  `/etc/systemd/system/ollama.service.d/ai-context.conf` with `OLLAMA_CONTEXT_LENGTH` (the setting *Context length
+  to set*, 65536 at first) and starts Ollama again. *Take it away again* removes the file. Only that one file is
+  written. On the server: `curl` the API, or `ollama ps` for the CONTEXT column.
+- **Ollama elsewhere**: set `OLLAMA_CONTEXT_LENGTH=65536` where it runs (its service, or the slider in the Ollama
+  app) and start it again.
+
+More context takes more memory. A model that no longer fits the GPU runs partly on the CPU, slower.
+
+*Longest answer* (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`, 32000 at first) stops an answer that runs on long before
+Claude Code's own 128000: a local model that lost the thread would otherwise write for an hour first.

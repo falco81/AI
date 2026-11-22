@@ -3964,6 +3964,45 @@ STRINGS = {
         'Odebrat ze seznamu všechny ukončené Claude Code',
     'Pinned among them':
         'Z toho připnutých',
+    # ---- 1.0.105
+    'Context length to set':
+        'Délka kontextu k nastavení',
+    'How many tokens Ollama keeps of a chat (OLLAMA_CONTEXT_LENGTH). Claude Code sends a long system prompt and its tools: Ollama recommends at least 64000. Ollama\'s own default is 4096 under 24 GB of VRAM - too little, the model loses the thread and writes on until the limit. Put in on this server with "Set it on this server\'s Ollama"; elsewhere, set OLLAMA_CONTEXT_LENGTH where Ollama runs. More context needs more memory.':
+        'Kolik tokenů chatu si Ollama drží (OLLAMA_CONTEXT_LENGTH). Claude Code posílá dlouhý systémový prompt a své nástroje: Ollama doporučuje aspoň 64000. Výchozí hodnota Ollamy je 4096 při méně než 24 GB VRAM – málo, model ztratí nit a píše dál až do limitu. Na tomto serveru se nastaví tlačítkem „Nastavit u Ollamy na tomto serveru“; jinde nastavte OLLAMA_CONTEXT_LENGTH tam, kde Ollama běží. Delší kontext potřebuje víc paměti.',
+    'Longest answer (tokens)':
+        'Nejdelší odpověď (tokeny)',
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS of a chat with Ollama: an answer that runs on is stopped here, not at Claude Code's 128000 - a local model that lost the thread would otherwise write for an hour. 0: Claude Code's own.":
+        'CLAUDE_CODE_MAX_OUTPUT_TOKENS chatu s Ollamou: odpověď, která se nezastaví, skončí tady, ne až u 128000 Claude Code – lokální model, který ztratil nit, by jinak psal hodinu. 0: výchozí Claude Code.',
+    'Too little context for Claude Code':
+        'Na Claude Code je málo kontextu',
+    'A model is loaded with':
+        'Načtený model má',
+    'tokens of context.':
+        'tokenů kontextu.',
+    'Ollama here is started with':
+        'Ollama je tu spuštěná s',
+    'Ollama here is started without OLLAMA_CONTEXT_LENGTH: under 24 GB of VRAM it gives 4096 tokens.':
+        'Ollama je tu spuštěná bez OLLAMA_CONTEXT_LENGTH: při méně než 24 GB VRAM dává 4096 tokenů.',
+    'Claude Code needs at least 64000: with less, the model loses the thread and writes on until "the output token maximum".':
+        'Claude Code potřebuje aspoň 64000: s menším kontextem model ztratí nit a píše dál až do „output token maximum“.',
+    "Set it on this server's Ollama":
+        'Nastavit u Ollamy na tomto serveru',
+    'OLLAMA_CONTEXT_LENGTH in a drop-in of ai\'s own (/etc/systemd/system/ollama.service.d/ai-context.conf), and Ollama started again. The number is "Context length to set" below - saved first.':
+        'OLLAMA_CONTEXT_LENGTH ve vlastním drop-inu ai (/etc/systemd/system/ollama.service.d/ai-context.conf) a Ollama se spustí znovu. Číslo je „Délka kontextu k nastavení“ níže – nejdřív ho uložte.',
+    'Start Ollama again with':
+        'Spustit Ollamu znovu s',
+    'Every model of it is unloaded and loaded again at the next question. More context needs more memory: a model that no longer fits the GPU runs partly on the CPU, slower (ollama ps says how it is split).':
+        'Všechny její modely se uvolní a při další otázce načtou znovu. Delší kontext potřebuje víc paměti: model, který se už nevejde do GPU, poběží zčásti na CPU, pomaleji (ollama ps ukáže rozdělení).',
+    'Take it away again':
+        'Zase odebrat',
+    "Ollama runs elsewhere: set OLLAMA_CONTEXT_LENGTH=65536 (or more) where it runs - in its service, or in the Ollama app's settings - and start it again.":
+        'Ollama běží jinde: nastavte OLLAMA_CONTEXT_LENGTH=65536 (nebo víc) tam, kde běží – v její službě nebo v nastavení aplikace Ollama – a spusťte ji znovu.',
+    'Context now':
+        'Kontext teď',
+    'partly on the CPU':
+        'zčásti na CPU',
+    'not loaded':
+        'nenačtený',
 }
 
 PATTERNS = {

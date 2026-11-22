@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.104'
+__version__ = '1.0.105'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -137,6 +137,8 @@ DEFAULTS = {
     'ollama_model': '',
     'ollama_small': '',
     'ollama_who': 'all',
+    'ollama_ctx': 65536,
+    'ollama_max_out': 32000,
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
     'default_cwd': '',
@@ -320,6 +322,16 @@ SCHEMA = [
     ('ollama_small', 'ollama', 'str', 'Model for the small tasks',
      'What Claude Code asks for its quick work on the side (titles, summaries - Haiku\'s part). A small, '
      'quick one; empty: the chat\'s own model.', {}),
+    ('ollama_ctx', 'ollama', 'int', 'Context length to set',
+     'How many tokens Ollama keeps of a chat (OLLAMA_CONTEXT_LENGTH). Claude Code sends a long system prompt and '
+     'its tools: Ollama recommends at least 64000. Ollama\'s own default is 4096 under 24 GB of VRAM - too little, '
+     'the model loses the thread and writes on until the limit. Put in on this server with "Set it on this '
+     'server\'s Ollama"; elsewhere, set OLLAMA_CONTEXT_LENGTH where Ollama runs. More context needs more memory.',
+     {'min': 2048, 'max': 1048576}),
+    ('ollama_max_out', 'ollama', 'int', 'Longest answer (tokens)',
+     'CLAUDE_CODE_MAX_OUTPUT_TOKENS of a chat with Ollama: an answer that runs on is stopped here, not at Claude '
+     'Code\'s 128000 - a local model that lost the thread would otherwise write for an hour. 0: Claude Code\'s own.',
+     {'min': 0, 'max': 200000}),
     ('ollama_who', 'ollama', 'choice', 'Who may use it',
      'Every account, or administrators only.', {'choices': [['all', 'Every account'], ['admins', 'Administrators only']]}),
     ('term_lang', 'claude', 'str', 'Language and characters of the terminals',
@@ -9673,6 +9685,17 @@ def ollama_look(base=None, key=None, fresh=False, detail=True):
                 x.join(8)
         out['detail'] = bool(detail)
         models.sort(key=lambda m: m['name'])
+        # the context each loaded model has now (1.0.105) - what Ollama actually gives, not what it could
+        try:
+            for r in (_ollama_call(base, '/api/ps', key, timeout=4).get('models') or [])[:50]:
+                if isinstance(r, dict) and isinstance(r.get('context_length'), int):
+                    for m in models:
+                        if m['name'] == r.get('name') or m['name'] == r.get('model'):
+                            m['ctx_now'] = r['context_length']
+                            m['vram'] = int(r.get('size_vram') or 0)
+                            m['size_loaded'] = int(r.get('size') or 0)
+        except Exception:                               # noqa: BLE001 - an older Ollama: not said
+            pass
         out.update(ok=True, models=models)
     except urllib.error.HTTPError as e:
         out['error'] = 'Ollama answered %d %s%s' % (e.code, e.reason, ' - is the key right?' if e.code in (401, 403) else '')
@@ -9684,13 +9707,51 @@ def ollama_look(base=None, key=None, fresh=False, detail=True):
     return out
 
 
+OLLAMA_DROPIN = Path(os.environ.get('AI_OLLAMA_DROPIN') or '/etc/systemd/system/ollama.service.d/ai-context.conf')
+
+
 def ollama_here():
-    """Ollama installed on this server, and whether its service runs - said on the settings."""
-    out = {'installed': bool(which('ollama')), 'service': ''}
+    """Ollama installed on this server, whether its service runs, and the context length it is started with."""
+    out = {'installed': bool(which('ollama')), 'service': '', 'ctx_env': None, 'ctx_ours': None}
     if systemd_here():
         rc, so, _se = run(['systemctl', 'is-active', 'ollama'], timeout=5)
         out['service'] = so.strip()
+        rc, so, _se = run(['systemctl', 'show', 'ollama', '-p', 'Environment', '--value'], timeout=5)
+        m = re.search(r'(?:^|\s)OLLAMA_CONTEXT_LENGTH=(\d+)', so or '')
+        out['ctx_env'] = int(m.group(1)) if m else None
+    m = re.search(r'OLLAMA_CONTEXT_LENGTH=(\d+)', read_text(OLLAMA_DROPIN, 4096))
+    out['ctx_ours'] = int(m.group(1)) if m else None
     return out
+
+
+def ollama_set_context(n, by):
+    """OLLAMA_CONTEXT_LENGTH for Ollama's service on this server (1.0.105): a drop-in of ai's own, and Ollama
+    started again. Only this one file is written; taken away again with n = 0."""
+    if CONFIG.get('ollama_where') == 'remote':
+        raise Refused('Ollama runs elsewhere: set OLLAMA_CONTEXT_LENGTH where it runs')
+    if not systemd_here():
+        raise Refused('no systemd here: start Ollama with OLLAMA_CONTEXT_LENGTH=%d ollama serve' % (n or 65536))
+    rc, so, _se = run(['systemctl', 'cat', 'ollama'], timeout=5)
+    if rc != 0:
+        raise Refused('there is no ollama.service on this server (Ollama from ollama.com/download makes one)')
+    n = int(n or 0)
+    if n and not 2048 <= n <= 1048576:
+        raise Refused('the context length: 2048 to 1048576')
+    if n:
+        write_atomic(OLLAMA_DROPIN, ('# made by ai (Settings - Ollama): the context Ollama gives every model\n'
+                                     '[Service]\nEnvironment="OLLAMA_CONTEXT_LENGTH=%d"\n' % n).encode(), mode=0o644)
+    else:
+        try:
+            OLLAMA_DROPIN.unlink()
+        except FileNotFoundError:
+            pass
+    run(['systemctl', 'daemon-reload'], timeout=30)
+    rc, so, se = run(['systemctl', 'restart', 'ollama'], timeout=120)
+    if rc != 0:
+        raise Refused('Ollama did not start again: %s' % (se or so).strip()[-300:])
+    OLLAMA_CACHE.clear()
+    return {'message': ('Ollama gives %d tokens of context now - started again' % n) if n
+            else 'Ollama is back on its own context length - started again'}
 
 
 def ollama_allowed(u):
@@ -9721,7 +9782,9 @@ def ollama_env(u, opts):
     return {'ANTHROPIC_BASE_URL': base, 'ANTHROPIC_AUTH_TOKEN': ollama_key() or 'ollama', 'ANTHROPIC_API_KEY': '',
             'ANTHROPIC_MODEL': model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': model, 'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
             'ANTHROPIC_DEFAULT_HAIKU_MODEL': small, 'ANTHROPIC_SMALL_FAST_MODEL': small,
-            'CLAUDE_CODE_SUBAGENT_MODEL': model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1'}
+            'CLAUDE_CODE_SUBAGENT_MODEL': model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
+            **({'CLAUDE_CODE_MAX_OUTPUT_TOKENS': str(int(CONFIG.get('ollama_max_out') or 0))}
+               if int(CONFIG.get('ollama_max_out') or 0) > 0 else {})}
 
 
 def ollama_view(u, fresh=False):
@@ -9735,7 +9798,8 @@ def ollama_view(u, fresh=False):
            'new_enough': look.get('new_enough'), 'models': look.get('models') or [], 'at': look.get('at'),
            'default': CONFIG.get('ollama_model') or '', 'where': CONFIG.get('ollama_where') or 'local'}
     if (u or {}).get('role') == 'admin':
-        out.update(base=look.get('base') or '', here=ollama_here(), small=CONFIG.get('ollama_small') or '')
+        out.update(base=look.get('base') or '', here=ollama_here(), small=CONFIG.get('ollama_small') or '',
+                   ctx_want=int(CONFIG.get('ollama_ctx') or 0))
     return out
 
 
@@ -13239,8 +13303,12 @@ def api_ollama(c):
 def api_ollama_do(c):
     """Try an address and a key before they are saved (Settings - Ollama - Try it)."""
     b = c.body
+    if str(b.get('action') or '') == 'context':
+        got = ollama_set_context(b.get('n') if b.get('n') is not None else CONFIG.get('ollama_ctx'), c.name)
+        c.daemon.store.add_event('settings', '%s: %s' % (c.name, got['message']), who=c.name)
+        return got
     if str(b.get('action') or '') != 'try':
-        raise Refused('try')
+        raise Refused('try or context')
     base = ollama_base(str(b.get('where') or 'local'), b.get('url'), b.get('port'))
     key = str(b.get('key') or '').strip()
     if not key and b.get('key_saved', True):

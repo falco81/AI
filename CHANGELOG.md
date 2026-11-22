@@ -3,6 +3,21 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.105
+
+**Chats with Ollama: "Claude's response exceeded the 128000 output token maximum"** on anything harder. Ollama gives a
+model only 4096 tokens of context by default (under 24 GB of VRAM); Claude Code's system prompt and tools do not
+fit, the model loses the thread and writes on until the limit. Ollama recommends at least 64000
+([docs/ollama.md](docs/ollama.md)):
+
+- **What Ollama has** shows the context each loaded model has now (*Context now*, from Ollama's `/api/ps`), in
+  orange under 64000, and whether a model runs partly on the CPU; a note says when there is too little.
+- **Set it on this server's Ollama**: `OLLAMA_CONTEXT_LENGTH` in a systemd drop-in of ai's own
+  (`ollama.service.d/ai-context.conf`, 65536 at first - *Context length to set*), Ollama started again; *Take it
+  away again* removes it. For Ollama elsewhere, what to set there is said.
+- **Longest answer** (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`, 32000 at first) for chats with Ollama: an answer that runs on
+  stops there, not after 128000 tokens.
+
 ## 1.0.104
 
 - **The list of terminals**: its headings (PINNED, THE OTHERS) were cut in half once the list was longer than the

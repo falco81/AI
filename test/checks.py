@@ -854,6 +854,8 @@ class _OlH(_hs.BaseHTTPRequestHandler):
     def do_GET(s):
         _OL['auth'].append(s.headers.get('Authorization') or '')
         if s.path == '/api/version': return s._send({'version': _OL['version']})
+        if s.path == '/api/ps': return s._send({'models': [{'name': 'qwen3-coder:30b', 'model': 'qwen3-coder:30b',
+                                                              'size': 20 * 2**30, 'size_vram': 12 * 2**30, 'context_length': 4096}]})
         if s.path == '/api/tags': return s._send({'models': [
             {'name': 'qwen3-coder:30b', 'size': 18 * 2**30, 'details': {'parameter_size': '30.5B', 'quantization_level': 'Q4_K_M', 'family': 'qwen3moe'}},
             {'name': 'gemma3:4b', 'size': 3 * 2**30, 'details': {'parameter_size': '4.3B'}},
@@ -949,6 +951,33 @@ check('ollama: a model name of Ollama (a tag, a namespace) goes through, a word 
       ai.OLLAMA_MODEL_RE.match('hf.co/unsloth/Qwen3-GGUF:Q4_K_M') and not ai.OLLAMA_MODEL_RE.match('x;rm -rf'))
 check('ollama: the backend chosen is kept with the chat, and as the account\'s last choice',
       "'add_dirs', 'backend')" in _ai_src and "'backend')" in _ai_src[_ai_src.index('PREF_KEYS = '):_ai_src.index('PREF_KEYS = ') + 400])
+ai.OLLAMA_CACHE.clear()
+ai.CONFIG.update(ollama_where='local', ollama_port=_olport, ollama_key='')
+_l2 = {m['name']: m for m in ai.ollama_look()['models']}
+check('ollama: the context a loaded model has now (/api/ps), and that it is partly on the CPU',
+      _l2['qwen3-coder:30b'].get('ctx_now') == 4096 and _l2['qwen3-coder:30b']['vram'] < _l2['qwen3-coder:30b']['size_loaded']
+      and 'ctx_now' not in _l2['gemma3:4b'])
+ai.CONFIG['ollama_max_out'] = 32000
+check('ollama: an answer that runs on stops at the longest answer set (CLAUDE_CODE_MAX_OUTPUT_TOKENS)',
+      ai.ollama_env(_user, dict(_o)).get('CLAUDE_CODE_MAX_OUTPUT_TOKENS') == '32000')
+ai.CONFIG['ollama_max_out'] = 0
+check('ollama: longest answer 0 - Claude Code\'s own', 'CLAUDE_CODE_MAX_OUTPUT_TOKENS' not in ai.ollama_env(_user, dict(_o)))
+_ran = []
+_was_run, _was_sd = ai.run, ai.systemd_here
+ai.run = lambda cmd, **kw: (_ran.append(cmd) or (0, '', ''))
+ai.systemd_here = lambda: True
+ai.OLLAMA_DROPIN = ai.Path(WORK) / 'ollama.service.d' / 'ai-context.conf'
+ai.ollama_set_context(65536, 'tester')
+_drop = ai.read_text(ai.OLLAMA_DROPIN)
+check('ollama: the context set on this server - a drop-in of ai\'s own, systemd told, Ollama started again',
+      'Environment="OLLAMA_CONTEXT_LENGTH=65536"' in _drop and ['systemctl', 'daemon-reload'] in _ran
+      and ['systemctl', 'restart', 'ollama'] in _ran)
+ai.ollama_set_context(0, 'tester')
+check('ollama: taken away again - the drop-in gone', not ai.OLLAMA_DROPIN.exists())
+check('ollama: a context out of range is refused', 'context length' in _refused(lambda: ai.ollama_set_context(100, 't')))
+ai.CONFIG['ollama_where'] = 'remote'
+check('ollama: elsewhere on the network - not set from here', 'elsewhere' in _refused(lambda: ai.ollama_set_context(65536, 't')))
+ai.run, ai.systemd_here = _was_run, _was_sd
 _ols.shutdown()
 ai.CONFIG.update(ollama_on=False, ollama_where='local', ollama_port=11434, ollama_model='', ollama_small='')
 

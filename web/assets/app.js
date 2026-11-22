@@ -3693,7 +3693,8 @@ var PANE_LAYOUT = {
        {when: 'remote', title: 'Ollama elsewhere on the network', icon: 'net',
         lede: 'Another machine - a GPU box, a NAS. Ollama there listens on the network (OLLAMA_HOST=0.0.0.0); the chats ask it from this server.',
         keys: ['ollama_url', 'ollama_key'], wide: {ollama_url: 2, ollama_key: 2}, extra: olTryExtra}]},
-    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small'], wide: {ollama_model: 2, ollama_small: 2}}
+    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small', 'ollama_ctx', 'ollama_max_out'],
+     wide: {ollama_model: 2, ollama_small: 2, ollama_ctx: 2, ollama_max_out: 2}}
   ],
   codes: [
     {title: 'The codes', icon: 'token', cols: 5, keys: ['code_digits', 'code_ttl_s', 'code_tries', 'code_send_max', 'code_send_window_min']},
@@ -3848,12 +3849,62 @@ function olFacts(d, tried) {
   line((d.models || []).length ? true : false, txT('Models') + ': ' + (d.models || []).length,
        (d.models || []).length ? '' : txT('none yet - ollama pull qwen3-coder (or another) on the machine of Ollama'));
   if ((d.models || []).length) f.appendChild(olTable(d.models, d['default']));
+  /* The context Ollama gives (1.0.105): its own default is 4096 under 24 GB of VRAM - Claude Code's prompt does
+     not fit, the model loses the thread and writes on until "exceeded the output token maximum". */
+  var NEED = 64000;
+  var loaded = (d.models || []).filter(function (m) { return m.ctx_now; });
+  var small = loaded.filter(function (m) { return m.ctx_now < NEED; });
+  var here = d.here || {};
+  var envCtx = here.ctx_env;
+  if (small.length || (envCtx !== undefined && envCtx !== null && envCtx < NEED) ||
+      (d.where !== 'remote' && here.service === 'active' && !envCtx)) {
+    var w = el('div', 'note warn ol-ctx');
+    w.appendChild(el('b', '', 'Too little context for Claude Code'));
+    w.appendChild(document.createTextNode(' '));
+    w.appendChild(el('span', '', small.length
+      ? txT('A model is loaded with') + ' ' + small.map(function (m) { return m.name + ': ' + m.ctx_now; }).join(', ') + ' ' + txT('tokens of context.')
+      : (envCtx ? txT('Ollama here is started with') + ' OLLAMA_CONTEXT_LENGTH=' + envCtx + '.'
+                : txT('Ollama here is started without OLLAMA_CONTEXT_LENGTH: under 24 GB of VRAM it gives 4096 tokens.'))));
+    w.appendChild(document.createTextNode(' '));
+    w.appendChild(el('span', '', 'Claude Code needs at least 64000: with less, the model loses the thread and writes on until "the output token maximum".'));
+    f.appendChild(w);
+  }
+  if (!tried && d.where !== 'remote' && here.service && ADMIN) {
+    var want = d.ctx_want || 65536;
+    var row = el('div', 'btnrow');
+    row.style.marginTop = '10px';
+    var set = cmdButton(txT('Set it on this server\'s Ollama') + ' (' + want + ')', 'play', 'small' + (envCtx === want ? '' : ' primary'));
+    explain(set, 'OLLAMA_CONTEXT_LENGTH in a drop-in of ai\'s own (/etc/systemd/system/ollama.service.d/ai-context.conf), and Ollama started again. The number is "Context length to set" below - saved first.');
+    set.onclick = function () {
+      confirmThen(txT('Start Ollama again with') + ' OLLAMA_CONTEXT_LENGTH=' + want + '?',
+        'Every model of it is unloaded and loaded again at the next question. More context needs more memory: a model that no longer fits the GPU runs partly on the CPU, slower (ollama ps says how it is split).',
+        'Start it again', function () {
+          busy(set, true);
+          api('ollama', {action: 'context', n: want}).then(function (r) { toast(r.message, 'good'); loadOllama(true); })
+            .catch(oops).then(function () { busy(set, false); });
+        }, false);
+    };
+    row.appendChild(set);
+    if (here.ctx_ours) {
+      var off = cmdButton('Take it away again', 'undo', 'small');
+      off.onclick = function () {
+        busy(off, true);
+        api('ollama', {action: 'context', n: 0}).then(function (r) { toast(r.message, 'good'); loadOllama(true); })
+          .catch(oops).then(function () { busy(off, false); });
+      };
+      row.appendChild(off);
+    }
+    if (envCtx) row.appendChild(noI18n(el('span', 'muted small', 'OLLAMA_CONTEXT_LENGTH=' + envCtx)));
+    f.appendChild(row);
+  } else if (!tried && d.where === 'remote' && (small.length || !loaded.length)) {
+    f.appendChild(el('p', 'note', 'Ollama runs elsewhere: set OLLAMA_CONTEXT_LENGTH=65536 (or more) where it runs - in its service, or in the Ollama app\'s settings - and start it again.'));
+  }
   return f;
 }
 function olTable(models, def) {
   var tb = el('table', 'tbl ol-models');
   var hr = el('tr');
-  ['Model', 'Size', 'Parameters', 'Context', 'Tools'].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+  ['Model', 'Size', 'Parameters', 'Context', 'Context now', 'Tools'].forEach(function (h) { hr.appendChild(el('th', '', h)); });
   var th = el('thead'); th.appendChild(hr); tb.appendChild(th);
   var body = el('tbody');
   models.forEach(function (m) {
@@ -3866,6 +3917,12 @@ function olTable(models, def) {
     r.appendChild(noI18n(el('td', 'small', m.size ? bytes(m.size) : '')));
     r.appendChild(noI18n(el('td', 'small', [m.params, m.quant].filter(Boolean).join(' · '))));
     r.appendChild(noI18n(el('td', 'small', m.ctx ? (m.ctx >= 1024 ? Math.round(m.ctx / 1024) + 'k' : String(m.ctx)) : '')));
+    var now = el('td', 'small');
+    if (m.ctx_now) {
+      now.appendChild(noI18n(tagEl(m.ctx_now >= 1024 ? Math.round(m.ctx_now / 1024) + 'k' : String(m.ctx_now), m.ctx_now >= 64000 ? 'ok' : 'warn')));
+      if (m.size_loaded && m.vram < m.size_loaded) now.appendChild(el('span', 'muted', ' ' + txT('partly on the CPU')));
+    } else now.appendChild(el('span', 'muted', 'not loaded'));
+    r.appendChild(now);
     var tl = el('td', 'small');
     if (m.tools === true) tl.appendChild(el('span', 'tag ok', 'yes'));
     else if (m.tools === false) { tl.appendChild(el('span', 'tag warn', 'no')); tl.title = txT('Claude Code works with tools - a model without them only talks'); }
