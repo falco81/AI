@@ -4010,6 +4010,51 @@ STRINGS = {
         'Zapnuto: chat s Ollamou spustí kopii zvoleného modelu, která má tuto délku kontextu nastavenou v sobě (num_ctx) – Ollama ji poprvé vytvoří, má pár kB, váhy se nekopírují; jmenuje se třeba qwen3-coder:30b-ai64k. Funguje pro Ollamu kdekoli, na jejím stroji se nic nemění ani nerestartuje. Nikdy víc, než model unese. Vypnuto: model tak, jak je, s kontextem, který mu dá Ollama.',
     'New chats run a copy of their model with the context set (Each model with that context, below); a chat started before: Start it again.':
         'Nové chaty spouštějí kopii svého modelu s nastaveným kontextem (Každý model s tímto kontextem, níže); chat spuštěný dřív: Spustit znovu.',
+    # ---- 1.0.107
+    'For Claude Code':
+        'Pro Claude Code',
+    'Measure':
+        'Změřit',
+    'Results':
+        'Výsledky',
+    'measuring…':
+        'měřím…',
+    'Measuring':
+        'Měřím',
+    'Loads the model with 16k, 32k, 64k and 128k of context in turn on the machine of Ollama, asks it for a few words, and says how much of it is in the GPU, how much in the RAM, and how fast it answers - then recommends how much context to give it.':
+        'Na stroji s Ollamou postupně načte model s kontextem 16k, 32k, 64k a 128k, nechá ho odpovědět pár slovy a řekne, kolik ho je v GPU, kolik v RAM a jak rychle odpovídá – pak doporučí, kolik kontextu mu dát.',
+    'How much context':
+        'Kolik kontextu',
+    "Claude Code needs at least 64k of context. What does not fit the GPU's memory Ollama puts in the machine's RAM and works on the CPU: it fits, but answers more slowly. Measured on the machine of Ollama, each size loaded in turn - that takes a while for a big model.":
+        'Claude Code potřebuje aspoň 64k kontextu. Co se nevejde do paměti GPU, dá Ollama do RAM počítače a počítá na CPU: vejde se to, ale odpovídá pomaleji. Měří se na stroji s Ollamou, každá velikost se načte zvlášť – u velkého modelu to chvíli trvá.',
+    'Not measured yet.':
+        'Zatím nezměřeno.',
+    'In the GPU':
+        'V GPU',
+    'In the RAM':
+        'V RAM',
+    'Speed':
+        'Rychlost',
+    'recommended':
+        'doporučeno',
+    'in use':
+        'používá se',
+    'not tried':
+        'nezkoušeno',
+    'Use this':
+        'Použít',
+    'Recommended':
+        'Doporučeno',
+    'whole in the GPU, enough for Claude Code':
+        'celý v GPU, pro Claude Code dost',
+    'part in the RAM - slower, but enough for Claude Code':
+        'zčásti v RAM – pomalejší, ale pro Claude Code dost',
+    'the most this machine holds - less than Claude Code needs':
+        'nejvíc, co tento stroj unese – méně, než Claude Code potřebuje',
+    'As every model':
+        'Jako u ostatních modelů',
+    'Measure again':
+        'Změřit znovu',
 }
 
 PATTERNS = {

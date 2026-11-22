@@ -854,8 +854,11 @@ class _OlH(_hs.BaseHTTPRequestHandler):
     def do_GET(s):
         _OL['auth'].append(s.headers.get('Authorization') or '')
         if s.path == '/api/version': return s._send({'version': _OL['version']})
-        if s.path == '/api/ps': return s._send({'models': [{'name': 'qwen3-coder:30b', 'model': 'qwen3-coder:30b',
-                                                              'size': 20 * 2**30, 'size_vram': 12 * 2**30, 'context_length': 4096}]})
+        if s.path == '/api/ps':
+            if _OL.get('loaded'):
+                return s._send({'models': [_OL['loaded']]})
+            return s._send({'models': [{'name': 'qwen3-coder:30b', 'model': 'qwen3-coder:30b',
+                                        'size': 20 * 2**30, 'size_vram': 12 * 2**30, 'context_length': 4096}]})
         if s.path == '/api/tags': return s._send({'models': [
             {'name': 'qwen3-coder:30b', 'size': 18 * 2**30, 'details': {'parameter_size': '30.5B', 'quantization_level': 'Q4_K_M', 'family': 'qwen3moe'}},
             {'name': 'gemma3:4b', 'size': 3 * 2**30, 'details': {'parameter_size': '4.3B'}},
@@ -863,6 +866,19 @@ class _OlH(_hs.BaseHTTPRequestHandler):
         s._send({}, 404)
     def do_POST(s):
         body = json.loads(s.rfile.read(int(s.headers.get('Content-Length') or 0)) or b'{}')
+        if s.path == '/api/generate':
+            # a 16 GB GPU: the model's 9 GB plus 0.1 GB of context per 1k tokens; what does not fit goes to the RAM
+            if body.get('keep_alive') == 0:
+                _OL['loaded'] = None
+                return s._send({'done': True})
+            n = int((body.get('options') or {}).get('num_ctx') or 4096)
+            size = 9 * 2**30 + int(n / 1024 * 0.1 * 2**30)
+            vram = min(size, 16 * 2**30)
+            _OL['loaded'] = {'name': body['model'], 'model': body['model'], 'size': size, 'size_vram': vram,
+                             'context_length': n}
+            tps = 40.0 if vram == size else 40.0 * vram / size / 4
+            return s._send({'response': 'OK', 'done': True, 'eval_count': 24, 'eval_duration': int(24 / tps * 1e9),
+                            'load_duration': int(2e9)})
         if s.path == '/api/create':
             _OL.setdefault('created', []).append(body)
             _OL['copies'] = _OL.get('copies', []) + [body.get('model')]
@@ -1009,6 +1025,33 @@ ai.CONFIG['ollama_ctx_model'] = True
 check('ollama: the name of a copy', ai.ollama_copy_name('qwen3-coder:30b', 65536) == 'qwen3-coder:30b-ai64k'
       and ai.ollama_copy_name('llama3', 32768) == 'llama3:latest-ai32k'
       and ai.ollama_copy_name('hf.co/a/b:Q4_K_M', 65536) == 'hf.co/a/b:Q4_K_M-ai64k')
+ai.STORE_NOW['store'] = st
+ai.OLLAMA_CACHE.clear()
+_OL['loaded'] = None
+ai.ollama_probe_start(st, 'qwen3-coder:30b', 'tester')
+for _i in range(100):
+    if ai.OLLAMA_PROBE['qwen3-coder:30b'].get('state') != 'running':
+        break
+    time.sleep(0.1)
+_pr = ai.OLLAMA_PROBE['qwen3-coder:30b']
+_by = {s['ctx']: s for s in _pr['steps']}
+check('ollama: measured - each context loaded in turn, how much in the GPU and in the RAM, how fast',
+      _pr['state'] == 'done' and sorted(_by) == [16384, 32768, 65536, 131072] and _by[16384]['gpu'] == 100
+      and _by[131072]['gpu'] < 100 and _by[16384]['tps'] > _by[131072]['tps'] and _OL.get('loaded') is None)
+check('ollama: the advice - 64k whole in the GPU here', _pr['advice']['choice'] == 65536 and _pr['advice']['gpu_only'] == 65536)
+_adv = ai.ollama_probe_advice([{'ctx': 16384, 'ok': True, 'gpu': 100, 'tps': 30}, {'ctx': 32768, 'ok': True, 'gpu': 100, 'tps': 28},
+                               {'ctx': 65536, 'ok': True, 'gpu': 80, 'tps': 9}], 262144)
+check('ollama: the advice - 64k with part in the RAM when only 32k fits the GPU, with its speed',
+      _adv['choice'] == 65536 and _adv['gpu_only'] == 32768 and _adv['with_ram'] == 65536 and '9' in _adv['why'])
+_adv = ai.ollama_probe_advice([{'ctx': 16384, 'ok': True, 'gpu': 100, 'tps': 30}, {'ctx': 32768, 'ok': False}], 262144)
+check('ollama: the advice - the most it holds, said to be too little', _adv['choice'] == 16384 and 'less' in _adv['why'])
+ai.ollama_ctx_keep(st, 'qwen3-coder:30b', 32768, 'tester')
+ai.CONFIG.update(ollama_ctx=65536, ollama_ctx_model=True)
+ai.OLLAMA_CACHE.clear()
+check('ollama: a context kept for a model is what its chats run with',
+      ai.ollama_env(_user, {'model': 'qwen3-coder:30b', 'backend': 'ollama'})['ANTHROPIC_MODEL'] == 'qwen3-coder:30b-ai32k')
+ai.ollama_ctx_keep(st, 'qwen3-coder:30b', 0, 'tester')
+check('ollama: ... and back to the context set for every model', 'qwen3-coder:30b' not in ai.ollama_ctx_kept(st))
 _ols.shutdown()
 ai.CONFIG.update(ollama_on=False, ollama_where='local', ollama_port=11434, ollama_model='', ollama_small='')
 

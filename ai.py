@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.106'
+__version__ = '1.0.107'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9612,6 +9612,138 @@ def ollama_copy_name(model, n):
     return '%s:%s-ai%dk' % (name, tag, max(1, n // 1024))
 
 
+# Measured, not guessed (1.0.107): Ollama says nothing of its GPU, but what it does with a model is seen. The
+# model is loaded with each context in turn (/api/generate with num_ctx), asked for a few words (its speed:
+# eval_count / eval_duration), and /api/ps says how much of it is in the GPU's memory (size_vram of size) - the
+# rest is in the machine's RAM, worked by its CPU: it fits, slower. What fits whole is recommended; more context
+# that spills into RAM is offered with its speed. The context chosen is kept for the model (meta ollama:ctx).
+OLLAMA_PROBE = {}
+OLLAMA_PROBE_LOCK = threading.Lock()
+OLLAMA_PROBE_SIZES = (16384, 32768, 65536, 131072)
+OLLAMA_NEED = 65536
+
+
+def ollama_ctx_kept(store):
+    got = store.meta_json('ollama:ctx', {}) if store is not None else {}
+    return got if isinstance(got, dict) else {}
+
+
+def ollama_probe_one(base, key, model, n):
+    """One context tried: {ctx, ok, size, vram, gpu, tps, load_s, error}."""
+    one = {'ctx': n, 'ok': False}
+    try:
+        t0 = time.time()
+        got = _ollama_call(base, '/api/generate', key, {
+            'model': model, 'prompt': 'Say OK.', 'stream': False, 'keep_alive': '2m',
+            'options': {'num_ctx': n, 'num_predict': 24, 'temperature': 0}}, timeout=900)
+        one['took_s'] = round(time.time() - t0, 1)
+        one['load_s'] = round(float(got.get('load_duration') or 0) / 1e9, 1)
+        ec, ed = int(got.get('eval_count') or 0), float(got.get('eval_duration') or 0)
+        one['tps'] = round(ec / (ed / 1e9), 1) if ec and ed else None
+        for r in (_ollama_call(base, '/api/ps', key, timeout=10).get('models') or []):
+            if isinstance(r, dict) and model in (r.get('name'), r.get('model')):
+                one['size'] = int(r.get('size') or 0)
+                one['vram'] = int(r.get('size_vram') or 0)
+                one['ctx_got'] = r.get('context_length')
+                one['gpu'] = round(100.0 * one['vram'] / one['size']) if one['size'] else None
+        one['ok'] = True
+    except urllib.error.HTTPError as e:
+        try:
+            said = json.loads(e.read(4096).decode('utf-8', 'replace')).get('error') or ''
+        except Exception:                               # noqa: BLE001
+            said = ''
+        one['error'] = ('%d %s' % (e.code, said or e.reason))[:300]
+    except Exception as e:                              # noqa: BLE001 - not enough memory, a timeout: said
+        one['error'] = str(getattr(e, 'reason', None) or e)[:300]
+    return one
+
+
+def ollama_probe_advice(steps, most):
+    """What to use: the most context that is whole in the GPU, and - when that is under 64k - the least that
+    reaches 64k in the GPU and the RAM together, with its speed."""
+    good = [s for s in steps if s.get('ok')]
+    whole = [s for s in good if (s.get('gpu') or 0) >= 99]
+    best = max(whole, key=lambda s: s['ctx']) if whole else None
+    out = {'gpu_only': best['ctx'] if best else 0, 'with_ram': 0, 'choice': 0, 'why': ''}
+    if best and best['ctx'] >= min(OLLAMA_NEED, most or OLLAMA_NEED):
+        out.update(choice=best['ctx'], why='whole in the GPU, enough for Claude Code', kind='gpu')
+        return out
+    spill = sorted([s for s in good if s['ctx'] >= min(OLLAMA_NEED, most or OLLAMA_NEED)], key=lambda s: s['ctx'])
+    if spill:
+        out['with_ram'] = spill[0]['ctx']
+        out.update(choice=spill[0]['ctx'], why='part in the RAM - slower (%s tokens/s), but enough for Claude Code'
+                   % (spill[0].get('tps') or '?'), kind='ram', tps=spill[0].get('tps'))
+    elif best:
+        out.update(choice=best['ctx'], why='the most this machine holds - less than Claude Code needs', kind='short')
+    return out
+
+
+def ollama_probe_start(store, model, by):
+    base = ollama_base()
+    key = ollama_key()
+    look = ollama_look(base, key)
+    one = next((m for m in look.get('models') or [] if m['name'] == model), None)
+    if not one:
+        raise Refused('Ollama has no model %s' % model)
+    if one.get('remote'):
+        raise Refused('a cloud model has its whole context already')
+    most = one.get('ctx') or 0
+    sizes = [n for n in OLLAMA_PROBE_SIZES if not most or n <= most]
+    if most and most not in sizes and most < OLLAMA_PROBE_SIZES[-1]:
+        sizes.append(most)
+    with OLLAMA_PROBE_LOCK:
+        if any(p.get('state') == 'running' for p in OLLAMA_PROBE.values()):
+            raise Refused('a check is going on already - one at a time, each loads the model')
+        st = {'model': model, 'state': 'running', 'steps': [], 'sizes': sizes, 'most': most, 'at': time.time(),
+              'by': by}
+        OLLAMA_PROBE[model] = st
+
+    def work():
+        try:
+            for n in sizes:
+                st['now'] = n
+                one = ollama_probe_one(base, key, model, n)
+                st['steps'].append(one)
+                # more context than fails, or than makes the speed hopeless, is not tried
+                if not one.get('ok') or (one.get('tps') is not None and one['tps'] < 1):
+                    break
+            st['advice'] = ollama_probe_advice(st['steps'], most)
+            st['state'] = 'done'
+        except Exception as e:                          # noqa: BLE001
+            st.update(state='failed', error=str(e)[:300])
+        finally:
+            st.pop('now', None)
+            st['ended'] = time.time()
+            try:                                        # unloaded again: the chats load what they need
+                _ollama_call(base, '/api/generate', key, {'model': model, 'keep_alive': 0}, timeout=60)
+            except Exception:                           # noqa: BLE001
+                pass
+            OLLAMA_CACHE.clear()
+            store.add_event('settings', '%s checked the context of %s in Ollama: %s' % (
+                by, model, ', '.join('%dk %s' % (s['ctx'] // 1024, ('%s%% GPU' % s.get('gpu')) if s.get('ok')
+                                                       else 'failed') for s in st['steps'])), who=by)
+    threading.Thread(target=work, name='ollama-probe', daemon=True).start()
+    return {'message': 'checking %s: %s' % (model, ', '.join('%dk' % (n // 1024) for n in sizes))}
+
+
+def ollama_ctx_keep(store, model, n, by):
+    if not OLLAMA_MODEL_RE.match(str(model or '')):
+        raise Refused('which model?')
+    n = int(n or 0)
+    if n and not 2048 <= n <= 1048576:
+        raise Refused('the context length: 2048 to 1048576')
+    kept = ollama_ctx_kept(store)
+    if n:
+        kept[model] = n
+    else:
+        kept.pop(model, None)
+    store.set_meta_json('ollama:ctx', kept)
+    store.add_event('settings', '%s: %s runs with %s in chats with Ollama' % (
+        by, model, ('%d tokens of context' % n) if n else 'the context set for every model'), who=by)
+    return {'message': ('%s: %dk of context in new chats' % (model, n // 1024)) if n
+            else '%s: the context set for every model' % model}
+
+
 def ollama_with_context(base, key, look, model, want):
     """The model to run for `model` with `want` tokens of context (1.0.106): ai's copy of it with num_ctx set,
     made in Ollama the first time (/api/create, from the model, only its parameters - no weights copied).
@@ -9837,8 +9969,10 @@ def ollama_env(u, opts):
     run_model, run_small = model, small
     if CONFIG.get('ollama_ctx_model', True) and look.get('ok'):
         want = int(CONFIG.get('ollama_ctx') or 0)
-        run_model, said = ollama_with_context(base, ollama_key(), look, model, want)
-        run_small = run_model if small == model else ollama_with_context(base, ollama_key(), look, small, want)[0]
+        kept = ollama_ctx_kept(STORE_NOW.get('store'))
+        run_model, said = ollama_with_context(base, ollama_key(), look, model, int(kept.get(model) or want))
+        run_small = run_model if small == model else \
+            ollama_with_context(base, ollama_key(), look, small, int(kept.get(small) or want))[0]
         if said:
             log('ollama: %s - %s, as it is' % (said, model))
     return {'ANTHROPIC_BASE_URL': base, 'ANTHROPIC_AUTH_TOKEN': ollama_key() or 'ollama', 'ANTHROPIC_API_KEY': '',
@@ -9863,7 +9997,8 @@ def ollama_view(u, fresh=False):
     if (u or {}).get('role') == 'admin':
         out.update(base=look.get('base') or '', here=ollama_here(), small=CONFIG.get('ollama_small') or '',
                    ctx_want=int(CONFIG.get('ollama_ctx') or 0), ctx_model=bool(CONFIG.get('ollama_ctx_model', True)),
-                   copies=look.get('copies') or [])
+                   copies=look.get('copies') or [], kept=ollama_ctx_kept(STORE_NOW.get('store')),
+                   probes={k: v for k, v in OLLAMA_PROBE.items()})
     return out
 
 
@@ -13367,6 +13502,10 @@ def api_ollama(c):
 def api_ollama_do(c):
     """Try an address and a key before they are saved (Settings - Ollama - Try it)."""
     b = c.body
+    if str(b.get('action') or '') == 'probe':
+        return ollama_probe_start(c.daemon.store, str(b.get('model') or ''), c.name)
+    if str(b.get('action') or '') == 'keep':
+        return ollama_ctx_keep(c.daemon.store, str(b.get('model') or ''), b.get('n'), c.name)
     if str(b.get('action') or '') == 'context':
         got = ollama_set_context(b.get('n') if b.get('n') is not None else CONFIG.get('ollama_ctx'), c.name)
         c.daemon.store.add_event('settings', '%s: %s' % (c.name, got['message']), who=c.name)

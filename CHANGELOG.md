@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.107
+
+**Ollama: measured, then recommended.** *Measure* by each model (Settings → Ollama → What Ollama has → *For Claude
+Code*) loads it on the machine of Ollama with 16k, 32k, 64k and 128k of context in turn, asks it for a few words,
+and shows how much of it is in the GPU, how much spills into the machine's RAM (Ollama shares it by itself:
+slower), and how many tokens a second it writes. It recommends the most context that is whole in the GPU, or -
+when that is under the 64k Claude Code needs - the least that reaches 64k with the RAM, with its speed. *Use this*
+keeps that context for the model: its chats run with it ([docs/ollama.md](docs/ollama.md)).
+
 ## 1.0.106
 
 **Chats with Ollama keep the context they need, wherever Ollama runs.** The context set in Ollama's app or service

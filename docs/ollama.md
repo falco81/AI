@@ -101,3 +101,19 @@ What fits: the model's file plus its context must fit the GPU, or a part runs on
 *partly on the CPU*). On 16 GB, a model of up to about 8-9 GB (a 12B or 14B in Q4_K_M, an 8-9B in Q8) leaves room
 for 64k. Ollama's `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` on its machine halve what the context
 takes.
+
+### Measured: how much context fits, and how much more with the RAM (1.0.107)
+
+Ollama says nothing of its GPU through its API, but what it does with a model can be seen. *Measure* (the column
+*For Claude Code* of What Ollama has) loads the model on the machine of Ollama with 16k, 32k, 64k and 128k of
+context in turn (never more than the model holds), asks it for a few words, and reads from `/api/ps` how much of
+it is in the GPU's memory (`size_vram` of `size`) - the rest is in the machine's RAM and worked by its CPU - and
+from the answer how many tokens a second it writes. More context is not tried once one fails or writes under a
+token a second. The model is unloaded afterwards.
+
+It recommends the most context that is whole in the GPU; when that is under 64k, the least that reaches 64k with
+part in the RAM, with its speed. *Use this* keeps a context for that model (its chats run ai's copy with it);
+*As every model* goes back to *Context length to set*. A chat started before: *Start it again*.
+
+Yes, Ollama shares the RAM by itself: what does not fit the GPU goes to the RAM. It is slower - how much slower
+depends on how much spills: a few hundred MB costs little, gigabytes a lot. The measure shows it.

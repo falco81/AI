@@ -3848,7 +3848,7 @@ function olFacts(d, tried) {
        d.new_enough === false ? txT('Claude Code needs Ollama 0.14 or newer (its Anthropic API)') : '');
   line((d.models || []).length ? true : false, txT('Models') + ': ' + (d.models || []).length,
        (d.models || []).length ? '' : txT('none yet - ollama pull qwen3-coder (or another) on the machine of Ollama'));
-  if ((d.models || []).length) f.appendChild(olTable(d.models, d['default']));
+  if ((d.models || []).length) f.appendChild(olTable(d.models, d['default'], tried ? null : d));
   /* The context Ollama gives (1.0.105): its own default is 4096 under 24 GB of VRAM - Claude Code's prompt does
      not fit, the model loses the thread and writes on until "exceeded the output token maximum". */
   var NEED = 64000;
@@ -3905,10 +3905,11 @@ function olFacts(d, tried) {
   }
   return f;
 }
-function olTable(models, def) {
+function olTable(models, def, d) {
   var tb = el('table', 'tbl ol-models');
   var hr = el('tr');
-  ['Model', 'Size', 'Parameters', 'Context', 'Context now', 'Tools'].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+  ['Model', 'Size', 'Parameters', 'Context', 'Context now', 'Tools'].concat(d && d.here ? ['For Claude Code'] : [])
+    .forEach(function (h) { hr.appendChild(el('th', '', h)); });
   var th = el('thead'); th.appendChild(hr); tb.appendChild(th);
   var body = el('tbody');
   models.forEach(function (m) {
@@ -3931,10 +3932,113 @@ function olTable(models, def) {
     if (m.tools === true) tl.appendChild(el('span', 'tag ok', 'yes'));
     else if (m.tools === false) { tl.appendChild(el('span', 'tag warn', 'no')); tl.title = txT('Claude Code works with tools - a model without them only talks'); }
     r.appendChild(tl);
+    /* Measured on the machine of Ollama (1.0.107): how much context fits the GPU, and how much more with the RAM. */
+    if (d && d.here) {
+      var cc = el('td', 'small ol-cc');
+      var kept = (d.kept || {})[m.name];
+      var pr = (d.probes || {})[m.name];
+      if (kept) cc.appendChild(noI18n(tagEl(Math.round(kept / 1024) + 'k', 'ok')));
+      else if (d.ctx_model && d.ctx_want) cc.appendChild(noI18n(tagEl(Math.round(Math.min(d.ctx_want, m.ctx || d.ctx_want) / 1024) + 'k', 'dim')));
+      if (pr && pr.state === 'running') cc.appendChild(el('span', 'muted', ' ' + txT('measuring…')));
+      if (!m.remote && ADMIN) {
+        var chk = cmdButton(pr && pr.state !== 'running' ? 'Results' : 'Measure', 'pulse', 'small');
+        chk.style.marginLeft = '6px';
+        explain(chk, 'Loads the model with 16k, 32k, 64k and 128k of context in turn on the machine of Ollama, asks it for a few words, and says how much of it is in the GPU, how much in the RAM, and how fast it answers - then recommends how much context to give it.');
+        chk.onclick = function () { olProbe(m, d); };
+        cc.appendChild(chk);
+      }
+      r.appendChild(cc);
+    }
     body.appendChild(r);
   });
   tb.appendChild(body);
   return tb;
+}
+function olK(n) { return n >= 1024 ? Math.round(n / 1024) + 'k' : String(n); }
+function olProbe(m, d) {
+  var st = {poll: null, shown: (d.probes || {})[m.name] || null};
+  modal(txT('How much context') + ' - ' + m.name, function (body) {
+    body.appendChild(el('p', 'note', 'Claude Code needs at least 64k of context. What does not fit the GPU\'s memory Ollama puts in the machine\'s RAM and works on the CPU: it fits, but answers more slowly. Measured on the machine of Ollama, each size loaded in turn - that takes a while for a big model.'));
+    var out = el('div', 'ol-probe');
+    body.appendChild(out);
+    var draw = function (p) {
+      clear(out);
+      if (!p) { out.appendChild(el('p', 'muted', 'Not measured yet.')); return; }
+      var tb = el('table', 'tbl');
+      var hr = el('tr');
+      ['Context', 'In the GPU', 'In the RAM', 'Speed', ''].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+      var th = el('thead'); th.appendChild(hr); tb.appendChild(th);
+      var bd = el('tbody');
+      var adv = p.advice || {};
+      (p.sizes || []).forEach(function (n) {
+        var s = (p.steps || []).filter(function (x) { return x.ctx === n; })[0];
+        var r = el('tr');
+        var c0 = el('td', 'mono');
+        c0.appendChild(noI18n(el('b', '', olK(n))));
+        if (adv.choice === n) { c0.appendChild(document.createTextNode(' ')); c0.appendChild(tagEl('recommended', 'ok')); }
+        if (((d.kept || {})[m.name]) === n) { c0.appendChild(document.createTextNode(' ')); c0.appendChild(tagEl('in use', 'info')); }
+        r.appendChild(c0);
+        if (!s) {
+          r.appendChild(el('td', 'muted', p.state === 'running' && p.now === n ? txT('measuring…') : (p.state === 'running' ? txT('waiting') : txT('not tried'))));
+          r.appendChild(el('td')); r.appendChild(el('td')); r.appendChild(el('td'));
+        } else if (!s.ok) {
+          var e = el('td', 'bad small', s.error || 'failed');
+          e.colSpan = 4;
+          noI18n(e);
+          r.appendChild(e);
+        } else {
+          var g = s.gpu === null || s.gpu === undefined ? '?' : s.gpu + ' %';
+          r.appendChild(noI18n(el('td', '', g + (s.vram ? ' · ' + bytes(s.vram) : ''))));
+          var ram = (s.size || 0) - (s.vram || 0);
+          r.appendChild(noI18n(el('td', ram > 0 ? 'warn' : 'muted', ram > 0 ? bytes(ram) : '–')));
+          r.appendChild(noI18n(el('td', '', s.tps ? s.tps + ' tok/s' : '?')));
+          var use = el('td');
+          var b = cmdButton('Use this', 'check', 'small' + (adv.choice === n ? ' primary' : ''));
+          b.onclick = function () {
+            busy(b, true);
+            api('ollama', {action: 'keep', model: m.name, n: n}).then(function (r2) {
+              toast(r2.message, 'good'); d.kept = d.kept || {}; d.kept[m.name] = n; draw(p); loadOllama(true);
+            }).catch(oops).then(function () { busy(b, false); });
+          };
+          use.appendChild(b);
+          r.appendChild(use);
+        }
+        bd.appendChild(r);
+      });
+      tb.appendChild(bd);
+      out.appendChild(tb);
+      if (p.state === 'running') out.appendChild(el('p', 'note', txT('Measuring') + ' ' + olK(p.now || 0) + '…'));
+      if (adv.why) {
+        var w = el('p', 'note' + (adv.choice >= 65536 || adv.choice >= (m.ctx || 0) ? '' : ' warn'));
+        w.appendChild(el('b', '', txT('Recommended') + ': ' + olK(adv.choice) + ' '));
+        w.appendChild(el('span', '', '- ' + (adv.kind === 'gpu' ? txT('whole in the GPU, enough for Claude Code')
+          : adv.kind === 'ram' ? txT('part in the RAM - slower, but enough for Claude Code') + ' (' + (adv.tps || '?') + ' tok/s)'
+          : adv.kind === 'short' ? txT('the most this machine holds - less than Claude Code needs') : adv.why)));
+        out.appendChild(w);
+      }
+      if (p.state === 'failed') out.appendChild(el('p', 'note bad', p.error || 'failed'));
+    };
+    draw(st.shown);
+    var poll = function () {
+      api('ollama').then(function (x) {
+        var p = (x.probes || {})[m.name];
+        d.kept = x.kept || d.kept;
+        draw(p);
+        if (p && p.state === 'running' && $('modal') && !$('modal').hidden) st.poll = setTimeout(poll, 2000);
+      }).catch(function () { st.poll = setTimeout(poll, 4000); });
+    };
+    body._measure = function (b) {
+      busy(b, true);
+      api('ollama', {action: 'probe', model: m.name}).then(function () { setTimeout(poll, 800); })
+        .catch(oops).then(function () { busy(b, false); });
+    };
+    if (st.shown && st.shown.state === 'running') setTimeout(poll, 500);
+  }, [{words: 'Close', close: true, go: function () { clearTimeout(st.poll); }},
+      (d.kept || {})[m.name] ? {words: 'As every model', icon: 'undo', go: function () {
+        api('ollama', {action: 'keep', model: m.name, n: 0}).then(function (r) { toast(r.message, 'good'); closeModal(); loadOllama(true); }).catch(oops);
+      }} : null,
+      {words: st.shown && st.shown.state !== 'running' ? 'Measure again' : 'Measure', cls: 'primary', icon: 'pulse',
+       go: function (b) { $('modal-body')._measure(b); }}].filter(Boolean), 'wide');
 }
 function loadOllama(fresh) {
   var host = $('ol-host');
