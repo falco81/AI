@@ -3295,6 +3295,9 @@ pre.lines.tall{max-height:60vh;overflow:auto}
 .tl-sec{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tx-mut);
   margin:8px 4px 2px;display:flex;align-items:center;gap:6px}
 .tl-sec:first-child{margin-top:0}
+/* Never squeezed (1.0.104): the list is a column that scrolls, and a full one shrank its headings - PINNED
+   was cut in half at the top. */
+.tl-list > *{flex-shrink:0}
 .tl-item{position:relative}
 /* The ⋯ in the bottom right corner (1.0.15): at the top it lay over the
    chat's name and its state. */

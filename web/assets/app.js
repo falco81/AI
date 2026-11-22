@@ -1909,8 +1909,9 @@ $('te-hist').onclick = function () { showTab('history'); };
       }},
       {icon: 'search', words: 'Find a terminal', go: function () { side.classList.add('open'); $('tl-q').focus(); }},
       endedCount() ? {icon: 'trash', words: 'Take every ended one off the list (' + endedCount() + ')', danger: true, go: forgetEnded} : null,
+    ].concat(forgetMoreItems(), [
       narrow() ? null : {icon: 'pin', words: TLR.pinned ? 'Let the list hide itself' : 'Keep the list open', go: function () { pinSide(!TLR.pinned); }},
-      {icon: 'refresh', words: 'Read it again', go: function () { loadTerms(); }}]);
+      {icon: 'refresh', words: 'Read it again', go: function () { loadTerms(); }}]));
   };
   side.addEventListener('contextmenu', function (e) {
     if (e.target.closest('.tl-item, input, select')) return;
@@ -9779,18 +9780,49 @@ function termActions(t, row) {
       }, true);
     }},
     endedCount() ? {icon: 'trash', words: 'Take every ended one off the list (' + endedCount() + ')', danger: true, go: forgetEnded} : null
-  ];
+  ].concat(forgetMoreItems());
 }
 /* Every ended terminal off the list at once (1.0.18) - one by one it was a
    right click each. The running ones are not touched. */
-function endedCount() { return (TL.terms || []).filter(function (x) { return x.state === 'ended'; }).length; }
-function forgetEnded() {
-  var gone = (TL.terms || []).filter(function (x) { return x.state === 'ended'; });
+/* What ran in it is over (1.0.104): ended, or exited - a command whose last screen tmux still holds. Both go
+   off the list together; an exited one is ended first. */
+function isOver(x) { return x.state === 'ended' || x.state === 'exited'; }
+function endedCount() { return (TL.terms || []).filter(isOver).length; }
+/* Fewer at once (1.0.104): the ended ones that are not pinned, or every ended one of a kind - the shells, the
+   commands, Claude Code. Only those that differ from "every ended one" are offered. */
+function forgetMoreItems() {
+  var ended = (TL.terms || []).filter(isOver);
+  if (!ended.length) return [];
+  var out = [];
+  var loose = ended.filter(function (x) { return !isPinned(x.id); });
+  if (loose.length && loose.length < ended.length) {
+    out.push({icon: 'trash', words: txT('Take every ended one that is not pinned off the list') + ' (' + loose.length + ')', danger: true,
+              go: function () { forgetEnded(function (x) { return !isPinned(x.id); }); }});
+  }
+  var kinds = {};
+  ended.forEach(function (x) { kinds[x.kind] = (kinds[x.kind] || 0) + 1; });
+  if (Object.keys(kinds).length > 1) {
+    [['shell', 'Take every ended shell off the list'], ['command', 'Take every ended command off the list'],
+     ['claude', 'Take every ended Claude Code off the list']].forEach(function (k) {
+      if (!kinds[k[0]]) return;
+      out.push({icon: 'trash', words: txT(k[1]) + ' (' + kinds[k[0]] + ')', danger: true,
+                go: function () { forgetEnded(function (x) { return x.kind === k[0]; }); }});
+    });
+  }
+  return out;
+}
+function forgetEnded(which) {
+  var gone = (TL.terms || []).filter(function (x) { return isOver(x) && (!which || which(x)); });
   if (!gone.length) { toast('no ended terminal in the list'); return; }
+  var pinnedGone = gone.filter(function (x) { return isPinned(x.id); }).length;
   confirmThen('Take ' + gone.length + ' ended terminal(s) off the list?',
-    'Their last screens go with them. Nothing that runs is touched, and the conversations of Claude Code stay - they are picked up again under Conversations.',
+    txT('Their last screens go with them. Nothing that runs is touched, and the conversations of Claude Code stay - they are picked up again under Conversations.')
+      + (pinnedGone ? ' ' + txT('Pinned among them') + ': ' + pinnedGone + '.' : ''),
     'Take them off', function () {
-      Promise.all(gone.map(function (x) { return api('terms', {do: 'forget', id: x.id}).catch(function () { }); }))
+      Promise.all(gone.map(function (x) {
+        var first = x.state === 'exited' ? api('terms', {do: 'kill', id: x.id}).catch(function () { }) : Promise.resolve();
+        return first.then(function () { return api('terms', {do: 'forget', id: x.id}); }).catch(function () { });
+      }))
         .then(function () { toast(gone.length + ' taken off the list', 'good'); loadTerms(TL.open, true); });
     }, true);
 }

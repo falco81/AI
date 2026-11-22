@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.103'
+__version__ = '1.0.104'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults

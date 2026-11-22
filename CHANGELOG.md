@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.104
+
+- **The list of terminals**: its headings (PINNED, THE OTHERS) were cut in half once the list was longer than the
+  screen - the list squeezed them to make room. They keep their height now.
+- **Taking many off the list at once** (the right button on a terminal, or on the list): besides every ended one,
+  - every ended one that is not pinned,
+  - every ended shell, every ended command, every ended Claude Code
+  (each offered only where it differs from "every ended one", with how many). The confirm says how many pinned
+  ones are among them.
+- A command whose program has ended but whose last screen is still held (claude doctor, an update) counts as
+  ended for these, and for *Take every ended one off the list*: it is ended first, then taken off. Before, it was
+  left behind.
+
 ## 1.0.103
 
 Bugs found by a review of the terminals, the files, the backups and the database, and the system's panes - each

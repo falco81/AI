@@ -3953,6 +3953,17 @@ STRINGS = {
         'nejnovější',
     'Claude Code updates itself in a while; Update it does it now.':
         'Claude Code se za chvíli aktualizuje sám; Aktualizovat to udělá hned.',
+    # ---- 1.0.104
+    'Take every ended one that is not pinned off the list':
+        'Odebrat ze seznamu všechny ukončené, které nejsou připnuté',
+    'Take every ended shell off the list':
+        'Odebrat ze seznamu všechny ukončené shelly',
+    'Take every ended command off the list':
+        'Odebrat ze seznamu všechny ukončené příkazy',
+    'Take every ended Claude Code off the list':
+        'Odebrat ze seznamu všechny ukončené Claude Code',
+    'Pinned among them':
+        'Z toho připnutých',
 }
 
 PATTERNS = {
