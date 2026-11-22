@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.112'
+__version__ = '1.0.113'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -11002,7 +11002,42 @@ def api_load(c):
     if c.arg('detail'):
         out['detail'] = load_detail()
     out['hist'] = load_history()
+    if CONFIG.get('ollama_on'):
+        out['ollama'] = ollama_meter()
     return out
+
+
+# What Ollama holds now, for the header (1.0.113): only /api/ps - which models are loaded, how much of each is in
+# the GPU's memory and how much in the RAM of its machine, with what context. Ollama says nothing more through its
+# API (not the GPU's whole memory, nor how busy it is, nor the machine's RAM). Asked at most every 5 s, in the
+# background, never by a page waiting: a page gets what was asked last. /api/ps reads the list Ollama keeps - it
+# does not touch a model, so the answers of the chats are not slowed.
+OLLAMA_METER = {'at': 0.0, 'asking': False, 'out': None}
+
+
+def ollama_meter():
+    now = time.time()
+    if not OLLAMA_METER['asking'] and now - OLLAMA_METER['at'] >= 5:
+        OLLAMA_METER['asking'] = True
+
+        def ask():
+            out = {'at': time.time(), 'models': [], 'ok': False}
+            try:
+                got = _ollama_call(ollama_base(), '/api/ps', ollama_key(), timeout=3)
+                for r in (got.get('models') or [])[:10]:
+                    if not isinstance(r, dict):
+                        continue
+                    size, vram = int(r.get('size') or 0), int(r.get('size_vram') or 0)
+                    out['models'].append({'name': OLLAMA_COPY_RE.sub('', str(r.get('name') or ''))[:80],
+                                          'size': size, 'vram': vram, 'ram': max(0, size - vram),
+                                          'ctx': r.get('context_length') if isinstance(r.get('context_length'), int)
+                                          else None, 'until': str(r.get('expires_at') or '')[:40]})
+                out['ok'] = True
+            except Exception as e:                      # noqa: BLE001
+                out['error'] = str(getattr(e, 'reason', None) or e)[:120]
+            OLLAMA_METER.update(out=out, at=time.time(), asking=False)
+        threading.Thread(target=ask, name='ollama-meter', daemon=True).start()
+    return OLLAMA_METER['out'] or {'at': 0, 'models': [], 'ok': None}
 
 
 @route('POST', '/api/auth/login', anon=True)

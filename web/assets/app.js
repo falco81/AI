@@ -638,8 +638,38 @@ function hloadDraw(d, into, asLook) {
       host.appendChild(c);
     });
   }
+  if (!preview && d.ollama) host.appendChild(hloadOllama(d.ollama, look));
   host.hidden = false;
   if (!preview && HLOAD.open) hloadPanelDraw();
+}
+/* What Ollama holds (1.0.113): the model loaded, how much of it is in the GPU's memory and how much spilled into
+   the RAM of its machine - all Ollama says through its API. "GPU free" when nothing is loaded. A click: Settings -
+   Ollama (Measure, Free the GPU). */
+function hloadOllama(o, look) {
+  var c = el('span', (look === 'line' ? 'hl-part' : 'hl') + ' hl-ol');
+  c.appendChild(el('span', 'hl-k', 'Ollama'));
+  var ms = o.models || [];
+  var v;
+  if (o.ok === false) { v = txT('not answering'); c.classList.add('warm'); }
+  else if (o.ok === null || o.ok === undefined) v = '…';
+  else if (!ms.length) v = txT('GPU free');
+  else {
+    var m = ms[0];
+    var short = m.name.replace(/:latest$/, '');
+    if (short.length > 22) short = short.slice(0, 21) + '…';
+    v = short + (m.ctx ? ' · ' + Math.round(m.ctx / 1024) + 'k' : '') + ' · GPU ' + bytes(m.vram) + (m.ram > 0 ? ' + RAM ' + bytes(m.ram) : '')
+      + (ms.length > 1 ? ' · +' + (ms.length - 1) : '');
+    if (m.ram > 0) c.classList.add('warm');
+  }
+  c.appendChild(hlVal(v));
+  c.title = o.ok === false ? txT('Ollama does not answer') + (o.error ? ': ' + o.error : '')
+    : (ms.length ? ms.map(function (m) {
+        return m.name + (m.ctx ? ' · ' + txT('context') + ' ' + m.ctx : '') + ' · GPU ' + bytes(m.vram) + (m.ram > 0 ? ' · RAM ' + bytes(m.ram) + ' (' + txT('partly on the CPU') + ')' : '');
+      }).join('\n') : txT('Ollama holds no model now - its GPU is free.'));
+  c.tabIndex = 0;
+  c.setAttribute('role', 'button');
+  c.onclick = function (e) { e.stopPropagation(); showTab('settings', 'ollama'); };
+  return c;
 }
 /* Sample numbers for the previews in My account: a server with sensors, so
    every part shows (1.0.75). */

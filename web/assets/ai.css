@@ -4093,3 +4093,6 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 .ol-models td.ol-cc > .tag{margin-left:0;margin-right:6px;vertical-align:middle}
 .ol-models td.ol-cc > *{vertical-align:middle}
 .ol-models td.ol-cc > .btn{margin-left:0 !important}
+/* Ollama in the header (1.0.113): its own width, the words as long as they are */
+.hload .hl-ol .hl-v{width:auto;min-width:0;max-width:none;white-space:nowrap}
+.hload .hl-ol{cursor:pointer}

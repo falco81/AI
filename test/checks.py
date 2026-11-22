@@ -1083,6 +1083,22 @@ ai.ollama_unload_tick(st, {})
 time.sleep(0.2)
 check('ollama: switched off - never unloaded by itself', len(_calls) == 1)
 ai.ollama_unload_all = _was_ua
+_OL['loaded'] = {'name': 'qwen3-coder:30b-ai64k', 'model': 'qwen3-coder:30b-ai64k', 'size': 20, 'size_vram': 15,
+                 'context_length': 65536, 'expires_at': '2026-01-01T00:00:00Z'}
+ai.OLLAMA_METER.update(at=0.0, asking=False, out=None)
+ai.ollama_meter()
+for _i in range(50):
+    if ai.OLLAMA_METER['out']:
+        break
+    time.sleep(0.1)
+_mt = ai.ollama_meter()
+check('ollama: the header - what it holds, in the GPU and in the RAM, its context, asked in the background',
+      _mt['ok'] and _mt['models'][0] == {'name': 'qwen3-coder:30b', 'size': 20, 'vram': 15, 'ram': 5, 'ctx': 65536,
+                                          'until': '2026-01-01T00:00:00Z'})
+_t0 = time.time()
+ai.ollama_meter()
+check('ollama: the header never waits for Ollama, nor asks it more than every 5 s',
+      time.time() - _t0 < 0.05 and not ai.OLLAMA_METER['asking'])
 st.x("DELETE FROM terms WHERE id='olt1'")
 ai.ollama_ctx_keep(st, 'qwen3-coder:30b', 32768, 'tester')
 ai.CONFIG.update(ollama_ctx=65536, ollama_ctx_model=True)

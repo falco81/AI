@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.113
+
+- **Ollama in the header** (the performance bar, while chats with Ollama are on): the model Ollama holds, its
+  context, how much of it is in the GPU's memory and how much spilled into the RAM of its machine (orange then);
+  *GPU free* when nothing is loaded. A click opens Settings → Ollama. It is all Ollama says through its API: not the
+  GPU's whole memory, nor how busy the GPU is, nor the RAM of its machine. Only `/api/ps` is asked - the list Ollama
+  keeps, no model is touched, the chats' answers are not slowed - at most every 5 s, in the background.
+
 ## 1.0.112
 
 - **Ollama: Free the GPU** (Settings → Ollama → What Ollama has, or `ai --ollama-free`): every model Ollama holds is
