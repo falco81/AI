@@ -3,6 +3,19 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.102
+
+- **An open list closed by itself**: on the Terminals tab with no chat open, the start page was drawn again every few
+  seconds and gave the keys back to its own box - taking them from an open dialog, so a list open in it (the model of a
+  new chat…) closed under the mouse. It takes them only when it is first shown now, and never from a dialog or another
+  box. Every tab and every pane of the settings was checked the same way (a list open, the page scrolled half down,
+  waited): nothing else takes the keys or moves the page.
+- **A long menu closed while it was scrolled** (the models of a new chat): scrolling the menu itself no longer closes
+  it; scrolling the page still does.
+- **A new chat starts with Claude**: *Every option…* chose an Ollama model by itself when no model was remembered,
+  and the last chat's Ollama model was offered again. Claude (as Claude Code chooses) is the default now; Ollama is
+  chosen for one chat at a time.
+
 ## 1.0.101
 
 **Chats with Ollama** - a chat can talk to a model of Ollama instead of Claude ([docs/ollama.md](docs/ollama.md)):

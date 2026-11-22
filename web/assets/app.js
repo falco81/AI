@@ -1970,8 +1970,9 @@ function cxDraw() {
     CX.model = prefs().model || '';
     CX.mode = prefs().mode || '';
     CX.effort = (prefs().cc_opts || {}).effort || '';
-    CX.backend = prefs().backend === 'ollama' && olOn() ? 'ollama' : '';
-    if (prefs().backend === 'ollama' && !CX.backend) CX.model = '';
+    /* Claude first, always (1.0.102): Ollama is chosen for one chat at a time, never left as the default. */
+    CX.backend = '';
+    if (prefs().backend === 'ollama') CX.model = '';
   }
   if (CX.backend === 'ollama' && !olOn()) { CX.backend = ''; CX.model = ''; }
   cxChip($('cx-dir'), 'folder', CX.cwd ? baseName(CX.cwd) : txT('the home folder'), CX.cwd || '');
@@ -2039,7 +2040,16 @@ function drawTermEmpty() {
   $('term-open').hidden = true;
   $('term-layout').classList.add('at-start');
   cxDraw();
-  setTimeout(function () { if (!$('term-empty').hidden && !('ontouchstart' in window)) $('cx-text').focus(); }, 60);
+  /* Only when the start is first shown (1.0.102), and only when nothing else has the keys: drawn again every few
+     seconds, it took the focus from an open dialog - a list open in it closed by itself. */
+  var wasShown = TL._emptyShown;
+  TL._emptyShown = true;
+  if (!wasShown) setTimeout(function () {
+    var a = document.activeElement;
+    if ($('term-empty').hidden || ('ontouchstart' in window) || !$('modal').hidden) return;
+    if (a && a !== document.body && a !== $('cx-text') && a.isConnected) return;
+    $('cx-text').focus();
+  }, 60);
   var host = $('te-recent');
   clear(host);
   /* The folders first (1.0.21): a click there sets where the box above starts, so it belongs next to it. */
@@ -2245,8 +2255,7 @@ function newTermAsk(kind, cwd) {
     g2.appendChild(formField('Start with', start));
     var nameBox = textBox('', 'shown in the prompt box and in /resume');
     g2.appendChild(formField('Its name in Claude Code (--name)', nameBox));
-    var olFirst = prefs().backend === 'ollama' && olOn();
-    var model = selectBox(MODELS.concat([['*', 'another… (written below)']]), olFirst ? '' : (prefs().model || ''));
+    var model = selectBox(MODELS.concat([['*', 'another… (written below)']]), prefs().backend === 'ollama' ? '' : (prefs().model || ''));
     /* Ollama's models in it too (1.0.101), once the server has said what Ollama has. */
     if (olOn()) olGet().then(function (d) {
       if (!d.on || !d.models || !d.models.length) return;
@@ -2259,8 +2268,6 @@ function newTermAsk(kind, cwd) {
         grp.appendChild(o);
       });
       model.appendChild(grp);
-      if (olFirst) model.value = '@ollama ' + (prefs().model || d['default'] || d.models[0].name);
-      if (!model.value) model.value = '@ollama ' + d.models[0].name;
     }).catch(function () { });
     var modelOwn = textBox('', 'claude-opus-5-5', 'mono');
     noI18n(modelOwn);
@@ -2583,6 +2590,7 @@ function openTerm(id) {
   TL.open = id;
   $('term-layout').classList.remove('at-start');
   $('term-empty').hidden = true;
+  TL._emptyShown = false;
   $('term-open').hidden = false;
   $('term-gone').hidden = true;
   paintTermBar(t);
@@ -9711,7 +9719,8 @@ document.addEventListener('keydown', function (e) {
 }, true);
 window.addEventListener('resize', ctxClose);
 window.addEventListener('blur', ctxClose);
-document.addEventListener('scroll', ctxClose, true);
+/* Scrolling the menu itself never closes it (1.0.102): a long one - the models - went away under the wheel. */
+document.addEventListener('scroll', function (e) { if (CTX.el && !CTX.el.contains(e.target)) ctxClose(); }, true);
 
 function termById(id) { return TL.terms.filter(function (x) { return x.id === id; })[0]; }
 function copyText2(text, said) {

@@ -37,7 +37,7 @@ for 30 seconds. *Try it* in the settings asks with the values written there befo
 
 ## A new chat
 
-The model chip under the box of a new chat lists **Claude (subscription)** and below it **Ollama** with its
+A new chat starts with Claude unless an Ollama model is chosen for it (1.0.102). The model chip under the box of a new chat lists **Claude (subscription)** and below it **Ollama** with its
 models; *Every option…* has them in the model list. A chat started with an Ollama model runs Claude Code with:
 
 ```
