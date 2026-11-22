@@ -3693,7 +3693,7 @@ var PANE_LAYOUT = {
        {when: 'remote', title: 'Ollama elsewhere on the network', icon: 'net',
         lede: 'Another machine - a GPU box, a NAS. Ollama there listens on the network (OLLAMA_HOST=0.0.0.0); the chats ask it from this server.',
         keys: ['ollama_url', 'ollama_key'], wide: {ollama_url: 2, ollama_key: 2}, extra: olTryExtra}]},
-    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small', 'ollama_ctx', 'ollama_max_out'],
+    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small', 'ollama_ctx', 'ollama_ctx_model', 'ollama_max_out'],
      wide: {ollama_model: 2, ollama_small: 2, ollama_ctx: 2, ollama_max_out: 2}}
   ],
   codes: [
@@ -3867,6 +3867,10 @@ function olFacts(d, tried) {
                 : txT('Ollama here is started without OLLAMA_CONTEXT_LENGTH: under 24 GB of VRAM it gives 4096 tokens.'))));
     w.appendChild(document.createTextNode(' '));
     w.appendChild(el('span', '', 'Claude Code needs at least 64000: with less, the model loses the thread and writes on until "the output token maximum".'));
+    if (d.ctx_model) {
+      w.appendChild(document.createTextNode(' '));
+      w.appendChild(el('span', '', 'New chats run a copy of their model with the context set (Each model with that context, below); a chat started before: Start it again.'));
+    }
     f.appendChild(w);
   }
   if (!tried && d.where !== 'remote' && here.service && ADMIN) {
@@ -3896,7 +3900,7 @@ function olFacts(d, tried) {
     }
     if (envCtx) row.appendChild(noI18n(el('span', 'muted small', 'OLLAMA_CONTEXT_LENGTH=' + envCtx)));
     f.appendChild(row);
-  } else if (!tried && d.where === 'remote' && (small.length || !loaded.length)) {
+  } else if (!tried && d.where === 'remote' && !d.ctx_model && (small.length || !loaded.length)) {
     f.appendChild(el('p', 'note', 'Ollama runs elsewhere: set OLLAMA_CONTEXT_LENGTH=65536 (or more) where it runs - in its service, or in the Ollama app\'s settings - and start it again.'));
   }
   return f;

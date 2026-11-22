@@ -3,6 +3,17 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.106
+
+**Chats with Ollama keep the context they need, wherever Ollama runs.** The context set in Ollama's app or service
+is not what a model always gets - Ollama gives less when the model and its context do not fit the GPU (256k set,
+16k given to a 12B model in Q8 on 16 GB) - and with too little the model forgot the folder it works in and the
+conversation, asked "which script, which folder?", and ran on to the output limit. Now a chat runs ai's copy of
+its model with the context set in it (`num_ctx`, from *Context length to set*, 64k at first), made in Ollama the
+first time (a few kB, the weights are not copied: `qwen3-coder:30b-ai64k`); never more than the model holds; the
+copies are not offered as models of their own. *Each model with that context* switches it off. A chat started
+before: *Start it again*. [docs/ollama.md](docs/ollama.md) says what fits on how much GPU.
+
 ## 1.0.105
 
 **Chats with Ollama: "Claude's response exceeded the 128000 output token maximum"** on anything harder. Ollama gives a

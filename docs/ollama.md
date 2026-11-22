@@ -86,3 +86,18 @@ More context takes more memory. A model that no longer fits the GPU runs partly 
 
 *Longest answer* (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`, 32000 at first) stops an answer that runs on long before
 Claude Code's own 128000: a local model that lost the thread would otherwise write for an hour first.
+
+### A copy of the model with its context (1.0.106)
+
+The context set in Ollama's service or app is not always what a model gets: Ollama gives less when the model and
+its context do not fit the GPU (a 12B model in Q8 with 256k asked was loaded with 16k on a 16 GB card). So by
+default (*Each model with that context*) a chat runs ai's copy of its model with `num_ctx` set in it - made in
+Ollama the first time with `/api/create` (`from` the model, only `parameters`; the weights are not copied, it takes
+a few kB), named `MODEL-aiNNk` (`qwen3-coder:30b-ai64k`). Ollama loads it with that context, whatever its default.
+It never asks for more than the model holds, leaves cloud models alone, and does not offer the copies as models
+of their own. A chat started before keeps what it had: *Start it again*.
+
+What fits: the model's file plus its context must fit the GPU, or a part runs on the CPU (*Context now* says
+*partly on the CPU*). On 16 GB, a model of up to about 8-9 GB (a 12B or 14B in Q4_K_M, an 8-9B in Q8) leaves room
+for 64k. Ollama's `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` on its machine halve what the context
+takes.

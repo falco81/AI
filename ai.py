@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.105'
+__version__ = '1.0.106'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -138,6 +138,7 @@ DEFAULTS = {
     'ollama_small': '',
     'ollama_who': 'all',
     'ollama_ctx': 65536,
+    'ollama_ctx_model': True,
     'ollama_max_out': 32000,
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
@@ -328,6 +329,11 @@ SCHEMA = [
      'the model loses the thread and writes on until the limit. Put in on this server with "Set it on this '
      'server\'s Ollama"; elsewhere, set OLLAMA_CONTEXT_LENGTH where Ollama runs. More context needs more memory.',
      {'min': 2048, 'max': 1048576}),
+    ('ollama_ctx_model', 'ollama', 'bool', 'Each model with that context',
+     'On: a chat with Ollama runs a copy of the chosen model that has this context length set in it (num_ctx) - '
+     'made in Ollama the first time, a few kB, the weights are not copied; named like qwen3-coder:30b-ai64k. Works '
+     'for Ollama anywhere, nothing on its machine is changed or started again. Never more than the model can hold. '
+     'Off: the model as it is, with the context Ollama gives it.', {}),
     ('ollama_max_out', 'ollama', 'int', 'Longest answer (tokens)',
      'CLAUDE_CODE_MAX_OUTPUT_TOKENS of a chat with Ollama: an answer that runs on is stopped here, not at Claude '
      'Code\'s 128000 - a local model that lost the thread would otherwise write for an hour. 0: Claude Code\'s own.',
@@ -9595,6 +9601,50 @@ OLLAMA_LOOK_S = 30
 OLLAMA_SHOW_MOST = 40
 OLLAMA_MIN = (0, 14, 0)
 OLLAMA_MODEL_RE = re.compile(r'^[A-Za-z0-9._\[\]:/-]{1,120}\Z')
+OLLAMA_COPY_RE = re.compile(r'-ai\d+k\Z')
+
+
+def ollama_copy_name(model, n):
+    """The name of ai's copy of a model with n tokens of context: qwen3-coder:30b -> qwen3-coder:30b-ai64k."""
+    name, sep, tag = model.rpartition(':')
+    if not sep or '/' in tag:
+        name, tag = model, 'latest'
+    return '%s:%s-ai%dk' % (name, tag, max(1, n // 1024))
+
+
+def ollama_with_context(base, key, look, model, want):
+    """The model to run for `model` with `want` tokens of context (1.0.106): ai's copy of it with num_ctx set,
+    made in Ollama the first time (/api/create, from the model, only its parameters - no weights copied).
+    Ollama's own default context (4096 under 24 GB of VRAM) does not hold Claude Code's prompt and tools: the
+    model forgot the folder and the conversation, and wrote on to the output limit. Never more than the model
+    can hold; a cloud model has its whole context already. Anything that does not work: the model as it is."""
+    if not want or model.endswith((':cloud', '-cloud')) or OLLAMA_COPY_RE.search(model):
+        return model, ''
+    one = next((m for m in look.get('models') or [] if m['name'] == model), None)
+    if one and one.get('remote'):
+        return model, ''
+    most = (one or {}).get('ctx') or 0
+    if not most:
+        try:
+            info = _ollama_call(base, '/api/show', key, {'model': model}, timeout=8).get('model_info') or {}
+            ctx = [v for k, v in info.items() if str(k).endswith('.context_length') and isinstance(v, int)]
+            most = max(ctx) if ctx else 0
+        except Exception:                               # noqa: BLE001
+            most = 0
+    n = min(int(want), most) if most else int(want)
+    if n < 2048:
+        return model, ''
+    copy = ollama_copy_name(model, n)
+    if copy in [m['name'] for m in look.get('models') or []] + list(look.get('copies') or []):
+        return copy, ''
+    try:
+        _ollama_call(base, '/api/create', key, {'model': copy, 'from': model, 'parameters': {'num_ctx': n},
+                                                'stream': False}, timeout=120)
+    except Exception as e:                              # noqa: BLE001 - the model as it is, and said
+        return model, 'a copy with %d tokens of context could not be made in Ollama: %s' % (
+            n, str(getattr(e, 'reason', None) or e)[:200])
+    OLLAMA_CACHE.clear()
+    return copy, ''
 
 
 def ollama_base(where=None, url=None, port=None):
@@ -9656,6 +9706,9 @@ def ollama_look(base=None, key=None, fresh=False, detail=True):
             if not isinstance(m, dict) or not OLLAMA_MODEL_RE.match(str(m.get('name') or m.get('model') or '')):
                 continue
             det = m.get('details') if isinstance(m.get('details'), dict) else {}
+            if OLLAMA_COPY_RE.search(str(m.get('name') or m.get('model'))):
+                out.setdefault('copies', []).append(str(m.get('name') or m.get('model')))
+                continue
             models.append({'name': str(m.get('name') or m.get('model')), 'size': int(m.get('size') or 0),
                            'params': str(det.get('parameter_size') or '')[:20],
                            'quant': str(det.get('quantization_level') or '')[:20],
@@ -9689,8 +9742,10 @@ def ollama_look(base=None, key=None, fresh=False, detail=True):
         try:
             for r in (_ollama_call(base, '/api/ps', key, timeout=4).get('models') or [])[:50]:
                 if isinstance(r, dict) and isinstance(r.get('context_length'), int):
+                    loaded = OLLAMA_COPY_RE.sub('', str(r.get('name') or ''))
                     for m in models:
-                        if m['name'] == r.get('name') or m['name'] == r.get('model'):
+                        if m['name'] == r.get('name') or m['name'] == r.get('model') or \
+                                (loaded != r.get('name') and ollama_copy_name(m['name'], 1024).rsplit('-ai', 1)[0] == loaded):
                             m['ctx_now'] = r['context_length']
                             m['vram'] = int(r.get('size_vram') or 0)
                             m['size_loaded'] = int(r.get('size') or 0)
@@ -9779,10 +9834,18 @@ def ollama_env(u, opts):
     opts['model'] = model
     small = str(CONFIG.get('ollama_small') or '').strip()
     small = small if small and OLLAMA_MODEL_RE.match(small) else model
+    run_model, run_small = model, small
+    if CONFIG.get('ollama_ctx_model', True) and look.get('ok'):
+        want = int(CONFIG.get('ollama_ctx') or 0)
+        run_model, said = ollama_with_context(base, ollama_key(), look, model, want)
+        run_small = run_model if small == model else ollama_with_context(base, ollama_key(), look, small, want)[0]
+        if said:
+            log('ollama: %s - %s, as it is' % (said, model))
     return {'ANTHROPIC_BASE_URL': base, 'ANTHROPIC_AUTH_TOKEN': ollama_key() or 'ollama', 'ANTHROPIC_API_KEY': '',
-            'ANTHROPIC_MODEL': model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': model, 'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
-            'ANTHROPIC_DEFAULT_HAIKU_MODEL': small, 'ANTHROPIC_SMALL_FAST_MODEL': small,
-            'CLAUDE_CODE_SUBAGENT_MODEL': model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
+            'ANTHROPIC_MODEL': run_model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': run_model,
+            'ANTHROPIC_DEFAULT_SONNET_MODEL': run_model,
+            'ANTHROPIC_DEFAULT_HAIKU_MODEL': run_small, 'ANTHROPIC_SMALL_FAST_MODEL': run_small,
+            'CLAUDE_CODE_SUBAGENT_MODEL': run_model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
             **({'CLAUDE_CODE_MAX_OUTPUT_TOKENS': str(int(CONFIG.get('ollama_max_out') or 0))}
                if int(CONFIG.get('ollama_max_out') or 0) > 0 else {})}
 
@@ -9799,7 +9862,8 @@ def ollama_view(u, fresh=False):
            'default': CONFIG.get('ollama_model') or '', 'where': CONFIG.get('ollama_where') or 'local'}
     if (u or {}).get('role') == 'admin':
         out.update(base=look.get('base') or '', here=ollama_here(), small=CONFIG.get('ollama_small') or '',
-                   ctx_want=int(CONFIG.get('ollama_ctx') or 0))
+                   ctx_want=int(CONFIG.get('ollama_ctx') or 0), ctx_model=bool(CONFIG.get('ollama_ctx_model', True)),
+                   copies=look.get('copies') or [])
     return out
 
 

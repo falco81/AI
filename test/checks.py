@@ -859,10 +859,14 @@ class _OlH(_hs.BaseHTTPRequestHandler):
         if s.path == '/api/tags': return s._send({'models': [
             {'name': 'qwen3-coder:30b', 'size': 18 * 2**30, 'details': {'parameter_size': '30.5B', 'quantization_level': 'Q4_K_M', 'family': 'qwen3moe'}},
             {'name': 'gemma3:4b', 'size': 3 * 2**30, 'details': {'parameter_size': '4.3B'}},
-            {'name': 'bad name;rm', 'size': 1}]})
+            {'name': 'bad name;rm', 'size': 1}] + [{'name': c, 'size': 1} for c in _OL.get('copies', [])]})
         s._send({}, 404)
     def do_POST(s):
         body = json.loads(s.rfile.read(int(s.headers.get('Content-Length') or 0)) or b'{}')
+        if s.path == '/api/create':
+            _OL.setdefault('created', []).append(body)
+            _OL['copies'] = _OL.get('copies', []) + [body.get('model')]
+            return s._send({'status': 'success'})
         if s.path == '/api/show':
             if body.get('model') == 'qwen3-coder:30b':
                 return s._send({'capabilities': ['completion', 'tools'], 'model_info': {'qwen3moe.context_length': 262144}})
@@ -872,7 +876,7 @@ _ols = _hs.ThreadingHTTPServer(('127.0.0.1', 0), _OlH)
 threading.Thread(target=_ols.serve_forever, daemon=True).start()
 _olport = _ols.server_address[1]
 ai.CONFIG.update(ollama_on=True, ollama_where='local', ollama_port=_olport, ollama_url='', ollama_key='', ollama_model='',
-                 ollama_small='', ollama_who='all')
+                 ollama_small='', ollama_who='all', ollama_ctx_model=False)
 ai.OLLAMA_CACHE.clear()
 _look = ai.ollama_look()
 _byname = {m['name']: m for m in _look['models']}
@@ -978,6 +982,33 @@ check('ollama: a context out of range is refused', 'context length' in _refused(
 ai.CONFIG['ollama_where'] = 'remote'
 check('ollama: elsewhere on the network - not set from here', 'elsewhere' in _refused(lambda: ai.ollama_set_context(65536, 't')))
 ai.run, ai.systemd_here = _was_run, _was_sd
+ai.CONFIG.update(ollama_where='local', ollama_port=_olport, ollama_ctx=65536, ollama_ctx_model=True, ollama_small='')
+ai.OLLAMA_CACHE.clear()
+_OL['created'] = []
+_e1 = ai.ollama_env(_user, {'model': 'qwen3-coder:30b', 'backend': 'ollama'})
+check('ollama: a chat runs a copy of its model with the context set in it (made once, from the model, num_ctx)',
+      _e1['ANTHROPIC_MODEL'] == 'qwen3-coder:30b-ai64k' and _e1['ANTHROPIC_SMALL_FAST_MODEL'] == 'qwen3-coder:30b-ai64k'
+      and _OL['created'] == [{'model': 'qwen3-coder:30b-ai64k', 'from': 'qwen3-coder:30b',
+                              'parameters': {'num_ctx': 65536}, 'stream': False}])
+ai.OLLAMA_CACHE.clear()
+_o5 = {'model': 'qwen3-coder:30b', 'backend': 'ollama'}
+ai.ollama_env(_user, _o5)
+check('ollama: the copy made once only, and the chat keeps the model\'s own name',
+      len(_OL['created']) == 1 and _o5['model'] == 'qwen3-coder:30b')
+check('ollama: ai\'s copies are not offered as models of their own',
+      all(not m['name'].endswith('-ai64k') for m in ai.ollama_look(fresh=True)['models']))
+_e2 = ai.ollama_env(_user, {'model': 'gemma3:4b', 'backend': 'ollama'})
+check('ollama: never more context than the model holds (gemma3:4b holds 128k - 64k asked; set 200k - 128k)',
+      _e2['ANTHROPIC_MODEL'] == 'gemma3:4b-ai64k')
+ai.CONFIG['ollama_ctx'] = 200000
+ai.OLLAMA_CACHE.clear()
+check('ollama: ... capped at what the model holds', ai.ollama_env(_user, {'model': 'gemma3:4b', 'backend': 'ollama'})['ANTHROPIC_MODEL'] == 'gemma3:4b-ai128k')
+ai.CONFIG.update(ollama_ctx=65536, ollama_ctx_model=False)
+check('ollama: copies switched off - the model as it is', ai.ollama_env(_user, dict(_o))['ANTHROPIC_MODEL'] == 'qwen3-coder:30b')
+ai.CONFIG['ollama_ctx_model'] = True
+check('ollama: the name of a copy', ai.ollama_copy_name('qwen3-coder:30b', 65536) == 'qwen3-coder:30b-ai64k'
+      and ai.ollama_copy_name('llama3', 32768) == 'llama3:latest-ai32k'
+      and ai.ollama_copy_name('hf.co/a/b:Q4_K_M', 65536) == 'hf.co/a/b:Q4_K_M-ai64k')
 _ols.shutdown()
 ai.CONFIG.update(ollama_on=False, ollama_where='local', ollama_port=11434, ollama_model='', ollama_small='')
 

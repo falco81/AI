@@ -4003,6 +4003,13 @@ STRINGS = {
         'zčásti na CPU',
     'not loaded':
         'nenačtený',
+    # ---- 1.0.106
+    'Each model with that context':
+        'Každý model s tímto kontextem',
+    'On: a chat with Ollama runs a copy of the chosen model that has this context length set in it (num_ctx) - made in Ollama the first time, a few kB, the weights are not copied; named like qwen3-coder:30b-ai64k. Works for Ollama anywhere, nothing on its machine is changed or started again. Never more than the model can hold. Off: the model as it is, with the context Ollama gives it.':
+        'Zapnuto: chat s Ollamou spustí kopii zvoleného modelu, která má tuto délku kontextu nastavenou v sobě (num_ctx) – Ollama ji poprvé vytvoří, má pár kB, váhy se nekopírují; jmenuje se třeba qwen3-coder:30b-ai64k. Funguje pro Ollamu kdekoli, na jejím stroji se nic nemění ani nerestartuje. Nikdy víc, než model unese. Vypnuto: model tak, jak je, s kontextem, který mu dá Ollama.',
+    'New chats run a copy of their model with the context set (Each model with that context, below); a chat started before: Start it again.':
+        'Nové chaty spouštějí kopii svého modelu s nastaveným kontextem (Každý model s tímto kontextem, níže); chat spuštěný dřív: Spustit znovu.',
 }
 
 PATTERNS = {
