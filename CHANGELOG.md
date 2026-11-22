@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.109
+
+- **Tables**: a row with a button or a tag in it is lined up through its middle - the words sat at the top of
+  the row, the buttons and tags lower down (Ollama's models and its measure, Claude Code's accounts, the accounts,
+  who is signed in, and every other table with buttons in its rows).
+
 ## 1.0.108
 
 - **Ollama's measure**, made right: the model is unloaded before each size, so each is really loaded with its own

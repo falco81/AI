@@ -387,6 +387,9 @@ a,a:visited{color:var(--info)}
      so the word still sits over its column. */
   th:first-child,td:first-child{padding-left:11px}
   tr:last-child td{border-bottom:0}
+  /* A row with a button in it is lined up through its middle (1.0.109): the words sat at the top of the row,
+     the buttons and tags lower down - every cell of a row on one line. */
+  tr:has(> td .btn) > td,tr:has(> td > .tag) > td{vertical-align:middle}
   /* A column of numbers is right-aligned, and so is the word above it. A
      heading sitting on the left of a column that is flush right reads as a
      different column from the one it names - which is what every table in
@@ -4080,3 +4083,9 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 .se-none b{display:block;font-size:14px}
 .se-none span{font-size:13px;color:var(--tx-dim)}
 .se-name .tag{font-size:10.5px}
+
+/* Ollama's tables (1.0.109): each cell on one line, the tag and the button of "For Claude Code" side by side */
+.ol-models td,.ol-probe td{vertical-align:middle}
+.ol-models td.ol-cc{white-space:nowrap}
+.ol-models td.ol-cc > .tag{margin-left:0;margin-right:6px}
+.ol-models td.ol-cc > .btn{margin-left:0 !important}
