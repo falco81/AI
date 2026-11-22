@@ -4055,6 +4055,11 @@ STRINGS = {
         'Jako u ostatních modelů',
     'Measure again':
         'Změřit znovu',
+    # ---- 1.0.108
+    'Given':
+        'Dáno',
+    'Ollama gave less than asked - it made the context fit its memory':
+        'Ollama dala méně, než se žádalo – kontext přizpůsobila své paměti',
 }
 
 PATTERNS = {

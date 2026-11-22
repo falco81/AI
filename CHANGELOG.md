@@ -3,6 +3,14 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.108
+
+- **Ollama's measure**, made right: the model is unloaded before each size, so each is really loaded with its own
+  context (every size measured the same before - the model was answered from as it was loaded); the column
+  *Given* says how much context Ollama really gave each time (from `/api/ps`), a size it cut down counts as not
+  reached; the model is found in `/api/ps` also when it is listed with or without `:latest`, asked again while it
+  is still loading.
+
 ## 1.0.107
 
 **Ollama: measured, then recommended.** *Measure* by each model (Settings → Ollama → What Ollama has → *For Claude

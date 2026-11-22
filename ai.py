@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.107'
+__version__ = '1.0.108'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -9631,7 +9631,20 @@ def ollama_ctx_kept(store):
 def ollama_probe_one(base, key, model, n):
     """One context tried: {ctx, ok, size, vram, gpu, tps, load_s, error}."""
     one = {'ctx': n, 'ok': False}
+    same = lambda a: str(a or '').replace(':latest', '') == model.replace(':latest', '')
     try:
+        # unloaded first (1.0.108): a model still loaded with another context was answered from as it was - every
+        # size measured the same
+        try:
+            _ollama_call(base, '/api/generate', key, {'model': model, 'keep_alive': 0}, timeout=60)
+            for _i in range(20):
+                if not any(same(r.get('name')) or same(r.get('model'))
+                           for r in (_ollama_call(base, '/api/ps', key, timeout=10).get('models') or [])
+                           if isinstance(r, dict)):
+                    break
+                time.sleep(0.5)
+        except Exception:                               # noqa: BLE001
+            pass
         t0 = time.time()
         got = _ollama_call(base, '/api/generate', key, {
             'model': model, 'prompt': 'Say OK.', 'stream': False, 'keep_alive': '2m',
@@ -9640,12 +9653,18 @@ def ollama_probe_one(base, key, model, n):
         one['load_s'] = round(float(got.get('load_duration') or 0) / 1e9, 1)
         ec, ed = int(got.get('eval_count') or 0), float(got.get('eval_duration') or 0)
         one['tps'] = round(ec / (ed / 1e9), 1) if ec and ed else None
-        for r in (_ollama_call(base, '/api/ps', key, timeout=10).get('models') or []):
-            if isinstance(r, dict) and model in (r.get('name'), r.get('model')):
-                one['size'] = int(r.get('size') or 0)
-                one['vram'] = int(r.get('size_vram') or 0)
-                one['ctx_got'] = r.get('context_length')
-                one['gpu'] = round(100.0 * one['vram'] / one['size']) if one['size'] else None
+        for _i in range(6):
+            for r in (_ollama_call(base, '/api/ps', key, timeout=10).get('models') or []):
+                if isinstance(r, dict) and (same(r.get('name')) or same(r.get('model'))):
+                    one['size'] = int(r.get('size') or 0)
+                    one['vram'] = int(r.get('size_vram') or 0)
+                    one['ctx_got'] = r.get('context_length') if isinstance(r.get('context_length'), int) else None
+                    one['gpu'] = round(100.0 * one['vram'] / one['size']) if one['size'] else None
+            if one.get('size'):
+                break
+            time.sleep(0.5)
+        # what Ollama really gave: less than asked (it fits the context to the memory) counts as that
+        one['short'] = bool(one.get('ctx_got') and one['ctx_got'] < n)
         one['ok'] = True
     except urllib.error.HTTPError as e:
         try:
@@ -9661,7 +9680,7 @@ def ollama_probe_one(base, key, model, n):
 def ollama_probe_advice(steps, most):
     """What to use: the most context that is whole in the GPU, and - when that is under 64k - the least that
     reaches 64k in the GPU and the RAM together, with its speed."""
-    good = [s for s in steps if s.get('ok')]
+    good = [s for s in steps if s.get('ok') and not s.get('short')]
     whole = [s for s in good if (s.get('gpu') or 0) >= 99]
     best = max(whole, key=lambda s: s['ctx']) if whole else None
     out = {'gpu_only': best['ctx'] if best else 0, 'with_ram': 0, 'choice': 0, 'why': ''}

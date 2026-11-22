@@ -855,8 +855,8 @@ class _OlH(_hs.BaseHTTPRequestHandler):
         _OL['auth'].append(s.headers.get('Authorization') or '')
         if s.path == '/api/version': return s._send({'version': _OL['version']})
         if s.path == '/api/ps':
-            if _OL.get('loaded'):
-                return s._send({'models': [_OL['loaded']]})
+            if 'loaded' in _OL:
+                return s._send({'models': [_OL['loaded']] if _OL['loaded'] else []})
             return s._send({'models': [{'name': 'qwen3-coder:30b', 'model': 'qwen3-coder:30b',
                                         'size': 20 * 2**30, 'size_vram': 12 * 2**30, 'context_length': 4096}]})
         if s.path == '/api/tags': return s._send({'models': [
@@ -1039,6 +1039,10 @@ check('ollama: measured - each context loaded in turn, how much in the GPU and i
       _pr['state'] == 'done' and sorted(_by) == [16384, 32768, 65536, 131072] and _by[16384]['gpu'] == 100
       and _by[131072]['gpu'] < 100 and _by[16384]['tps'] > _by[131072]['tps'] and _OL.get('loaded') is None)
 check('ollama: the advice - 64k whole in the GPU here', _pr['advice']['choice'] == 65536 and _pr['advice']['gpu_only'] == 65536)
+check('ollama: measured - what Ollama gave is said with each size', all(s.get('ctx_got') == s['ctx'] for s in _pr['steps']))
+_adv = ai.ollama_probe_advice([{'ctx': 16384, 'ok': True, 'gpu': 100, 'tps': 30, 'ctx_got': 16384},
+                               {'ctx': 65536, 'ok': True, 'gpu': 100, 'tps': 30, 'ctx_got': 16384, 'short': True}], 262144)
+check('ollama: the advice - a size Ollama cut down to fit counts as not reached', _adv['choice'] == 16384)
 _adv = ai.ollama_probe_advice([{'ctx': 16384, 'ok': True, 'gpu': 100, 'tps': 30}, {'ctx': 32768, 'ok': True, 'gpu': 100, 'tps': 28},
                                {'ctx': 65536, 'ok': True, 'gpu': 80, 'tps': 9}], 262144)
 check('ollama: the advice - 64k with part in the RAM when only 32k fits the GPU, with its speed',

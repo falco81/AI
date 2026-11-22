@@ -3966,7 +3966,7 @@ function olProbe(m, d) {
       if (!p) { out.appendChild(el('p', 'muted', 'Not measured yet.')); return; }
       var tb = el('table', 'tbl');
       var hr = el('tr');
-      ['Context', 'In the GPU', 'In the RAM', 'Speed', ''].forEach(function (h) { hr.appendChild(el('th', '', h)); });
+      ['Context', 'Given', 'In the GPU', 'In the RAM', 'Speed', ''].forEach(function (h) { hr.appendChild(el('th', '', h)); });
       var th = el('thead'); th.appendChild(hr); tb.appendChild(th);
       var bd = el('tbody');
       var adv = p.advice || {};
@@ -3980,13 +3980,18 @@ function olProbe(m, d) {
         r.appendChild(c0);
         if (!s) {
           r.appendChild(el('td', 'muted', p.state === 'running' && p.now === n ? txT('measuring…') : (p.state === 'running' ? txT('waiting') : txT('not tried'))));
-          r.appendChild(el('td')); r.appendChild(el('td')); r.appendChild(el('td'));
+          r.appendChild(el('td')); r.appendChild(el('td')); r.appendChild(el('td')); r.appendChild(el('td'));
         } else if (!s.ok) {
           var e = el('td', 'bad small', s.error || 'failed');
-          e.colSpan = 4;
+          e.colSpan = 5;
           noI18n(e);
           r.appendChild(e);
         } else {
+          /* what Ollama gave - less than asked when it fitted the context to the memory (1.0.108) */
+          var gv = el('td', s.short ? 'warn' : '');
+          gv.appendChild(noI18n(el('span', '', s.ctx_got ? olK(s.ctx_got) : '?')));
+          if (s.short) gv.title = txT('Ollama gave less than asked - it made the context fit its memory');
+          r.appendChild(gv);
           var g = s.gpu === null || s.gpu === undefined ? '?' : s.gpu + ' %';
           r.appendChild(noI18n(el('td', '', g + (s.vram ? ' · ' + bytes(s.vram) : ''))));
           var ram = (s.size || 0) - (s.vram || 0);
