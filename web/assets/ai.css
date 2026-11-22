@@ -390,6 +390,9 @@ a,a:visited{color:var(--info)}
   /* A row with a button in it is lined up through its middle (1.0.109): the words sat at the top of the row,
      the buttons and tags lower down - every cell of a row on one line. */
   tr:has(> td .btn) > td,tr:has(> td > .tag) > td{vertical-align:middle}
+  /* a tag and a button side by side in a cell sit on the same middle, not on the text's baseline (1.0.111) */
+  tr:has(> td .btn) > td .tag,tr:has(> td > .tag) > td .tag{vertical-align:middle;position:relative;top:-2px}
+  tr:has(> td .btn) > td > .btn{vertical-align:middle}
   /* A column of numbers is right-aligned, and so is the word above it. A
      heading sitting on the left of a column that is flush right reads as a
      different column from the one it names - which is what every table in
@@ -4087,5 +4090,6 @@ p.nt-level.nt-crit{color:var(--crit);font-weight:600} p.nt-level.nt-warn{color:v
 /* Ollama's tables (1.0.109): each cell on one line, the tag and the button of "For Claude Code" side by side */
 .ol-models td,.ol-probe td{vertical-align:middle}
 .ol-models td.ol-cc{white-space:nowrap}
-.ol-models td.ol-cc > .tag{margin-left:0;margin-right:6px}
+.ol-models td.ol-cc > .tag{margin-left:0;margin-right:6px;vertical-align:middle}
+.ol-models td.ol-cc > *{vertical-align:middle}
 .ol-models td.ol-cc > .btn{margin-left:0 !important}

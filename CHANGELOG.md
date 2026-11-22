@@ -3,6 +3,12 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.111
+
+- **Tables**: a tag (YES, 128K, ADMINISTRATOR…) sat 2-5 px lower than the words and the buttons of its row - it
+  went by the text's baseline. Every word, tag and button of a row is on one line now (measured on every table of
+  the settings: Ollama's models, Claude Code's accounts, the accounts, backups, certificates…).
+
 ## 1.0.110
 
 **Chats with Ollama: "exceeded the output token maximum" after a few words, again and again** - three faults, each
