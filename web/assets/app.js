@@ -3541,7 +3541,7 @@ function showPane(name) {
   });
   document.querySelectorAll('.ctl-pane').forEach(function (p) { p.hidden = p.id !== 'pane-' + name; });
   writeHash();
-  if (name === 'claude') loadClaude();
+  if (name === 'claude') loadClaude(true);   /* as it is now - after an update in a terminal too (1.0.103) */
   if (name === 'people') { loadUsers(); loadLockouts(); colsCardSay(); }
   if (name === 'mail') loadMail();
   if (name === 'texts') loadTexts();
@@ -4415,6 +4415,17 @@ function loadClaude(fresh) {
       if (a.error) v.appendChild(el('span', 'bad', a.error));
       else if (a.version) {
         v.appendChild(noI18n(el('span', '', a.version)));
+        /* The newest there is (1.0.103): Update it said nothing of whether there was anything to update to. */
+        if (a.behind) {
+          v.appendChild(document.createTextNode(' '));
+          var nw = tagEl(txT('new version') + ' ' + a.newest, 'warn');
+          noI18n(nw);
+          nw.title = txT('Claude Code updates itself in a while; Update it does it now.') + (a.stable ? ' (stable: ' + a.stable + ')' : '');
+          v.appendChild(nw);
+        } else if (a.newest) {
+          v.appendChild(document.createTextNode(' '));
+          v.appendChild(tagEl('the newest', 'ok'));
+        }
         v.appendChild(noI18n(el('div', 'mono small muted', a.path)));
       } else v.appendChild(tagEl('not installed', 'warn'));
       tr.appendChild(v);
@@ -4439,7 +4450,7 @@ function loadClaude(fresh) {
           add('Install it', 'download', 'install', 'Anthropic\'s own installer, in a terminal you watch: ' + d.native, 'primary');
           if (a.npm) add('With npm', 'download', 'npm', d.npm);
         } else {
-          add('Update it', 'download', 'update', 'claude update, in a terminal you watch.');
+          add('Update it', 'download', 'update', 'claude update, in a terminal you watch.', a.behind ? 'primary' : '');
           add('Check it', 'search', 'doctor', 'claude doctor: what is wrong with the installation, if anything.');
         }
       }
@@ -10075,12 +10086,12 @@ function cfMenu(e, full, x, y, row) {
     {icon: 'edit', words: 'Rename', go: function () {
       var name = prompt('A new name for ' + e.name, e.name);
       if (!name || name === e.name) return;
-      filesApi('op', '', {op: 'rename', path: full, name: name}).then(function () { cfLoad(CF.path); }).catch(oops);
+      filesApi('op', '', {op: 'rename', path: full, name: name, root: CF.root || ''}).then(function () { cfLoad(CF.path); }).catch(oops);
     }},
     'sep',
     {icon: 'trash', words: 'Delete', danger: true, go: function () {
       confirmThen('Delete ' + e.name + '?', (dir ? 'The folder <b>' + htmlText(e.name) + '</b> and everything in it are' : '<b>' + htmlText(e.name) + '</b> is') + ' deleted from the server. There is no bin.', 'Delete it', function () {
-        filesApi('op', '', {op: 'delete', path: full}).then(function () { cfLoad(CF.path); }).catch(oops);
+        filesApi('op', '', {op: 'delete', path: full, root: CF.root || ''}).then(function () { cfLoad(CF.path); }).catch(oops);
       });
     }}
   ], row);

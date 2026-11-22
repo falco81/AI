@@ -3946,6 +3946,13 @@ STRINGS = {
         'její první model',
     'A chat with a model of Ollama':
         'Chat s modelem z Ollama',
+    # ---- 1.0.103
+    'new version':
+        'nová verze',
+    'the newest':
+        'nejnovější',
+    'Claude Code updates itself in a while; Update it does it now.':
+        'Claude Code se za chvíli aktualizuje sám; Aktualizovat to udělá hned.',
 }
 
 PATTERNS = {

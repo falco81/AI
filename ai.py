@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.102'
+__version__ = '1.0.103'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -871,12 +871,13 @@ def write_atomic(path, data, mode=0o640, uid=None, gid=None):
     try:
         with os.fdopen(fd, 'wb' if isinstance(data, bytes) else 'w') as f:
             f.write(data)
-        os.chmod(tmp, mode)
-        if uid is not None or gid is not None:
-            try:
-                os.chown(tmp, -1 if uid is None else uid, -1 if gid is None else gid)
-            except OSError:
-                pass
+            # on the open file, never by its name (1.0.103) - a name can be swapped for a link meanwhile
+            os.fchmod(f.fileno(), mode)
+            if uid is not None or gid is not None:
+                try:
+                    os.fchown(f.fileno(), -1 if uid is None else uid, -1 if gid is None else gid)
+                except OSError:
+                    pass
         os.replace(tmp, str(path))
     except BaseException:
         try:
@@ -3292,7 +3293,7 @@ class Db(object):
                                        'could not receive data', 'connection timed out'))
 
     def query(self, sql, args=(), fetch=True):
-        with self.lock:
+        with fs_root(), self.lock:
             if self.conn is None:
                 self.connect()
             try:
@@ -3858,6 +3859,100 @@ def linux_groups(pw):
         return [pw.pw_gid]
 
 
+# Files touched as the account they are for (1.0.103) - not as root. The daemon is root; a path an account
+# controls (its home, its chat's folder) may hold a link to anywhere, swapped in between a check and the
+# write. While a thread is "as" an account, the kernel checks every open, write, mkdir and rename with that
+# account's uid, gid and groups, and root's way past permissions is gone for that thread (fsuid != 0 drops
+# CAP_DAC_OVERRIDE and the rest). setfsuid/setfsgid and the raw setgroups are per thread: the daemon's other
+# threads stay root. Linux only; elsewhere, and for root's own account, nothing changes.
+_LIBC = None
+_SYS_SETGROUPS = {'x86_64': 116, 'aarch64': 159, 'ppc64le': 81, 's390x': 206}.get(os.uname().machine)
+
+
+def _libc():
+    global _LIBC
+    if _LIBC is None:
+        import ctypes
+        import ctypes.util
+        _LIBC = ctypes.CDLL(ctypes.util.find_library('c') or 'libc.so.6', use_errno=True)
+    return _LIBC
+
+
+def _thread_groups(gids):
+    import ctypes
+    arr = (ctypes.c_uint * max(1, len(gids)))(*gids)
+    if _libc().syscall(_SYS_SETGROUPS, len(gids), arr) != 0:
+        raise OSError(ctypes.get_errno(), 'setgroups')
+
+
+_FS = threading.local()
+
+
+def _fs_enter(pw):
+    libc = _libc()
+    if _SYS_SETGROUPS:
+        _thread_groups(linux_groups(pw))
+    libc.setfsgid(pw.pw_gid)
+    libc.setfsuid(pw.pw_uid)
+    if libc.setfsuid(-1) != pw.pw_uid or libc.setfsgid(-1) != pw.pw_gid:
+        _fs_leave(_FS.groups)
+        raise Refused('could not act as %s' % pw.pw_name, 500)
+
+
+def _fs_leave(groups):
+    libc = _libc()
+    libc.setfsuid(0)
+    libc.setfsgid(0)
+    if _SYS_SETGROUPS:
+        _thread_groups(groups)
+    if libc.setfsuid(-1) != 0:
+        # never left in this state: a root thread that is not root would fail everything after it
+        os._exit(70)
+
+
+@contextlib.contextmanager
+def fs_as(pw):
+    if pw is None or pw.pw_uid == 0 or os.geteuid() != 0 or not sys.platform.startswith('linux') \
+            or getattr(_FS, 'pw', None) is not None:
+        yield
+        return
+    _FS.groups = os.getgroups()
+    _fs_enter(pw)
+    _FS.pw = pw
+    try:
+        yield
+    finally:
+        _FS.pw = None
+        _fs_leave(_FS.groups)
+
+
+@contextlib.contextmanager
+def fs_root():
+    """Root again for a moment inside fs_as - the database (SQLite's files are root's) and the like."""
+    pw = getattr(_FS, 'pw', None)
+    if pw is None:
+        yield
+        return
+    _FS.pw = None
+    _fs_leave(_FS.groups)
+    try:
+        yield
+    finally:
+        _fs_enter(pw)
+        _FS.pw = pw
+
+
+def fs_account(u):
+    """The account a person's file work is done as: an administrator's as root (it may go anywhere), anybody
+    else's as the Linux account their terminals run as."""
+    if (u or {}).get('role') == 'admin':
+        return None
+    try:
+        return linux_user(run_as_of(u))
+    except Refused:
+        raise Refused('this account runs as no Linux account here - no files', 403)
+
+
 def as_user_kwargs(pw):
     """What subprocess needs to run a command as that account (the daemon is root)."""
     if os.geteuid() != 0 or pw.pw_uid == os.geteuid():
@@ -4035,6 +4130,10 @@ class Auth:
     def _fail_keys(self, name, ip, kind=''):
         # A passkey's failures are counted apart (1.0.100): a stale passkey pressed a few times locked
         # every password sign-in from that address - everybody behind the same NAT too.
+        # Wrong codes of the second step apart too (1.0.103): counted with the password's, the right password
+        # given again cleared them - eight guesses at a time, for ever.
+        if kind == 'mfa':
+            return ['mfaip:' + str(ip or '?'), 'mfa:' + str(name or '').lower()]
         return [('pkip:' if kind == 'passkey' else 'ip:') + str(ip or '?'), 'name:' + str(name or '').lower()]
 
     def locked(self, name, ip, kind=''):
@@ -4599,8 +4698,11 @@ class Terms:
         if upkeep:
             keep['upkeep'] = True       # started again, still Claude Code's upkeep (1.0.67)
         if revive:
+            # the account it runs as now too (1.0.103) - changed meanwhile, the row named the old one and
+            # everything after (attach, keys, end) looked for the session on the old account's tmux
             self.store.x('UPDATE terms SET ended=NULL, last_screen=NULL, exit_status=NULL, cwd=?, opts=?, '
-                         'title=? WHERE id=?', (cwd, json.dumps(keep), clean_line(title, 120), tid))
+                         'title=?, run_as=? WHERE id=?', (cwd, json.dumps(keep), clean_line(title, 120),
+                                                          pw.pw_name, tid))
             self.store.add_event('terminals', '%s started "%s" again%s' % (
                 u['name'], clean_line(title, 120), ' - its conversation %s' % opts['resume'][:8]
                 if opts.get('resume') else ''), 'info', who=u['name'])
@@ -4879,6 +4981,19 @@ def _first_words(content):
     return ''
 
 
+def open_regular(path, text=False):
+    """A file of an account's opened by root only when it is a plain file (1.0.103): a FIFO named like a
+    transcript held the reading thread for ever, and a link led root anywhere."""
+    fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, 'not a plain file')
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, 'r', encoding='utf-8', errors='replace') if text else os.fdopen(fd, 'rb')
+
+
 def conversation_facts(path):
     try:
         st = os.stat(path)
@@ -4890,7 +5005,7 @@ def conversation_facts(path):
     facts = {'id': os.path.basename(path)[:-6], 'mtime': st.st_mtime, 'bytes': st.st_size,
              'cwd': '', 'first': '', 'summary': '', 'branch': '', 'messages': 0}
     try:
-        with open(path, 'rb') as f:
+        with open_regular(path) as f:
             head = f.read(512 * 1024)
             if st.st_size > len(head):
                 f.seek(max(len(head), st.st_size - 64 * 1024))
@@ -5403,19 +5518,26 @@ def chat_folder(daemon, u, r):
     base = where if where.startswith('/') else os.path.join(r['cwd'] or pw.pw_dir, where)
     base = os.path.normpath(base)
     path_allowed(u, base)
-    if not os.path.isdir(base):
-        os.makedirs(base, exist_ok=True)
-        if os.geteuid() == 0:
-            os.chown(base, pw.pw_uid, pw.pw_gid)
-    gi = os.path.join(base, '.gitignore')
-    if not os.path.exists(gi):
-        try:
-            with open(gi, 'w') as f:
-                f.write('# files given to Claude Code from the ai pages\n*\n')
-            if os.geteuid() == 0:
-                os.chown(gi, pw.pw_uid, pw.pw_gid)
-        except OSError:
-            pass
+    # Made as the terminal's account (1.0.103) - a .gitignore that was a link to /etc/profile.d/… was
+    # written there by root, and given to the account.
+    with fs_as(pw):
+        if not os.path.isdir(base):
+            os.makedirs(base, exist_ok=True)
+            if os.geteuid() == 0 and pw.pw_uid == 0:
+                os.chown(base, pw.pw_uid, pw.pw_gid)
+        gi = os.path.join(base, '.gitignore')
+        if not os.path.lexists(gi):
+            try:
+                fd = os.open(gi, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+                with os.fdopen(fd, 'w') as f:
+                    f.write('# files given to Claude Code from the ai pages\n*\n')
+                    if os.geteuid() == 0:
+                        try:
+                            os.fchown(f.fileno(), pw.pw_uid, pw.pw_gid)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
     return base
 
 
@@ -5445,14 +5567,20 @@ def take_upload(rfile, length, dest_dir, name, u, overwrite=False, uid=None, gid
                     break
                 f.write(lump)
                 got += len(lump)
-        if got != length:
-            raise Refused('the file did not arrive whole (%d of %d bytes)' % (got, length))
-        os.chmod(tmp, 0o644)
-        if os.geteuid() == 0:
-            if uid is None:
-                uid, gid = owner_ids(u)
-            if uid is not None:
-                os.chown(tmp, uid, gid)
+            if got != length:
+                raise Refused('the file did not arrive whole (%d of %d bytes)' % (got, length))
+            # On the open file, never by its name (1.0.103): the name could be swapped for a link to
+            # /etc/shadow while the upload ran, and root then gave that away.
+            os.fchmod(f.fileno(), 0o644)
+            if os.geteuid() == 0:
+                if uid is None:
+                    uid, gid = owner_ids(u)
+                if uid is not None:
+                    try:
+                        os.fchown(f.fileno(), uid, gid)
+                    except OSError:
+                        if getattr(_FS, 'pw', None) is None:
+                            raise
         os.replace(tmp, target)
     except BaseException:
         try:
@@ -5473,22 +5601,29 @@ def cc_carry_transcript(pw, sid, cwd):
     """A conversation's transcript copied to where Claude Code looks for it
     when started in `cwd` (1.0.25) - its folder of ~/.claude/projects is the
     path with every other character than a letter or a digit a '-'."""
-    base = Path(pw.pw_dir) / '.claude' / 'projects'
-    src = next(iter(base.glob('*/%s.jsonl' % sid)), None) if UUID_RE.match(str(sid)) else None
-    if not src:
-        return False
-    dest_dir = base / re.sub(r'[^A-Za-z0-9]', '-', cwd)
-    dest = dest_dir / src.name
-    if dest == src:
-        return True
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(src), str(dest))
-    if os.geteuid() == 0:
-        for p in (dest_dir, dest):
-            try:
-                os.chown(str(p), pw.pw_uid, pw.pw_gid)
-            except OSError:
-                pass
+    # As the account (1.0.103): as root, a transcript that was a link to /etc/shadow, or a folder of
+    # projects that was a link to /etc, made root copy the one into the other and give both away.
+    with fs_as(pw):
+        base = Path(pw.pw_dir) / '.claude' / 'projects'
+        src = next(iter(base.glob('*/%s.jsonl' % sid)), None) if UUID_RE.match(str(sid)) else None
+        if not src or src.is_symlink() or not src.is_file():
+            return False
+        dest_dir = base / re.sub(r'[^A-Za-z0-9]', '-', cwd)
+        dest = dest_dir / src.name
+        if dest == src:
+            return True
+        if dest_dir.is_symlink() or not path_under(str(dest_dir.parent), str(base)):
+            return False
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            return False
+        shutil.copy2(str(src), str(dest), follow_symlinks=False)
+        if os.geteuid() == 0 and pw.pw_uid == 0:
+            for p in (dest_dir, dest):
+                try:
+                    os.lchown(str(p), pw.pw_uid, pw.pw_gid)
+                except OSError:
+                    pass
     return True
 
 
@@ -5530,6 +5665,21 @@ def files_op(u, body):
         os.makedirs(full, exist_ok=False)
         give(full, u)
         return {'path': full}
+    # A link is renamed or taken away itself, never what it points to (1.0.103): taking away a link to a
+    # folder emptied the folder it pointed to, and renaming it renamed that folder's file in its own place.
+    here = os.path.normpath(path)
+    if op in ('rename', 'delete') and os.path.islink(here):
+        path_allowed(u, os.path.dirname(here) or '/')
+        if op == 'delete':
+            os.unlink(here)
+            return {'path': here}
+        name = safe_name(body.get('name'))
+        dest = os.path.join(os.path.dirname(here), name)
+        path_allowed(u, os.path.dirname(dest))
+        if os.path.lexists(dest):
+            raise Refused('there is a %s there already' % name)
+        os.rename(here, dest)
+        return {'path': dest}
     real = path_allowed(u, path)
     if op == 'rename':
         name = safe_name(body.get('name'))
@@ -5703,6 +5853,10 @@ class Trials:
         with self.lock:
             t = self.all()
             secs = int(CONFIG.get('revert_s') or 120)
+            # A second change while the first is still on trial goes back to how it was before both
+            # (1.0.103): its own undo would only have put back the first change.
+            if isinstance(t.get(kind), dict) and t[kind].get('undo') is not None:
+                undo = t[kind]['undo']
             t[kind] = {'kind': kind, 'words': words, 'undo': undo, 'by': by, 'at': time.time(),
                        'until': time.time() + secs}
             self.daemon.store.set_meta_json('trials', t)
@@ -8459,7 +8613,16 @@ def rb_verify(store, by, tid=None, name=None, progress=None):
     try:
         kept = kept_copies()
         if kept:
-            got = copy_read_through(BACKUP_DIR / kept[0]['name'], sealing_key())
+            # with the key kept beside it (1.0.103): after a restore that brought another key, the copy
+            # made before it was read with the new one and called not good
+            key = sealing_key()
+            try:
+                kf = _key_beside(BACKUP_DIR / kept[0]['name'])
+                if kf.is_file():
+                    key = bytes.fromhex(kf.read_text().strip()) or key
+            except (OSError, ValueError):
+                pass
+            got = copy_read_through(BACKUP_DIR / kept[0]['name'], key)
             res['checks'].append({'what': 'the newest nightly copy here reads to its last line',
                                   'ok': got['tried'] == got['opened'],
                                   'said': '%s, %d accounts' % (kept[0]['name'], got['counts'].get('users', 0))})
@@ -9584,6 +9747,42 @@ INSTALL_NATIVE = 'curl -fsSL https://claude.ai/install.sh | bash'
 INSTALL_NPM = 'npm install -g @anthropic-ai/claude-code'
 
 
+CLAUDE_NEWEST = {'at': 0.0, 'tags': {}, 'error': ''}
+CLAUDE_NEWEST_LOCK = threading.Lock()
+
+
+def claude_newest(fresh=False):
+    """The newest Claude Code there is (1.0.103): npm's dist-tags of @anthropic-ai/claude-code - latest (what
+    Claude Code updates itself to by default) and stable. Asked at most every 6 hours (every minute when asked
+    fresh), through the proxy where Claude Code's installing goes through it."""
+    with CLAUDE_NEWEST_LOCK:
+        age = time.time() - CLAUDE_NEWEST['at']
+        if age < (60 if fresh else 6 * 3600) and (CLAUDE_NEWEST['tags'] or age < 600):
+            return dict(CLAUDE_NEWEST)
+        try:
+            req = urllib.request.Request('https://registry.npmjs.org/-/package/@anthropic-ai/claude-code/dist-tags',
+                                         headers={'User-Agent': 'ai/%s' % __version__, 'Accept': 'application/json'})
+            with url_open(req, timeout=8, context=ssl.create_default_context(), purpose='claude_install') as r:
+                got = json.loads(r.read(65536).decode('utf-8', 'replace') or '{}')
+            tags = {k: str(v) for k, v in (got or {}).items()
+                    if k in ('latest', 'stable', 'next') and re.match(r'^\d+\.\d+\.\d+', str(v))}
+            CLAUDE_NEWEST.update(at=time.time(), tags=tags, error='' if tags else 'no version in the answer')
+        except Exception as e:                          # noqa: BLE001 - never more than "not known"
+            CLAUDE_NEWEST.update(at=time.time(), error=str(getattr(e, 'reason', None) or e)[:200])
+        return dict(CLAUDE_NEWEST)
+
+
+def claude_update_facts(version, fresh=False):
+    """{newest, stable, behind} for a version as `claude --version` says it ("2.1.328 (Claude Code)")."""
+    m = re.match(r'^\s*(\d+)\.(\d+)\.(\d+)', str(version or ''))
+    n = claude_newest(fresh)
+    tags = n.get('tags') or {}
+    out = {'newest': tags.get('latest') or '', 'stable': tags.get('stable') or '', 'newest_error': n.get('error') or ''}
+    if m and out['newest']:
+        out['behind'] = ver_tuple(out['newest']) > tuple(int(x) for x in m.groups())
+    return out
+
+
 def claude_facts(pw, fresh=False):
     hit = CLAUDE_CACHE.get(pw.pw_name)
     if hit and not fresh and time.time() - hit['at'] < 120:
@@ -9619,6 +9818,8 @@ def claude_facts(pw, fresh=False):
     except (OSError, ValueError, AttributeError):
         pass
     out['api_key'] = 'ANTHROPIC_API_KEY' in env_lines(CONFIG.get('claude_env'))
+    if out['version']:
+        out.update(claude_update_facts(out['version'], fresh))
     CLAUDE_CACHE[pw.pw_name] = out
     return out
 
@@ -10883,7 +11084,10 @@ def api_password(c):
     if not check_password(c.body.get('old'), c.who['pw']):
         raise Refused('the present password is not that', 403)
     c.daemon.auth.set_password(c.name, c.body.get('new'), c.name)
-    return {}
+    # Every other sign-in of the account ends with the old password (1.0.103) - one opened with a stolen
+    # cookie went on for up to a week.
+    n = c.daemon.store.x('DELETE FROM sessions WHERE name=? AND id<>?', (c.name, c.who['_sid']))
+    return {'ended': n or 0}
 
 
 @route('POST', '/api/auth/prefs')
@@ -13783,7 +13987,7 @@ def usage_file_rows(path, st):
     rows = []
     seen = set()
     try:
-        with open(path, encoding='utf-8', errors='replace') as fh:
+        with open_regular(path, text=True) as fh:
             for line in fh:
                 if '"usage"' not in line:
                     continue
@@ -14023,6 +14227,12 @@ def cc_usage(pw, days=30):
 def api_cc(c):
     src = {'as': c.arg('as'), 'project': c.arg('project')}
     pw, project = cc_target(c, src)
+    # Its files read as the account (1.0.103), never as root through a link in its home.
+    with fs_as(pw):
+        return _api_cc(c, pw, project)
+
+
+def _api_cc(c, pw, project):
     what = c.arg('what') or 'overview'
     base = {'as': pw.pw_name, 'home': pw.pw_dir, 'project': project}
     if what == 'overview':
@@ -14088,8 +14298,15 @@ def api_cc(c):
 
 @route('POST', '/api/cc')
 def api_cc_do(c):
+    pw, project = cc_target(c, c.body)
+    # Written, made and taken away as the account (1.0.103): as root, a link in its home to /etc made root
+    # make folders and write files there, given to the account.
+    with fs_as(pw):
+        return _api_cc_do(c, pw, project)
+
+
+def _api_cc_do(c, pw, project):
     b = c.body
-    pw, project = cc_target(c, b)
     act = str(b.get('action') or '')
     st = c.daemon.store
     where = '%s%s' % (pw.pw_name, (' in ' + project) if project else '')
@@ -15410,8 +15627,8 @@ def _mfa_done(c, how):
 
 
 def _mfa_wrong(c):
-    c.daemon.auth.failed(c.name, c.ip)
-    wait = c.daemon.auth.locked(c.name, c.ip)
+    c.daemon.auth.failed(c.name, c.ip, 'mfa')
+    wait = c.daemon.auth.locked(c.name, c.ip, 'mfa')
     if wait:
         c.daemon.store.add_event('sign-in', '%s is locked out after wrong codes of the second step, from %s' % (
             c.name, c.ip), 'warn', who=c.name)
@@ -15440,7 +15657,7 @@ def api_mfa_do(c):
     name = c.name
     act = str(c.body.get('action') or '')
     data = c.who.get('_data') or {}
-    wait = c.daemon.auth.locked(name, c.ip)
+    wait = c.daemon.auth.locked(name, c.ip) or c.daemon.auth.locked(name, c.ip, 'mfa')
     if wait and act in ('enrol_confirm', 'check'):
         raise Refused('too many wrong codes - try again in %d min' % max(1, wait // 60 + 1), 429)
     if act in ('enrol_start', 'enrol_confirm') and (stage != 'enrol' or mfa_stage(st, name) != 'enrol'):
@@ -15522,7 +15739,7 @@ def api_mfa_do(c):
             if not _mfa_code_ok(data.get('mfa_code'), code) or not st.session_take(c.who['_sid'], 'mfa_code'):
                 _mfa_wrong(c)
                 raise Refused('that code is not right, or no longer good - send another')
-        for k in c.daemon.auth._fail_keys(name, c.ip):
+        for k in c.daemon.auth._fail_keys(name, c.ip) + c.daemon.auth._fail_keys(name, c.ip, 'mfa'):
             st.x('DELETE FROM fails WHERE k=?', (k,))
         token = _mfa_done(c, MFA_KIND_WORDS.get(rec.get('kind')))
         return {'message': 'signed in', 'done': True, 'token': token}
@@ -15541,10 +15758,11 @@ def lockouts_view(store):
         forgets = max(float(r['until_ts'] or 0), float(r['first'] or 0) + pause)
         if forgets <= now:
             continue
-        rows.append({'kind': 'admin', 'who': who, 'key': r['k'], 'by': 'address' if by == 'ip' else 'name',
+        rows.append({'kind': 'admin', 'who': who, 'key': r['k'],
+                     'by': 'address' if by in ('ip', 'pkip', 'mfaip') else 'name',
                      'what': 'signing in to these pages', 'words': 'wrong passwords',
                      'fails': int(r['n'] or 0), 'limit': limit, 'locked': locked,
-                     'until': float(r['until']) if locked else None, 'forgets': forgets,
+                     'until': float(r['until_ts']) if locked else None, 'forgets': forgets,
                      'first': float(r['first'] or 0), 'last': float(r['first'] or 0), 'others': []})
     rows.sort(key=lambda x: (not x['locked'], -x['last']))
     return rows
@@ -15575,7 +15793,9 @@ def api_lockouts_do(c):
         return {'message': 'cleared: %d' % n, 'told': []}
     if act == 'clear':
         kind = str(c.body.get('who') or '')
-        keys = [k for k in ('ip:' + kind, 'name:' + kind.lower())]
+        keys = [k for k in ('ip:' + kind, 'name:' + kind.lower(), 'pkip:' + kind, 'mfaip:' + kind, 'mfa:' + kind.lower())]
+        if c.body.get('key'):
+            keys.append(str(c.body['key']))
         n = lockouts_clear(c.daemon.store, keys, c.name)
         return {'message': 'cleared: %d' % n, 'told': []}
     raise Refused('clear or clear_all')
@@ -16114,8 +16334,11 @@ def setting_value(k, v):
         return str(v)
     v = str(v if v is not None else '')
     if kind in ('str', 'password'):
-        v = v.strip()
-        if '\n' in v or len(v) > 2000:
+        # a password as typed, its spaces too (1.0.103): taken off, a backup password "secret " locked the
+        # backups with "secret", and the password typed on another machine did not open them
+        if kind == 'str':
+            v = v.strip()
+        if '\n' in v or '\r' in v or len(v) > 2000:
             raise Refused('%s: one line' % s[3])
     if len(v) > 64000:
         raise Refused('%s: too long' % s[3])
@@ -19323,12 +19546,19 @@ def engine_asked(given):
     for k, v in on_file.items():
         if k != 'db_engine':
             c[k] = v
+    live = dict(c)
     for k, v in (given or {}).items():
         if k not in DB_KEYS or v is None:
             continue
         if k == 'db_password' and is_masked(v):
             continue
         c[k] = v
+    # The password in use only for the server in use (1.0.103): left dotted while another engine, host or
+    # port was typed, it was sent to that other server.
+    pw_given = (given or {}).get('db_password')
+    if (pw_given is None or is_masked(pw_given)) and any(
+            str(c.get(k) or '') != str(live.get(k) or '') for k in ('db_engine', 'db_host', 'db_port')):
+        c['db_password'] = ''
     if c.get('db_engine') not in ('sqlite', 'mariadb', 'postgres'):
         raise ValueError('the engine is sqlite, mariadb or postgres')
     for k in ('db_name', 'db_user'):
@@ -19365,8 +19595,38 @@ def same_database(c, db):
     port = int(c.get('db_port') or {'mariadb': 3306, 'postgres': 5432}[db.engine])
     here = {'', 'localhost', '127.0.0.1', '::1'}
     a, b = str(c.get('db_host') or '').lower(), str(db.host or '').lower()
-    return ((a == b or (a in here and b in here)) and port == int(db.port or port)
-            and str(c.get('db_name')) == str(db.name))
+    if ((a == b or (a in here and b in here)) and port == int(db.port or port)
+            and str(c.get('db_name')) == str(db.name)):
+        return True
+    return db_marked_same(c, db)
+
+
+def db_marked_same(c, db):
+    """The one in use under another name (1.0.103): db.example.lan for 10.0.0.5. A mark made new this moment in
+    the live database (meta db:instance) is looked for in the other one - only the same database can hold it;
+    a copy of it cannot. Its tables were thrown away as "the other"."""
+    mark = secrets.token_hex(16)
+    try:
+        db.run('DELETE FROM meta WHERE k=?', ('db:instance',))
+        db.run('INSERT INTO meta(k, v) VALUES(?, ?)', ('db:instance', mark))
+    except Exception:                                   # noqa: BLE001
+        return False
+    far = None
+    try:
+        far = db_open(c)
+        far.connect()
+        got = far.value('SELECT v FROM meta WHERE k=?', ('db:instance',), None)
+        if isinstance(got, (bytes, bytearray)):
+            got = got.decode()
+        return got == mark
+    except Exception:                                   # noqa: BLE001 - not reached, no meta: not this one
+        return False
+    finally:
+        if far is not None:
+            try:
+                far.close()
+            except Exception:                           # noqa: BLE001
+                pass
 
 
 def db_try(c):
@@ -19737,7 +19997,7 @@ def db_table_sizes(db):
     try:
         if db.engine == 'mariadb':
             for r in db.rows('SELECT TABLE_NAME AS t, DATA_LENGTH + INDEX_LENGTH AS b, '
-                             'DATA_FREE AS f FROM information_schema.DB_TABLES '
+                             'DATA_FREE AS f FROM information_schema.TABLES '
                              'WHERE TABLE_SCHEMA = DATABASE()'):
                 sizes[r['t']] = (int(r['b'] or 0), int(r['f'] or 0))
         elif db.engine == 'postgres':
@@ -19768,7 +20028,7 @@ def db_free_inside(db):
             pages = int(db.value('PRAGMA freelist_count') or 0)
             return pages * int(db.value('PRAGMA page_size') or 4096)
         if db.engine == 'mariadb':
-            return int(db.value('SELECT SUM(DATA_FREE) FROM information_schema.DB_TABLES '
+            return int(db.value('SELECT SUM(DATA_FREE) FROM information_schema.TABLES '
                                 'WHERE TABLE_SCHEMA = DATABASE()') or 0)
         return int(db.value('SELECT COALESCE(SUM(n_dead_tup), 0) FROM pg_stat_user_tables') or 0)
     except Exception:
@@ -21775,6 +22035,15 @@ def config_export(store, with_secrets=False):
             tls['key'] = unseal_secret(tls['key'], 'web:tls')
         else:
             tls.pop('key', None)
+        # the ECDSA twin's key too (1.0.103): it went out still sealed with this machine's key, and the
+        # other machine dropped the twin without a word
+        if isinstance(tls.get('alt'), dict):
+            alt = dict(tls['alt'])
+            if with_secrets and alt.get('key'):
+                alt['key'] = unseal_secret(alt['key'], 'web:tls')
+                tls['alt'] = alt if alt['key'] else None
+            else:
+                tls.pop('alt', None)
     out = {'kind': 'ai-config', 'version': __version__, 'host': host_name(), 'at': time.time(),
            'settings': settings, 'users': users, 'firewall': store.meta_json('fw:conf', None),
            'access': store.meta_json('fw:access', None), 'mail_ca': mail_ca_pem(store), 'tls': tls,
@@ -21791,20 +22060,32 @@ def config_import(daemon, conf, by, replace=False, ip='127.0.0.1', wait=False):
     said = []
     sets = conf.get('settings') or {}
     n = 0
+    # Every value checked first, then written (1.0.103): one this machine refuses (a Linux account it has not)
+    # stopped the import half done - some settings in, the accounts and the rest never. It is left out now,
+    # and said.
+    good, skipped = {}, []
     for k, v in sets.items():
         if k not in SCHEMA_KEYS or k in ('upgrade_url',) and not str(v).startswith('https://'):
             continue
-        nv = setting_value(k, v)
+        try:
+            nv = setting_value(k, v)
+        except (Refused, ValueError, TypeError) as e:
+            skipped.append('%s (%s)' % (k, e))
+            continue
         if SCHEMA_KEYS[k][2] == 'password':
             nv = seal_secret(nv, 'setting:' + k) if nv else ''
+        good[k] = nv
+    for k, nv in good.items():
         st.set_setting(k, nv, by)
         n += 1
     if replace:
         for k in list(st.settings_all()):
-            if k not in sets and k in SCHEMA_KEYS and not (SCHEMA_KEYS[k][2] == 'password' and
-                                                           not conf.get('with_secrets')):
+            # a secret left out of a file without secrets is kept, of every kind (claude_env too, 1.0.103)
+            if k not in sets and k in SCHEMA_KEYS and not (secret_key(k) and not conf.get('with_secrets')):
                 st.drop_setting(k)
     said.append('%d setting(s)' % n)
+    if skipped:
+        said.append('left out, not good here: %s' % '; '.join(skipped)[:600])
     sa = conf.get('signin_art')
     if isinstance(sa, dict):
         try:
@@ -21864,6 +22145,10 @@ def config_import(daemon, conf, by, replace=False, ip='127.0.0.1', wait=False):
     if isinstance(conf.get('tls'), dict) and conf['tls'].get('cert') and conf['tls'].get('key'):
         prof = dict(conf['tls'])
         prof['key'] = seal_secret(prof['key'], 'web:tls')
+        if isinstance(prof.get('alt'), dict) and prof['alt'].get('key'):
+            prof['alt'] = dict(prof['alt'], key=seal_secret(prof['alt']['key'], 'web:tls'))
+        else:
+            prof.pop('alt', None)
         if wait:
             tls_apply(st, prof, by)
             said.append('the certificate and TLS')
@@ -22350,11 +22635,16 @@ def trial_undo(daemon, kind, undo):
     if kind == 'net':
         net_restore(undo)
     elif kind == 'fw':
+        # Who may reach the pages first, then the firewall - built from that (1.0.103): the other way round,
+        # its rules for the pages were made from the setting being taken back.
+        acc = undo.get('access')
+        if acc is not None:
+            if 'pages' not in acc:              # an undo kept by 1.0.102 or older: {'all', 'nets'}
+                acc = {'pages': {'any': bool(acc.get('all', True)), 'from': list(acc.get('nets') or [])}}
+            access_apply({'all': acc['pages'].get('any', True), 'nets': acc['pages'].get('from') or []})
+            daemon.store.set_meta_json('fw:access', acc)
         daemon.store.set_meta_json('fw:conf', undo.get('conf') or {'on': False, 'off': [], 'rules': []})
         fw_put(daemon, undo.get('conf') or {}, record=False)
-        if undo.get('access') is not None:
-            access_apply(undo['access'])
-            daemon.store.set_meta_json('fw:access', undo['access'])
     elif kind == 'access':
         access_apply(undo)
 
@@ -22479,7 +22769,9 @@ def net_job(daemon, got, by):
     if NO_SYSTEM:
         raise Refused('this is a test machine: nothing is changed')
     job = daemon.store.meta_json('net:job', {}) or {}
-    if job.get('state') == 'running':
+    # A job left "running" by a daemon that stopped in the middle of it (an upgrade, a restart) never ends:
+    # one that has not moved for 5 minutes is over (1.0.103) - the longest step is 90 s.
+    if job.get('state') == 'running' and time.time() - float(job.get('moved') or job.get('at') or 0) < 300:
         raise Refused('a change of the network is going on already')
     job = {'id': secrets.token_hex(6), 'state': 'running', 'pct': 5, 'steps': [], 'at': time.time(),
            'moved': time.time(), 'by': by}
@@ -22833,7 +23125,8 @@ def fw_save(daemon, b, who, ip):
         rules.append(r)
     off = [k for k in (b.get('off') or []) if k in FW_AUTO_OPTIONAL]
     was_conf = store.meta_json('fw:conf', None) or {'on': False, 'off': [], 'rules': []}
-    was_access = store.meta_json('fw:access', None)
+    # who may reach the pages as it is now, before anything is written (1.0.103): read after, it was the new one
+    was_access = access_conf(store)
     said = []
     new_access = None
     if isinstance(b.get('access'), dict):
@@ -22868,8 +23161,9 @@ def fw_save(daemon, b, who, ip):
         store.set_meta_json('fw:conf', was_conf)
         raise
     daemon.trials.start('fw', 'the firewall and access: %s' % (' · '.join(said) or 'as it was'),
-                        {'conf': was_conf, 'access': {'all': (was_access or access_conf(store)).get('pages', {}).get('any', True),
-                                                      'nets': (was_access or access_conf(store)).get('pages', {}).get('from', [])}
+                        {'conf': was_conf,
+                         'access': {'pages': {'any': bool((was_access.get('pages') or {}).get('any', True)),
+                                              'from': list((was_access.get('pages') or {}).get('from') or [])}}
                          if new_access else None}, who)
     if said:
         store.add_event('settings', '%s changed the firewall and access: %s' % (who, ' · '.join(said)), 'warn', who=who)
@@ -23366,7 +23660,8 @@ def api_net_do(c):
         return {'message': 'asked: %s does it now' % node_name(), 'id': job['id']}
     if act == 'hide':
         job = c.daemon.store.meta_json('net:job', {}) or {}
-        if job.get('state') not in ('done', 'failed'):
+        stale = time.time() - float(job.get('moved') or job.get('at') or 0) >= 300
+        if job.get('state') not in ('done', 'failed') and not stale:
             raise Refused('the change is not over yet', 409)
         c.daemon.store.set_meta('net:seen', str(job.get('id')))
         return net_view(c.daemon)
@@ -23657,7 +23952,8 @@ class Handler(BaseHTTPRequestHandler):
                 real = os.path.realpath(path)
                 if real != root and not real.startswith(root.rstrip('/') + '/'):
                     raise Refused('that is outside the folder of this chat (%s)' % root, 403)
-            got = files_list(who, path, arg('hidden', '1') == '1')
+            with fs_as(fs_account(who)):
+                got = files_list(who, path, arg('hidden', '1') == '1')
             if root:
                 got['root'] = root
                 if os.path.realpath(got.get('path') or path) == root:
@@ -23665,13 +23961,17 @@ class Handler(BaseHTTPRequestHandler):
                 got['roots'] = [root]
             return self.answer(200, dict(got, ok=True))
         if u.path == '/files/get' and not post:
-            return self.send_path(who, arg('path'), arg('inline') == '1')
+            with fs_as(fs_account(who)):
+                return self.send_path(who, arg('path'), arg('inline') == '1')
         if u.path == '/files/op' and post:
-            out = files_op(who, self.body_json())
+            # Done as the account's Linux account (1.0.103), not as root: see fs_as.
+            with fs_as(fs_account(who)):
+                out = files_op(who, self.body_json())
             return self.answer(200, dict(out, ok=True))
         if u.path == '/files/put' and post:
             length = int(self.headers.get('Content-Length') or -1)
-            path, size = take_upload(self.rfile, length, arg('dir'), arg('name'), who, arg('overwrite') == '1')
+            with fs_as(fs_account(who)):
+                path, size = take_upload(self.rfile, length, arg('dir'), arg('name'), who, arg('overwrite') == '1')
             d.store.add_event('files', '%s sent %s (%s)' % (who['name'], path, human_bytes(size)), 'info',
                               who=who['name'])
             return self.answer(200, {'ok': True, 'path': path, 'size': size})
@@ -23683,7 +23983,8 @@ class Handler(BaseHTTPRequestHandler):
             name = time.strftime('%Y%m%d-%H%M%S-') + safe_name(arg('name') or 'pasted')
             pw = linux_user(r['run_as'])
             length = int(self.headers.get('Content-Length') or -1)
-            path, size = take_upload(self.rfile, length, folder, name, who, False, uid=pw.pw_uid, gid=pw.pw_gid)
+            with fs_as(pw):
+                path, size = take_upload(self.rfile, length, folder, name, who, False, uid=pw.pw_uid, gid=pw.pw_gid)
             mime = mimetypes.guess_type(path)[0] or ''
             if arg('paste', '1') == '1':
                 text = path if ' ' not in path else shlex.quote(path)
@@ -28132,7 +28433,7 @@ def cli_main(argv):
                 print(pal.ok_line('nobody is locked out, and no wrong attempt is being counted'))
                 return 0
             now = time.time()
-            print(table([[r['who'], r['by'], 'LOCKED %d min' % max(1, int((r['until'] - now) // 60 + 1))
+            print(table([[r['who'], r['by'], 'LOCKED %d min' % max(1, int(((r['until'] or now) - now) // 60 + 1))
                           if r['locked'] else 'counting', '%d/%d' % (r['fails'], r['limit']),
                           when(r['first'])] for r in rows], ['who', 'by', 'state', 'wrong', 'since']))
             return 0

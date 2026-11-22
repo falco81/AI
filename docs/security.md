@@ -15,6 +15,18 @@ ai --lockouts
 ai --unlock 192.0.2.7        # an address, a name, or all
 ```
 
+## Files are touched as their account (1.0.103)
+
+The daemon runs as root, because it starts terminals as any account. For a person who is not an administrator,
+every file the pages read, write, upload, make, rename or take away is handled as the Linux account that
+person's terminals run as, not as root: the thread switches its file identity (`setfsuid`, `setfsgid`, its
+groups) for that one piece of work. The kernel then checks each step with that account's rights, and root's way
+past permissions is gone for that moment. The same goes for the settings of Claude Code in an account's home,
+for carrying a chat's transcript to another folder, and for the folder of files given to Claude in a chat. A
+link the account put in its home therefore leads nowhere it could not go itself. Uploads and every file ai
+writes get their owner and mode on the open file, never by name. A link is renamed or taken away itself, never
+what it points to.
+
 ## Passkeys (Face ID, Touch ID, Windows Hello)
 
 (How it is built, to take into another application - the API, every check, the code and the looks: [ipad-and-passkeys.md](ipad-and-passkeys.md).)

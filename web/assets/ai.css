@@ -3188,7 +3188,10 @@ body.term-wide .wrap{max-width:none}
 .pill.small{padding:2px 9px;font-size:12px}
 .btn.iconly{padding-left:8px;padding-right:8px;min-width:34px;justify-content:center}
 .term-host{position:relative;flex:1 1 auto;min-height:240px;background:var(--term-bg,#000);border:1px solid var(--line);
-  border-radius:10px;padding:6px 4px 4px 8px;overflow:hidden}
+  border-radius:10px;padding:6px 4px 4px 8px;overflow:hidden;
+  /* Its height without the padding and the border (1.0.103): xterm's fit reads the height of this box, and with
+     border-box it counted them in - a row more than there is room for, the last one cut in half. */
+  box-sizing:content-box}
 .term-host .xterm{height:100%}
 .term-host .xterm-viewport{background:var(--term-bg,#000) !important}
 .term-drop{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;
@@ -3400,7 +3403,7 @@ pre.lines.tall{max-height:60vh;overflow:auto}
   font:600 12.5px var(--font,system-ui);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45)}
 .term-live .muted{color:#8aa4c6;font-weight:500}
 .term-host .xterm{padding-right:16px}
-.term-history{height:min(70vh,900px);background:var(--term-bg,#000);border:1px solid var(--line);border-radius:10px;padding:6px;overflow:hidden}
+.term-history{height:calc(min(70vh,900px) - 14px);background:var(--term-bg,#000);border:1px solid var(--line);border-radius:10px;padding:6px;overflow:hidden;box-sizing:content-box}
 .term-history .xterm{height:100%}
 .term-history .xterm-viewport{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 /* The folder picker (1.0.9). */

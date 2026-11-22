@@ -952,5 +952,126 @@ check('ollama: the backend chosen is kept with the chat, and as the account\'s l
 _ols.shutdown()
 ai.CONFIG.update(ollama_on=False, ollama_where='local', ollama_port=11434, ollama_model='', ollama_small='')
 
+# ---- 1.0.103: root never through an account's links; fixes found by the review ------------------------
+import pwd as _pwd
+import shutil as _sh
+import subprocess as _sp
+_fsu = None
+if os.geteuid() == 0:
+    try:
+        _nb = _pwd.getpwnam('nobody')            # an account every system has; its home here is a folder of the test
+        _home = os.path.join(WORK, 'home-nobody')
+        os.makedirs(_home, exist_ok=True)
+        os.chown(_home, _nb.pw_uid, _nb.pw_gid)
+        os.chmod(WORK, 0o755)
+        _fsu = _pwd.struct_passwd((_nb.pw_name, 'x', _nb.pw_uid, _nb.pw_gid, '', _home, '/bin/sh'))
+    except KeyError:
+        _fsu = None
+if _fsu is not None:
+    _vict = os.path.join(WORK, 'victim')
+    os.makedirs(_vict, exist_ok=True)
+    os.chmod(_vict, 0o755)
+    for _old in ('mine.txt', 'p'):
+        if os.path.lexists(os.path.join(_fsu.pw_dir, _old)):
+            os.unlink(os.path.join(_fsu.pw_dir, _old))
+    _trap = os.path.join(_fsu.pw_dir, 'trap')
+    if os.path.lexists(_trap):
+        os.unlink(_trap)
+    os.symlink(_vict, _trap)
+    _r = {}
+    def _fs_work():
+        with ai.fs_as(_fsu):
+            try:
+                open(os.path.join(_trap, 'x'), 'w').write('no')
+                _r['through'] = True
+            except OSError:
+                _r['through'] = False
+            open(os.path.join(_fsu.pw_dir, 'mine.txt'), 'w').write('ok')
+            _r['mine'] = os.stat(os.path.join(_fsu.pw_dir, 'mine.txt')).st_uid == _fsu.pw_uid
+            with ai.fs_root():
+                _r['root_again'] = os.access('/etc/shadow', os.R_OK) and bool(open('/etc/shadow').read(1) is not None)
+            try:
+                open('/etc/shadow').read(1)
+                _r['after'] = True
+            except OSError:
+                _r['after'] = False
+    _th = threading.Thread(target=_fs_work)
+    _th.start()
+    _th.join()
+    check('files as the account: never through its link into a folder it may not write, its own written as its own',
+          _r.get('through') is False and _r.get('mine') and not os.path.exists(os.path.join(_vict, 'x')))
+    check('files as the account: root for a moment inside (the database), the account again after, root after it all',
+          _r.get('root_again') and _r.get('after') is False and open('/etc/shadow').read(1) is not None)
+    # the transcript carried along: a link to /etc/… as the transcript, the folder of projects a link
+    _proj = os.path.join(_fsu.pw_dir, '.claude', 'projects')
+    _sh.rmtree(os.path.join(_fsu.pw_dir, '.claude'), ignore_errors=True)
+    os.makedirs(os.path.join(_proj, 'x'))
+    _sid = '11111111-2222-3333-4444-555555555555'
+    _secret = os.path.join(WORK, 'secret.txt')
+    open(_secret, 'w').write('root only')
+    os.chmod(_secret, 0o600)
+    os.symlink(_secret, os.path.join(_proj, 'x', _sid + '.jsonl'))
+    _dest = os.path.join(_fsu.pw_dir, 'p')
+    os.symlink(_vict, os.path.join(_proj, ai.re.sub(r'[^A-Za-z0-9]', '-', _dest)))
+    _sp.run(['chown', '-R', '%d:%d' % (_fsu.pw_uid, _fsu.pw_gid), os.path.join(_fsu.pw_dir, '.claude')])
+    ai.cc_carry_transcript(_fsu, _sid, _dest)
+    check('a chat moved to another folder: a transcript that is a link, or a folder of projects that is one, '
+          'is never copied by root', os.listdir(_vict) == [] and os.stat(_vict).st_uid == 0)
+    # the .gitignore of the folder of files given to Claude: a dangling link
+    _sh.rmtree(os.path.join(_fsu.pw_dir, 'proj'), ignore_errors=True)
+    _up = os.path.join(_fsu.pw_dir, 'proj', '.ai-uploads')
+    os.makedirs(_up, exist_ok=True)
+    _target = os.path.join(_vict, 'zz.sh')
+    os.symlink(_target, os.path.join(_up, '.gitignore'))
+    _sp.run(['chown', '-R', '%d:%d' % (_fsu.pw_uid, _fsu.pw_gid), os.path.join(_fsu.pw_dir, 'proj')])
+    ai.CONFIG['chat_upload_dir'] = '.ai-uploads'
+    ai.chat_folder(None, {'name': 'admin', 'role': 'admin', 'run_as': '', 'roots': '[]'},
+                   {'run_as': 'nobody', 'cwd': os.path.join(_fsu.pw_dir, 'proj')})
+    check('the .gitignore of the files given to Claude: a link there never makes root write where it points',
+          not os.path.exists(_target))
+# a link taken away or renamed in Files: the link, never what it points to
+_fd = os.path.join(WORK, 'files')
+os.makedirs(os.path.join(_fd, 'data'), exist_ok=True)
+open(os.path.join(_fd, 'data', 'keep.txt'), 'w').write('keep')
+os.makedirs(os.path.join(_fd, 'b'), exist_ok=True)
+os.symlink(os.path.join(_fd, 'data'), os.path.join(_fd, 'b', 'link'))
+_adm = {'name': 'admin', 'role': 'admin', 'run_as': '', 'roots': '[]'}
+ai.files_op(_adm, {'op': 'rename', 'path': os.path.join(_fd, 'b', 'link'), 'name': 'link2'})
+check('Files: renaming a link renames the link', os.path.islink(os.path.join(_fd, 'b', 'link2'))
+      and os.path.isdir(os.path.join(_fd, 'data')))
+ai.files_op(_adm, {'op': 'delete', 'path': os.path.join(_fd, 'b', 'link2')})
+check('Files: taking a link to a folder away leaves the folder and what is in it',
+      not os.path.lexists(os.path.join(_fd, 'b', 'link2')) and os.path.isfile(os.path.join(_fd, 'data', 'keep.txt')))
+# a FIFO named like a transcript
+_ff = os.path.join(WORK, 'fifo.jsonl')
+os.mkfifo(_ff)
+_t0 = time.time()
+check('a FIFO named like a transcript is passed by, never waited on', ai.conversation_facts(_ff) is None
+      and time.time() - _t0 < 2)
+# the second step's wrong codes are not cleared by the password given again
+_ma = ai.Auth(st)
+for _i in range(3):
+    _ma.failed('mfauser', '10.7.7.7', 'mfa')
+st.x('DELETE FROM fails WHERE k=?', ('name:mfauser',))           # what a right password does
+check('wrong codes of the second step are counted apart - a right password does not clear them',
+      st.one('SELECT n FROM fails WHERE k=?', ('mfa:mfauser',))['n'] == 3)
+for _i in range(10):
+    _ma.failed('mfauser', '10.7.7.7', 'mfa')
+check('the list of who is locked out shows a lock (it broke on one)', any(
+    r['locked'] and r['until'] for r in ai.lockouts_view(st)))
+ai.lockouts_clear(st)
+check('a password setting keeps its spaces; a str setting is trimmed',
+      ai.setting_value('rbackup_password', 'secret ') == 'secret ' and ai.setting_value('site_name', ' x ') == 'x')
+_was_dra = ai.CONFIG.get('default_run_as')
+_imp = ai.config_import(type('D', (), {'store': st})(), {'kind': 'ai-config', 'settings': {
+    'default_run_as': 'nobody-here-xyz', 'site_name': 'imported-site'}, 'users': []}, 'tester')
+check('an import goes on past a setting this machine has not (a Linux account), and says it',
+      st.settings_all().get('site_name') in ('imported-site', '"imported-site"') and
+      'default_run_as' in json.dumps(_imp))
+_ai_src = open(os.path.join(HERE, 'ai.py')).read()
+check('an import that replaces keeps every secret left out of the file (claude_env too)',
+      "not (secret_key(k) and not conf.get('with_secrets'))" in _ai_src)
+check('MariaDB: table sizes from information_schema.TABLES', 'information_schema.DB_TABLES' not in _ai_src)
+
 print('\n%d failed' % len(FAILS) if FAILS else '\nall fine')
 sys.exit(1 if FAILS else 0)

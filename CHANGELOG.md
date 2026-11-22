@@ -3,6 +3,55 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.103
+
+Bugs found by a review of the terminals, the files, the backups and the database, and the system's panes - each
+one fixed:
+
+- **Security - an account's files are touched as that account now, never as root.** The daemon is root; an
+  account whose terminals run as its own Linux account could put a link in its home and have root follow it:
+  - moving a chat to another folder copied its transcript as root - a transcript that was a link to /etc/shadow,
+    into a folder that was a link to /etc, both then given to the account;
+  - the .gitignore of the folder of files given to Claude, a link to /etc/profile.d/…, was written by root;
+  - Settings of Claude Code (agents, commands, settings.json…) made folders and wrote through a link as root;
+  - an upload's file was given its owner by name: swapped for a link to /etc/shadow during the upload, root gave
+    /etc/shadow away;
+  - the Files tab worked as root on the paths an account controls (a link swapped in between the check and the
+    work).
+  Every file of a person who is not an administrator is now read, written, made, renamed and taken away as the
+  Linux account they run as (the kernel checks it, root's way past permissions is gone for that moment); uploads
+  and every file ai writes get their owner and mode on the open file, never by name.
+- **Files: a link is renamed or taken away itself**: taking away a link to a folder emptied the folder it pointed
+  to; renaming it renamed the file it pointed to, in that file's folder. The files of a chat keep renaming and
+  taking away inside the chat's folder too.
+- **Security - the second step**: its wrong codes were counted with the password's, so the right password given
+  again cleared them - eight guesses at a time, for ever. They are counted apart now.
+- **Security - changing your own password** ends your other sign-ins (one opened with a stolen cookie went on for
+  up to a week).
+- **The firewall's "goes back by itself"** did not put back who may reach the pages: on a fresh installation it
+  "went back" to the new setting, the firewall was rebuilt from the setting being taken back, and the setting it
+  put back had the wrong shape (the pages open to everybody at the next save). A second change while the first
+  is on trial now goes back to how it was before both.
+- **Locked out** (Accounts) broke whenever anybody was locked out; passkey and second-step locks can be cleared
+  one by one.
+- A change of the network interrupted by a restart of ai blocked every later change for good.
+- **Export and import**: one setting this machine cannot take (a Linux account it has not) stopped the import half
+  done - it is left out and said now; an import that replaces dropped `claude_env` (the API key of the
+  terminals) when the file had no secrets; the ECDSA twin of the certificate went out still sealed with this
+  machine's key and was lost on the other.
+- Passwords in the settings lost their spaces at the ends (a backup password "secret " locked with "secret").
+- **The database**: "empty the other database" could empty the live one reached under another name - the live
+  one is now told by a mark made in it at that moment; the password in use was sent to a newly typed server
+  when the box was left dotted; MariaDB's table sizes and free space were always empty; the weekly check of a
+  copy said NOT GOOD after a restore that brought another key.
+- Starting a chat again after its account's Linux account was changed left it unreachable (attach, keys, end).
+- A FIFO named like a transcript held a thread of the daemon for ever.
+- **The terminal's last line** was cut in half: xterm counted the padding and the border of its box as room for
+  rows. It is whole now, in every size, full screen and with the files or the writing box open.
+- **Claude Code's accounts** (Settings → Claude Code) say whether a newer Claude Code is out (npm's *latest*,
+  asked every 6 hours, through the proxy where installing Claude Code goes through it); *Update it* is then the
+  blue button, and the table is read afresh each time the pane is opened.
+
 ## 1.0.102
 
 - **An open list closed by itself**: on the Terminals tab with no chat open, the start page was drawn again every few
