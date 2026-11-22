@@ -3,6 +3,15 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.112
+
+- **Ollama: Free the GPU** (Settings → Ollama → What Ollama has, or `ai --ollama-free`): every model Ollama holds is
+  unloaded at once (`keep_alive: 0` for each one `/api/ps` lists) - the GPU's memory and the RAM of its machine are
+  free, for a game or anything else, with nothing restarted. Ollama loads a model again by itself at the next
+  question.
+- **Free the GPU when the last chat ends** (a setting, off at first): once no chat with Ollama runs any more - the
+  last one ended here, or Claude Code in it quit - the same is done by itself.
+
 ## 1.0.111
 
 - **Tables**: a tag (YES, 128K, ADMINISTRATOR…) sat 2-5 px lower than the words and the buttons of its row - it

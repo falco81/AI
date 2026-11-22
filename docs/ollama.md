@@ -125,3 +125,10 @@ it. `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is that context, so Claude Code compacts t
 the model - otherwise it takes a model it does not know to hold a million tokens, and Ollama stops every answer once
 the context is full (Claude Code reports that as "exceeded the output token maximum"). `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
 is *Longest answer*, never more than half the context. The list of chats shows the model and context a chat runs with.
+
+### Free the GPU (1.0.112)
+
+Ollama keeps a model loaded for a while after its last question (`OLLAMA_KEEP_ALIVE`, 5 minutes unless set), and
+holds its GPU's memory and RAM until then. *Free the GPU* (What Ollama has, or `ai --ollama-free`) unloads every model
+it holds at once: `keep_alive: 0` for each one `/api/ps` lists. *Free the GPU when the last chat ends* does it by
+itself when no chat with Ollama runs any more. Nothing is restarted; Ollama loads a model again at the next question.

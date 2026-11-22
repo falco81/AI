@@ -3695,7 +3695,7 @@ var PANE_LAYOUT = {
        {when: 'remote', title: 'Ollama elsewhere on the network', icon: 'net',
         lede: 'Another machine - a GPU box, a NAS. Ollama there listens on the network (OLLAMA_HOST=0.0.0.0); the chats ask it from this server.',
         keys: ['ollama_url', 'ollama_key'], wide: {ollama_url: 2, ollama_key: 2}, extra: olTryExtra}]},
-    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small', 'ollama_ctx', 'ollama_ctx_model', 'ollama_max_out'],
+    {title: 'The models', icon: 'list', keys: ['ollama_model', 'ollama_small', 'ollama_ctx', 'ollama_ctx_model', 'ollama_max_out', 'ollama_unload_end'],
      wide: {ollama_model: 2, ollama_small: 2, ollama_ctx: 2, ollama_max_out: 2}}
   ],
   codes: [
@@ -4061,7 +4061,18 @@ function loadOllama(fresh) {
     host.appendChild(olFacts(d));
   }, function (e) { clear(host); host.appendChild(el('p', 'note bad', String((e && e.message) || e))); });
 }
-(function () { var b = $('ol-look'); if (b) b.onclick = function () { loadOllama(true); }; }());
+(function () {
+  var b = $('ol-look'); if (b) b.onclick = function () { loadOllama(true); };
+  /* Free the GPU (1.0.112): every model Ollama holds unloaded, its machine free for something else */
+  var f = $('ol-free');
+  if (f) f.onclick = function () {
+    busy(f, true);
+    api('ollama', {action: 'unload'}).then(function (r) {
+      toast(r.freed && r.freed.length ? txT('Freed') + ': ' + r.freed.join(', ') : txT(r.message), r.failed && r.failed.length ? 'warn' : 'good');
+      loadOllama(true);
+    }).catch(oops).then(function () { busy(f, false); });
+  };
+}());
 
 function smsTelExtra() {
   var f = document.createDocumentFragment();

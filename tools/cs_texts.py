@@ -4063,6 +4063,19 @@ STRINGS = {
     # ---- 1.0.110
     'context not set':
         'kontext nenastaven',
+    # ---- 1.0.112
+    'Free the GPU':
+        'Uvolnit GPU',
+    'Freed':
+        'Uvolněno',
+    'nothing was loaded':
+        'nic nebylo načtené',
+    "Every model Ollama holds unloaded now: its GPU's memory and the RAM free at once - for a game or anything else - with nothing restarted. Ollama loads a model again by itself at the next question.":
+        'Uvolní hned všechny modely, které má Ollama načtené: paměť GPU i RAM jsou volné – pro hru nebo cokoli jiného – bez restartu. Při další otázce si Ollama model načte sama.',
+    'Free the GPU when the last chat ends':
+        'Uvolnit GPU, když skončí poslední chat',
+    'On: when no chat with Ollama runs any more (the last one ended here, or Claude Code in it quit), every model Ollama holds is unloaded - its GPU and RAM free at once, for a game or anything else. Off: Ollama keeps a model loaded as it does by itself (OLLAMA_KEEP_ALIVE, 5 minutes unless set). Free the GPU on What Ollama has does it by hand any time.':
+        'Zapnuto: když už neběží žádný chat s Ollamou (poslední tu skončil, nebo se v něm ukončil Claude Code), uvolní se všechny modely, které Ollama drží – GPU i RAM jsou hned volné, pro hru nebo cokoli jiného. Vypnuto: Ollama si model drží sama (OLLAMA_KEEP_ALIVE, 5 minut, pokud není nastaveno). Tlačítko Uvolnit GPU u Co Ollama nabízí to udělá kdykoli ručně.',
 }
 
 PATTERNS = {

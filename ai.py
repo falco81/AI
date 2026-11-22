@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.111'
+__version__ = '1.0.112'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -139,6 +139,7 @@ DEFAULTS = {
     'ollama_who': 'all',
     'ollama_ctx': 65536,
     'ollama_ctx_model': True,
+    'ollama_unload_end': False,
     'ollama_max_out': 32000,
     'term_lang': 'C.UTF-8',
     'default_run_as': 'root',
@@ -334,6 +335,11 @@ SCHEMA = [
      'made in Ollama the first time, a few kB, the weights are not copied; named like qwen3-coder:30b-ai64k. Works '
      'for Ollama anywhere, nothing on its machine is changed or started again. Never more than the model can hold. '
      'Off: the model as it is, with the context Ollama gives it.', {}),
+    ('ollama_unload_end', 'ollama', 'bool', 'Free the GPU when the last chat ends',
+     'On: when no chat with Ollama runs any more (the last one ended here, or Claude Code in it quit), every model '
+     'Ollama holds is unloaded - its GPU and RAM free at once, for a game or anything else. Off: Ollama keeps a '
+     'model loaded as it does by itself (OLLAMA_KEEP_ALIVE, 5 minutes unless set). Free the GPU on What Ollama has '
+     'does it by hand any time.', {}),
     ('ollama_max_out', 'ollama', 'int', 'Longest answer (tokens)',
      'CLAUDE_CODE_MAX_OUTPUT_TOKENS of a chat with Ollama: an answer that runs on is stopped here, not at Claude '
      'Code\'s 128000 - a local model that lost the thread would otherwise write for an hour. 0: Claude Code\'s own.',
@@ -4557,6 +4563,10 @@ class Terms:
                 self.store.x('UPDATE terms SET ended=? WHERE id=?', (time.time(), tid))
         keep = float(CONFIG.get('ended_keep_days') or 14) * 86400
         self.store.x('DELETE FROM terms WHERE ended IS NOT NULL AND ended < ?', (time.time() - keep,))
+        try:
+            ollama_unload_tick(self.store, live)
+        except Exception as e:                          # noqa: BLE001 - never in the way of the terminals
+            log('ollama: %s' % e, 'warn')
 
     # -- starting one -------------------------------------------------------------
     def claude_script(self, opts):
@@ -9748,6 +9758,65 @@ def ollama_probe_start(store, model, by):
     return {'message': 'checking %s: %s' % (model, ', '.join('%dk' % (n // 1024) for n in sizes))}
 
 
+def ollama_unload_all(by='', why=''):
+    """Every model Ollama holds unloaded (1.0.112): keep_alive 0 for each one /api/ps lists - its GPU's memory and
+    the RAM free at once, the machine of Ollama free for a game, with nothing restarted. Ollama loads a model
+    again by itself at the next question."""
+    base, key = ollama_base(), ollama_key()
+    names = []
+    for r in (_ollama_call(base, '/api/ps', key, timeout=10).get('models') or [])[:50]:
+        if isinstance(r, dict) and OLLAMA_MODEL_RE.match(str(r.get('name') or r.get('model') or '')):
+            names.append(str(r.get('name') or r.get('model')))
+    freed, said = [], []
+    for n in names:
+        try:
+            _ollama_call(base, '/api/generate', key, {'model': n, 'keep_alive': 0}, timeout=60)
+            freed.append(n)
+        except Exception as e:                          # noqa: BLE001
+            said.append('%s: %s' % (n, str(getattr(e, 'reason', None) or e)[:120]))
+    OLLAMA_CACHE.clear()
+    if freed and STORE_NOW.get('store') is not None:
+        STORE_NOW['store'].add_event('settings', '%sOllama unloaded %s%s' % (
+            ('%s: ' % by) if by else '', ', '.join(freed), (' - %s' % why) if why else ''), who=by or None)
+    return {'freed': freed, 'failed': said,
+            'message': ('freed: %s' % ', '.join(freed)) if freed else ('nothing was loaded' if not said else
+                                                                       'not freed: %s' % '; '.join(said))}
+
+
+def ollama_chats_running(store, live):
+    """Whether any chat with Ollama still runs - Claude Code alive in it, not only its last screen."""
+    for r in store.q("SELECT id, opts FROM terms WHERE kind='claude' AND ended IS NULL"):
+        lv = live.get(r['id'])
+        if not lv or lv.get('dead'):
+            continue
+        try:
+            if json.loads(r['opts'] or '{}').get('backend') == 'ollama':
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def ollama_unload_tick(store, live):
+    """Free the GPU when the last chat ends (1.0.112): looked at with every sync of the terminals - once, when
+    the chats with Ollama go from some to none."""
+    if not (CONFIG.get('ollama_on') and CONFIG.get('ollama_unload_end')):
+        OLLAMA_UNLOAD['had'] = False
+        return
+    now = ollama_chats_running(store, live)
+    if OLLAMA_UNLOAD.get('had') and not now:
+        def go():
+            try:
+                ollama_unload_all('', 'the last chat with Ollama ended')
+            except Exception as e:                      # noqa: BLE001
+                log('ollama: unloading after the last chat failed: %s' % e, 'warn')
+        threading.Thread(target=go, name='ollama-unload', daemon=True).start()
+    OLLAMA_UNLOAD['had'] = now
+
+
+OLLAMA_UNLOAD = {'had': False}
+
+
 def ollama_ctx_keep(store, model, n, by):
     if not OLLAMA_MODEL_RE.match(str(model or '')):
         raise Refused('which model?')
@@ -13533,6 +13602,8 @@ def api_ollama(c):
 def api_ollama_do(c):
     """Try an address and a key before they are saved (Settings - Ollama - Try it)."""
     b = c.body
+    if str(b.get('action') or '') == 'unload':
+        return ollama_unload_all(c.name)
     if str(b.get('action') or '') == 'probe':
         return ollama_probe_start(c.daemon.store, str(b.get('model') or ''), c.name)
     if str(b.get('action') or '') == 'keep':
@@ -27604,6 +27675,8 @@ def build_parser():
                    help='with --new: the last conversation of the folder')
     g.add_argument('--pick', action='store_true', help='with --new: choose one of its conversations')
     g.add_argument('--model', default='', help='with --new, --edit: the model (opus, sonnet, claude-opus-5-5…)')
+    g.add_argument('--ollama-free', action='store_true',
+                   help='every model Ollama holds unloaded - its GPU and RAM free (Settings - Ollama - Free the GPU)')
     g.add_argument('--ollama', nargs='?', const='', default=None, metavar='MODEL',
                    help='alone: what Ollama has (Settings - Ollama, --json); with --new: a chat with Ollama, '
                         'with MODEL or the one offered first')
@@ -28557,6 +28630,10 @@ def cli_main(argv):
             return cli_selinux(st, a, pal)
         if a.os_roots or a.os_roots_add or a.os_roots_remove:
             return cli_osroots(st, a, pal)
+        if a.ollama_free:
+            got = ollama_unload_all('the command line')
+            print((pal.ok_line if not got['failed'] else pal.warn_line)(got['message']))
+            return 0 if not got['failed'] else 1
         if a.ollama is not None and not a.new:
             return cli_ollama(a, pal)
         if a.notices or a.notice_done or a.notices_clear_done:

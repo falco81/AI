@@ -766,7 +766,7 @@ $upg_on = $upg !== null && $upg['state'] === 'running';
       <p class="ctl-lede">A chat can talk to a model of Ollama instead of Claude: the same Claude Code, pointed at
         Ollama (its Anthropic API, Ollama 0.14 and newer). Which one is chosen with the model, when the chat is
         started. Ollama on this server, or on another machine of the network.</p></div>
-    <div class="card full"><h2>What Ollama has <span class="right"><button class="btn small cmd" id="ol-look" data-icon="refresh">Look again</button></span></h2>
+    <div class="card full"><h2>What Ollama has <span class="right"><button class="btn small cmd admin-only" id="ol-free" data-icon="power" title="Every model Ollama holds unloaded now: its GPU's memory and the RAM free at once - for a game or anything else - with nothing restarted. Ollama loads a model again by itself at the next question.">Free the GPU</button> <button class="btn small cmd" id="ol-look" data-icon="refresh">Look again</button></span></h2>
       <div id="ol-host"></div></div>
     <div class="card full"><div id="sect-ollama"></div></div>
   </div>

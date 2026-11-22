@@ -1056,6 +1056,34 @@ check('ollama: the advice - 64k with part in the RAM when only 32k fits the GPU,
       _adv['choice'] == 65536 and _adv['gpu_only'] == 32768 and _adv['with_ram'] == 65536 and '9' in _adv['why'])
 _adv = ai.ollama_probe_advice([{'ctx': 16384, 'ok': True, 'gpu': 100, 'tps': 30}, {'ctx': 32768, 'ok': False}], 262144)
 check('ollama: the advice - the most it holds, said to be too little', _adv['choice'] == 16384 and 'less' in _adv['why'])
+_OL['loaded'] = {'name': 'qwen3-coder:30b-ai64k', 'model': 'qwen3-coder:30b-ai64k', 'size': 10, 'size_vram': 10,
+                 'context_length': 65536}
+_fr = ai.ollama_unload_all('tester')
+check('ollama: Free the GPU - every model it holds unloaded', _fr['freed'] == ['qwen3-coder:30b-ai64k'] and _OL['loaded'] is None)
+check('ollama: Free the GPU - nothing loaded, said so', ai.ollama_unload_all('tester')['message'] == 'nothing was loaded')
+# the last chat with Ollama ending frees it, once
+st.x("INSERT INTO terms(id,owner,run_as,title,kind,cwd,created,opts) VALUES('olt1','admin','root','x','claude','/root',?,?)",
+     (time.time(), json.dumps({'backend': 'ollama', 'model': 'qwen3-coder:30b'})))
+_calls = []
+_was_ua = ai.ollama_unload_all
+ai.ollama_unload_all = lambda by='', why='': _calls.append(why) or {}
+ai.CONFIG.update(ollama_unload_end=True)
+ai.OLLAMA_UNLOAD['had'] = False
+ai.ollama_unload_tick(st, {'olt1': {'dead': False}})
+ai.ollama_unload_tick(st, {'olt1': {'dead': False}})
+check('ollama: a chat with Ollama running - nothing unloaded', _calls == [])
+ai.ollama_unload_tick(st, {'olt1': {'dead': True}})
+time.sleep(0.3)
+ai.ollama_unload_tick(st, {})
+time.sleep(0.3)
+check('ollama: the last chat with Ollama ended - the GPU freed, once', len(_calls) == 1)
+ai.CONFIG.update(ollama_unload_end=False)
+ai.OLLAMA_UNLOAD['had'] = True
+ai.ollama_unload_tick(st, {})
+time.sleep(0.2)
+check('ollama: switched off - never unloaded by itself', len(_calls) == 1)
+ai.ollama_unload_all = _was_ua
+st.x("DELETE FROM terms WHERE id='olt1'")
 ai.ollama_ctx_keep(st, 'qwen3-coder:30b', 32768, 'tester')
 ai.CONFIG.update(ollama_ctx=65536, ollama_ctx_model=True)
 ai.OLLAMA_CACHE.clear()
