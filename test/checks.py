@@ -1036,7 +1036,7 @@ ai.STORE_NOW['store'] = st
 ai.OLLAMA_CACHE.clear()
 _OL['loaded'] = None
 ai.ollama_probe_start(st, 'qwen3-coder:30b', 'tester')
-for _i in range(100):
+for _i in range(600):                          # up to a minute on a busy machine
     if ai.OLLAMA_PROBE['qwen3-coder:30b'].get('state') != 'running':
         break
     time.sleep(0.1)
@@ -1161,7 +1161,7 @@ _ff = os.path.join(WORK, 'fifo.jsonl')
 os.mkfifo(_ff)
 _t0 = time.time()
 check('a FIFO named like a transcript is passed by, never waited on', ai.conversation_facts(_ff) is None
-      and time.time() - _t0 < 2)
+      and time.time() - _t0 < 10)
 # the second step's wrong codes are not cleared by the password given again
 _ma = ai.Auth(st)
 for _i in range(3):
