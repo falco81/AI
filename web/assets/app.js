@@ -638,7 +638,19 @@ function hloadDraw(d, into, asLook) {
       host.appendChild(c);
     });
   }
-  if (!preview && d.ollama) host.appendChild(hloadOllama(d.ollama, look));
+  if (!preview && d.ollama) {
+    /* its own two minutes: what Ollama holds in the GPU and the RAM at each reading (1.0.114) */
+    var oh = HLOAD.olHist || (HLOAD.olHist = {gpu: [], ram: [], at: []});
+    var oms = d.ollama.models || [];
+    if (d.ollama.at && d.ollama.at !== HLOAD.olAt) {
+      HLOAD.olAt = d.ollama.at;
+      oh.gpu.push(oms.reduce(function (s, m) { return s + (m.vram || 0); }, 0));
+      oh.ram.push(oms.reduce(function (s, m) { return s + (m.ram || 0); }, 0));
+      oh.at.push(d.ollama.at);
+      while (oh.at.length && oh.at[0] < d.ollama.at - 120) { oh.gpu.shift(); oh.ram.shift(); oh.at.shift(); }
+    }
+    host.appendChild(hloadOllama(d.ollama, look));
+  }
   host.hidden = false;
   if (!preview && HLOAD.open) hloadPanelDraw();
 }
@@ -662,14 +674,84 @@ function hloadOllama(o, look) {
     if (m.ram > 0) c.classList.add('warm');
   }
   c.appendChild(hlVal(v));
+  var oh = HLOAD.olHist || {gpu: [], ram: [], at: []};
+  var tot = ms.reduce(function (s, m) { return s + (m.size || 0); }, 0);
+  var inGpu = ms.reduce(function (s, m) { return s + (m.vram || 0); }, 0);
+  if (look === 'pills' && ms.length) {
+    var bar = el('span', 'hl-bar'), fill = el('span', '');
+    fill.style.width = (tot ? Math.round(100 * inGpu / tot) : 0) + '%';
+    bar.appendChild(fill); c.appendChild(bar);
+  }
+  if (look === 'graphs') {
+    var g = el('span', 'hl-g');
+    var top = Math.max.apply(null, oh.gpu.map(function (x, i) { return x + (oh.ram[i] || 0); }).concat([1])) * 1.25;
+    g.innerHTML = hloadSpark(oh.gpu.map(function (x, i) { return x + (oh.ram[i] || 0); }), top, '', oh.at);
+    c.appendChild(g);
+  }
+  c.dataset.k = 'ol';
   c.title = o.ok === false ? txT('Ollama does not answer') + (o.error ? ': ' + o.error : '')
     : (ms.length ? ms.map(function (m) {
         return m.name + (m.ctx ? ' · ' + txT('context') + ' ' + m.ctx : '') + ' · GPU ' + bytes(m.vram) + (m.ram > 0 ? ' · RAM ' + bytes(m.ram) + ' (' + txT('partly on the CPU') + ')' : '');
       }).join('\n') : txT('Ollama holds no model now - its GPU is free.'));
   c.tabIndex = 0;
   c.setAttribute('role', 'button');
-  c.onclick = function (e) { e.stopPropagation(); showTab('settings', 'ollama'); };
+  if (hpStyle() !== 'off') { c.removeAttribute('title'); hloadPanelHooks(c, 'ol'); }
+  else c.onclick = function (e) { e.stopPropagation(); showTab('settings', 'ollama'); };
   return c;
+}
+/* The detail of Ollama, as the others have theirs (1.0.114): every model it holds - its context, in the GPU, in
+   the RAM, until when it stays loaded - two minutes of it, and Free the GPU. */
+function hpOllama(p) {
+  var o = (HLOAD.last || {}).ollama || {};
+  var ms = o.models || [];
+  var head = el('div', 'hp-head');
+  head.appendChild(el('b', '', 'Ollama'));
+  var oh = HLOAD.olHist || {gpu: [], ram: [], at: []};
+  var sum = oh.gpu.map(function (x, i) { return x + (oh.ram[i] || 0); });
+  var top = Math.max.apply(null, sum.concat([1])) * 1.25;   /* room above: a steady line not stuck to the edge */
+  head.appendChild(noI18n(el('span', 'hp-scale muted small', bytes(top))));
+  p.appendChild(head);
+  var big = el('div', 'hp-graph hl-ol');
+  big.innerHTML = hloadSpark(sum, top, '', oh.at).replace('width="56" height="18"', 'width="100%" height="54"');
+  p.appendChild(big);
+  p.appendChild(el('div', 'hp-span muted small', 'the last two minutes - what it holds, in the GPU and the RAM'));
+  var s = el('div', 'hp-sec');
+  if (o.ok === false) s.appendChild(el('p', 'bad small', txT('Ollama does not answer') + (o.error ? ': ' + o.error : '')));
+  else if (!ms.length) s.appendChild(el('p', 'muted small', 'Ollama holds no model now - its GPU is free.'));
+  ms.forEach(function (m) {
+    var b = el('div', 'hp-ol');
+    b.appendChild(noI18n(el('b', 'mono', m.name)));
+    var kv = function (k, v, cls) {
+      var r = el('div', 'hp-row hp-kv');
+      r.appendChild(el('span', 'muted', k));
+      r.appendChild(noI18n(el('span', cls || '', v)));
+      b.appendChild(r);
+    };
+    if (m.ctx) kv(txT('Context'), Math.round(m.ctx / 1024) + 'k (' + m.ctx + ')');
+    kv(txT('In the GPU'), bytes(m.vram) + (m.size ? ' · ' + Math.round(100 * m.vram / m.size) + ' %' : ''));
+    kv(txT('In the RAM'), m.ram > 0 ? bytes(m.ram) + ' - ' + txT('partly on the CPU') : '–', m.ram > 0 ? 'warn' : '');
+    if (m.until) {
+      var u = Date.parse(m.until);
+      if (u && u > Date.now() && u - Date.now() < 30 * 86400000) kv(txT('Unloaded by itself at'), new Date(u).toLocaleTimeString());
+    }
+    s.appendChild(b);
+  });
+  p.appendChild(s);
+  var row = el('div', 'btnrow');
+  row.style.marginTop = '8px';
+  if (ADMIN && ms.length) {
+    var f = cmdButton('Free the GPU', 'power', 'small');
+    f.onclick = function () {
+      busy(f, true);
+      api('ollama', {action: 'unload'}).then(function (r) { toast(r.freed && r.freed.length ? txT('Freed') + ': ' + r.freed.join(', ') : txT(r.message), 'good'); hloadTick(true); })
+        .catch(oops).then(function () { busy(f, false); });
+    };
+    row.appendChild(f);
+  }
+  var go = cmdButton('Settings', 'gear', 'small');
+  go.onclick = function () { hloadPanelClose(); showTab('settings', 'ollama'); };
+  row.appendChild(go);
+  p.appendChild(row);
 }
 /* Sample numbers for the previews in My account: a server with sensors, so
    every part shows (1.0.75). */
@@ -831,6 +913,7 @@ function hloadPanelDraw() {
   clear(p);
   p.className = 'hl-panel hp-' + st;
   document.querySelectorAll('#hload [data-k]').forEach(function (c) { c.classList.toggle('hl-open', st !== 'wide' ? c.dataset.k === k : true); });
+  if (k === 'ol') { p.className = 'hl-panel hp-tiles'; hpOllama(p); return; }
   if (st === 'table') hpTable(p, k);
   else if (st === 'map') hpMap(p, k);
   else if (st === 'wide') hpWide(p);

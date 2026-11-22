@@ -4085,6 +4085,11 @@ STRINGS = {
         'kontext',
     'Ollama holds no model now - its GPU is free.':
         'Ollama teď nedrží žádný model – její GPU je volná.',
+    # ---- 1.0.114
+    'the last two minutes - what it holds, in the GPU and the RAM':
+        'poslední dvě minuty – co drží, v GPU a v RAM',
+    'Unloaded by itself at':
+        'Sama uvolní v',
 }
 
 PATTERNS = {

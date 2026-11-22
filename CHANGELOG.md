@@ -3,6 +3,13 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.114
+
+- **Ollama in the header, as the others**: its graph of the last two minutes (what it holds, in the GPU and the
+  RAM), the bar of how much is in the GPU in the *pills* look, and its detail on the mouse (or a tap): every model
+  it holds with its context, how much is in the GPU and in the RAM, when Ollama unloads it by itself, and the
+  buttons *Free the GPU* and *Settings*.
+
 ## 1.0.113
 
 - **Ollama in the header** (the performance bar, while chats with Ollama are on): the model Ollama holds, its
