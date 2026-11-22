@@ -117,3 +117,11 @@ part in the RAM, with its speed. *Use this* keeps a context for that model (its 
 
 Yes, Ollama shares the RAM by itself: what does not fit the GPU goes to the RAM. It is slower - how much slower
 depends on how much spills: a few hundred MB costs little, gigabytes a lot. The measure shows it.
+
+### What Claude Code is told (1.0.110)
+
+A chat with Ollama is started without `--model`: its model is `ANTHROPIC_MODEL`, ai's copy with the context set in
+it. `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is that context, so Claude Code compacts the conversation before it outgrows
+the model - otherwise it takes a model it does not know to hold a million tokens, and Ollama stops every answer once
+the context is full (Claude Code reports that as "exceeded the output token maximum"). `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+is *Longest answer*, never more than half the context. The list of chats shows the model and context a chat runs with.

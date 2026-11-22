@@ -3,6 +3,23 @@
 Every change is a new version: the number is in `ai.py` (`ai --version`), on
 the pages (Settings → About), in the name of the folder and of the archive.
 
+## 1.0.110
+
+**Chats with Ollama: "exceeded the output token maximum" after a few words, again and again** - three faults, each
+fixed:
+
+- The copy of the model with the context set in it (1.0.106) was never asked: the chat also gave Claude Code
+  `--model` with the model's own name, and that went over `ANTHROPIC_MODEL`. Ollama answered with the model as it
+  is - 4k or 16k of context.
+- Claude Code takes a model it does not know to hold a million tokens ("context assumed to be 1m tokens"), so it
+  never compacted the conversation; it outgrew the model's context, and Ollama stopped every answer at once -
+  which Claude Code reports as "exceeded the output token maximum". A chat with Ollama now tells Claude Code the
+  window it really has (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`), and it compacts in time.
+- The longest answer is never more than half the model's context.
+
+The list of chats says what a chat with Ollama runs with: *Ollama MODEL · 128k* (or *context not set*). A chat
+started before: *Start it again*.
+
 ## 1.0.109
 
 - **Tables**: a row with a button or a tag in it is lined up through its middle - the words sat at the top of

@@ -4060,6 +4060,9 @@ STRINGS = {
         'Dáno',
     'Ollama gave less than asked - it made the context fit its memory':
         'Ollama dala méně, než se žádalo – kontext přizpůsobila své paměti',
+    # ---- 1.0.110
+    'context not set':
+        'kontext nenastaven',
 }
 
 PATTERNS = {

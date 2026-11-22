@@ -1806,7 +1806,9 @@ function drawTermList() {
     row.appendChild(noI18n(el('div', 'tl-path mono', t.path || t.cwd)));
     var meta = el('div', 'tl-meta muted');
     var ol = t.kind === 'claude' && t.opts && t.opts.backend === 'ollama';
-    meta.appendChild(document.createTextNode((ol ? 'Ollama' + (t.opts.model ? ' ' + t.opts.model : '') : kindWords(t.kind)) + ' · ' + t.run_as
+    /* what it really runs with (1.0.110): the model and the context Ollama was asked to give it */
+    meta.appendChild(document.createTextNode((ol ? 'Ollama' + (t.opts.model ? ' ' + t.opts.model : '')
+      + (t.opts.ollama_ctx ? ' · ' + Math.round(t.opts.ollama_ctx / 1024) + 'k' : ' · ' + txT('context not set')) : kindWords(t.kind)) + ' · ' + t.run_as
       + (ADMIN && t.owner && t.owner !== ME.name ? ' · ' + t.owner : '') + ' · ' + ago(t.activity)));
     row.appendChild(meta);
     var dots = el('button', 'tl-dots');

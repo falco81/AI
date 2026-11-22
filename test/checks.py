@@ -966,11 +966,11 @@ _sc = ai.Terms(None).claude_script({'model': 'qwen3-coder:30b', 'backend': 'olla
 _sc2 = ai.Terms(None).claude_script({'model': 'opus'})
 ai.CONFIG['claude_args'] = _was_args
 check('ollama: Claude\'s --model of the words of every chat is never put over Ollama\'s model',
-      'qwen3-coder:30b' in _sc and 'sonnet' not in _sc and ' opus' not in _sc and '--verbose' in _sc and '--model=sonnet' in _sc2)
+      '--model' not in _sc and 'sonnet' not in _sc and ' opus' not in _sc and '--verbose' in _sc and '--model=sonnet' in _sc2)
 check('ollama: a model name of Ollama (a tag, a namespace) goes through, a word of the shell does not',
       ai.OLLAMA_MODEL_RE.match('hf.co/unsloth/Qwen3-GGUF:Q4_K_M') and not ai.OLLAMA_MODEL_RE.match('x;rm -rf'))
 check('ollama: the backend chosen is kept with the chat, and as the account\'s last choice',
-      "'add_dirs', 'backend')" in _ai_src and "'backend')" in _ai_src[_ai_src.index('PREF_KEYS = '):_ai_src.index('PREF_KEYS = ') + 400])
+      "'add_dirs', 'backend'," in _ai_src and "'backend')" in _ai_src[_ai_src.index('PREF_KEYS = '):_ai_src.index('PREF_KEYS = ') + 400])
 ai.OLLAMA_CACHE.clear()
 ai.CONFIG.update(ollama_where='local', ollama_port=_olport, ollama_key='')
 _l2 = {m['name']: m for m in ai.ollama_look()['models']}
@@ -1001,7 +1001,14 @@ ai.run, ai.systemd_here = _was_run, _was_sd
 ai.CONFIG.update(ollama_where='local', ollama_port=_olport, ollama_ctx=65536, ollama_ctx_model=True, ollama_small='')
 ai.OLLAMA_CACHE.clear()
 _OL['created'] = []
-_e1 = ai.ollama_env(_user, {'model': 'qwen3-coder:30b', 'backend': 'ollama'})
+_o6 = {'model': 'qwen3-coder:30b', 'backend': 'ollama'}
+_e1 = ai.ollama_env(_user, _o6)
+check('ollama: Claude Code told the window it compacts in, the longest answer never over half of it, kept with the chat',
+      _e1.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW') == '65536' and _o6.get('ollama_ctx') == 65536
+      and _o6.get('ollama_run') == 'qwen3-coder:30b-ai64k')
+check('ollama: no --model of the model\'s own name over the copy',
+      '--model' not in ai.Terms(None).claude_script({'model': 'qwen3-coder:30b', 'backend': 'ollama'})
+      and '--model' in ai.Terms(None).claude_script({'model': 'opus'}))
 check('ollama: a chat runs a copy of its model with the context set in it (made once, from the model, num_ctx)',
       _e1['ANTHROPIC_MODEL'] == 'qwen3-coder:30b-ai64k' and _e1['ANTHROPIC_SMALL_FAST_MODEL'] == 'qwen3-coder:30b-ai64k'
       and _OL['created'] == [{'model': 'qwen3-coder:30b-ai64k', 'from': 'qwen3-coder:30b',

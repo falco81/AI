@@ -81,7 +81,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-__version__ = '1.0.109'
+__version__ = '1.0.110'
 
 # ---------------------------------------------------------------------------
 # Paths and defaults
@@ -4485,7 +4485,7 @@ class Terms:
                 'cols': lv['cols'] if lv else 0, 'rows': lv['rows'] if lv else 0,
                 'pane_title': lv['pane_title'] if lv else '',
                 'opts': {k: opts.get(k) for k in ('model', 'mode', 'effort', 'resume', 'continue', 'args',
-                                                  'command', 'backend') if opts.get(k)}}
+                                                  'command', 'backend', 'ollama_run', 'ollama_ctx') if opts.get(k)}}
 
     def merge(self, live):
         """One tile a conversation (1.0.17): before 1.0.16 picking one up again
@@ -4575,7 +4575,9 @@ class Terms:
             args += ['--resume']
         elif opts.get('continue'):
             args += ['--continue']
-        if opts.get('model'):
+        if opts.get('model') and opts.get('backend') != 'ollama':
+            # Not for a chat with Ollama (1.0.110): its model is ANTHROPIC_MODEL - ai's copy with the context set
+            # in it; a --model of the model's own name went over that, and the copy was never asked.
             args += ['--model', str(opts['model'])]
         if opts.get('mode'):
             args += ['--permission-mode', str(opts['mode'])]
@@ -4710,7 +4712,8 @@ class Terms:
         # Claude Code's own options kept too (1.0.25), so that starting it again -
         # or with changes - starts it as it was chosen.
         keep = {k: v for k, v in opts.items() if k in ('model', 'mode', 'resume', 'continue', 'pick',
-                                                       'args', 'command', 'add_dirs', 'backend') or k in CC_KEEP}
+                                                       'args', 'command', 'add_dirs', 'backend', 'ollama_run',
+                                                       'ollama_ctx') or k in CC_KEEP}
         if sid:
             keep['sid'] = sid
         if upkeep:
@@ -9770,10 +9773,10 @@ def ollama_with_context(base, key, look, model, want):
     model forgot the folder and the conversation, and wrote on to the output limit. Never more than the model
     can hold; a cloud model has its whole context already. Anything that does not work: the model as it is."""
     if not want or model.endswith((':cloud', '-cloud')) or OLLAMA_COPY_RE.search(model):
-        return model, ''
+        return model, '', 0
     one = next((m for m in look.get('models') or [] if m['name'] == model), None)
     if one and one.get('remote'):
-        return model, ''
+        return model, '', 0
     most = (one or {}).get('ctx') or 0
     if not most:
         try:
@@ -9784,18 +9787,18 @@ def ollama_with_context(base, key, look, model, want):
             most = 0
     n = min(int(want), most) if most else int(want)
     if n < 2048:
-        return model, ''
+        return model, '', 0
     copy = ollama_copy_name(model, n)
     if copy in [m['name'] for m in look.get('models') or []] + list(look.get('copies') or []):
-        return copy, ''
+        return copy, '', n
     try:
         _ollama_call(base, '/api/create', key, {'model': copy, 'from': model, 'parameters': {'num_ctx': n},
                                                 'stream': False}, timeout=120)
     except Exception as e:                              # noqa: BLE001 - the model as it is, and said
         return model, 'a copy with %d tokens of context could not be made in Ollama: %s' % (
-            n, str(getattr(e, 'reason', None) or e)[:200])
+            n, str(getattr(e, 'reason', None) or e)[:200]), 0
     OLLAMA_CACHE.clear()
-    return copy, ''
+    return copy, '', n
 
 
 def ollama_base(where=None, url=None, port=None):
@@ -9985,22 +9988,31 @@ def ollama_env(u, opts):
     opts['model'] = model
     small = str(CONFIG.get('ollama_small') or '').strip()
     small = small if small and OLLAMA_MODEL_RE.match(small) else model
-    run_model, run_small = model, small
+    run_model, run_small, ctx = model, small, 0
     if CONFIG.get('ollama_ctx_model', True) and look.get('ok'):
         want = int(CONFIG.get('ollama_ctx') or 0)
         kept = ollama_ctx_kept(STORE_NOW.get('store'))
-        run_model, said = ollama_with_context(base, ollama_key(), look, model, int(kept.get(model) or want))
+        run_model, said, ctx = ollama_with_context(base, ollama_key(), look, model, int(kept.get(model) or want))
         run_small = run_model if small == model else \
             ollama_with_context(base, ollama_key(), look, small, int(kept.get(small) or want))[0]
         if said:
             log('ollama: %s - %s, as it is' % (said, model))
+    # What it runs with, kept with the chat and shown in the list (1.0.110)
+    opts['ollama_run'] = run_model
+    opts['ollama_ctx'] = ctx
+    out_most = int(CONFIG.get('ollama_max_out') or 0)
+    if ctx and out_most:
+        out_most = min(out_most, max(1024, ctx // 2))   # an answer never longer than half of what the model holds
     return {'ANTHROPIC_BASE_URL': base, 'ANTHROPIC_AUTH_TOKEN': ollama_key() or 'ollama', 'ANTHROPIC_API_KEY': '',
             'ANTHROPIC_MODEL': run_model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': run_model,
             'ANTHROPIC_DEFAULT_SONNET_MODEL': run_model,
             'ANTHROPIC_DEFAULT_HAIKU_MODEL': run_small, 'ANTHROPIC_SMALL_FAST_MODEL': run_small,
             'CLAUDE_CODE_SUBAGENT_MODEL': run_model, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
-            **({'CLAUDE_CODE_MAX_OUTPUT_TOKENS': str(int(CONFIG.get('ollama_max_out') or 0))}
-               if int(CONFIG.get('ollama_max_out') or 0) > 0 else {})}
+            **({'CLAUDE_CODE_MAX_OUTPUT_TOKENS': str(out_most)} if out_most > 0 else {}),
+            # The window Claude Code compacts the conversation in (1.0.110): an unknown model is taken to hold a
+            # million tokens, the conversation was never compacted, outgrew the model's context, and Ollama
+            # stopped every answer - "exceeded the output token maximum" after a few words.
+            **({'CLAUDE_CODE_AUTO_COMPACT_WINDOW': str(ctx)} if ctx else {})}
 
 
 def ollama_view(u, fresh=False):
